@@ -1,0 +1,55 @@
+[package]
+name = "granian"
+version = "0.1.0"
+description = ""
+authors = ["Giovanni Barillari <gi0baro@d4net.org>"]
+license = "BSD-3-Clause"
+edition = "2018"
+
+keywords = ["emmett"]
+
+readme = "README.md"
+homepage = "https://github.com/emmett-framework/granian"
+repository = "https://github.com/emmett-framework/granian"
+
+include = [
+    "Cargo.toml",
+    "LICENSE",
+    "pyproject.toml",
+    "README.md",
+    "src/*"
+]
+
+[lib]
+name = "granian"
+crate-type = ["cdylib"]
+
+[dependencies]
+bytes = "1"
+hyper = { version = "0.14", features = ["http1", "http2", "server", "stream", "runtime", "tcp"] }
+mimalloc = { version = "0.1.28" }
+pyo3 = { version = "0.16", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.16", features = ["tokio-runtime"] }
+socket2 = { version = "0.4", features = ["all"] }
+tokio = { version = "1.17", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[package.metadata.maturin]
+requires-python = ">=3.7"
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python",
+    "Programming Language :: Rust"
+]

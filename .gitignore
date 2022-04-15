@@ -1,0 +1,10 @@
+.DS_Store
+*.pyc
+__pycache__
+
+*.sublime-*
+.venv
+.vscode
+
+granian/*.so
+target/*

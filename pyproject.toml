@@ -1,0 +1,16 @@
+[project]
+name = "granian"
+repository = "https://github.com/emmett-framework/granian"
+dependencies = ["uvloop~=0.16.0; sys_platform != 'win32'"]
+
+[build-system]
+requires = ["maturin>=0.12,<0.13"]
+build-backend = "maturin"
+
+[tool.maturin]
+sdist-include = [
+    "Cargo.lock",
+    "granian/*.py",
+    "tests/*.py"
+]
+strip = true
