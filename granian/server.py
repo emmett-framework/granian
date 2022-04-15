@@ -170,7 +170,7 @@ class Granian:
             Interfaces.RSGI: self._spawn_rsgi_worker
         }
         target_loader = target_loader or self._target_load
-        spawn_target = spawn_target or default_spawners[self.mode]
+        spawn_target = spawn_target or default_spawners[self.interface]
 
         # if self.workers > 1 and "fork" not in multiprocessing.get_all_start_methods():
         #     raise RuntimeError("Multiple workers are not supported on current platform")
