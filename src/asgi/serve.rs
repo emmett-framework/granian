@@ -44,7 +44,6 @@ impl ASGIWorker {
         println!("Listener spawned: {}", worker_id);
 
         let svc_loop = pyo3_asyncio::tokio::run_until_complete(event_loop, async move {
-            println!("Service fut");
             let service = make_service_fn(|socket: &AddrStream| {
                 let remote_addr = socket.remote_addr();
                 let callback_wrapper = callback_wrapper.clone();
@@ -62,7 +61,6 @@ impl ASGIWorker {
                 }
             });
 
-            println!("Starting server");
             let server = Server::from_tcp(tcp_listener).unwrap()
                 .http1_max_buf_size(http1_buffer_max)
                 .serve(service);

@@ -23,10 +23,7 @@ RSGIWorker = _workers.RSGIWorker
 
 
 class Granian:
-    SIGNALS = {
-        signal.SIGINT,
-        signal.SIGTERM
-    }
+    SIGNALS = {signal.SIGINT, signal.SIGTERM}
 
     def __init__(
         self,
@@ -34,8 +31,9 @@ class Granian:
         address: str = "127.0.0.1",
         port: int = 8000,
         workers: int = 1,
-        backlog: int = 512,
+        backlog: int = 1024,
         threads: Optional[int] = None,
+        http1_buffer_size: int = 65535,
         interface: Interfaces = Interfaces.RSGI
     ):
         self.target = target
@@ -47,6 +45,7 @@ class Granian:
             max(1, threads) if threads is not None else
             max(2, multiprocessing.cpu_count() // workers)
         )
+        self.http1_buffer_size = http1_buffer_size
         self.interface = interface
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
@@ -57,14 +56,20 @@ class Granian:
         return load_target(target)
 
     @staticmethod
-    def _spawn_asgi_worker(worker_id, callback_loader, socket, threads):
+    def _spawn_asgi_worker(
+        worker_id,
+        callback_loader,
+        socket,
+        threads,
+        http1_buffer_size
+    ):
         from granian._loops import loops
 
         callback = callback_loader()
         loop = loops.get("auto")
         sfd = socket.fileno()
 
-        worker = ASGIWorker(worker_id, sfd, threads)
+        worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size)
         worker.serve(_asgi_call_wrap(callback), loop, contextvars.copy_context())
 
         # worker._serve_ret_st(callback, loop, contextvars.copy_context())
@@ -72,15 +77,20 @@ class Granian:
         # loop.run_forever()
 
     @staticmethod
-    def _spawn_rsgi_worker(worker_id, callback_loader, socket, threads):
+    def _spawn_rsgi_worker(
+        worker_id,
+        callback_loader,
+        socket,
+        threads,
+        http1_buffer_size
+    ):
         from granian._loops import loops
 
         callback = callback_loader()
         loop = loops.get("auto")
         sfd = socket.fileno()
 
-        print("spawning wrk", sfd, threads)
-        worker = RSGIWorker(worker_id, sfd, threads)
+        worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size)
         worker.serve(_rsgi_call_wrap(callback), loop, contextvars.copy_context())
 
         # worker._serve_ret_st(callback, loop, contextvars.copy_context())
@@ -100,15 +110,13 @@ class Granian:
         CTX.socks[pid] = SocketHolder.from_address(
             self.bind_addr,
             self.bind_port,
-            self.backlog * self.workers
+            self.backlog
         )
         self._sfd = CTX.socks[pid].get_fd()
 
     def _build_socket_loader(self, pid):
         if self.workers > 1:
-            return partial(
-                self._shared_socket_loader, pid
-            )
+            return partial(self._shared_socket_loader, pid)
         return partial(
             self._local_socket_builder,
             self.bind_addr,
@@ -128,7 +136,13 @@ class Granian:
     ) -> multiprocessing.Process:
         return multiprocessing.get_context().Process(
             target=target,
-            args=(id, callback_loader, socket_loader(), self.threads)
+            args=(
+                id,
+                callback_loader,
+                socket_loader(),
+                self.threads,
+                self.http1_buffer_size
+            )
         )
 
     def startup(self, spawn_target, target_loader):
@@ -137,7 +151,6 @@ class Granian:
 
         pid = os.getpid()
         self._init_shared_socket(pid)
-        # socket_loader = self._build_socket_loader(pid)
 
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)

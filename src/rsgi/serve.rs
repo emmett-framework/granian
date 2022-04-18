@@ -40,6 +40,9 @@ impl RSGIWorker {
         let http1_buffer_max = self.config.http1_buffer_max;
         let callback_wrapper = CallbackWrapper::new(callback, event_loop, context);
 
+        let worker_id = self.config.id;
+        println!("Listener spawned: {}", worker_id);
+
         let svc_loop = pyo3_asyncio::tokio::run_until_complete(event_loop, async move {
             let service = make_service_fn(|socket: &AddrStream| {
                 let remote_addr = socket.remote_addr();

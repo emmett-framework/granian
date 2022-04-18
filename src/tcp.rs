@@ -21,11 +21,9 @@ impl SocketHolder {
     #[cfg(unix)]
     #[new]
     pub fn new(fd: i32) -> PyResult<Self> {
-        println!("{}", fd);
         let socket = unsafe {
             Socket::from_raw_fd(fd)
         };
-        // println!("{}", socket.type().unwrap());
         Ok(Self { socket: socket })
     }
 
@@ -39,12 +37,18 @@ impl SocketHolder {
     }
 
     #[classmethod]
-    pub fn from_address(_cls: &PyType, address: &str, port: u16, backlog: i32) -> PyResult<Self> {
-        println!("{}", address);
+    pub fn from_address(
+        _cls: &PyType,
+        address: &str,
+        port: u16,
+        backlog: i32
+    ) -> PyResult<Self> {
         let address: SocketAddr = (address.parse::<IpAddr>()?, port).into();
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
         socket.set_reuse_address(true)?;
-        socket.set_tcp_keepalive(&TcpKeepalive::new().with_time(Duration::from_secs(0)))?;
+        socket.set_tcp_keepalive(
+            &TcpKeepalive::new().with_time(Duration::from_secs(0))
+        )?;
         socket.set_nodelay(true)?;
         socket.bind(&address.into())?;
         socket.listen(backlog)?;
@@ -53,9 +57,7 @@ impl SocketHolder {
 
     #[cfg(unix)]
     pub fn __getstate__(&self, py: Python) -> PyObject {
-        // let fd = self.socket.try_clone().unwrap().as_raw_fd();
         let fd = self.socket.as_raw_fd();
-        println!("{}", fd);
         (
             fd.into_py(py),
         ).to_object(py)
@@ -63,7 +65,6 @@ impl SocketHolder {
 
     #[cfg(windows)]
     pub fn __getstate__(&self, py: Python) -> PyObject {
-        // let fd = self.socket.try_clone().unwrap().as_raw_socket();
         let fd = self.socket.as_raw_socket();
         (
             fd.into_py(py),
@@ -82,11 +83,6 @@ impl SocketHolder {
 }
 
 impl SocketHolder {
-    // pub fn try_clone(&self) -> PyResult<Self> {
-    //     let copied = self.socket.try_clone()?;
-    //     Ok(Self { socket: copied })
-    // }
-
     pub fn get_socket(&self) -> Socket {
         self.socket.try_clone().unwrap()
     }
@@ -106,12 +102,9 @@ impl ListenerHolder {
     #[cfg(unix)]
     #[new]
     pub fn new(fd: i32) -> PyResult<Self> {
-        println!("{}", fd);
         let socket = unsafe {
             TcpListener::from_raw_fd(fd)
         };
-        // println!("{}", socket.type().unwrap());
-        println!("{}", socket.local_addr().unwrap());
         Ok(Self { socket: socket })
     }
 
@@ -125,8 +118,12 @@ impl ListenerHolder {
     }
 
     #[classmethod]
-    pub fn from_address(_cls: &PyType, address: &str, port: u16, backlog: i32) -> PyResult<Self> {
-        println!("{}", address);
+    pub fn from_address(
+        _cls: &PyType,
+        address: &str,
+        port: u16,
+        backlog: i32
+    ) -> PyResult<Self> {
         let address: SocketAddr = (address.parse::<IpAddr>()?, port).into();
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
         socket.set_reuse_address(true)?;
@@ -139,7 +136,6 @@ impl ListenerHolder {
     #[cfg(unix)]
     pub fn __getstate__(&self, py: Python) -> PyObject {
         let fd = self.socket.as_raw_fd();
-        println!("{}", fd);
         (
             fd.into_py(py),
         ).to_object(py)
