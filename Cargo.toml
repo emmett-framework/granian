@@ -1,12 +1,12 @@
 [package]
 name = "granian"
-version = "0.1.0"
-description = ""
+version = "0.1.0-alpha.1"
+description = "A Rust HTTP server for Python applications"
 authors = ["Giovanni Barillari <gi0baro@d4net.org>"]
 license = "BSD-3-Clause"
 edition = "2018"
 
-keywords = ["emmett"]
+keywords = ["web", "asyncio"]
 
 readme = "README.md"
 homepage = "https://github.com/emmett-framework/granian"
@@ -23,16 +23,6 @@ include = [
 [lib]
 name = "granian"
 crate-type = ["cdylib"]
-
-[dependencies]
-bytes = "1"
-hyper = { version = "0.14", features = ["http1", "http2", "server", "stream", "runtime", "tcp"] }
-mimalloc = { version = "0.1.28" }
-pyo3 = { version = "0.16", features = ["extension-module"] }
-pyo3-asyncio = { version = "0.16", features = ["tokio-runtime"] }
-socket2 = { version = "0.4", features = ["all"] }
-tokio = { version = "1.17", features = ["full"] }
-tokio-util = { version = "0.7", features = ["codec"] }
 
 [package.metadata.maturin]
 requires-python = ">=3.7"
@@ -51,5 +41,27 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python",
-    "Programming Language :: Rust"
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP"
 ]
+
+[dependencies]
+bytes = "1"
+hyper = { version = "0.14", features = ["http1", "http2", "server", "stream", "runtime", "tcp"] }
+mimalloc = { version = "0.1.28" }
+pyo3 = { version = "0.16", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.16", features = ["tokio-runtime"] }
+socket2 = { version = "0.4", features = ["all"] }
+tokio = { version = "1.17", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[profile.release]
+codegen-units = 1
+debug = false
+incremental = false
+lto = "thin"
+opt-level = 3
+panic = "abort"
+
+[profile.release.build-override]
+opt-level = 0
