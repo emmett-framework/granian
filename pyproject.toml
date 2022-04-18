@@ -1,7 +1,13 @@
 [project]
 name = "granian"
 repository = "https://github.com/emmett-framework/granian"
-dependencies = ["uvloop~=0.16.0; sys_platform != 'win32'"]
+dependencies = [
+    "typer~=0.4.1",
+    "uvloop~=0.16.0; sys_platform != 'win32'"
+]
+
+[project.scripts]
+granian = "granian:cli.cli"
 
 [build-system]
 requires = ["maturin>=0.12,<0.13"]
