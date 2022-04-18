@@ -30,9 +30,17 @@ impl WorkerConfig {
         }
     }
 
+    #[cfg(unix)]
     pub fn tcp_listener(&self) -> TcpListener {
         unsafe {
             TcpListener::from_raw_fd(self.socket_fd)
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn tcp_listener(&self) -> TcpListener {
+        unsafe {
+            TcpListener::from_raw_socket(self.socket_fd)
         }
     }
 }
