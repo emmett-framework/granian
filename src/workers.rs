@@ -3,7 +3,7 @@ use std::net::TcpListener;
 #[cfg(unix)]
 use std::os::unix::io::FromRawFd;
 #[cfg(windows)]
-use std::os::windows::io::{FromRawSocket, RawSocket};
+use std::os::windows::io::FromRawSocket;
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
@@ -40,7 +40,7 @@ impl WorkerConfig {
     #[cfg(windows)]
     pub fn tcp_listener(&self) -> TcpListener {
         unsafe {
-            TcpListener::from_raw_socket(self.socket_fd)
+            TcpListener::from_raw_socket(self.socket_fd as u64)
         }
     }
 }
