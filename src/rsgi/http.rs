@@ -2,7 +2,7 @@ use hyper::{
     Body,
     Request,
     Response,
-    header::{HeaderName, HeaderValue},
+    header::{HeaderName, HeaderValue, SERVER},
     http::response::{Builder as ResponseBuilder}
 };
 use std::collections::HashMap;
@@ -20,6 +20,7 @@ const RESPONSE_FILEPATH: u32 = ResponseType::FilePath as u32;
 const RESPONSE_STR: u32 = ResponseType::String as u32;
 
 const EMPTY_BODY: &[u8] = b"";
+const HDR_SERVER: HeaderValue = HeaderValue::from_static("granian");
 
 pub trait HTTPResponseData {}
 
@@ -33,6 +34,7 @@ impl<T: HTTPResponseData> HTTPResponse<T> {
     pub fn response(&self) -> ResponseBuilder {
         let mut builder = Response::builder().status(self.status as u16);
         let headers = builder.headers_mut().unwrap();
+        headers.insert(SERVER, HDR_SERVER);
         for (key, value) in self.headers.iter() {
             headers.insert(
                 HeaderName::from_bytes(&key.clone().into_bytes()).unwrap(),

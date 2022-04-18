@@ -3,7 +3,7 @@ use hyper::{
     Body,
     Request,
     Response,
-    header::{HeaderName, HeaderValue, HeaderMap}
+    header::{HeaderName, HeaderValue, HeaderMap, SERVER}
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
@@ -12,6 +12,8 @@ use tokio::sync::{Mutex, oneshot};
 
 use super::errors::{ASGIFlowError, UnsupportedASGIMessage};
 use super::types::ASGIMessageType;
+
+const HDR_SERVER: HeaderValue = HeaderValue::from_static("granian");
 
 #[pyclass(module="granian.asgi")]
 pub(crate) struct Receiver {
@@ -96,6 +98,7 @@ impl Sender {
 
     fn adapt_headers(&self, message: &PyDict) -> HeaderMap {
         let mut ret = HeaderMap::new();
+        ret.insert(SERVER, HDR_SERVER);
         match message.get_item("headers") {
             Some(item) => {
                 let accum: Vec<Vec<&[u8]>> = item.extract().unwrap_or(Vec::new());
