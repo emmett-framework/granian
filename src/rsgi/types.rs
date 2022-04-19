@@ -47,12 +47,15 @@ impl Headers {
 
     #[args(key, default="None")]
     fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
-        self.inner.get(key).and_then(|val| {
-            match val.to_str() {
-                Ok(string) => Some(PyString::new(py, string).into()),
-                _ => default
-            }
-        })
+        match self.inner.get(key) {
+            Some(val) => {
+                match val.to_str() {
+                    Ok(string) => Some(PyString::new(py, string).into()),
+                    _ => default
+                }
+            },
+            _ => default
+        }
     }
 }
 
