@@ -65,9 +65,9 @@ class Granian:
     ):
         from granian._loops import loops
 
-        callback = callback_loader()
         loop = loops.get("auto")
         sfd = socket.fileno()
+        callback = callback_loader()
 
         worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size)
         worker.serve(_asgi_call_wrap(callback), loop, contextvars.copy_context())
@@ -86,9 +86,9 @@ class Granian:
     ):
         from granian._loops import loops
 
-        callback = callback_loader()
         loop = loops.get("auto")
         sfd = socket.fileno()
+        callback = callback_loader()
 
         worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size)
         worker.serve(_rsgi_call_wrap(callback), loop, contextvars.copy_context())
