@@ -5,6 +5,7 @@ from functools import wraps
 from . import _rsgi
 from ._futures import future_wrapper
 
+Headers = _rsgi.Headers
 Scope = _rsgi.Scope
 Receiver = _rsgi.Receiver
 
