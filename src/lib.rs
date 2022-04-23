@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 
 mod asgi;
 mod callbacks;
+mod http;
 mod rsgi;
 mod tcp;
 mod workers;

@@ -55,7 +55,7 @@ impl ASGIWorker {
                         async move {
                             Ok::<_, Infallible>(handle_request(
                                 callback_wrapper, remote_addr, req
-                            ).await.unwrap())
+                            ).await)
                         }
                     }))
                 }

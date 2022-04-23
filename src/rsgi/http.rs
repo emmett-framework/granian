@@ -2,7 +2,7 @@ use hyper::{
     Body,
     Request,
     Response,
-    header::{HeaderName, HeaderValue, SERVER},
+    header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
     http::response::{Builder as ResponseBuilder}
 };
 use std::collections::HashMap;
@@ -11,6 +11,7 @@ use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 use super::super::callbacks::CallbackWrapper;
+use super::super::http::{HV_SERVER, response_500};
 use super::callbacks::call as callback_caller;
 use super::io::Receiver;
 use super::types::{ResponseType, Scope};
@@ -19,8 +20,7 @@ const RESPONSE_BYTES: u32 = ResponseType::Bytes as u32;
 const RESPONSE_FILEPATH: u32 = ResponseType::FilePath as u32;
 const RESPONSE_STR: u32 = ResponseType::String as u32;
 
-const EMPTY_BODY: &[u8] = b"";
-const HDR_SERVER: HeaderValue = HeaderValue::from_static("granian");
+pub(crate) const EMPTY_BODY: &[u8] = b"";
 
 pub trait HTTPResponseData {}
 
@@ -34,7 +34,7 @@ impl<T: HTTPResponseData> HTTPResponse<T> {
     pub fn response(&self) -> ResponseBuilder {
         let mut builder = Response::builder().status(self.status as u16);
         let headers = builder.headers_mut().unwrap();
-        headers.insert(SERVER, HDR_SERVER);
+        headers.insert(HK_SERVER, HV_SERVER);
         for (key, value) in self.headers.iter() {
             headers.insert(
                 HeaderName::from_bytes(&key.clone().into_bytes()).unwrap(),
@@ -137,11 +137,12 @@ impl HTTPResponse<HTTPFileResponse> {
     }
 }
 
+// TODO: return response instead of result
 pub(crate) async fn handle_request(
     callback: CallbackWrapper,
     client_addr: SocketAddr,
     req: Request<Body>,
-) -> Result<Response<Body>, hyper::Error> {
+) -> Response<Body> {
     let scope = Scope::new(
         "http",
         req.version(),
@@ -151,35 +152,43 @@ pub(crate) async fn handle_request(
         req.headers()
     );
     let receiver = Receiver::new(req);
-    let pyres = callback_caller(callback, receiver, scope).await.unwrap();
 
-    Ok(match pyres.mode {
-        RESPONSE_BYTES => {
-            HTTPResponse::<HTTPEmptyResponse>::new(
-                pyres.status,
-                pyres.headers
-            ).response().body(pyres.bytes_data.unwrap().into()).unwrap()
+    match callback_caller(callback, receiver, scope).await {
+        Ok(pyres) => {
+            let res = match pyres.mode {
+                RESPONSE_BYTES => {
+                    HTTPResponse::<HTTPEmptyResponse>::new(
+                        pyres.status,
+                        pyres.headers
+                    ).response().body(pyres.bytes_data.unwrap().into())
+                },
+                RESPONSE_STR => {
+                    HTTPResponse::<HTTPEmptyResponse>::new(
+                        pyres.status,
+                        pyres.headers
+                    ).response().body(pyres.str_data.unwrap().into())
+                },
+                RESPONSE_FILEPATH => {
+                    let http_obj = HTTPResponse::<HTTPFileResponse>::new(
+                        pyres.status,
+                        pyres.headers,
+                        pyres.file_path.unwrap().to_owned()
+                    );
+                    http_obj.response().body(http_obj.get_body().await)
+                },
+                _ => {
+                    let mut http_obj = HTTPResponse::<HTTPEmptyResponse>::new(
+                        pyres.status,
+                        pyres.headers
+                    );
+                    http_obj.response().body(http_obj.get_body())
+                }
+            };
+            match res {
+                Ok(r) => r,
+                _ => response_500()
+            }
         },
-        RESPONSE_STR => {
-            HTTPResponse::<HTTPEmptyResponse>::new(
-                pyres.status,
-                pyres.headers
-            ).response().body(pyres.str_data.unwrap().into()).unwrap()
-        },
-        RESPONSE_FILEPATH => {
-            let http_obj = HTTPResponse::<HTTPFileResponse>::new(
-                pyres.status,
-                pyres.headers,
-                pyres.file_path.unwrap().to_owned()
-            );
-            http_obj.response().body(http_obj.get_body().await).unwrap()
-        },
-        _ => {
-            let mut http_obj = HTTPResponse::<HTTPEmptyResponse>::new(
-                pyres.status,
-                pyres.headers
-            );
-            http_obj.response().body(http_obj.get_body()).unwrap()
-        }
-    })
+        _ => response_500()
+    }
 }

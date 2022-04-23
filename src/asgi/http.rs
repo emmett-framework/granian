@@ -2,6 +2,7 @@ use hyper::{Body, Request, Response};
 use std::net::SocketAddr;
 
 use super::super::callbacks::CallbackWrapper;
+use super::super::http::response_500;
 use super::callbacks::call as callback_caller;
 use super::io::{Receiver};
 use super::types::Scope;
@@ -30,7 +31,7 @@ pub(crate) async fn handle_request(
     cb_wrapper: CallbackWrapper,
     client_addr: SocketAddr,
     req: Request<Body>,
-) -> Result<Response<Body>, Box<dyn std::error::Error>> {
+) -> Response<Body> {
     let scope = Scope::new(
         "http",
         req.version(),
@@ -41,6 +42,13 @@ pub(crate) async fn handle_request(
     );
     let receiver = Receiver::new(req);
 
-    let rx = callback_caller(cb_wrapper, receiver, scope).await?;
-    Ok(rx.await?)
+    match callback_caller(cb_wrapper, receiver, scope).await {
+        Ok(rx) => {
+            match rx.await {
+                Ok(res) => res,
+                _ => response_500()
+            }
+        },
+        _ => response_500()
+    }
 }

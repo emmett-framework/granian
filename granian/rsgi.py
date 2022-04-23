@@ -42,7 +42,7 @@ def future_handler(watcher):
     def handler(task):
         try:
             res = task.result()
-            watcher.done(res)
         except Exception:
-            watcher.done(None)
+            res = None
+        watcher.done(res)
     return handler
