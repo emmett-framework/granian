@@ -3,8 +3,9 @@ use std::net::SocketAddr;
 
 use super::super::callbacks::CallbackWrapper;
 use super::super::http::response_500;
+use super::super::io::Receiver;
+use super::super::runtime::ThreadIsolation;
 use super::callbacks::call as callback_caller;
-use super::io::{Receiver};
 use super::types::Scope;
 
 // pub(crate) async fn handle_request(
@@ -28,9 +29,10 @@ use super::types::Scope;
 // }
 
 pub(crate) async fn handle_request(
+    thread_mode: ThreadIsolation,
     cb_wrapper: CallbackWrapper,
     client_addr: SocketAddr,
-    req: Request<Body>,
+    req: Request<Body>
 ) -> Response<Body> {
     let scope = Scope::new(
         "http",
@@ -40,7 +42,7 @@ pub(crate) async fn handle_request(
         client_addr,
         req.headers()
     );
-    let receiver = Receiver::new(req);
+    let receiver = Receiver::new(thread_mode, req);
 
     match callback_caller(cb_wrapper, receiver, scope).await {
         Ok(rx) => {

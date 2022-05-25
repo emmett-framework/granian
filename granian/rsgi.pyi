@@ -20,7 +20,3 @@ class Scope:
 
     @property
     def headers(self) -> Headers: ...
-
-
-class Receiver:
-    async def __call__(self) -> bytes: ...

@@ -1,10 +1,6 @@
 from typing import Any, Dict
 
 
-class Receiver:
-    async def __call__(self) -> bytes: ...
-
-
 class Sender:
     def __call__(self, message: Dict[str, Any]) -> None: ...
 

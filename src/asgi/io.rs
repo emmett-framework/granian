@@ -1,49 +1,17 @@
 use bytes::Buf;
 use hyper::{
     Body,
-    Request,
     Response,
     header::{HeaderName, HeaderValue, HeaderMap, SERVER}
 };
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
-use std::sync::{Arc};
-use tokio::sync::{Mutex, oneshot};
+use pyo3::types::PyDict;
+use tokio::sync::oneshot;
 
 use super::errors::{ASGIFlowError, UnsupportedASGIMessage};
 use super::types::ASGIMessageType;
 
 const HDR_SERVER: HeaderValue = HeaderValue::from_static("granian");
-
-#[pyclass(module="granian.asgi")]
-pub(crate) struct Receiver {
-    request: Arc<Mutex<Request<Body>>>
-}
-
-impl Receiver {
-    pub fn new(request: Request<Body>) -> Self {
-        Self {
-            request: Arc::new(Mutex::new(request))
-        }
-    }
-}
-
-#[pymethods]
-impl Receiver {
-    fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let req_ref = self.request.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut req = req_ref.lock().await;
-            let mut body = hyper::body::to_bytes(&mut *req).await.unwrap();
-            Ok(Python::with_gil(|py| {
-                PyBytes::new_with(py, body.len(), |bytes: &mut [u8]| {
-                    body.copy_to_slice(bytes);
-                    Ok(())
-                }).unwrap().as_ref().to_object(py)
-            }))
-        })
-    }
-}
 
 #[pyclass(module="granian.asgi")]
 pub(crate) struct Sender {

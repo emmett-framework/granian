@@ -2,8 +2,8 @@ use hyper::{Response, Body};
 use pyo3::prelude::*;
 use tokio::sync::oneshot;
 
-use super::super::callbacks::CallbackWrapper;
-use super::io::{Receiver, Sender};
+use super::super::{callbacks::CallbackWrapper, io::Receiver};
+use super::io::Sender;
 use super::types::Scope;
 
 #[pyclass]

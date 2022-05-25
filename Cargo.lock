@@ -134,6 +134,7 @@ dependencies = [
  "bytes",
  "hyper",
  "mimalloc",
+ "once_cell",
  "pyo3",
  "pyo3-asyncio",
  "socket2",

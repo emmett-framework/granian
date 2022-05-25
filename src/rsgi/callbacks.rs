@@ -2,8 +2,10 @@ use pyo3::prelude::*;
 use std::collections::HashMap;
 use tokio::sync::oneshot;
 
-use super::super::callbacks::CallbackWrapper;
-use super::io::Receiver;
+use super::super::{
+    callbacks::CallbackWrapper,
+    io::Receiver
+};
 use super::types::Scope;
 
 #[derive(FromPyObject)]

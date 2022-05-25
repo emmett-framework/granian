@@ -10,10 +10,13 @@ use std::net::SocketAddr;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-use super::super::callbacks::CallbackWrapper;
-use super::super::http::{HV_SERVER, response_500};
+use super::super::{
+    callbacks::CallbackWrapper,
+    http::{HV_SERVER, response_500},
+    io::Receiver,
+    runtime::ThreadIsolation
+};
 use super::callbacks::call as callback_caller;
-use super::io::Receiver;
 use super::types::{ResponseType, Scope};
 
 const RESPONSE_BYTES: u32 = ResponseType::Bytes as u32;
@@ -139,6 +142,7 @@ impl HTTPResponse<HTTPFileResponse> {
 
 // TODO: return response instead of result
 pub(crate) async fn handle_request(
+    thread_mode: ThreadIsolation,
     callback: CallbackWrapper,
     client_addr: SocketAddr,
     req: Request<Body>,
@@ -151,7 +155,7 @@ pub(crate) async fn handle_request(
         client_addr,
         req.headers()
     );
-    let receiver = Receiver::new(req);
+    let receiver = Receiver::new(thread_mode, req);
 
     match callback_caller(callback, receiver, scope).await {
         Ok(pyres) => {

@@ -10,7 +10,6 @@ mod types;
 pub(crate) fn build_pymodule(py: Python) -> PyResult<&PyModule> {
     let module = PyModule::new(py, "asgi")?;
 
-    module.add_class::<io::Receiver>()?;
     module.add_class::<io::Sender>()?;
     module.add_class::<types::Scope>()?;
 
