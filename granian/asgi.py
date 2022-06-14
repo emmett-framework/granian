@@ -2,8 +2,8 @@ from functools import wraps
 
 from . import _asgi
 from ._futures import future_wrapper
+from .io import Receiver
 
-Receiver = _asgi.Receiver
 Sender = _asgi.Sender
 Scope = _asgi.Scope
 

@@ -3,7 +3,7 @@ name: benchmarks
 on: workflow_dispatch
 
 env:
-  MATURIN_VERSION: 0.12.12
+  MATURIN_VERSION: 0.12.19
 
 jobs:
   benchmarks:
@@ -14,18 +14,19 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.10"
     - uses: messense/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
-        args: --release --strip --no-sdist --interpreter python3.9
+        args: --release --strip --no-sdist --interpreter python3.10
         target: x64
         manylinux: auto
         container: off
     - name: Deps
       run: |
-        pip install target/wheels/granian-0.1.0-cp39-cp39-manylinux_2_28_x86_64.whl
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
         pip install uvicorn==0.17.6
         pip install httptools
     - name: wrk
@@ -33,6 +34,11 @@ jobs:
         git clone https://github.com/wg/wrk.git .wrk
         cd .wrk && make && sudo mv wrk /usr/local/bin
     - name: Benchmarks
+      env:
+        BENCHMARK_THREADS: true
+        PROCS: 2
+        ASGI_THREADS: 4
+        RSGI_THREADS: 3
       run: |
         cd benchmarks && python benchmarks.py
     - name: Upload results

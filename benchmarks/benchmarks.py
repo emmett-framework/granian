@@ -14,10 +14,11 @@ CONCURRENCIES = [CPU * 2 ** i for i in range(3, 7)]
 
 
 @contextmanager
-def app(name, procs = None, threads = None):
-    procs = procs or CPU
-    # threads = threads or CPU // 2
-    threads = threads or CPU * 2
+def app(name, procs=None, threads=None, thmode=None):
+    procs = procs or int(os.environ.get("PROCS", CPU))
+    athreads = threads or max(2, int(os.environ.get("ASGI_THREADS", CPU // 2)))
+    rthreads = threads or max(2, int(os.environ.get("RSGI_THREADS", CPU // 2)))
+    thmode = thmode or "runtime"
     proc = {
         "uvicorn_h11": (
             "uvicorn --interface asgi3 "
@@ -29,8 +30,16 @@ def app(name, procs = None, threads = None):
             "--no-access-log --log-level warning "
             f"--http httptools --workers {procs} app.asgi:app"
         ),
-        "asgi": f"python app/asgi.py {procs} {threads}",
-        "rsgi": f"python app/rsgi.py {procs} {threads}"
+        "asgi": (
+            "granian --interface asgi "
+            f"--workers {procs} --threads {athreads} --threading-mode {thmode} "
+            "app.asgi:app"
+        ),
+        "rsgi": (
+            "granian --interface rsgi "
+            f"--workers {procs} --threads {rthreads} --threading-mode {thmode} "
+            "app.rsgi:app"
+        )
     }
     proc = subprocess.Popen(proc[name], shell=True, preexec_fn=os.setsid)
     time.sleep(2)
@@ -73,10 +82,19 @@ def benchmark(endpoint):
 
 def procs_threads():
     results = {}
-    for procs in [2 ** i for i in range(0, math.ceil(math.log2(CPU)) + 1)]:
-        for threads in [2 ** i for i in range(0, math.ceil(math.log(CPU)) + 3)]:
-            with app("rsgi", procs, threads):
-                results[f"{procs} procs - {threads} threads"] = benchmark("b")
+    for interface in ["asgi", "rsgi"]:
+        results[interface] = {}
+        for thmode in ["runtime", "workers"]:
+            results[interface][thmode] = {}
+    for procs in sorted(list(set(
+        [2 ** i for i in range(0, math.ceil(math.log2(CPU)) + 1)] + [CPU + 1]
+    ))):
+        for threads in sorted(list(set([1, 2, CPU, CPU + 1, CPU * 2]))):
+            for interface in results.keys():
+                for thmode in results[interface].keys():
+                    with app(interface, procs, threads, thmode):
+                        res = results[interface][thmode]
+                        res[f"{procs} procs - {threads} threads"] = benchmark("b")
     return results
 
 
@@ -117,7 +135,8 @@ def uvicorn():
 def run():
     now = datetime.datetime.utcnow()
     results = {}
-    # results["procs_threads"] = procs_threads()
+    if os.environ.get("BENCHMARK_THREADS") == "true":
+        results["procs_threads"] = procs_threads()
     results["rsgi_body"] = rsgi_body_type()
     results["rsgi_asgi"] = rsgi_vs_asgi()
     results["uvicorn"] = uvicorn()

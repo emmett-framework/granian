@@ -4,10 +4,10 @@ from functools import wraps
 
 from . import _rsgi
 from ._futures import future_wrapper
+from .io import Receiver
 
 Headers = _rsgi.Headers
 Scope = _rsgi.Scope
-Receiver = _rsgi.Receiver
 
 
 class ResponseType(int, Enum):

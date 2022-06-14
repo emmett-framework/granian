@@ -4,15 +4,28 @@ use hyper::{
     service::{make_service_fn, service_fn}
 };
 use pyo3::prelude::*;
-use std::{convert::Infallible, process};
+use std::{convert::Infallible, process, thread};
 
-use super::super::callbacks::CallbackWrapper;
-use super::super::workers::{WorkerConfig, worker_rt};
+use super::super::{
+    callbacks::CallbackWrapper,
+    runtime::{
+        ThreadIsolation,
+        block_on_local,
+        init_runtime,
+        run_until_complete
+    },
+    workers::{WorkerConfig, WorkerExecutor, serve_rth, serve_wth, worker_rt}
+};
 use super::http::handle_request;
 
 #[pyclass(module="granian.workers")]
 pub struct RSGIWorker {
     config: WorkerConfig
+}
+
+impl RSGIWorker {
+    serve_rth!(_serve_rth, handle_request);
+    serve_wth!(_serve_wth, handle_request);
 }
 
 #[pymethods]
@@ -35,45 +48,11 @@ impl RSGIWorker {
         })
     }
 
-    fn serve(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
-        let tcp_listener = worker_rt(&self.config);
-        let http1_buffer_max = self.config.http1_buffer_max;
-        let callback_wrapper = CallbackWrapper::new(callback, event_loop, context);
+    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
+       self._serve_rth(callback, event_loop, context)
+    }
 
-        let worker_id = self.config.id;
-        println!("Listener spawned: {}", worker_id);
-
-        let svc_loop = pyo3_asyncio::tokio::run_until_complete(event_loop, async move {
-            let service = make_service_fn(|socket: &AddrStream| {
-                let remote_addr = socket.remote_addr();
-                let callback_wrapper = callback_wrapper.clone();
-
-                async move {
-                    Ok::<_, Infallible>(service_fn(move |req| {
-                        let callback_wrapper = callback_wrapper.clone();
-
-                        async move {
-                            Ok::<_, Infallible>(handle_request(
-                                callback_wrapper, remote_addr, req
-                            ).await)
-                        }
-                    }))
-                }
-            });
-
-            let server = Server::from_tcp(tcp_listener).unwrap()
-                .http1_max_buf_size(http1_buffer_max)
-                .serve(service);
-            server.await.unwrap();
-            Ok(())
-        });
-
-        match svc_loop {
-            Ok(_) => {}
-            Err(err) => {
-                println!("err: {}", err);
-                process::exit(1);
-            }
-        };
+    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
+        self._serve_wth(callback, event_loop, context)
     }
 }

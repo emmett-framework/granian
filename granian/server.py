@@ -12,7 +12,7 @@ from typing import List, Optional
 from . import _workers
 from ._internal import CTX, load_target
 from .asgi import callback_wrapper as _asgi_call_wrap
-from .constants import Interfaces
+from .constants import Interfaces, ThreadModes
 from .net import SocketHolder
 from .rsgi import callback_wrapper as _rsgi_call_wrap
 
@@ -33,6 +33,7 @@ class Granian:
         workers: int = 1,
         backlog: int = 1024,
         threads: Optional[int] = None,
+        threading_mode: ThreadModes = ThreadModes.runtime,
         http1_buffer_size: int = 65535,
         interface: Interfaces = Interfaces.RSGI
     ):
@@ -45,6 +46,7 @@ class Granian:
             max(1, threads) if threads is not None else
             max(2, multiprocessing.cpu_count() // workers)
         )
+        self.threading_mode = threading_mode
         self.http1_buffer_size = http1_buffer_size
         self.interface = interface
         self._sfd = None
@@ -61,6 +63,7 @@ class Granian:
         callback_loader,
         socket,
         threads,
+        threading_mode,
         http1_buffer_size
     ):
         from granian._loops import loops
@@ -70,7 +73,11 @@ class Granian:
         callback = callback_loader()
 
         worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size)
-        worker.serve(_asgi_call_wrap(callback), loop, contextvars.copy_context())
+        serve = getattr(worker, {
+            ThreadModes.runtime: "serve_rth",
+            ThreadModes.workers: "serve_wth"
+        }[threading_mode])
+        serve(_asgi_call_wrap(callback), loop, contextvars.copy_context())
 
         # worker._serve_ret_st(callback, loop, contextvars.copy_context())
         # print("infinite loop")
@@ -82,6 +89,7 @@ class Granian:
         callback_loader,
         socket,
         threads,
+        threading_mode,
         http1_buffer_size
     ):
         from granian._loops import loops
@@ -91,7 +99,11 @@ class Granian:
         callback = callback_loader()
 
         worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size)
-        worker.serve(_rsgi_call_wrap(callback), loop, contextvars.copy_context())
+        serve = getattr(worker, {
+            ThreadModes.runtime: "serve_rth",
+            ThreadModes.workers: "serve_wth"
+        }[threading_mode])
+        serve(_rsgi_call_wrap(callback), loop, contextvars.copy_context())
 
         # worker._serve_ret_st(callback, loop, contextvars.copy_context())
         # print("infinite loop")
@@ -141,6 +153,7 @@ class Granian:
                 callback_loader,
                 socket_loader(),
                 self.threads,
+                self.threading_mode,
                 self.http1_buffer_size
             )
         )

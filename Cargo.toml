@@ -48,6 +48,7 @@ classifiers = [
 [dependencies]
 bytes = "1"
 hyper = { version = "0.14", features = ["http1", "http2", "server", "stream", "runtime", "tcp"] }
+once_cell = "1.5"
 pyo3 = { version = "0.16", features = ["extension-module"] }
 pyo3-asyncio = { version = "0.16", features = ["tokio-runtime"] }
 socket2 = { version = "0.4", features = ["all"] }
