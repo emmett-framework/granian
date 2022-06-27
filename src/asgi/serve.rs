@@ -48,11 +48,23 @@ impl ASGIWorker {
         })
     }
 
-    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
-        self._serve_rth(callback, event_loop, context)
+    fn serve_rth(
+        &self,
+        callback: PyObject,
+        event_loop: &PyAny,
+        context: &PyAny,
+        signal_rx: PyObject
+    ) {
+        self._serve_rth(callback, event_loop, context, signal_rx)
     }
 
-    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
-        self._serve_wth(callback, event_loop, context)
+    fn serve_wth(
+        &self,
+        callback: PyObject,
+        event_loop: &PyAny,
+        context: &PyAny,
+        signal_rx: PyObject
+    ) {
+        self._serve_wth(callback, event_loop, context, signal_rx)
     }
 }

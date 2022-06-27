@@ -76,9 +76,10 @@ def build_asyncio_loop():
 
 @loops.register('uvloop', packages=['uvloop'])
 def build_uv_loop(uvloop):
-    asyncio.get_event_loop().close()
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    return asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop
 
 
 @loops.register('auto')
@@ -86,3 +87,19 @@ def build_auto_loop():
     if 'uvloop' in loops:
         return loops.get('uvloop')
     return loops.get('asyncio')
+
+
+def set_loop_signals(loop, signals):
+    signal_event = asyncio.Event()
+
+    def signal_handler(signum, frame):
+        signal_event.set()
+
+    try:
+        for signal in signals:
+            loop.add_signal_handler(signal, signal_handler, signal, None)
+    except NotImplementedError:
+        for signal in signals:
+            signal.signal(signal, signal_handler)
+
+    return signal_event

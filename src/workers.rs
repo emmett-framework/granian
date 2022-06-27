@@ -80,7 +80,13 @@ pub(crate) fn worker_rt(config: &WorkerConfig) -> TcpListener {
 
 macro_rules! serve_rth {
     ($func_name:ident, $target:expr) => {
-        fn $func_name(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
+        fn $func_name(
+            &self,
+            callback: PyObject,
+            event_loop: &PyAny,
+            context: &PyAny,
+            signal_rx: PyObject
+        ) {
             let tcp_listener = worker_rt(&self.config);
             let http1_buffer_max = self.config.http1_buffer_max;
             let callback_wrapper = CallbackWrapper::new(callback, event_loop, context);
@@ -114,7 +120,13 @@ macro_rules! serve_rth {
                     let server = Server::from_tcp(tcp_listener).unwrap()
                         .http1_max_buf_size(http1_buffer_max)
                         .serve(service);
-                    server.await.unwrap();
+                    server.with_graceful_shutdown(async move {
+                        Python::with_gil(|py| {
+                            pyo3_asyncio::tokio::into_future(
+                                signal_rx.as_ref(py)
+                            ).unwrap()
+                        }).await.unwrap();
+                    }).await.unwrap();
                     Ok(())
                 }
             );
@@ -132,7 +144,13 @@ macro_rules! serve_rth {
 
 macro_rules! serve_wth {
     ($func_name: ident, $target:expr) => {
-        fn $func_name(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny) {
+        fn $func_name(
+            &self,
+            callback: PyObject,
+            event_loop: &PyAny,
+            context: &PyAny,
+            signal_rx: PyObject
+        ) {
             init_runtime();
 
             let worker_id = self.config.id;
@@ -140,6 +158,7 @@ macro_rules! serve_wth {
 
             let callback_wrapper = CallbackWrapper::new(callback, event_loop, context);
             let mut workers = vec![];
+            let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
                 println!("Worker spawned: {}", thread_id);
@@ -147,6 +166,7 @@ macro_rules! serve_wth {
                 let tcp_listener = self.config.tcp_listener();
                 let http1_buffer_max = self.config.http1_buffer_max.clone();
                 let callback_wrapper = callback_wrapper.clone();
+                let mut srx = srx.clone();
 
                 workers.push(thread::spawn(move || {
                     init_runtime();
@@ -177,12 +197,20 @@ macro_rules! serve_wth {
                             .executor(WorkerExecutor)
                             .http1_max_buf_size(http1_buffer_max)
                             .serve(service);
-                        server.await.unwrap();
+                        server.with_graceful_shutdown(async move {
+                            srx.changed().await.unwrap();
+                        }).await.unwrap();
                     });
                 }));
             };
 
             let main_loop = run_until_complete(event_loop, async move {
+                Python::with_gil(|py| {
+                    pyo3_asyncio::tokio::into_future(
+                        signal_rx.as_ref(py)
+                    ).unwrap()
+                }).await.unwrap();
+                stx.send(true).unwrap();
                 while let Some(worker) = workers.pop() {
                     worker.join().unwrap();
                 }

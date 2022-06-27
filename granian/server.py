@@ -1,3 +1,4 @@
+import asyncio
 import contextvars
 import copyreg
 import os
@@ -11,7 +12,7 @@ from typing import List, Optional
 
 from . import _workers
 from ._internal import CTX, load_target
-from .asgi import callback_wrapper as _asgi_call_wrap
+from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, ThreadModes
 from .net import SocketHolder
 from .rsgi import callback_wrapper as _rsgi_call_wrap
@@ -66,22 +67,32 @@ class Granian:
         threading_mode,
         http1_buffer_size
     ):
-        from granian._loops import loops
+        from granian._loops import loops, set_loop_signals
 
         loop = loops.get("auto")
         sfd = socket.fileno()
         callback = callback_loader()
+        lifespan_handler = LifespanProtocol(callback)
+
+        loop.run_until_complete(lifespan_handler.startup())
+        if lifespan_handler.interrupt:
+            return
+
+        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
         worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size)
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
-        serve(_asgi_call_wrap(callback), loop, contextvars.copy_context())
+        serve(
+            _asgi_call_wrap(callback),
+            loop,
+            contextvars.copy_context(),
+            shutdown_event.wait()
+        )
+        loop.run_until_complete(lifespan_handler.shutdown())
 
-        # worker._serve_ret_st(callback, loop, contextvars.copy_context())
-        # print("infinite loop")
-        # loop.run_forever()
 
     @staticmethod
     def _spawn_rsgi_worker(
@@ -92,22 +103,25 @@ class Granian:
         threading_mode,
         http1_buffer_size
     ):
-        from granian._loops import loops
+        from granian._loops import loops, set_loop_signals
 
         loop = loops.get("auto")
         sfd = socket.fileno()
         callback = callback_loader()
+
+        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
         worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size)
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
-        serve(_rsgi_call_wrap(callback), loop, contextvars.copy_context())
-
-        # worker._serve_ret_st(callback, loop, contextvars.copy_context())
-        # print("infinite loop")
-        # loop.run_forever()
+        serve(
+            _rsgi_call_wrap(callback),
+            loop,
+            contextvars.copy_context(),
+            shutdown_event.wait()
+        )
 
     @staticmethod
     def _shared_socket_loader(pid):
@@ -184,8 +198,7 @@ class Granian:
     def shutdown(self):
         print("send term")
         for proc in self.procs:
-            # proc.terminate()
-            proc.kill()
+            proc.terminate()
         print("joining")
         for proc in self.procs:
             proc.join()
@@ -203,10 +216,7 @@ class Granian:
 
         self.startup(spawn_target, partial(target_loader, self.target))
         print("started", self.procs)
-        try:
-            self.exit_event.wait()
-        except KeyboardInterrupt:
-            print("keyb. interr")
+        self.exit_event.wait()
         print("exit event received")
         self.shutdown()
 
