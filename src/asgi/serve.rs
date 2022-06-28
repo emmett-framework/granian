@@ -11,8 +11,7 @@ use super::super::{
     runtime::{
         ThreadIsolation,
         block_on_local,
-        init_runtime,
-        run_until_complete
+        init_runtime
     },
     workers::{WorkerConfig, WorkerExecutor, serve_rth, serve_wth, worker_rt}
 };

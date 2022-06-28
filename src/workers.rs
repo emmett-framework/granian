@@ -151,7 +151,10 @@ macro_rules! serve_wth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
-            init_runtime();
+            let mut tokio_builder = tokio::runtime::Builder::new_multi_thread();
+            tokio_builder.worker_threads(1);
+            tokio_builder.enable_all();
+            pyo3_asyncio::tokio::init(tokio_builder);
 
             let worker_id = self.config.id;
             println!("Process spawned: {}", worker_id);
@@ -204,18 +207,21 @@ macro_rules! serve_wth {
                 }));
             };
 
-            let main_loop = run_until_complete(event_loop, async move {
-                Python::with_gil(|py| {
-                    pyo3_asyncio::tokio::into_future(
-                        signal_rx.as_ref(py)
-                    ).unwrap()
-                }).await.unwrap();
-                stx.send(true).unwrap();
-                while let Some(worker) = workers.pop() {
-                    worker.join().unwrap();
+            let main_loop = pyo3_asyncio::tokio::run_until_complete(
+                event_loop,
+                async move {
+                    Python::with_gil(|py| {
+                        pyo3_asyncio::tokio::into_future(
+                            signal_rx.as_ref(py)
+                        ).unwrap()
+                    }).await.unwrap();
+                    stx.send(true).unwrap();
+                    while let Some(worker) = workers.pop() {
+                        worker.join().unwrap();
+                    }
+                    Ok(())
                 }
-                Ok(())
-            });
+            );
 
             match main_loop {
                 Ok(_) => {}
