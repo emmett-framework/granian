@@ -6,6 +6,13 @@ dependencies = [
     "uvloop~=0.16.0; sys_platform != 'win32'"
 ]
 
+[project.optional-dependencies]
+test = [
+    "httpx~=0.23.0",
+    "pytest~=7.1.2",
+    "pytest-asyncio~=0.18.3"
+]
+
 [project.scripts]
 granian = "granian:cli.cli"
 
