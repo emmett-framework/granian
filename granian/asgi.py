@@ -110,7 +110,7 @@ def receiver_wrapper(receiver):
     async def wrapper():
         return {
             "type": "http.request",
-            "body": await receiver,
+            "body": await receiver(),
             "more_body": False
         }
     return wrapper
@@ -142,7 +142,7 @@ def callback_wrapper(callback):
                 "root_path": "",
                 "path": scope.path,
                 "raw_path": scope.path.encode("ascii"),
-                "query_string": scope.query_string,
+                "query_string": scope.query_string.encode('latin-1'),
                 "headers": scope.headers,
                 "extensions": {}
             },
