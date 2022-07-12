@@ -3,7 +3,7 @@ name: build
 on: workflow_dispatch
 
 env:
-  MATURIN_VERSION: 0.12.19
+  MATURIN_VERSION: 0.12.20
 
 jobs:
   linux-gnu:

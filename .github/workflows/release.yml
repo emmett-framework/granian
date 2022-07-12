@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env:
-  MATURIN_VERSION: 0.12.19
+  MATURIN_VERSION: 0.12.20
 
 jobs:
   sdist:
