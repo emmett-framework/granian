@@ -25,6 +25,6 @@ sdist-include = [
     "Cargo.lock",
     "granian/*.py",
     "granian/*.pyi",
-    "tests/*.py"
+    "tests/**/*.py"
 ]
 strip = true
