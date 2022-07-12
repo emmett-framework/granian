@@ -1,4 +1,5 @@
 import asyncio
+import os
 import signal
 import sys
 
@@ -70,7 +71,7 @@ loops = BuilderRegistry()
 
 @loops.register('asyncio')
 def build_asyncio_loop():
-    loop = asyncio.new_event_loop()
+    loop = asyncio.new_event_loop() if os.name == 'nt' else asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
     return loop
 
