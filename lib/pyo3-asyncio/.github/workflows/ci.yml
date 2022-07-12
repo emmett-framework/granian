@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+      - run: pip install black==19.10b0
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: rustfmt
+      - name: Check python formatting (black)
+        run: black --check .
+      - name: Check rust formatting (rustfmt)
+        run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: clippy
+      - run: make clippy
+
+  build:
+    needs: [fmt] # don't wait for clippy as fails rarely and takes longer
+    name: python${{ matrix.python-version }}-${{ matrix.platform.python-architecture }} ${{ matrix.platform.os }} ${{ matrix.msrv }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false # If one platform fails, allow the rest to keep testing.
+      matrix:
+        rust: [stable]
+        python-version:
+          [
+            "3.7",
+            "3.8",
+            "3.9",
+            "3.10",
+            "3.11-dev",
+            "pypy-3.7",
+            "pypy-3.8",
+            "pypy-3.9",
+          ]
+        platform:
+          [
+            {
+              os: "macOS-latest",
+              python-architecture: "x64",
+              rust-target: "x86_64-apple-darwin",
+            },
+            {
+              os: "ubuntu-latest",
+              python-architecture: "x64",
+              rust-target: "x86_64-unknown-linux-gnu",
+            },
+            {
+              os: "windows-latest",
+              python-architecture: "x64",
+              rust-target: "x86_64-pc-windows-msvc",
+            },
+            {
+              os: "windows-latest",
+              python-architecture: "x86",
+              rust-target: "i686-pc-windows-msvc",
+            },
+          ]
+        exclude:
+          # PyPy doesn't release 32-bit Windows builds any more
+          - python-version: pypy-3.7
+            platform: { os: "windows-latest", python-architecture: "x86" }
+          - python-version: pypy-3.8
+            platform: { os: "windows-latest", python-architecture: "x86" }
+          - python-version: pypy-3.9
+            platform: { os: "windows-latest", python-architecture: "x86" }
+        include:
+          # Test minimal supported Rust version
+          - rust: 1.48.0
+            python-version: "3.10"
+            platform:
+              {
+                os: "ubuntu-latest",
+                python-architecture: "x64",
+                rust-target: "x86_64-unknown-linux-gnu",
+              }
+            msrv: "MSRV"
+
+          # Test the `nightly` feature
+          - rust: nightly
+            python-version: "3.10"
+            platform:
+              {
+                os: "ubuntu-latest",
+                python-architecture: "x64",
+                rust-target: "x86_64-unknown-linux-gnu",
+              }
+            extra_features: "nightly"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: ${{ matrix.platform.python-architecture }}
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.platform.rust-target }}
+          profile: minimal
+          default: true
+
+      - if: matrix.platform.os == 'ubuntu-latest'
+        name: Prepare LD_LIBRARY_PATH (Ubuntu only)
+        run: echo LD_LIBRARY_PATH=${pythonLocation}/lib >> $GITHUB_ENV
+
+      - name: Build (no features)
+        run: cargo build --no-default-features --verbose --target ${{ matrix.platform.rust-target }}
+
+      - name: Build
+        run: cargo build --features=${{env.features}} --verbose --target ${{ matrix.platform.rust-target }}
+
+      # uvloop doesn't compile under Windows, Python 3.11-dev, and PyPy
+      - if: ${{ matrix.platform.os != 'windows-latest' && matrix.python-version != '3.11-dev' && !startsWith(matrix.python-version, 'pypy') }}
+        name: Install pyo3-asyncio test dependencies
+        run: |
+          python -m pip install -U uvloop
+
+    env:
+      RUST_BACKTRACE: 1
+      RUSTFLAGS: "-D warnings"
+      # TODO: this is a hack to workaround compile_error! warnings about auto-initialize on PyPy
+      # Once cargo's `resolver = "2"` is stable (~ MSRV Rust 1.52), remove this.
+      PYO3_CI: 1
+
+  coverage:
+    needs: [fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          profile: minimal
+      - name: Install pyo3-asyncio test dependencies
+        run: |
+          python -m pip install -U uvloop
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off"
+          RUSTDOCFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off"
+      - uses: actions-rs/grcov@v0.1
+        id: coverage
+      - uses: codecov/codecov-action@v1
+        with:
+          file: ${{ steps.coverage.outputs.report }}

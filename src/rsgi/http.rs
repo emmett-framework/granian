@@ -14,7 +14,7 @@ use super::super::{
     callbacks::CallbackWrapper,
     http::{HV_SERVER, response_500},
     io::Receiver,
-    runtime::ThreadIsolation
+    runtime::RuntimeRef
 };
 use super::callbacks::call as callback_caller;
 use super::types::{ResponseType, Scope};
@@ -142,7 +142,7 @@ impl HTTPResponse<HTTPFileResponse> {
 
 // TODO: return response instead of result
 pub(crate) async fn handle_request(
-    thread_mode: ThreadIsolation,
+    rt: RuntimeRef,
     callback: CallbackWrapper,
     client_addr: SocketAddr,
     req: Request<Body>,
@@ -155,7 +155,7 @@ pub(crate) async fn handle_request(
         client_addr,
         req.headers()
     );
-    let receiver = Receiver::new(thread_mode, req);
+    let receiver = Receiver::new(rt, req);
 
     match callback_caller(callback, receiver, scope).await {
         Ok(pyres) => {

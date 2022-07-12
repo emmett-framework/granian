@@ -5,60 +5,39 @@ use pyo3::types::PyBytes;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::runtime::{ThreadIsolation, future_into_py};
+use super::runtime::{RuntimeRef, future_into_py};
 
 #[pyclass(module="granian.io")]
 pub(crate) struct Receiver {
-    thread_mode: ThreadIsolation,
+    // thread_mode: ThreadIsolation,
+    rt: RuntimeRef,
     request: Arc<Mutex<Request<Body>>>
 }
 
 impl Receiver {
-    pub fn new(thread_mode: ThreadIsolation, request: Request<Body>) -> Self {
+    pub fn new(rt: RuntimeRef, request: Request<Body>) -> Self {
         Self {
-            thread_mode: thread_mode,
+            rt: rt,
             request: Arc::new(Mutex::new(request))
         }
-    }
-
-    fn receive_mt_runtime<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let req_ref = self.request.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut req = req_ref.lock().await;
-            let mut body = hyper::body::to_bytes(&mut *req).await.unwrap();
-            Ok(Python::with_gil(|py| {
-                // PyBytes::new(py, &body.to_vec());
-                PyBytes::new_with(py, body.len(), |bytes: &mut [u8]| {
-                    body.copy_to_slice(bytes);
-                    Ok(())
-                }).unwrap().as_ref().to_object(py)
-            }))
-        })
-    }
-
-    fn receive_st_runtime<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let req_ref = self.request.clone();
-        future_into_py(py, async move {
-            let mut req = req_ref.lock().await;
-            let mut body = hyper::body::to_bytes(&mut *req).await.unwrap();
-            Ok(Python::with_gil(|py| {
-                // PyBytes::new(py, &body.to_vec());
-                PyBytes::new_with(py, body.len(), |bytes: &mut [u8]| {
-                    body.copy_to_slice(bytes);
-                    Ok(())
-                }).unwrap().as_ref().to_object(py)
-            }))
-        })
     }
 }
 
 #[pymethods]
 impl Receiver {
     fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        match self.thread_mode {
-            ThreadIsolation::Runtime => self.receive_mt_runtime(py),
-            ThreadIsolation::Worker => self.receive_st_runtime(py)
-        }
+        let req_ref = self.request.clone();
+        future_into_py(self.rt.clone(), py, async move {
+            let mut req = req_ref.lock().await;
+            let mut body = hyper::body::to_bytes(&mut *req).await.unwrap();
+            Ok(Python::with_gil(|py| {
+                // PyBytes::new(py, &body.to_vec());
+                PyBytes::new_with(py, body.len(), |bytes: &mut [u8]| {
+                    body.copy_to_slice(bytes);
+                    Ok(())
+                }).unwrap().as_ref().to_object(py)
+            }))
+        })
     }
 }
 

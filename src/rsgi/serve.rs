@@ -9,11 +9,12 @@ use std::{convert::Infallible, process, thread};
 use super::super::{
     callbacks::CallbackWrapper,
     runtime::{
-        ThreadIsolation,
         block_on_local,
-        init_runtime
+        init_runtime,
+        run_until_complete,
+        into_future
     },
-    workers::{WorkerConfig, WorkerExecutor, serve_rth, serve_wth, worker_rt}
+    workers::{WorkerConfig, WorkerExecutor, serve_rth, serve_wth}
 };
 use super::http::handle_request;
 

@@ -1,0 +1,21 @@
+[package]
+name = "pyo3-asyncio-macros"
+description = "Proc Macro Attributes for PyO3 Asyncio"
+version = "0.16.0"
+authors = ["Andrew J Westlake <awestlake87@yahoo.com>"]
+readme = "../README.md"
+keywords = ["pyo3", "python", "ffi", "async", "asyncio"]
+homepage = "https://github.com/awestlake87/pyo3-asyncio"
+repository = "https://github.com/awestlake87/pyo3-asyncio"
+documentation = "https://docs.rs/crate/pyo3-asyncio/"
+categories = ["api-bindings", "development-tools::ffi"]
+license = "Apache-2.0"
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1"
+syn = { version = "1", features = ["full"] }

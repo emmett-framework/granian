@@ -65,17 +65,7 @@ where
 {
     fn execute(&self, fut: F) {
         tokio::task::spawn_local(fut);
-        // current_runtime().spawn(fut);
     }
-}
-
-pub(crate) fn worker_rt(config: &WorkerConfig) -> TcpListener {
-    let mut tokio_builder = tokio::runtime::Builder::new_multi_thread();
-    tokio_builder.worker_threads(config.threads);
-    tokio_builder.enable_all();
-    pyo3_asyncio::tokio::init(tokio_builder);
-
-    config.tcp_listener()
 }
 
 macro_rules! serve_rth {
@@ -87,27 +77,32 @@ macro_rules! serve_rth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
-            let tcp_listener = worker_rt(&self.config);
+            let rt = init_runtime(self.config.threads);
+            let rth = rt.handler();
+            let tcp_listener = self.config.tcp_listener();
             let http1_buffer_max = self.config.http1_buffer_max;
             let callback_wrapper = CallbackWrapper::new(callback, event_loop, context);
 
             let worker_id = self.config.id;
             println!("Listener spawned: {}", worker_id);
 
-            let svc_loop = pyo3_asyncio::tokio::run_until_complete(
+            let svc_loop = run_until_complete(
+                rt.handler(),
                 event_loop,
                 async move {
                     let service = make_service_fn(|socket: &AddrStream| {
                         let remote_addr = socket.remote_addr();
                         let callback_wrapper = callback_wrapper.clone();
+                        let rth = rth.clone();
 
                         async move {
                             Ok::<_, Infallible>(service_fn(move |req| {
                                 let callback_wrapper = callback_wrapper.clone();
+                                let rth = rth.clone();
 
                                 async move {
                                     Ok::<_, Infallible>($target(
-                                        ThreadIsolation::Runtime,
+                                        rth,
                                         callback_wrapper,
                                         remote_addr,
                                         req
@@ -122,9 +117,7 @@ macro_rules! serve_rth {
                         .serve(service);
                     server.with_graceful_shutdown(async move {
                         Python::with_gil(|py| {
-                            pyo3_asyncio::tokio::into_future(
-                                signal_rx.as_ref(py)
-                            ).unwrap()
+                            into_future(signal_rx.as_ref(py)).unwrap()
                         }).await.unwrap();
                     }).await.unwrap();
                     Ok(())
@@ -151,10 +144,7 @@ macro_rules! serve_wth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
-            let mut tokio_builder = tokio::runtime::Builder::new_multi_thread();
-            tokio_builder.worker_threads(1);
-            tokio_builder.enable_all();
-            pyo3_asyncio::tokio::init(tokio_builder);
+            let rtm = init_runtime(1);
 
             let worker_id = self.config.id;
             println!("Process spawned: {}", worker_id);
@@ -172,21 +162,24 @@ macro_rules! serve_wth {
                 let mut srx = srx.clone();
 
                 workers.push(thread::spawn(move || {
-                    init_runtime();
+                    let rt = init_runtime(1);
+                    let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 
-                    block_on_local(local, async move {
+                    block_on_local(rt, local, async move {
                         let service = make_service_fn(|socket: &AddrStream| {
                             let remote_addr = socket.remote_addr();
                             let callback_wrapper = callback_wrapper.clone();
+                            let rth = rth.clone();
 
                             async move {
                                 Ok::<_, Infallible>(service_fn(move |req| {
                                     let callback_wrapper = callback_wrapper.clone();
+                                    let rth = rth.clone();
 
                                     async move {
-                                        Ok::<_, Infallible>(handle_request(
-                                            ThreadIsolation::Worker,
+                                        Ok::<_, Infallible>($target(
+                                            rth,
                                             callback_wrapper,
                                             remote_addr,
                                             req
@@ -207,13 +200,12 @@ macro_rules! serve_wth {
                 }));
             };
 
-            let main_loop = pyo3_asyncio::tokio::run_until_complete(
+            let main_loop = run_until_complete(
+                rtm.handler(),
                 event_loop,
                 async move {
                     Python::with_gil(|py| {
-                        pyo3_asyncio::tokio::into_future(
-                            signal_rx.as_ref(py)
-                        ).unwrap()
+                        into_future(signal_rx.as_ref(py)).unwrap()
                     }).await.unwrap();
                     stx.send(true).unwrap();
                     while let Some(worker) = workers.pop() {
