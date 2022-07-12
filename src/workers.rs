@@ -77,7 +77,7 @@ macro_rules! serve_rth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
-            let rt = init_runtime(self.config.threads);
+            let rt = init_runtime_mt(self.config.threads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
             let http1_buffer_max = self.config.http1_buffer_max;
@@ -144,7 +144,7 @@ macro_rules! serve_wth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
-            let rtm = init_runtime(1);
+            let rtm = init_runtime_mt(1);
 
             let worker_id = self.config.id;
             println!("Process spawned: {}", worker_id);
@@ -162,7 +162,7 @@ macro_rules! serve_wth {
                 let mut srx = srx.clone();
 
                 workers.push(thread::spawn(move || {
-                    let rt = init_runtime(1);
+                    let rt = init_runtime_st();
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 

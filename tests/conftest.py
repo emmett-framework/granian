@@ -29,7 +29,6 @@ def server_port():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         sock.bind(('localhost', 0))
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        print(sock.getsockname())
         return sock.getsockname()[1]
 
 

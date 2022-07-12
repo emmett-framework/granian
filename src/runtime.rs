@@ -117,7 +117,7 @@ fn default_runtime() -> io::Result<tokio::runtime::Runtime> {
         .build()
 }
 
-pub(crate) fn init_runtime(threads: usize) -> RuntimeWrapper {
+pub(crate) fn init_runtime_mt(threads: usize) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         Builder::new_multi_thread()
             .worker_threads(threads)
@@ -125,6 +125,10 @@ pub(crate) fn init_runtime(threads: usize) -> RuntimeWrapper {
             .build()
             .unwrap()
     )
+}
+
+pub(crate) fn init_runtime_st() -> RuntimeWrapper {
+    RuntimeWrapper::new()
 }
 
 pub(crate) fn into_future(

@@ -10,9 +10,10 @@ use super::super::{
     callbacks::CallbackWrapper,
     runtime::{
         block_on_local,
-        init_runtime,
-        run_until_complete,
-        into_future
+        init_runtime_mt,
+        init_runtime_st,
+        into_future,
+        run_until_complete
     },
     workers::{WorkerConfig, WorkerExecutor, serve_rth, serve_wth}
 };
