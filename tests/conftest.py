@@ -16,7 +16,7 @@ async def server(interface, port, threading_mode):
         f"tests.apps.{interface}:app",
         env=dict(os.environ)
     )
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1)
     try:
         yield port
     finally:
