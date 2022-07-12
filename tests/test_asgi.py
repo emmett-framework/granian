@@ -11,8 +11,8 @@ import pytest
     ]
 )
 async def test_scope(asgi_server, threading_mode):
-    async with asgi_server(threading_mode):
-        res = httpx.get("http://localhost:8000/info?test=true")
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f"http://localhost:{port}/info?test=true")
 
     assert res.status_code == 200
     data = res.json()
@@ -26,7 +26,7 @@ async def test_scope(asgi_server, threading_mode):
     assert data['method'] == "GET"
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
-    assert data['headers']['host'] == 'localhost:8000'
+    assert data['headers']['host'] == f'localhost:{port}'
 
 
 @pytest.mark.asyncio
@@ -38,8 +38,8 @@ async def test_scope(asgi_server, threading_mode):
     ]
 )
 async def test_body(asgi_server, threading_mode):
-    async with asgi_server(threading_mode):
-        res = httpx.post("http://localhost:8000/echo", data="test")
+    async with asgi_server(threading_mode) as port:
+        res = httpx.post(f"http://localhost:{port}/echo", data="test")
 
     assert res.status_code == 200
     assert res.text == "test"

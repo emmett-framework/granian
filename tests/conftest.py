@@ -1,33 +1,43 @@
 import asyncio
 import os
+import socket
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from functools import partial
 
 import pytest
 
 
 @asynccontextmanager
-async def server(interface, threading_mode):
+async def server(interface, port, threading_mode):
     proc = await asyncio.create_subprocess_shell(
-        f"granian --interface {interface} --threads 1 "
-        f"--threading-mode {threading_mode} "
+        f"granian --interface {interface} --port {port} "
+        f"--threads 1 --threading-mode {threading_mode} "
         f"tests.apps.{interface}:app",
         env=dict(os.environ)
     )
     await asyncio.sleep(0.5)
     try:
-        yield
+        yield port
     finally:
         proc.terminate()
         await proc.wait()
 
 
 @pytest.fixture(scope="function")
-def asgi_server():
-    return partial(server, "asgi")
+def server_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(('localhost', 0))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        print(sock.getsockname())
+        return sock.getsockname()[1]
 
 
 @pytest.fixture(scope="function")
-def rsgi_server():
-    return partial(server, "rsgi")
+def asgi_server(server_port):
+    return partial(server, "asgi", server_port)
+
+
+@pytest.fixture(scope="function")
+def rsgi_server(server_port):
+    return partial(server, "rsgi", server_port)
