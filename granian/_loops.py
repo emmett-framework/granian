@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import sys
 
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -96,10 +97,10 @@ def set_loop_signals(loop, signals):
         signal_event.set()
 
     try:
-        for signal in signals:
-            loop.add_signal_handler(signal, signal_handler, signal, None)
+        for sigval in signals:
+            loop.add_signal_handler(sigval, signal_handler, sigval, None)
     except NotImplementedError:
-        for signal in signals:
-            signal.signal(signal, signal_handler)
+        for sigval in signals:
+            signal.signal(sigval, signal_handler)
 
     return signal_event
