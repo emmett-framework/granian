@@ -91,6 +91,10 @@ impl Scope {
             headers: Headers::new(headers)
         }
     }
+
+    pub fn set_proto(&mut self, value: &str) {
+        self.proto = value.to_string()
+    }
 }
 
 #[pymethods]

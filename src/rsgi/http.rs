@@ -2,22 +2,31 @@ use hyper::{
     Body,
     Request,
     Response,
+    StatusCode,
     header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
-    http::response::{Builder as ResponseBuilder}
+    http::response::Builder as ResponseBuilder
 };
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use tokio::fs::File;
+use std::{collections::HashMap, net::SocketAddr};
+use tokio::{fs::File, sync::mpsc};
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-use super::super::{
+use crate::{
     callbacks::CallbackWrapper,
     http::{HV_SERVER, response_500},
-    io::Receiver,
-    runtime::RuntimeRef
+    runtime::RuntimeRef,
+    ws::{
+        HyperWebsocket,
+        UpgradeData,
+        is_upgrade_request as is_ws_upgrade,
+        upgrade_intent as ws_upgrade
+    }
 };
-use super::callbacks::call as callback_caller;
-use super::types::{ResponseType, Scope};
+use super::{
+    callbacks::{call_response, call_protocol},
+    io::{HTTPProtocol, WebsocketProtocol},
+    types::{ResponseType, Scope}
+};
+
 
 const RESPONSE_BYTES: u32 = ResponseType::Bytes as u32;
 const RESPONSE_FILEPATH: u32 = ResponseType::FilePath as u32;
@@ -140,14 +149,13 @@ impl HTTPResponse<HTTPFileResponse> {
     }
 }
 
-// TODO: return response instead of result
 pub(crate) async fn handle_request(
     rt: RuntimeRef,
     callback: CallbackWrapper,
     client_addr: SocketAddr,
     req: Request<Body>,
 ) -> Response<Body> {
-    let scope = Scope::new(
+    let mut scope = Scope::new(
         "http",
         req.version(),
         req.uri().clone(),
@@ -155,9 +163,38 @@ pub(crate) async fn handle_request(
         client_addr,
         req.headers()
     );
-    let receiver = Receiver::new(rt, req);
 
-    match callback_caller(callback, receiver, scope).await {
+    if is_ws_upgrade(&req) {
+        scope.set_proto("ws");
+
+        match ws_upgrade(req, None) {
+            Ok((res, ws)) => {
+                let rth = rt.clone();
+                let (restx, mut resrx) = mpsc::channel(1);
+
+                rt.inner.spawn(async move {
+                    handle_websocket(rth, res, restx, ws, callback, scope).await
+                });
+
+                return match resrx.recv().await {
+                    Some(res) => {
+                        resrx.close();
+                        res
+                    },
+                    _ => response_500()
+                }
+            },
+            Err(err) => {
+                return ResponseBuilder::new()
+                    .status(StatusCode::BAD_REQUEST)
+                    .header(HK_SERVER, HV_SERVER)
+                    .body(Body::from(format!("{}", err)))
+                    .unwrap()
+            }
+        }
+    }
+
+    match call_response(callback, HTTPProtocol::new(rt, req), scope).await {
         Ok(pyres) => {
             let res = match pyres.mode {
                 RESPONSE_BYTES => {
@@ -189,10 +226,46 @@ pub(crate) async fn handle_request(
                 }
             };
             match res {
-                Ok(r) => r,
+                Ok(res) => res,
                 _ => response_500()
             }
         },
         _ => response_500()
+    }
+}
+
+async fn handle_websocket(
+    rt: RuntimeRef,
+    response: ResponseBuilder,
+    tx: mpsc::Sender<Response<Body>>,
+    websocket: HyperWebsocket,
+    callback: CallbackWrapper,
+    scope: Scope
+) {
+    let tx_ref = tx.clone();
+
+    match call_protocol(
+        callback,
+        WebsocketProtocol::new(rt, websocket, UpgradeData::new(response, tx)),
+        scope
+    ).await {
+        Ok((status, consumed)) => {
+            if !consumed {
+                let _ = tx_ref.send(
+                    ResponseBuilder::new()
+                        .status(
+                            StatusCode::from_u16(status as u16).unwrap_or(
+                                StatusCode::FORBIDDEN
+                            )
+                        )
+                        .header(HK_SERVER, HV_SERVER)
+                        .body(Body::from(""))
+                        .unwrap()
+                ).await;
+            }
+        },
+        _ => {
+            let _ = tx_ref.send(response_500()).await;
+        }
     }
 }

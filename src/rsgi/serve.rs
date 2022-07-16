@@ -6,7 +6,7 @@ use hyper::{
 use pyo3::prelude::*;
 use std::{convert::Infallible, process, thread};
 
-use super::super::{
+use crate::{
     callbacks::CallbackWrapper,
     runtime::{
         block_on_local,

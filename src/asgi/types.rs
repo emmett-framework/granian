@@ -3,9 +3,13 @@ use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
+
 pub(crate) enum ASGIMessageType {
-    Start = 0,
-    Body = 1
+    HTTPStart,
+    HTTPBody,
+    WSAccept,
+    WSClose,
+    WSMessage
 }
 
 #[pyclass(module="granian.asgi")]
@@ -39,6 +43,10 @@ impl Scope {
             client: client.to_string(),
             headers: headers.to_owned()
         }
+    }
+
+    pub fn set_proto(&mut self, value: &str) {
+        self.proto = value.to_string()
     }
 }
 

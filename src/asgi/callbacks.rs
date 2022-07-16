@@ -1,10 +1,9 @@
-use hyper::{Response, Body};
 use pyo3::prelude::*;
 use tokio::sync::oneshot;
 
-use super::super::{callbacks::CallbackWrapper, io::Receiver};
-use super::io::Sender;
-use super::types::Scope;
+use crate::callbacks::CallbackWrapper;
+use super::{errors::ASGIFlowError, io::ASGIProtocol, types::Scope};
+
 
 #[pyclass]
 pub(crate) struct CallbackWatcher {
@@ -19,10 +18,10 @@ impl CallbackWatcher {
     pub fn new(
         py: Python,
         cb: CallbackWrapper,
-        tx: Option<oneshot::Sender<bool>>
+        tx: oneshot::Sender<bool>
     ) -> Self {
         Self {
-            tx: tx,
+            tx: Some(tx),
             event_loop: cb.context.event_loop(py).into(),
             context: cb.context.context(py).into(),
         }
@@ -39,42 +38,19 @@ impl CallbackWatcher {
     }
 }
 
-// pub(crate) async fn acall(
-//     cb: CallbackWrapper,
-//     receiver: Receiver,
-//     sender: Sender,
-//     scope: Scope
-// ) -> PyResult<()> {
-//     Python::with_gil(|py| {
-//         let coro = cb.callback.call1(py, (scope, receiver, sender))?;
-//         pyo3_asyncio::into_future_with_locals(
-//             &cb.context,
-//             coro.as_ref(py)
-//         )
-//     })?
-//     .await?;
-//     Ok(())
-// }
-
 pub(crate) async fn call(
     cb: CallbackWrapper,
-    receiver: Receiver,
+    protocol: impl ASGIProtocol + IntoPy<PyObject>,
     scope: Scope
-) -> Result<oneshot::Receiver<Response<Body>>, super::errors::ASGIFlowError> {
+) -> Result<(), ASGIFlowError> {
     let (tx, rx) = oneshot::channel();
-    let (stx, srx) = oneshot::channel();
-
     let callback = cb.callback.clone();
-    let sender = Sender::new(Some(stx));
     Python::with_gil(|py| {
-        callback.call1(
-            py,
-            (CallbackWatcher::new(py, cb, Some(tx)), scope, receiver, sender)
-        )
+        callback.call1(py, (CallbackWatcher::new(py, cb, tx), scope, protocol))
     })?;
 
     match rx.await {
-        Ok(true) => Ok(srx),
-        _ => Err(super::errors::ASGIFlowError)
+        Ok(true) => Ok(()),
+        _ => Err(ASGIFlowError)
     }
 }
