@@ -25,8 +25,8 @@ pub(crate) trait ASGIProtocol: PyClass {
     fn _send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny>;
 }
 
-#[pyclass(module="granian.asgi")]
-pub(crate) struct HttpProtocol {
+#[pyclass(module="granian._granian")]
+pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     request: Arc<Mutex<Request<Body>>>,
     response_inited: bool,
@@ -37,7 +37,7 @@ pub(crate) struct HttpProtocol {
     tx: Option<oneshot::Sender<Response<Body>>>
 }
 
-impl HttpProtocol {
+impl ASGIHTTPProtocol {
     pub fn new(
         rt: RuntimeRef,
         request: Request<Body>,
@@ -129,7 +129,7 @@ impl HttpProtocol {
 }
 
 #[pymethods]
-impl HttpProtocol {
+impl ASGIHTTPProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         self._recv(py)
     }
@@ -139,14 +139,14 @@ impl HttpProtocol {
     }
 }
 
-#[pyclass(module="granian.asgi")]
-pub(crate) struct WebsocketProtocol {
+#[pyclass(module="granian._granian")]
+pub(crate) struct ASGIWebsocketProtocol {
     rt: RuntimeRef,
     websocket: Arc<Mutex<WebsocketTransport>>,
     upgrade: Arc<Mutex<UpgradeData>>
 }
 
-impl WebsocketProtocol {
+impl ASGIWebsocketProtocol {
     pub fn new(
         rt: RuntimeRef,
         websocket: HyperWebsocket,
@@ -233,7 +233,7 @@ impl WebsocketProtocol {
 }
 
 #[pymethods]
-impl WebsocketProtocol {
+impl ASGIWebsocketProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         self._recv(py)
     }
@@ -243,7 +243,7 @@ impl WebsocketProtocol {
     }
 }
 
-impl ASGIProtocol for HttpProtocol {
+impl ASGIProtocol for ASGIHTTPProtocol {
     fn _recv<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.request.clone();
         future_into_py(self.rt.clone(), py, async move {
@@ -289,7 +289,7 @@ impl ASGIProtocol for HttpProtocol {
     }
 }
 
-impl ASGIProtocol for WebsocketProtocol {
+impl ASGIProtocol for ASGIWebsocketProtocol {
     fn _recv<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.websocket.clone();
         future_into_py(self.rt.clone(), py, async move {

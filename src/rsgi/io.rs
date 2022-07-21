@@ -15,13 +15,13 @@ use crate::{
 use super::errors::RSGIProtocolError;
 
 
-#[pyclass(module="granian.rsgi")]
-pub(crate) struct HTTPProtocol {
+#[pyclass(module="granian._granian")]
+pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
     request: Arc<Mutex<Request<Body>>>
 }
 
-impl HTTPProtocol {
+impl RSGIHTTPProtocol {
     pub fn new(rt: RuntimeRef, request: Request<Body>) -> Self {
         Self {
             rt: rt,
@@ -31,7 +31,7 @@ impl HTTPProtocol {
 }
 
 #[pymethods]
-impl HTTPProtocol {
+impl RSGIHTTPProtocol {
     fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let req_ref = self.request.clone();
         future_into_py(self.rt.clone(), py, async move {
@@ -48,13 +48,13 @@ impl HTTPProtocol {
     }
 }
 
-#[pyclass(module="granian.rsgi")]
-pub(crate) struct WebsocketTransport {
+#[pyclass(module="granian._granian")]
+pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
     transport: Arc<Mutex<WebSocketStream<hyper::upgrade::Upgraded>>>
 }
 
-impl WebsocketTransport {
+impl RSGIWebsocketTransport {
     pub fn new(
         rt: RuntimeRef,
         transport: WebSocketStream<hyper::upgrade::Upgraded>
@@ -64,7 +64,7 @@ impl WebsocketTransport {
 }
 
 #[pymethods]
-impl WebsocketTransport {
+impl RSGIWebsocketTransport {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.transport.clone();
         future_into_py(self.rt.clone(), py, async move {
@@ -104,15 +104,15 @@ impl WebsocketTransport {
     }
 }
 
-#[pyclass(module="granian.rsgi")]
-pub(crate) struct WebsocketProtocol {
+#[pyclass(module="granian._granian")]
+pub(crate) struct RSGIWebsocketProtocol {
     rt: RuntimeRef,
     websocket: Arc<Mutex<HyperWebsocket>>,
     upgrade: Option<UpgradeData>,
     status: i32
 }
 
-impl WebsocketProtocol {
+impl RSGIWebsocketProtocol {
     pub fn new(
         rt: RuntimeRef,
         websocket: HyperWebsocket,
@@ -174,7 +174,8 @@ impl WebsocketInboundTextMessage {
 }
 
 #[pymethods]
-impl WebsocketProtocol {
+impl RSGIWebsocketProtocol {
+    #[args(status="None")]
     fn close(&mut self, status: Option<i32>) -> PyResult<(i32, bool)> {
         let consumed = match &self.upgrade {
             Some(_) => false,
@@ -199,7 +200,7 @@ impl WebsocketProtocol {
                     match (&mut *ws).await {
                         Ok(stream) => {
                             Ok(Python::with_gil(|py| {
-                                WebsocketTransport::new(rth, stream).into_py(py)
+                                RSGIWebsocketTransport::new(rth, stream).into_py(py)
                             }))
                         },
                         _ => Err(RSGIProtocolError.into())

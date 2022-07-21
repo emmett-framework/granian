@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use tokio::sync::oneshot;
 
 use crate::callbacks::CallbackWrapper;
-use super::{errors::ASGIFlowError, io::ASGIProtocol, types::Scope};
+use super::{errors::ASGIFlowError, io::ASGIProtocol, types::ASGIScope as Scope};
 
 
 #[pyclass]

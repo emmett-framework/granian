@@ -21,10 +21,11 @@ include = [
 ]
 
 [lib]
-name = "granian"
+name = "_granian"
 crate-type = ["cdylib"]
 
 [package.metadata.maturin]
+name = "granian._granian"
 requires-python = ">=3.7"
 
 classifiers = [

@@ -7,12 +7,10 @@ mod io;
 pub(crate) mod serve;
 mod types;
 
-pub(crate) fn build_pymodule(py: Python) -> PyResult<&PyModule> {
-    let module = PyModule::new(py, "asgi")?;
+pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
+    module.add_class::<io::ASGIHTTPProtocol>()?;
+    module.add_class::<io::ASGIWebsocketProtocol>()?;
+    module.add_class::<types::ASGIScope>()?;
 
-    module.add_class::<io::HttpProtocol>()?;
-    module.add_class::<io::WebsocketProtocol>()?;
-    module.add_class::<types::Scope>()?;
-
-    Ok(module)
+    Ok(())
 }

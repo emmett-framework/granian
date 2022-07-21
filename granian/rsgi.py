@@ -1,12 +1,15 @@
 from collections import namedtuple
 from enum import Enum
 from functools import wraps
+from typing import Union
 
-from . import _rsgi
 from ._futures import future_wrapper
-
-Headers = _rsgi.Headers
-Scope = _rsgi.Scope
+from ._granian import (
+    RSGIHTTPProtocol as HTTPProtocol,
+    RSGIWebsocketProtocol as WebsocketProtocol,
+    RSGIHeaders as Headers,
+    RSGIScope as Scope
+)
 
 
 class ResponseType(int, Enum):
@@ -15,6 +18,17 @@ class ResponseType(int, Enum):
     string = 2
     file_path = 10
     # chunks = 20
+
+
+class WebsocketMessageType(int, Enum):
+    close = 0
+    bytes = 1
+    string = 2
+
+
+class WebsocketMessage:
+    kind: WebsocketMessageType
+    data: Union[bytes, str]
 
 
 RSGIResponse = namedtuple(
@@ -40,8 +54,6 @@ class Response:
             status,
             headers,
             bytes_data=data
-            # str_data=None,
-            # file_path=None
         )
 
     @classmethod
@@ -50,9 +62,7 @@ class Response:
             ResponseType.string,
             status,
             headers,
-            # bytes_data=None,
-            str_data=data,
-            # file_path=None
+            str_data=data
         )
 
     @classmethod
@@ -61,19 +71,19 @@ class Response:
             ResponseType.file_path,
             status,
             headers,
-            # bytes_data=None,
-            # str_data=None,
             file_path=data
         )
 
 
 def callback_wrapper(callback):
     @wraps(callback)
-    def wrapper(watcher, scope, transport):
+    def wrapper(
+        watcher, scope: Scope, protocol: Union[HTTPProtocol, WebsocketProtocol]
+    ):
         watcher.event_loop.call_soon_threadsafe(
             future_wrapper,
             watcher,
-            callback(scope, transport),
+            callback(scope, protocol),
             future_handler,
             context=watcher.context
         )

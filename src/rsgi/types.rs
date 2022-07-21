@@ -3,20 +3,20 @@ use pyo3::prelude::*;
 use pyo3::types::{PyString};
 use std::net::SocketAddr;
 
-#[pyclass(module="granian.rsgi")]
+#[pyclass(module="granian._granian")]
 #[derive(Clone)]
-pub(crate) struct Headers {
+pub(crate) struct RSGIHeaders {
     inner: HeaderMap
 }
 
-impl Headers {
+impl RSGIHeaders {
     pub fn new(map: &HeaderMap) -> Self {
         Self { inner: map.clone() }
     }
 }
 
 #[pymethods]
-impl Headers {
+impl RSGIHeaders {
     fn keys(&self) -> Vec<&str> {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
         for key in self.inner.keys() {
@@ -59,8 +59,8 @@ impl Headers {
     }
 }
 
-#[pyclass(module="granian.rsgi")]
-pub(crate) struct Scope {
+#[pyclass(module="granian._granian")]
+pub(crate) struct RSGIScope {
     #[pyo3(get)]
     proto: String,
     http_version: Version,
@@ -70,10 +70,10 @@ pub(crate) struct Scope {
     #[pyo3(get)]
     client: String,
     #[pyo3(get)]
-    headers: Headers
+    headers: RSGIHeaders
 }
 
-impl Scope {
+impl RSGIScope {
     pub fn new(
         proto: &str,
         http_version: Version,
@@ -88,7 +88,7 @@ impl Scope {
             method: method.to_string(),
             uri: uri,
             client: client.to_string(),
-            headers: Headers::new(headers)
+            headers: RSGIHeaders::new(headers)
         }
     }
 
@@ -98,7 +98,7 @@ impl Scope {
 }
 
 #[pymethods]
-impl Scope {
+impl RSGIScope {
     #[getter(http_version)]
     fn get_http_version(&self) -> &str {
         match self.http_version {

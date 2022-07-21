@@ -5,8 +5,8 @@ use tokio::sync::oneshot;
 use crate::callbacks::CallbackWrapper;
 use super::{
     errors::ApplicationError,
-    io::{HTTPProtocol, WebsocketProtocol},
-    types::Scope
+    io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
+    types::RSGIScope as Scope
 };
 
 

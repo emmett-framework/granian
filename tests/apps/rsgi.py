@@ -1,9 +1,15 @@
 import json
 
-from granian.rsgi import Response
+from granian.rsgi import (
+    HTTPProtocol,
+    Response,
+    Scope,
+    WebsocketMessageType,
+    WebsocketProtocol
+)
 
 
-async def info(scope, transport):
+async def info(scope: Scope, _):
     return Response.bytes(
         json.dumps({
             'proto': scope.proto,
@@ -18,37 +24,37 @@ async def info(scope, transport):
     )
 
 
-async def echo(scope, transport):
-    msg = await transport()
+async def echo(_, protocol: HTTPProtocol):
+    msg = await protocol()
     return Response.bytes(
         msg,
         headers={'content-type': 'text/plain; charset=utf-8'}
     )
 
 
-async def ws_reject(scope, transport):
-    return transport.close(403)
+async def ws_reject(_, protocol: WebsocketProtocol):
+    return protocol.close(403)
 
 
-async def ws_echo(scope, transport):
-    proto = await transport.accept()
+async def ws_echo(_, protocol: WebsocketProtocol):
+    trx = await protocol.accept()
 
     while True:
-        message = await proto.receive()
-        if message.kind == 0:
+        message = await trx.receive()
+        if message.kind == WebsocketMessageType.close:
             break
-        elif message.kind == 1:
-            await proto.send_bytes(message.data)
+        elif message.kind == WebsocketMessageType.bytes:
+            await trx.send_bytes(message.data)
         else:
-            await proto.send_str(message.data)
+            await trx.send_str(message.data)
 
-    return transport.close()
+    return protocol.close()
 
 
-def app(scope, transport):
+def app(scope, protocol):
     return {
         "/info": info,
         "/echo": echo,
         "/ws_reject": ws_reject,
         "/ws_echo": ws_echo
-    }[scope.path](scope, transport)
+    }[scope.path](scope, protocol)

@@ -229,11 +229,9 @@ macro_rules! serve_wth {
 pub(crate) use serve_rth;
 pub(crate) use serve_wth;
 
-pub(crate) fn build_pymodule(py: Python) -> PyResult<&PyModule> {
-    let module = PyModule::new(py, "workers")?;
-
+pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
     module.add_class::<ASGIWorker>()?;
     module.add_class::<RSGIWorker>()?;
 
-    Ok(module)
+    Ok(())
 }

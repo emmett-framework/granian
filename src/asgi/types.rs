@@ -12,8 +12,8 @@ pub(crate) enum ASGIMessageType {
     WSMessage
 }
 
-#[pyclass(module="granian.asgi")]
-pub(crate) struct Scope {
+#[pyclass(module="granian._granian")]
+pub(crate) struct ASGIScope {
     #[pyo3(get)]
     proto: String,
     http_version: Version,
@@ -26,7 +26,7 @@ pub(crate) struct Scope {
 }
 
 // TODO: server address
-impl Scope {
+impl ASGIScope {
     pub fn new(
         proto: &str,
         http_version: Version,
@@ -51,7 +51,7 @@ impl Scope {
 }
 
 #[pymethods]
-impl Scope {
+impl ASGIScope {
     #[getter(headers)]
     fn get_headers(&self) -> HashMap<&[u8], &[u8]> {
         let mut ret = HashMap::new();

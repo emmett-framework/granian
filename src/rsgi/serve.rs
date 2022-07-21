@@ -19,7 +19,7 @@ use crate::{
 };
 use super::http::handle_request;
 
-#[pyclass(module="granian.workers")]
+#[pyclass(module="granian._granian")]
 pub struct RSGIWorker {
     config: WorkerConfig
 }

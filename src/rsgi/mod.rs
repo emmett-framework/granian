@@ -7,13 +7,12 @@ mod io;
 pub(crate) mod serve;
 mod types;
 
-pub(crate) fn build_pymodule(py: Python) -> PyResult<&PyModule> {
-    let module = PyModule::new(py, "rsgi")?;
+pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
+    module.add_class::<io::RSGIHTTPProtocol>()?;
+    module.add_class::<io::RSGIWebsocketProtocol>()?;
+    module.add_class::<io::RSGIWebsocketTransport>()?;
+    module.add_class::<types::RSGIHeaders>()?;
+    module.add_class::<types::RSGIScope>()?;
 
-    module.add_class::<io::HTTPProtocol>()?;
-    module.add_class::<io::WebsocketProtocol>()?;
-    module.add_class::<types::Headers>()?;
-    module.add_class::<types::Scope>()?;
-
-    Ok(module)
+    Ok(())
 }

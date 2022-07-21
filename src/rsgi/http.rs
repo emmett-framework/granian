@@ -23,8 +23,8 @@ use crate::{
 };
 use super::{
     callbacks::{call_response, call_protocol},
-    io::{HTTPProtocol, WebsocketProtocol},
-    types::{ResponseType, Scope}
+    io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
+    types::{ResponseType, RSGIScope as Scope}
 };
 
 

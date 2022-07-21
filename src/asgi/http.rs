@@ -22,8 +22,8 @@ use crate::{
 };
 use super::{
     callbacks::call as callback_caller,
-    io::{HttpProtocol, WebsocketProtocol},
-    types::Scope
+    io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol},
+    types::ASGIScope as Scope
 };
 
 
@@ -74,7 +74,7 @@ pub(crate) async fn handle_request(
 
     let (tx, rx) = oneshot::channel();
 
-    match callback_caller(callback, HttpProtocol::new(rt, req, tx), scope).await {
+    match callback_caller(callback, HTTPProtocol::new(rt, req, tx), scope).await {
         Ok(_) => {
             match rx.await {
                 Ok(res) => res,

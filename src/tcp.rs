@@ -11,7 +11,7 @@ use std::time::Duration;
 use socket2::{Domain, Protocol, Socket, TcpKeepalive, Type};
 
 
-#[pyclass(module="granian.tcp")]
+#[pyclass(module="granian._granian")]
 pub struct SocketHolder {
     socket: Socket
 }
@@ -92,7 +92,7 @@ impl SocketHolder {
     }
 }
 
-#[pyclass(module="granian.tcp")]
+#[pyclass(module="granian._granian")]
 pub struct ListenerHolder {
     socket: TcpListener
 }
@@ -167,11 +167,9 @@ impl ListenerHolder {
 }
 
 
-pub(crate) fn build_pymodule(py: Python) -> PyResult<&PyModule> {
-    let module = PyModule::new(py, "tcp")?;
-
+pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
     module.add_class::<ListenerHolder>()?;
     module.add_class::<SocketHolder>()?;
 
-    Ok(module)
+    Ok(())
 }

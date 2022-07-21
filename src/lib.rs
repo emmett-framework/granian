@@ -15,11 +15,11 @@ mod workers;
 mod ws;
 
 #[pymodule]
-fn granian(py: Python, module: &PyModule) -> PyResult<()> {
-    module.add_submodule(asgi::build_pymodule(py)?)?;
-    module.add_submodule(rsgi::build_pymodule(py)?)?;
-    module.add_submodule(tcp::build_pymodule(py)?)?;
-    module.add_submodule(workers::build_pymodule(py)?)?;
+fn _granian(_py: Python, module: &PyModule) -> PyResult<()> {
+    asgi::init_pymodule(module)?;
+    rsgi::init_pymodule(module)?;
+    tcp::init_pymodule(module)?;
+    workers::init_pymodule(module)?;
 
     pyo3::prepare_freethreaded_python();
 

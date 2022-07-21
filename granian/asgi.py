@@ -2,12 +2,9 @@ import asyncio
 
 from functools import wraps
 
-from . import _asgi
 from ._futures import future_wrapper
-# from .io import Receiver
-
-# Sender = _asgi.Sender
-Scope = _asgi.Scope
+from ._granian import ASGIScope as Scope
+from ._types import ASGIProtocol
 
 
 class LifespanProtocol:
@@ -107,7 +104,7 @@ class LifespanProtocol:
 
 def callback_wrapper(callback):
     @wraps(callback)
-    def wrapper(watcher, scope, transport):
+    def wrapper(watcher, scope: Scope, protocol: ASGIProtocol):
         client_addr, client_port = (scope.client.split(":") + ["0"])[:2]
         coro = callback(
             {
@@ -128,8 +125,8 @@ def callback_wrapper(callback):
                 "headers": scope.headers,
                 "extensions": {}
             },
-            transport.receive,
-            transport.send
+            protocol.receive,
+            protocol.send
         )
         watcher.event_loop.call_soon_threadsafe(
             future_wrapper,

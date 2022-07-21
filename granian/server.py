@@ -1,6 +1,4 @@
-import asyncio
 import contextvars
-import copyreg
 import os
 import multiprocessing
 import signal
@@ -10,7 +8,7 @@ import threading
 from functools import partial
 from typing import List, Optional
 
-from . import _workers
+from ._granian import ASGIWorker, RSGIWorker
 from ._internal import CTX, load_target
 from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, ThreadModes
@@ -18,9 +16,6 @@ from .net import SocketHolder
 from .rsgi import callback_wrapper as _rsgi_call_wrap
 
 multiprocessing.allow_connection_pickling()
-
-ASGIWorker = _workers.ASGIWorker
-RSGIWorker = _workers.RSGIWorker
 
 
 class Granian:
@@ -219,9 +214,3 @@ class Granian:
         self.exit_event.wait()
         print("exit event received")
         self.shutdown()
-
-
-copyreg.pickle(
-    SocketHolder,
-    lambda v: (SocketHolder, v.__getstate__())
-)
