@@ -47,8 +47,28 @@ async def echo(scope, receive, send):
     })
 
 
+async def ws_reject(scope, receive, send):
+    return
+
+
+async def ws_echo(scope, receive, send):
+    await send({'type': 'websocket.accept'})
+
+    while True:
+        msg = await receive()
+        if msg['type'] == 'websocket.disconnect':
+            break
+        key = 'text' if 'text' in msg else 'bytes'
+        await send({
+            'type': 'websocket.send',
+            key: msg[key]
+        })
+
+
 def app(scope, receive, send):
     return {
         "/info": info,
-        "/echo": echo
+        "/echo": echo,
+        "/ws_reject": ws_reject,
+        "/ws_echo": ws_echo
     }[scope['path']](scope, receive, send)

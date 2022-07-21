@@ -1,8 +1,4 @@
-from typing import Any, Dict
-
-
-class Sender:
-    def __call__(self, message: Dict[str, Any]) -> None: ...
+from typing import Dict
 
 
 class Scope:

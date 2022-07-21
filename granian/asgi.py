@@ -4,9 +4,9 @@ from functools import wraps
 
 from . import _asgi
 from ._futures import future_wrapper
-from .io import Receiver
+# from .io import Receiver
 
-Sender = _asgi.Sender
+# Sender = _asgi.Sender
 Scope = _asgi.Scope
 
 
@@ -105,27 +105,9 @@ class LifespanProtocol:
         handler(message)
 
 
-def receiver_wrapper(receiver):
-    @wraps(receiver)
-    async def wrapper():
-        return {
-            "type": "http.request",
-            "body": await receiver(),
-            "more_body": False
-        }
-    return wrapper
-
-
-def sender_wrapper(sender):
-    @wraps(sender)
-    async def wrapper(data):
-        sender(data)
-    return wrapper
-
-
 def callback_wrapper(callback):
     @wraps(callback)
-    def wrapper(watcher, scope, receiver, sender):
+    def wrapper(watcher, scope, transport):
         client_addr, client_port = (scope.client.split(":") + ["0"])[:2]
         coro = callback(
             {
@@ -146,8 +128,8 @@ def callback_wrapper(callback):
                 "headers": scope.headers,
                 "extensions": {}
             },
-            receiver_wrapper(receiver),
-            sender_wrapper(sender)
+            transport.receive,
+            transport.send
         )
         watcher.event_loop.call_soon_threadsafe(
             future_wrapper,

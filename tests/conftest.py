@@ -9,7 +9,7 @@ import pytest
 
 
 @asynccontextmanager
-async def server(interface, port, threading_mode):
+async def _server(interface, port, threading_mode):
     proc = await asyncio.create_subprocess_shell(
         f"granian --interface {interface} --port {port} "
         f"--threads 1 --threading-mode {threading_mode} "
@@ -34,9 +34,14 @@ def server_port():
 
 @pytest.fixture(scope="function")
 def asgi_server(server_port):
-    return partial(server, "asgi", server_port)
+    return partial(_server, "asgi", server_port)
 
 
 @pytest.fixture(scope="function")
 def rsgi_server(server_port):
-    return partial(server, "rsgi", server_port)
+    return partial(_server, "rsgi", server_port)
+
+
+@pytest.fixture(scope="function")
+def server(server_port, request):
+    return partial(_server, request.param, server_port)
