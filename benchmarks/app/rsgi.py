@@ -10,34 +10,24 @@ BODY_STR_SHORT = "Test"
 BODY_STR_LONG = "Test" * 20_000
 
 
-async def b_short(scope, receive):
-    return Response(
-        1, 200, HEADERS, BODY_BYTES_SHORT, None, None
-    )
+async def b_short(scope, proto):
+    return Response.bytes(BODY_BYTES_SHORT, 200, HEADERS)
 
 
-async def b_long(scope, receive):
-    return Response(
-        1, 200, HEADERS, BODY_BYTES_LONG, None, None
-    )
+async def b_long(scope, proto):
+    return Response.bytes(BODY_BYTES_LONG, 200, HEADERS)
 
 
-async def s_short(scope, receive):
-    return Response(
-        2, 200, HEADERS, None, BODY_STR_SHORT, None
-    )
+async def s_short(scope, proto):
+    return Response.str(BODY_STR_SHORT, 200, HEADERS)
 
 
-async def s_long(scope, receive):
-    return Response(
-        2, 200, HEADERS, None, BODY_STR_LONG, None
-    )
+async def s_long(scope, proto):
+    return Response.str(BODY_STR_LONG, 200, HEADERS)
 
 
-async def handle_404(scope, receive):
-    return Response(
-        2, 200, HEADERS, None, "not found", None
-    )
+async def handle_404(scope, proto):
+    return Response.str("not found", 404, HEADERS)
 
 
 routes = {
@@ -48,9 +38,9 @@ routes = {
 }
 
 
-def app(scope, receive):
+def app(scope, proto):
     handler = routes.get(scope.path, handle_404)
-    return handler(scope, receive)
+    return handler(scope, proto)
 
 
 def granian(wrk, thr):
