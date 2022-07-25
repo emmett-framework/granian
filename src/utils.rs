@@ -14,7 +14,6 @@ pub(crate) fn header_contains_value(
     false
 }
 
-#[inline]
 fn trim(data: &[u8]) -> &[u8] {
     trim_end(trim_start(data))
 }
