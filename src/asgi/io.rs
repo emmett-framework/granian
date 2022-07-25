@@ -2,7 +2,7 @@ use hyper::{
     Body,
     Request,
     Response,
-    header::{HeaderName, HeaderValue, HeaderMap, SERVER}
+    header::{HeaderName, HeaderValue, HeaderMap, SERVER as HK_SERVER}
 };
 use pyo3::prelude::*;
 use pyo3::pyclass::PyClass;
@@ -12,6 +12,7 @@ use tokio::sync::{Mutex, oneshot};
 use tungstenite::Message;
 
 use crate::{
+    http::HV_SERVER,
     runtime::{RuntimeRef, future_into_py},
     ws::{HyperWebsocket, UpgradeData, WebsocketTransport}
 };
@@ -21,7 +22,8 @@ use super::{
 };
 
 
-const HDR_SERVER: HeaderValue = HeaderValue::from_static("granian");
+const EMPTY_BYTES: Vec<u8> = Vec::new();
+const EMPTY_STRING: String = String::new();
 
 pub(crate) trait ASGIProtocol: PyClass {
     fn _recv<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny>;
@@ -58,68 +60,6 @@ impl ASGIHTTPProtocol {
         }
     }
 
-    #[inline]
-    fn init_response(&mut self, status_code: i16, headers: HeaderMap) {
-        self.response_status = status_code;
-        self.response_headers = headers;
-        self.response_inited = true;
-    }
-
-    #[inline]
-    fn adapt_status_code(
-        &self,
-        message: &PyDict
-    ) -> Result<i16, UnsupportedASGIMessage> {
-        match message.get_item("status") {
-            Some(item) => {
-                Ok(item.extract()?)
-            },
-            _ => error_message!()
-        }
-    }
-
-    #[inline]
-    fn adapt_headers(&self, message: &PyDict) -> HeaderMap {
-        let mut ret = HeaderMap::new();
-        ret.insert(SERVER, HDR_SERVER);
-        match message.get_item("headers") {
-            Some(item) => {
-                let accum: Vec<Vec<&[u8]>> = item.extract().unwrap_or(Vec::new());
-                for tup in accum.iter() {
-                    match (
-                        HeaderName::from_bytes(tup[0]),
-                        HeaderValue::from_bytes(tup[1])
-                     ) {
-                        (Ok(key), Ok(val)) => { ret.insert(key, val); },
-                        _ => {}
-                    }
-                };
-                ret
-            },
-            _ => ret
-        }
-    }
-
-    #[inline]
-    fn adapt_body(&self, message: &PyDict) -> (Vec<u8>, bool) {
-        let default_body = b"".to_vec();
-        let default_more = false;
-        let body = match message.get_item("body") {
-            Some(item) => {
-                item.extract().unwrap_or(default_body)
-            },
-            _ => default_body
-        };
-        let more = match message.get_item("more_body") {
-            Some(item) => {
-                item.extract().unwrap_or(default_more)
-            },
-            _ => default_more
-        };
-        (body, more)
-    }
-
-    #[inline]
     fn send_body(&mut self, body: &[u8], finish: bool) {
         self.response_body.extend_from_slice(body);
         if finish {
@@ -167,32 +107,6 @@ impl ASGIWebsocketProtocol {
         }
     }
 
-    fn adapt_message(&self, message: &PyDict) -> Message {
-        let default_bytes = b"".to_vec();
-        let default_string = String::new();
-        match message.contains("bytes") {
-            Ok(true) => {
-                let data = match message.get_item("bytes") {
-                    Some(item) => {
-                        item.extract().unwrap_or(default_bytes)
-                    },
-                    _ => default_bytes
-                };
-                Message::Binary(data)
-            },
-            Ok(false) => {
-                let data = match message.get_item("text") {
-                    Some(item) => {
-                        item.extract().unwrap_or(default_string)
-                    },
-                    _ => default_string
-                };
-                Message::Text(data)
-            },
-            _ => Message::Binary(b"".to_vec())
-        }
-    }
-
     fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let upgrade = self.upgrade.clone();
         let transport = self.websocket.clone();
@@ -226,7 +140,7 @@ impl ASGIWebsocketProtocol {
         data: &'p PyDict
     ) -> PyResult<&'p PyAny> {
         let transport = self.websocket.clone();
-        let message = self.adapt_message(data);
+        let message = adapt_ws_message(data);
         future_into_py(self.rt.clone(), py, async move {
             let ws = transport.lock().await;
             if ws.closed {
@@ -238,6 +152,14 @@ impl ASGIWebsocketProtocol {
             }
         })
     }
+}
+
+macro_rules! empty_future {
+    ($rt:expr, $py:expr) => {
+        future_into_py($rt, $py, async move {
+            Ok(())
+        })
+    };
 }
 
 #[pymethods]
@@ -274,11 +196,10 @@ impl ASGIProtocol for ASGIHTTPProtocol {
             Ok(ASGIMessageType::HTTPStart) => {
                 match self.response_inited {
                     false => {
-                        self.init_response(
-                            self.adapt_status_code(data).unwrap(),
-                            self.adapt_headers(data)
-                        );
-                        empty_future(self.rt.clone(), py)
+                        self.response_status = adapt_status_code(data).unwrap();
+                        self.response_headers = adapt_headers(data);
+                        self.response_inited = true;
+                        empty_future!(self.rt.clone(), py)
                     },
                     _ => error_flow!()
                 }
@@ -286,9 +207,9 @@ impl ASGIProtocol for ASGIHTTPProtocol {
             Ok(ASGIMessageType::HTTPBody) => {
                 match (self.response_inited, self.response_built) {
                     (true, false) => {
-                        let body_data = self.adapt_body(data);
-                        self.send_body(&body_data.0[..], !body_data.1);
-                        empty_future(self.rt.clone(), py)
+                        let (body, more) = adapt_body(data);
+                        self.send_body(&body[..], !more);
+                        empty_future!(self.rt.clone(), py)
                     },
                     _ => error_flow!()
                 }
@@ -381,8 +302,75 @@ fn adapt_message_type(
 }
 
 #[inline]
-fn empty_future<'p>(rt: RuntimeRef, py: Python<'p>) -> PyResult<&'p PyAny> {
-    future_into_py(rt, py, async move {
-        Ok(())
-    })
+fn adapt_status_code(message: &PyDict) -> Result<i16, UnsupportedASGIMessage> {
+    match message.get_item("status") {
+        Some(item) => {
+            Ok(item.extract()?)
+        },
+        _ => error_message!()
+    }
+}
+
+#[inline]
+fn adapt_headers(message: &PyDict) -> HeaderMap {
+    let mut ret = HeaderMap::new();
+    ret.insert(HK_SERVER, HV_SERVER);
+    match message.get_item("headers") {
+        Some(item) => {
+            let accum: Vec<Vec<&[u8]>> = item.extract().unwrap_or(Vec::new());
+            for tup in accum.iter() {
+                match (
+                    HeaderName::from_bytes(tup[0]),
+                    HeaderValue::from_bytes(tup[1])
+                    ) {
+                    (Ok(key), Ok(val)) => { ret.insert(key, val); },
+                    _ => {}
+                }
+            };
+            ret
+        },
+        _ => ret
+    }
+}
+
+#[inline]
+fn adapt_body(message: &PyDict) -> (Vec<u8>, bool) {
+    let body = match message.get_item("body") {
+        Some(item) => {
+            item.extract().unwrap_or(EMPTY_BYTES)
+        },
+        _ => EMPTY_BYTES
+    };
+    let more = match message.get_item("more_body") {
+        Some(item) => {
+            item.extract().unwrap_or(false)
+        },
+        _ => false
+    };
+    (body, more)
+}
+
+#[inline]
+fn adapt_ws_message(message: &PyDict) -> Message {
+    match message.contains("bytes") {
+        Ok(true) => {
+            let data = match message.get_item("bytes") {
+                Some(item) => {
+                    item.extract().unwrap_or(EMPTY_BYTES)
+                },
+                _ => EMPTY_BYTES
+            };
+            Message::Binary(data)
+        },
+        Ok(false) => {
+            let data = match message.get_item("text") {
+                Some(item) => {
+                    item.extract().unwrap_or(EMPTY_STRING)
+                },
+                _ => EMPTY_STRING
+            };
+            Message::Text(data)
+        },
+        _ => Message::Binary(EMPTY_BYTES)
+    }
 }
