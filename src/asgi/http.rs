@@ -13,12 +13,7 @@ use crate::{
     callbacks::CallbackWrapper,
     http::{HV_SERVER, response_500},
     runtime::RuntimeRef,
-    ws::{
-        HyperWebsocket,
-        UpgradeData,
-        is_upgrade_request as is_ws_upgrade,
-        upgrade_intent as ws_upgrade
-    }
+    ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade}
 };
 use super::{
     callbacks::call as callback_caller,
@@ -27,20 +22,53 @@ use super::{
 };
 
 
-pub(crate) async fn handle_request(
-    rt: RuntimeRef,
-    callback: CallbackWrapper,
-    client_addr: SocketAddr,
-    req: Request<Body>
-) -> Response<Body> {
-    let mut scope = Scope::new(
+#[inline]
+fn default_scope<B>(client_addr: SocketAddr, req: &Request<B>) -> Scope {
+    Scope::new(
         "http",
         req.version(),
         req.uri().clone(),
         req.method().as_ref(),
         client_addr,
         req.headers()
-    );
+    )
+}
+
+macro_rules! handle_http_response {
+    ($rt:expr, $callback:expr, $req:expr, $scope:expr, $tx:expr, $rx:expr) => {
+        match callback_caller(
+            $callback, HTTPProtocol::new($rt, $req, $tx), $scope
+        ).await {
+            Ok(_) => {
+                match $rx.await {
+                    Ok(res) => res,
+                    _ => response_500()
+                }
+            },
+            _ => response_500()
+        }
+    }
+}
+
+pub(crate) async fn handle_request(
+    rt: RuntimeRef,
+    callback: CallbackWrapper,
+    client_addr: SocketAddr,
+    req: Request<Body>
+) -> Response<Body> {
+    let scope = default_scope(client_addr, &req);
+    let (tx, rx) = oneshot::channel();
+
+    handle_http_response!(rt, callback, req, scope, tx, rx)
+}
+
+pub(crate) async fn handle_request_with_ws(
+    rt: RuntimeRef,
+    callback: CallbackWrapper,
+    client_addr: SocketAddr,
+    req: Request<Body>
+) -> Response<Body> {
+    let mut scope = default_scope(client_addr, &req);
 
     if is_ws_upgrade(&req) {
         scope.set_proto("ws");
@@ -51,7 +79,31 @@ pub(crate) async fn handle_request(
                 let (restx, mut resrx) = mpsc::channel(1);
 
                 rt.inner.spawn(async move {
-                   handle_websocket(rth, res, restx, ws, callback, scope).await
+                    let tx_ref = restx.clone();
+                    let upgrade = Arc::new(Mutex::new(UpgradeData::new(res, restx)));
+                    let upgrade_ref = upgrade.clone();
+                    let protocol = WebsocketProtocol::new(rth, ws, upgrade);
+
+                    match callback_caller(callback, protocol, scope).await {
+                        Ok(_) => {
+                            let upgrade_res = upgrade_ref.lock().await;
+                            if !(*upgrade_res).consumed {
+                                let _ = tx_ref.send(
+                                    ResponseBuilder::new()
+                                        .status(StatusCode::FORBIDDEN)
+                                        .header(HK_SERVER, HV_SERVER)
+                                        .body(Body::from(""))
+                                        .unwrap()
+                                ).await;
+                            };
+                        },
+                        _ => {
+                            let upgrade_res = upgrade_ref.lock().await;
+                            if !(*upgrade_res).consumed {
+                                let _ = tx_ref.send(response_500()).await;
+                            };
+                        }
+                    }
                 });
 
                 match resrx.recv().await {
@@ -74,48 +126,5 @@ pub(crate) async fn handle_request(
 
     let (tx, rx) = oneshot::channel();
 
-    match callback_caller(callback, HTTPProtocol::new(rt, req, tx), scope).await {
-        Ok(_) => {
-            match rx.await {
-                Ok(res) => res,
-                _ => response_500()
-            }
-        },
-        _ => response_500()
-    }
-}
-
-async fn handle_websocket(
-    rt: RuntimeRef,
-    response: ResponseBuilder,
-    tx: mpsc::Sender<Response<Body>>,
-    websocket: HyperWebsocket,
-    callback: CallbackWrapper,
-    scope: Scope
-) {
-    let tx_ref = tx.clone();
-    let upgrade = Arc::new(Mutex::new(UpgradeData::new(response, tx)));
-    let upgrade_ref = upgrade.clone();
-    let protocol = WebsocketProtocol::new(rt, websocket, upgrade);
-
-    match callback_caller(callback, protocol, scope).await {
-        Ok(_) => {
-            let upgrade_res = upgrade_ref.lock().await;
-            if !(*upgrade_res).consumed {
-                let _ = tx_ref.send(
-                    ResponseBuilder::new()
-                        .status(StatusCode::FORBIDDEN)
-                        .header(HK_SERVER, HV_SERVER)
-                        .body(Body::from(""))
-                        .unwrap()
-                ).await;
-            };
-        },
-        _ => {
-            let upgrade_res = upgrade_ref.lock().await;
-            if !(*upgrade_res).consumed {
-                let _ = tx_ref.send(response_500()).await;
-            };
-        }
-    }
+    handle_http_response!(rt, callback, req, scope, tx, rx)
 }

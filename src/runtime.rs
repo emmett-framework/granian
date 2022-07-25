@@ -334,6 +334,7 @@ where
     Ok(py_fut)
 }
 
+#[inline]
 fn get_current_locals<R>(py: Python) -> PyResult<TaskLocals>
 where
     R: ContextExt,

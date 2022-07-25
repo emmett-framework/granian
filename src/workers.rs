@@ -12,7 +12,8 @@ pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
-    pub http1_buffer_max: usize
+    pub http1_buffer_max: usize,
+    pub websockets_enabled: bool
 }
 
 impl WorkerConfig {
@@ -20,13 +21,15 @@ impl WorkerConfig {
         id: i32,
         socket_fd: i32,
         threads: usize,
-        http1_buffer_max: usize
+        http1_buffer_max: usize,
+        websockets_enabled: bool
     ) -> Self {
         Self {
             id,
             socket_fd,
             threads,
-            http1_buffer_max
+            http1_buffer_max,
+            websockets_enabled
         }
     }
 

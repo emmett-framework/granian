@@ -52,3 +52,18 @@ impl std::convert::From<ASGIFlowError> for PyErr {
         PyRuntimeError::new_err(err.to_string())
     }
 }
+
+macro_rules! error_flow {
+    () => {
+        Err(ASGIFlowError.into())
+    };
+}
+
+macro_rules! error_message {
+    () => {
+        Err(UnsupportedASGIMessage.into())
+    };
+}
+
+pub(crate) use error_flow;
+pub(crate) use error_message;

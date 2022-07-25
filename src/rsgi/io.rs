@@ -12,7 +12,7 @@ use crate::{
     runtime::{RuntimeRef, future_into_py},
     ws::{HyperWebsocket, UpgradeData}
 };
-use super::errors::RSGIProtocolError;
+use super::errors::{RSGIProtocolError, error_proto};
 
 
 #[pyclass(module="granian._granian")]
@@ -73,10 +73,10 @@ impl RSGIWebsocketTransport {
                 Some(recv) => {
                     match recv {
                         Ok(message) => message_into_py(message),
-                        _ => Err(RSGIProtocolError.into())
+                        _ => error_proto!()
                     }
                 },
-                _ => Err(RSGIProtocolError.into())
+                _ => error_proto!()
             }
         })
     }
@@ -87,7 +87,7 @@ impl RSGIWebsocketTransport {
             let mut stream = transport.lock().await;
             match stream.send(Message::Binary(data)).await {
                 Ok(_) => Ok(()),
-                _ => Err(RSGIProtocolError.into())
+                _ => error_proto!()
             }
         })
     }
@@ -98,7 +98,7 @@ impl RSGIWebsocketTransport {
             let mut stream = transport.lock().await;
             match stream.send(Message::Text(data)).await {
                 Ok(_) => Ok(()),
-                _ => Err(RSGIProtocolError.into())
+                _ => error_proto!()
             }
         })
     }
@@ -203,15 +203,16 @@ impl RSGIWebsocketProtocol {
                                 RSGIWebsocketTransport::new(rth, stream).into_py(py)
                             }))
                         },
-                        _ => Err(RSGIProtocolError.into())
+                        _ => error_proto!()
                     }
                 },
-                _ => Err(RSGIProtocolError.into())
+                _ => error_proto!()
             }
         })
     }
 }
 
+#[inline]
 fn message_into_py(message: Message) -> PyResult<PyObject> {
     match message {
         Message::Binary(message) => {
@@ -231,6 +232,6 @@ fn message_into_py(message: Message) -> PyResult<PyObject> {
                 WebsocketInboundCloseMessage::new().into_py(py)
             }))
         }
-        _ => Err(RSGIProtocolError.into())
+        _ => error_proto!()
     }
 }

@@ -2,7 +2,11 @@ use pyo3::prelude::*;
 use tokio::sync::oneshot;
 
 use crate::callbacks::CallbackWrapper;
-use super::{errors::ASGIFlowError, io::ASGIProtocol, types::ASGIScope as Scope};
+use super::{
+    errors::{ASGIFlowError, error_flow},
+    io::ASGIProtocol,
+    types::ASGIScope as Scope
+};
 
 
 #[pyclass]
@@ -51,6 +55,6 @@ pub(crate) async fn call(
 
     match rx.await {
         Ok(true) => Ok(()),
-        _ => Err(ASGIFlowError)
+        _ => error_flow!()
     }
 }

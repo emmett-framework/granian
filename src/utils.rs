@@ -14,18 +14,21 @@ pub(crate) fn header_contains_value(
     false
 }
 
+#[inline]
 fn trim(data: &[u8]) -> &[u8] {
     trim_end(trim_start(data))
 }
 
+#[inline]
 fn trim_start(data: &[u8]) -> &[u8] {
-    if let Some(start) =data.iter().position(|x| !x.is_ascii_whitespace()) {
+    if let Some(start) = data.iter().position(|x| !x.is_ascii_whitespace()) {
         &data[start..]
     } else {
         b""
     }
 }
 
+#[inline]
 fn trim_end(data: &[u8]) -> &[u8] {
     if let Some(last) = data.iter().rposition(|x| !x.is_ascii_whitespace()) {
         &data[..last + 1]

@@ -14,12 +14,7 @@ use crate::{
     callbacks::CallbackWrapper,
     http::{HV_SERVER, response_500},
     runtime::RuntimeRef,
-    ws::{
-        HyperWebsocket,
-        UpgradeData,
-        is_upgrade_request as is_ws_upgrade,
-        upgrade_intent as ws_upgrade
-    }
+    ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade}
 };
 use super::{
     callbacks::{call_response, call_protocol},
@@ -149,20 +144,78 @@ impl HTTPResponse<HTTPFileResponse> {
     }
 }
 
-pub(crate) async fn handle_request(
-    rt: RuntimeRef,
-    callback: CallbackWrapper,
-    client_addr: SocketAddr,
-    req: Request<Body>,
-) -> Response<Body> {
-    let mut scope = Scope::new(
+#[inline]
+fn default_scope<B>(client_addr: SocketAddr, req: &Request<B>) -> Scope {
+    Scope::new(
         "http",
         req.version(),
         req.uri().clone(),
         req.method().as_ref(),
         client_addr,
         req.headers()
-    );
+    )
+}
+
+macro_rules! handle_http_response {
+    ($rt:expr, $callback:expr, $req:expr, $scope:expr) => {
+        match call_response($callback, HTTPProtocol::new($rt, $req), $scope).await {
+            Ok(pyres) => {
+                let res = match pyres.mode {
+                    RESPONSE_BYTES => {
+                        HTTPResponse::<HTTPEmptyResponse>::new(
+                            pyres.status,
+                            pyres.headers
+                        ).response().body(pyres.bytes_data.unwrap().into())
+                    },
+                    RESPONSE_STR => {
+                        HTTPResponse::<HTTPEmptyResponse>::new(
+                            pyres.status,
+                            pyres.headers
+                        ).response().body(pyres.str_data.unwrap().into())
+                    },
+                    RESPONSE_FILEPATH => {
+                        let http_obj = HTTPResponse::<HTTPFileResponse>::new(
+                            pyres.status,
+                            pyres.headers,
+                            pyres.file_path.unwrap().to_owned()
+                        );
+                        http_obj.response().body(http_obj.get_body().await)
+                    },
+                    _ => {
+                        let mut http_obj = HTTPResponse::<HTTPEmptyResponse>::new(
+                            pyres.status,
+                            pyres.headers
+                        );
+                        http_obj.response().body(http_obj.get_body())
+                    }
+                };
+                match res {
+                    Ok(res) => res,
+                    _ => response_500()
+                }
+            },
+            _ => response_500()
+        }
+    };
+}
+
+pub(crate) async fn handle_request(
+    rt: RuntimeRef,
+    callback: CallbackWrapper,
+    client_addr: SocketAddr,
+    req: Request<Body>,
+) -> Response<Body> {
+    let scope = default_scope(client_addr, &req);
+    handle_http_response!(rt, callback, req, scope)
+}
+
+pub(crate) async fn handle_request_with_ws(
+    rt: RuntimeRef,
+    callback: CallbackWrapper,
+    client_addr: SocketAddr,
+    req: Request<Body>,
+) -> Response<Body> {
+    let mut scope = default_scope(client_addr, &req);
 
     if is_ws_upgrade(&req) {
         scope.set_proto("ws");
@@ -173,7 +226,31 @@ pub(crate) async fn handle_request(
                 let (restx, mut resrx) = mpsc::channel(1);
 
                 rt.inner.spawn(async move {
-                    handle_websocket(rth, res, restx, ws, callback, scope).await
+                    let tx_ref = restx.clone();
+
+                    match call_protocol(
+                        callback,
+                        WebsocketProtocol::new(rth, ws, UpgradeData::new(res, restx)),
+                        scope
+                    ).await {
+                        Ok((status, consumed)) => {
+                            if !consumed {
+                                let _ = tx_ref.send(
+                                    ResponseBuilder::new()
+                                        .status(
+                                            StatusCode::from_u16(status as u16)
+                                                .unwrap_or(StatusCode::FORBIDDEN)
+                                        )
+                                        .header(HK_SERVER, HV_SERVER)
+                                        .body(Body::from(""))
+                                        .unwrap()
+                                ).await;
+                            }
+                        },
+                        _ => {
+                            let _ = tx_ref.send(response_500()).await;
+                        }
+                    }
                 });
 
                 return match resrx.recv().await {
@@ -194,78 +271,5 @@ pub(crate) async fn handle_request(
         }
     }
 
-    match call_response(callback, HTTPProtocol::new(rt, req), scope).await {
-        Ok(pyres) => {
-            let res = match pyres.mode {
-                RESPONSE_BYTES => {
-                    HTTPResponse::<HTTPEmptyResponse>::new(
-                        pyres.status,
-                        pyres.headers
-                    ).response().body(pyres.bytes_data.unwrap().into())
-                },
-                RESPONSE_STR => {
-                    HTTPResponse::<HTTPEmptyResponse>::new(
-                        pyres.status,
-                        pyres.headers
-                    ).response().body(pyres.str_data.unwrap().into())
-                },
-                RESPONSE_FILEPATH => {
-                    let http_obj = HTTPResponse::<HTTPFileResponse>::new(
-                        pyres.status,
-                        pyres.headers,
-                        pyres.file_path.unwrap().to_owned()
-                    );
-                    http_obj.response().body(http_obj.get_body().await)
-                },
-                _ => {
-                    let mut http_obj = HTTPResponse::<HTTPEmptyResponse>::new(
-                        pyres.status,
-                        pyres.headers
-                    );
-                    http_obj.response().body(http_obj.get_body())
-                }
-            };
-            match res {
-                Ok(res) => res,
-                _ => response_500()
-            }
-        },
-        _ => response_500()
-    }
-}
-
-async fn handle_websocket(
-    rt: RuntimeRef,
-    response: ResponseBuilder,
-    tx: mpsc::Sender<Response<Body>>,
-    websocket: HyperWebsocket,
-    callback: CallbackWrapper,
-    scope: Scope
-) {
-    let tx_ref = tx.clone();
-
-    match call_protocol(
-        callback,
-        WebsocketProtocol::new(rt, websocket, UpgradeData::new(response, tx)),
-        scope
-    ).await {
-        Ok((status, consumed)) => {
-            if !consumed {
-                let _ = tx_ref.send(
-                    ResponseBuilder::new()
-                        .status(
-                            StatusCode::from_u16(status as u16).unwrap_or(
-                                StatusCode::FORBIDDEN
-                            )
-                        )
-                        .header(HK_SERVER, HV_SERVER)
-                        .body(Body::from(""))
-                        .unwrap()
-                ).await;
-            }
-        },
-        _ => {
-            let _ = tx_ref.send(response_500()).await;
-        }
-    }
+    handle_http_response!(rt, callback, req, scope)
 }

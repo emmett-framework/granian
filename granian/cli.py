@@ -25,6 +25,12 @@ def main(
         Interfaces.RSGI.value,
         help="Application interface type."
     ),
+    websockets: bool = typer.Option(
+        True,
+        "--ws/--no-ws",
+        help="Enable websockets handling",
+        show_default="enabled"
+    ),
     workers: int = typer.Option(1, min=1, help="Number of worker processes."),
     threads: Optional[int] = typer.Option(None, min=1, help="Number of threads."),
     threading_mode: ThreadModes = typer.Option(
@@ -52,5 +58,6 @@ def main(
         backlog=backlog,
         threads=threads,
         threading_mode=threading_mode,
-        interface=interface
+        interface=interface,
+        websockets=websockets
     ).serve()

@@ -59,3 +59,11 @@ impl std::convert::From<ApplicationError> for PyErr {
         PyRuntimeError::new_err(err.to_string())
     }
 }
+
+macro_rules! error_proto {
+    () => {
+        Err(RSGIProtocolError.into())
+    };
+}
+
+pub(crate) use error_proto;

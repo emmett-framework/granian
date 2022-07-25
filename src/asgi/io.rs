@@ -15,7 +15,10 @@ use crate::{
     runtime::{RuntimeRef, future_into_py},
     ws::{HyperWebsocket, UpgradeData, WebsocketTransport}
 };
-use super::{errors::{ASGIFlowError, UnsupportedASGIMessage}, types::ASGIMessageType};
+use super::{
+    errors::{ASGIFlowError, UnsupportedASGIMessage, error_flow, error_message},
+    types::ASGIMessageType
+};
 
 
 const HDR_SERVER: HeaderValue = HeaderValue::from_static("granian");
@@ -55,12 +58,14 @@ impl ASGIHTTPProtocol {
         }
     }
 
+    #[inline]
     fn init_response(&mut self, status_code: i16, headers: HeaderMap) {
         self.response_status = status_code;
         self.response_headers = headers;
         self.response_inited = true;
     }
 
+    #[inline]
     fn adapt_status_code(
         &self,
         message: &PyDict
@@ -69,10 +74,11 @@ impl ASGIHTTPProtocol {
             Some(item) => {
                 Ok(item.extract()?)
             },
-            _ => Err(UnsupportedASGIMessage)
+            _ => error_message!()
         }
     }
 
+    #[inline]
     fn adapt_headers(&self, message: &PyDict) -> HeaderMap {
         let mut ret = HeaderMap::new();
         ret.insert(SERVER, HDR_SERVER);
@@ -94,6 +100,7 @@ impl ASGIHTTPProtocol {
         }
     }
 
+    #[inline]
     fn adapt_body(&self, message: &PyDict) -> (Vec<u8>, bool) {
         let default_body = b"".to_vec();
         let default_more = false;
@@ -112,6 +119,7 @@ impl ASGIHTTPProtocol {
         (body, more)
     }
 
+    #[inline]
     fn send_body(&mut self, body: &[u8], finish: bool) {
         self.response_body.extend_from_slice(body);
         if finish {
@@ -195,10 +203,10 @@ impl ASGIWebsocketProtocol {
                 Ok(_) => {
                     match ws.accept().await {
                         Ok(_) => Ok(()),
-                        _ => Err(ASGIFlowError.into())
+                        _ => error_flow!()
                     }
                 },
-                _ => Err(ASGIFlowError.into())
+                _ => error_flow!()
             }
         })
     }
@@ -222,11 +230,11 @@ impl ASGIWebsocketProtocol {
         future_into_py(self.rt.clone(), py, async move {
             let ws = transport.lock().await;
             if ws.closed {
-                return Err(ASGIFlowError.into())
+                return error_flow!()
             }
             match ws.send(message).await {
                 Ok(_) => Ok(()),
-                _ => Err(ASGIFlowError.into())
+                _ => error_flow!()
             }
         })
     }
@@ -244,6 +252,7 @@ impl ASGIWebsocketProtocol {
 }
 
 impl ASGIProtocol for ASGIHTTPProtocol {
+    #[inline]
     fn _recv<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.request.clone();
         future_into_py(self.rt.clone(), py, async move {
@@ -259,6 +268,7 @@ impl ASGIProtocol for ASGIHTTPProtocol {
         })
     }
 
+    #[inline]
     fn _send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::HTTPStart) => {
@@ -270,7 +280,7 @@ impl ASGIProtocol for ASGIHTTPProtocol {
                         );
                         empty_future(self.rt.clone(), py)
                     },
-                    _ => Err(ASGIFlowError.into())
+                    _ => error_flow!()
                 }
             },
             Ok(ASGIMessageType::HTTPBody) => {
@@ -280,7 +290,7 @@ impl ASGIProtocol for ASGIHTTPProtocol {
                         self.send_body(&body_data.0[..], !body_data.1);
                         empty_future(self.rt.clone(), py)
                     },
-                    _ => Err(ASGIFlowError.into())
+                    _ => error_flow!()
                 }
             },
             Err(err) => Err(err.into()),
@@ -290,12 +300,13 @@ impl ASGIProtocol for ASGIHTTPProtocol {
 }
 
 impl ASGIProtocol for ASGIWebsocketProtocol {
+    #[inline]
     fn _recv<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.websocket.clone();
         future_into_py(self.rt.clone(), py, async move {
             let ws = transport.lock().await;
             if ws.closed {
-                return Err(ASGIFlowError.into())
+                return error_flow!()
             }
             match ws.receive().await {
                 Ok(message) => {
@@ -323,14 +334,15 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
                                 Ok(dict.to_object(py))
                             })
                         },
-                        _ => Err(ASGIFlowError.into())
+                        _ => error_flow!()
                     }
                 },
-                _ => Err(ASGIFlowError.into())
+                _ => error_flow!()
             }
         })
     }
 
+    #[inline]
     fn _send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::WSAccept) => {
@@ -348,6 +360,7 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
     }
 }
 
+#[inline]
 fn adapt_message_type(
     message: &PyDict
 ) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
@@ -360,13 +373,14 @@ fn adapt_message_type(
                 "websocket.accept" => Ok(ASGIMessageType::WSAccept),
                 "websocket.close" => Ok(ASGIMessageType::WSClose),
                 "websocket.send" => Ok(ASGIMessageType::WSMessage),
-                _ => Err(UnsupportedASGIMessage)
+                _ => error_message!()
             }
         },
-        _ => Err(UnsupportedASGIMessage)
+        _ => error_message!()
     }
 }
 
+#[inline]
 fn empty_future<'p>(rt: RuntimeRef, py: Python<'p>) -> PyResult<&'p PyAny> {
     future_into_py(rt, py, async move {
         Ok(())

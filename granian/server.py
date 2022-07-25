@@ -31,7 +31,8 @@ class Granian:
         threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.runtime,
         http1_buffer_size: int = 65535,
-        interface: Interfaces = Interfaces.RSGI
+        interface: Interfaces = Interfaces.RSGI,
+        websockets: bool = True
     ):
         self.target = target
         self.bind_addr = address
@@ -45,6 +46,7 @@ class Granian:
         self.threading_mode = threading_mode
         self.http1_buffer_size = http1_buffer_size
         self.interface = interface
+        self.websockets = websockets
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
         self.exit_event = threading.Event()
@@ -60,7 +62,8 @@ class Granian:
         socket,
         threads,
         threading_mode,
-        http1_buffer_size
+        http1_buffer_size,
+        websockets
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -75,7 +78,7 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size)
+        worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size, websockets)
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
             ThreadModes.workers: "serve_wth"
@@ -96,7 +99,8 @@ class Granian:
         socket,
         threads,
         threading_mode,
-        http1_buffer_size
+        http1_buffer_size,
+        websockets
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -106,7 +110,7 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size)
+        worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size, websockets)
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
             ThreadModes.workers: "serve_wth"
@@ -163,7 +167,8 @@ class Granian:
                 socket_loader(),
                 self.threads,
                 self.threading_mode,
-                self.http1_buffer_size
+                self.http1_buffer_size,
+                self.websockets
             )
         )
 

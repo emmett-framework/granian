@@ -142,6 +142,7 @@ impl UpgradeData {
     }
 }
 
+#[inline]
 pub(crate) fn is_upgrade_request<B>(request: &Request<B>) -> bool {
     header_contains_value(
         request.headers(), CONNECTION, "Upgrade"
