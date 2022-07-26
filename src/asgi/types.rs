@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 
+const SCHEME_HTTPS: &str = "https";
+const SCHEME_WS: &str = "ws";
+const SCHEME_WSS: &str = "wss";
+
 pub(crate) enum ASGIMessageType {
     HTTPStart,
     HTTPBody,
@@ -14,21 +18,19 @@ pub(crate) enum ASGIMessageType {
 
 #[pyclass(module="granian._granian")]
 pub(crate) struct ASGIScope {
-    #[pyo3(get)]
-    proto: String,
     http_version: Version,
     #[pyo3(get)]
     method: String,
     uri: Uri,
     #[pyo3(get)]
     client: String,
-    headers: HeaderMap
+    headers: HeaderMap,
+    is_websocket: bool
 }
 
 // TODO: server address
 impl ASGIScope {
     pub fn new(
-        proto: &str,
         http_version: Version,
         uri: Uri,
         method: &str,
@@ -36,22 +38,30 @@ impl ASGIScope {
         headers: &HeaderMap
     ) -> Self {
         Self {
-            proto: proto.to_string(),
             http_version: http_version,
             method: method.to_string(),
             uri: uri,
             client: client.to_string(),
-            headers: headers.to_owned()
+            headers: headers.to_owned(),
+            is_websocket: false
         }
     }
 
-    pub fn set_proto(&mut self, value: &str) {
-        self.proto = value.to_string()
+    pub fn set_websocket(&mut self) {
+        self.is_websocket = true
     }
 }
 
 #[pymethods]
 impl ASGIScope {
+    #[getter(proto)]
+    fn get_proto(&self) -> &str {
+        match self.is_websocket {
+            false => "http",
+            true => "websocket"
+        }
+    }
+
     #[getter(headers)]
     fn get_headers(&self) -> HashMap<&[u8], &[u8]> {
         let mut ret = HashMap::new();
@@ -73,7 +83,16 @@ impl ASGIScope {
 
     #[getter(scheme)]
     fn get_scheme(&self) -> &str {
-        self.uri.scheme_str().unwrap_or("http")
+        let scheme = self.uri.scheme_str().unwrap_or("http");
+        match &self.is_websocket {
+            false => scheme,
+            true => {
+                match scheme {
+                    SCHEME_HTTPS => SCHEME_WSS,
+                    _ => SCHEME_WS
+                }
+            }
+        }
     }
 
     #[getter(path)]

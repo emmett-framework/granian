@@ -1,3 +1,4 @@
+import json
 import pytest
 import websockets
 
@@ -27,3 +28,52 @@ async def test_reject(server, threading_mode):
                 pass
 
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
+async def test_asgi_scope(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        async with websockets.connect(f"ws://localhost:{port}/ws_info?test=true") as ws:
+            res = await ws.recv()
+
+    data = json.loads(res)
+    assert data['asgi'] == {
+        'version': '3.0',
+        'spec_version': '2.3'
+    }
+    assert data['type'] == "websocket"
+    assert data['http_version'] == '1.1'
+    assert data['scheme'] == 'ws'
+    assert data['path'] == '/ws_info'
+    assert data['query_string'] == 'test=true'
+    assert data['headers']['host'] == f'localhost:{port}'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
+async def test_rsgi_scope(rsgi_server, threading_mode):
+    async with rsgi_server(threading_mode) as port:
+        async with websockets.connect(f"ws://localhost:{port}/ws_info?test=true") as ws:
+            res = await ws.recv()
+
+    data = json.loads(res)
+    assert data['proto'] == 'ws'
+    assert data['http_version'] == '1.1'
+    assert data['scheme'] == 'http'
+    assert data['method'] == "GET"
+    assert data['path'] == '/ws_info'
+    assert data['query_string'] == 'test=true'
+    assert data['headers']['host'] == f'localhost:{port}'

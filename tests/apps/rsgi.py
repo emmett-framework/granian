@@ -36,6 +36,21 @@ async def ws_reject(_, protocol: WebsocketProtocol):
     return protocol.close(403)
 
 
+async def ws_info(scope, protocol: WebsocketProtocol):
+    trx = await protocol.accept()
+
+    await trx.send_str(json.dumps({
+        'proto': scope.proto,
+        'http_version': scope.http_version,
+        'scheme': scope.scheme,
+        'method': scope.method,
+        'path': scope.path,
+        'query_string': scope.query_string,
+        'headers': {k: v for k, v in scope.headers.items()}
+    }))
+    return protocol.close()
+
+
 async def ws_echo(_, protocol: WebsocketProtocol):
     trx = await protocol.accept()
 
@@ -56,5 +71,6 @@ def app(scope, protocol):
         "/info": info,
         "/echo": echo,
         "/ws_reject": ws_reject,
+        "/ws_info": ws_info,
         "/ws_echo": ws_echo
     }[scope.path](scope, protocol)

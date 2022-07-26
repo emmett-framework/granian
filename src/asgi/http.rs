@@ -25,7 +25,6 @@ use super::{
 macro_rules! default_scope {
     ($client_addr:expr, $req:expr) => {
         Scope::new(
-            "http",
             $req.version(),
             $req.uri().clone(),
             $req.method().as_ref(),
@@ -72,7 +71,7 @@ pub(crate) async fn handle_request_with_ws(
     let mut scope = default_scope!(client_addr, &req);
 
     if is_ws_upgrade(&req) {
-        scope.set_proto("ws");
+        scope.set_websocket();
 
         return match ws_upgrade(req, None) {
             Ok((res, ws)) => {

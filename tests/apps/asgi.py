@@ -51,6 +51,26 @@ async def ws_reject(scope, receive, send):
     return
 
 
+async def ws_info(scope, receive, send):
+    await send({'type': 'websocket.accept'})
+    await send({
+        'type': 'websocket.send',
+        'text': json.dumps({
+            'type': scope['type'],
+            'asgi': scope['asgi'],
+            'http_version': scope['http_version'],
+            'scheme': scope['scheme'],
+            'path': scope['path'],
+            'query_string': scope['query_string'].decode("latin-1"),
+            'headers': {
+                k.decode("utf8"): v.decode("utf8")
+                for k, v in scope['headers'].items()
+            }
+        })
+    })
+    await send({'type': 'websocket.close'})
+
+
 async def ws_echo(scope, receive, send):
     await send({'type': 'websocket.accept'})
 
@@ -70,5 +90,6 @@ def app(scope, receive, send):
         "/info": info,
         "/echo": echo,
         "/ws_reject": ws_reject,
+        "/ws_info": ws_info,
         "/ws_echo": ws_echo
     }[scope['path']](scope, receive, send)
