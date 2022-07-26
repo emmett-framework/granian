@@ -68,6 +68,8 @@ pub(crate) struct RSGIScope {
     method: String,
     uri: Uri,
     #[pyo3(get)]
+    server: String,
+    #[pyo3(get)]
     client: String,
     #[pyo3(get)]
     headers: RSGIHeaders
@@ -79,6 +81,7 @@ impl RSGIScope {
         http_version: Version,
         uri: Uri,
         method: &str,
+        server: SocketAddr,
         client: SocketAddr,
         headers: &HeaderMap
     ) -> Self {
@@ -87,6 +90,7 @@ impl RSGIScope {
             http_version: http_version,
             method: method.to_string(),
             uri: uri,
+            server: server.to_string(),
             client: client.to_string(),
             headers: RSGIHeaders::new(headers)
         }

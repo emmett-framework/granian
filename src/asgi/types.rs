@@ -23,7 +23,13 @@ pub(crate) struct ASGIScope {
     method: String,
     uri: Uri,
     #[pyo3(get)]
-    client: String,
+    server_ip: String,
+    #[pyo3(get)]
+    server_port: u16,
+    #[pyo3(get)]
+    client_ip: String,
+    #[pyo3(get)]
+    client_port: u16,
     headers: HeaderMap,
     is_websocket: bool
 }
@@ -34,6 +40,7 @@ impl ASGIScope {
         http_version: Version,
         uri: Uri,
         method: &str,
+        server: SocketAddr,
         client: SocketAddr,
         headers: &HeaderMap
     ) -> Self {
@@ -41,7 +48,10 @@ impl ASGIScope {
             http_version: http_version,
             method: method.to_string(),
             uri: uri,
-            client: client.to_string(),
+            server_ip: server.ip().to_string(),
+            server_port: server.port(),
+            client_ip: client.ip().to_string(),
+            client_port: client.port(),
             headers: headers.to_owned(),
             is_websocket: false
         }

@@ -23,11 +23,12 @@ use super::{
 
 
 macro_rules! default_scope {
-    ($client_addr:expr, $req:expr) => {
+    ($server_addr:expr, $client_addr:expr, $req:expr) => {
         Scope::new(
             $req.version(),
             $req.uri().clone(),
             $req.method().as_ref(),
+            $server_addr,
             $client_addr,
             $req.headers()
         )
@@ -53,10 +54,11 @@ macro_rules! handle_http_response {
 pub(crate) async fn handle_request(
     rt: RuntimeRef,
     callback: CallbackWrapper,
+    server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: Request<Body>
 ) -> Response<Body> {
-    let scope = default_scope!(client_addr, &req);
+    let scope = default_scope!(server_addr, client_addr, &req);
     let (tx, rx) = oneshot::channel();
 
     handle_http_response!(rt, callback, req, scope, tx, rx)
@@ -65,10 +67,11 @@ pub(crate) async fn handle_request(
 pub(crate) async fn handle_request_with_ws(
     rt: RuntimeRef,
     callback: CallbackWrapper,
+    server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: Request<Body>
 ) -> Response<Body> {
-    let mut scope = default_scope!(client_addr, &req);
+    let mut scope = default_scope!(server_addr, client_addr, &req);
 
     if is_ws_upgrade(&req) {
         scope.set_websocket();

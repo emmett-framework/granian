@@ -105,7 +105,6 @@ class LifespanProtocol:
 def callback_wrapper(callback):
     @wraps(callback)
     def wrapper(watcher, scope: Scope, protocol: ASGIProtocol):
-        client_addr, client_port = (scope.client.split(":") + ["0"])[:2]
         coro = callback(
             {
                 "type": scope.proto,
@@ -114,8 +113,8 @@ def callback_wrapper(callback):
                     "spec_version": "2.3"
                 },
                 "http_version": scope.http_version,
-                "server": ("127.0.0.1", 8000),
-                "client": (client_addr, int(client_port)),
+                "server": (scope.server_ip, scope.server_port),
+                "client": (scope.client_ip, scope.client_port),
                 "scheme": scope.scheme,
                 "method": scope.method,
                 "root_path": "",

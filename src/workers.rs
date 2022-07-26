@@ -94,6 +94,7 @@ macro_rules! serve_rth {
                 event_loop,
                 async move {
                     let service = make_service_fn(|socket: &AddrStream| {
+                        let local_addr = socket.local_addr();
                         let remote_addr = socket.remote_addr();
                         let callback_wrapper = callback_wrapper.clone();
                         let rth = rth.clone();
@@ -107,6 +108,7 @@ macro_rules! serve_rth {
                                     Ok::<_, Infallible>($target(
                                         rth,
                                         callback_wrapper,
+                                        local_addr,
                                         remote_addr,
                                         req
                                     ).await)
@@ -171,6 +173,7 @@ macro_rules! serve_wth {
 
                     block_on_local(rt, local, async move {
                         let service = make_service_fn(|socket: &AddrStream| {
+                            let local_addr = socket.local_addr();
                             let remote_addr = socket.remote_addr();
                             let callback_wrapper = callback_wrapper.clone();
                             let rth = rth.clone();
@@ -184,6 +187,7 @@ macro_rules! serve_wth {
                                         Ok::<_, Infallible>($target(
                                             rth,
                                             callback_wrapper,
+                                            local_addr,
                                             remote_addr,
                                             req
                                         ).await)

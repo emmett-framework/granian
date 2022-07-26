@@ -4,7 +4,10 @@ from ._types import WebsocketMessage
 
 
 class ASGIScope:
-    client: str
+    client_ip: str
+    client_port: int
+    server_ip: str
+    server_port: int
     headers: Dict[bytes, bytes]
     http_version: str
     method: str
