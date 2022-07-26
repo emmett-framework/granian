@@ -48,6 +48,11 @@ async def ws_info(scope, protocol: WebsocketProtocol):
         'query_string': scope.query_string,
         'headers': {k: v for k, v in scope.headers.items()}
     }))
+    while True:
+        message = await trx.receive()
+        if message.kind == WebsocketMessageType.close:
+            break
+
     return protocol.close()
 
 
