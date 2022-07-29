@@ -13,9 +13,6 @@ license = "Apache-2.0"
 exclude = ["/.gitignore", "/codecov.yml", "/Makefile"]
 edition = "2018"
 
-[workspace]
-members = ["pyo3-asyncio-macros"]
-
 [features]
 async-std-runtime = ["async-std"]
 attributes = ["inventory"]
