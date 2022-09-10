@@ -1,6 +1,6 @@
 [package]
 name = "granian"
-version = "0.1.0-alpha.3"
+version = "0.1.0-beta.1"
 description = "A Rust HTTP server for Python applications"
 authors = ["Giovanni Barillari <gi0baro@d4net.org>"]
 license = "BSD-3-Clause"
@@ -29,7 +29,7 @@ name = "granian._granian"
 requires-python = ">=3.7"
 
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: BSD License",
     "Operating System :: MacOS",
