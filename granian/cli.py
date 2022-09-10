@@ -3,7 +3,7 @@ from typing import Optional
 import typer
 
 from .__version__ import __version__
-from .constants import Interfaces, ThreadModes
+from .constants import Interfaces, HTTPModes, ThreadModes
 from .server import Granian
 
 
@@ -24,6 +24,10 @@ def main(
     interface: Interfaces = typer.Option(
         Interfaces.RSGI.value,
         help="Application interface type."
+    ),
+    http: HTTPModes = typer.Option(
+        HTTPModes.auto.value,
+        help="HTTP version."
     ),
     websockets: bool = typer.Option(
         True,
@@ -59,5 +63,6 @@ def main(
         threads=threads,
         threading_mode=threading_mode,
         interface=interface,
+        http=http,
         websockets=websockets
     ).serve()

@@ -12,6 +12,7 @@ pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
+    pub http_mode: String,
     pub http1_buffer_max: usize,
     pub websockets_enabled: bool
 }
@@ -21,6 +22,7 @@ impl WorkerConfig {
         id: i32,
         socket_fd: i32,
         threads: usize,
+        http_mode: String,
         http1_buffer_max: usize,
         websockets_enabled: bool
     ) -> Self {
@@ -28,6 +30,7 @@ impl WorkerConfig {
             id,
             socket_fd,
             threads,
+            http_mode,
             http1_buffer_max,
             websockets_enabled
         }
@@ -83,7 +86,9 @@ macro_rules! serve_rth {
             let rt = init_runtime_mt(self.config.threads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
-            let http1_buffer_max = self.config.http1_buffer_max;
+            let http1_only = self.config.http_mode == "1";
+            let http2_only = self.config.http_mode == "2";
+            let http1_buffer_max = self.config.http1_buffer_max.clone();
             let callback_wrapper = CallbackWrapper::new(callback, event_loop, context);
 
             let worker_id = self.config.id;
@@ -118,6 +123,8 @@ macro_rules! serve_rth {
                     });
 
                     let server = Server::from_tcp(tcp_listener).unwrap()
+                        .http1_only(http1_only)
+                        .http2_only(http2_only)
                         .http1_max_buf_size(http1_buffer_max)
                         .serve(service);
                     server.with_graceful_shutdown(async move {
@@ -162,6 +169,8 @@ macro_rules! serve_wth {
                 println!("Worker spawned: {}", thread_id);
 
                 let tcp_listener = self.config.tcp_listener();
+                let http1_only = self.config.http_mode == "1";
+                let http2_only = self.config.http_mode == "2";
                 let http1_buffer_max = self.config.http1_buffer_max.clone();
                 let callback_wrapper = callback_wrapper.clone();
                 let mut srx = srx.clone();
@@ -198,6 +207,8 @@ macro_rules! serve_wth {
 
                         let server = Server::from_tcp(tcp_listener).unwrap()
                             .executor(WorkerExecutor)
+                            .http1_only(http1_only)
+                            .http2_only(http2_only)
                             .http1_max_buf_size(http1_buffer_max)
                             .serve(service);
                         server.with_graceful_shutdown(async move {

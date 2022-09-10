@@ -11,7 +11,7 @@ from typing import List, Optional
 from ._granian import ASGIWorker, RSGIWorker
 from ._internal import CTX, load_target
 from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
-from .constants import Interfaces, ThreadModes
+from .constants import Interfaces, HTTPModes, ThreadModes
 from .net import SocketHolder
 from .rsgi import callback_wrapper as _rsgi_call_wrap
 
@@ -32,6 +32,7 @@ class Granian:
         threading_mode: ThreadModes = ThreadModes.runtime,
         http1_buffer_size: int = 65535,
         interface: Interfaces = Interfaces.RSGI,
+        http: HTTPModes = HTTPModes.auto,
         websockets: bool = True
     ):
         self.target = target
@@ -46,14 +47,18 @@ class Granian:
         self.threading_mode = threading_mode
         self.http1_buffer_size = http1_buffer_size
         self.interface = interface
+        self.http = http
         self.websockets = websockets
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
         self.exit_event = threading.Event()
 
     @staticmethod
-    def _target_load(target: str):
-        return load_target(target)
+    def _target_load(target: str, interface: Interfaces):
+        obj = load_target(target)
+        if interface == Interfaces.RSGI and hasattr(obj, '__rsgi__'):
+            obj = getattr(obj, '__rsgi__')
+        return obj
 
     @staticmethod
     def _spawn_asgi_worker(
@@ -62,6 +67,7 @@ class Granian:
         socket,
         threads,
         threading_mode,
+        http_mode,
         http1_buffer_size,
         websockets
     ):
@@ -78,7 +84,14 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = ASGIWorker(worker_id, sfd, threads, http1_buffer_size, websockets)
+        worker = ASGIWorker(
+            worker_id,
+            sfd,
+            threads,
+            http_mode,
+            http1_buffer_size,
+            websockets
+        )
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
             ThreadModes.workers: "serve_wth"
@@ -99,6 +112,7 @@ class Granian:
         socket,
         threads,
         threading_mode,
+        http_mode,
         http1_buffer_size,
         websockets
     ):
@@ -110,7 +124,14 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = RSGIWorker(worker_id, sfd, threads, http1_buffer_size, websockets)
+        worker = RSGIWorker(
+            worker_id,
+            sfd,
+            threads,
+            http_mode,
+            http1_buffer_size,
+            websockets
+        )
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
             ThreadModes.workers: "serve_wth"
@@ -167,6 +188,7 @@ class Granian:
                 socket_loader(),
                 self.threads,
                 self.threading_mode,
+                self.http,
                 self.http1_buffer_size,
                 self.websockets
             )
@@ -214,7 +236,7 @@ class Granian:
         # if self.workers > 1 and "fork" not in multiprocessing.get_all_start_methods():
         #     raise RuntimeError("Multiple workers are not supported on current platform")
 
-        self.startup(spawn_target, partial(target_loader, self.target))
+        self.startup(spawn_target, partial(target_loader, self.target, self.interface))
         print("started", self.procs)
         self.exit_event.wait()
         print("exit event received")

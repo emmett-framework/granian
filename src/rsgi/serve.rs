@@ -39,6 +39,7 @@ impl RSGIWorker {
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
+        http_mode: String,
         http1_buffer_max: usize,
         websockets_enabled: bool
     ) -> PyResult<Self> {
@@ -47,6 +48,7 @@ impl RSGIWorker {
                 worker_id,
                 socket_fd,
                 threads,
+                http_mode,
                 http1_buffer_max,
                 websockets_enabled
             )
