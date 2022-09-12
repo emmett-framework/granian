@@ -3,9 +3,11 @@ import os
 import multiprocessing
 import signal
 import socket
+import ssl
 import threading
 
 from functools import partial
+from pathlib import Path
 from typing import List, Optional
 
 from ._granian import ASGIWorker, RSGIWorker
@@ -33,7 +35,9 @@ class Granian:
         http1_buffer_size: int = 65535,
         interface: Interfaces = Interfaces.RSGI,
         http: HTTPModes = HTTPModes.auto,
-        websockets: bool = True
+        websockets: bool = True,
+        ssl_cert: Optional[Path] = None,
+        ssl_key: Optional[Path] = None
     ):
         self.target = target
         self.bind_addr = address
@@ -49,9 +53,27 @@ class Granian:
         self.interface = interface
         self.http = http
         self.websockets = websockets
+        self.build_ssl_context(ssl_cert, ssl_key)
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
         self.exit_event = threading.Event()
+
+    def build_ssl_context(
+        self,
+        cert: Optional[Path],
+        key: Optional[Path]
+    ):
+        if not (cert and key):
+            self.ssl_ctx = (False, None, None)
+            return
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(cert, key, None)
+        self.ssl_enabled = True
+        # with cert.open("rb") as f:
+        #     cert_contents = f.read()
+        # with key.open("rb") as f:
+        #     key_contents = f.read()
+        self.ssl_ctx = (True, str(cert.resolve()), str(key.resolve()))
 
     @staticmethod
     def _target_load(target: str, interface: Interfaces):
@@ -69,7 +91,8 @@ class Granian:
         threading_mode,
         http_mode,
         http1_buffer_size,
-        websockets
+        websockets,
+        ssl_ctx
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -90,7 +113,8 @@ class Granian:
             threads,
             http_mode,
             http1_buffer_size,
-            websockets
+            websockets,
+            *ssl_ctx
         )
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
@@ -114,7 +138,8 @@ class Granian:
         threading_mode,
         http_mode,
         http1_buffer_size,
-        websockets
+        websockets,
+        ssl_ctx
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -130,7 +155,8 @@ class Granian:
             threads,
             http_mode,
             http1_buffer_size,
-            websockets
+            websockets,
+            *ssl_ctx
         )
         serve = getattr(worker, {
             ThreadModes.runtime: "serve_rth",
@@ -190,7 +216,8 @@ class Granian:
                 self.threading_mode,
                 self.http,
                 self.http1_buffer_size,
-                self.websockets
+                self.websockets,
+                self.ssl_ctx
             )
         )
 
@@ -203,6 +230,7 @@ class Granian:
 
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)
+        sock.setblocking(False)
 
         def socket_loader():
             return sock

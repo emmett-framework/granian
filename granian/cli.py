@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -46,6 +47,22 @@ def main(
         min=128,
         help="Maximum number of connections to hold in backlog."
     ),
+    ssl_keyfile: Optional[Path] = typer.Option(
+        None,
+        help="SSL key file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True
+    ),
+    ssl_certificate: Optional[Path] = typer.Option(
+        None,
+        help="SSL certificate file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True
+    ),
     _: Optional[bool] = typer.Option(
         None,
         "--version",
@@ -64,5 +81,7 @@ def main(
         threading_mode=threading_mode,
         interface=interface,
         http=http,
-        websockets=websockets
+        websockets=websockets,
+        ssl_cert=ssl_certificate,
+        ssl_key=ssl_keyfile
     ).serve()
