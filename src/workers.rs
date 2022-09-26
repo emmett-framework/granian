@@ -121,7 +121,8 @@ macro_rules! build_service {
                             callback_wrapper,
                             local_addr,
                             remote_addr,
-                            req
+                            req,
+                            "http"
                         ).await)
                     }
                 }))
@@ -150,7 +151,8 @@ macro_rules! build_service_ssl {
                             callback_wrapper,
                             local_addr,
                             remote_addr,
-                            req
+                            req,
+                            "https"
                         ).await)
                     }
                 }))

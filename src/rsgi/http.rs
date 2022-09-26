@@ -145,10 +145,11 @@ impl HTTPResponse<HTTPFileResponse> {
 }
 
 macro_rules! default_scope {
-    ($server_addr:expr, $client_addr:expr, $req:expr) => {
+    ($server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
         Scope::new(
             "http",
             $req.version(),
+            $scheme,
             $req.uri().clone(),
             $req.method().as_ref(),
             $server_addr,
@@ -207,8 +208,9 @@ pub(crate) async fn handle_request(
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: Request<Body>,
+    scheme: &str
 ) -> Response<Body> {
-    let scope = default_scope!(server_addr, client_addr, &req);
+    let scope = default_scope!(server_addr, client_addr, &req, scheme);
     handle_http_response!(rt, callback, req, scope)
 }
 
@@ -218,8 +220,9 @@ pub(crate) async fn handle_request_with_ws(
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: Request<Body>,
+    scheme: &str
 ) -> Response<Body> {
-    let mut scope = default_scope!(server_addr, client_addr, &req);
+    let mut scope = default_scope!(server_addr, client_addr, &req, scheme);
 
     if is_ws_upgrade(&req) {
         scope.set_proto("ws");
