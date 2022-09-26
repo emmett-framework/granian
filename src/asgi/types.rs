@@ -19,6 +19,7 @@ pub(crate) enum ASGIMessageType {
 #[pyclass(module="granian._granian")]
 pub(crate) struct ASGIScope {
     http_version: Version,
+    scheme: String,
     #[pyo3(get)]
     method: String,
     uri: Uri,
@@ -38,6 +39,7 @@ pub(crate) struct ASGIScope {
 impl ASGIScope {
     pub fn new(
         http_version: Version,
+        scheme: &str,
         uri: Uri,
         method: &str,
         server: SocketAddr,
@@ -46,6 +48,7 @@ impl ASGIScope {
     ) -> Self {
         Self {
             http_version: http_version,
+            scheme: scheme.to_string(),
             method: method.to_string(),
             uri: uri,
             server_ip: server.ip().to_string(),
@@ -93,7 +96,7 @@ impl ASGIScope {
 
     #[getter(scheme)]
     fn get_scheme(&self) -> &str {
-        let scheme = self.uri.scheme_str().unwrap_or("http");
+        let scheme = &self.scheme[..];
         match &self.is_websocket {
             false => scheme,
             true => {

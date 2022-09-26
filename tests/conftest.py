@@ -4,16 +4,25 @@ import socket
 
 from contextlib import asynccontextmanager, closing
 from functools import partial
+from pathlib import Path
 
 import pytest
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode):
+async def _server(interface, port, threading_mode, tls=False):
+    certs_path = Path.cwd() / "tests" / "fixtures" / "tls"
+    tls_opts = (
+        f"--ssl-certificate {certs_path / 'cert.pem'} "
+        f"--ssl-keyfile {certs_path / 'key.pem'} "
+    ) if tls else ""
     proc = await asyncio.create_subprocess_shell(
-        f"granian --interface {interface} --port {port} "
-        f"--threads 1 --threading-mode {threading_mode} "
-        f"tests.apps.{interface}:app",
+        "".join([
+            f"granian --interface {interface} --port {port} ",
+            f"--threads 1 --threading-mode {threading_mode} ",
+            tls_opts,
+            f"tests.apps.{interface}:app"
+        ]),
         env=dict(os.environ)
     )
     await asyncio.sleep(1)
@@ -45,3 +54,8 @@ def rsgi_server(server_port):
 @pytest.fixture(scope="function")
 def server(server_port, request):
     return partial(_server, request.param, server_port)
+
+
+@pytest.fixture(scope="function")
+def server_tls(server_port, request):
+    return partial(_server, request.param, server_port, tls=True)

@@ -65,6 +65,8 @@ pub(crate) struct RSGIScope {
     proto: String,
     http_version: Version,
     #[pyo3(get)]
+    scheme: String,
+    #[pyo3(get)]
     method: String,
     uri: Uri,
     #[pyo3(get)]
@@ -79,6 +81,7 @@ impl RSGIScope {
     pub fn new(
         proto: &str,
         http_version: Version,
+        scheme: &str,
         uri: Uri,
         method: &str,
         server: SocketAddr,
@@ -88,6 +91,7 @@ impl RSGIScope {
         Self {
             proto: proto.to_string(),
             http_version: http_version,
+            scheme: scheme.to_string(),
             method: method.to_string(),
             uri: uri,
             server: server.to_string(),
@@ -112,11 +116,6 @@ impl RSGIScope {
             Version::HTTP_3 => "3",
             _ => "1"
         }
-    }
-
-    #[getter(scheme)]
-    fn get_scheme(&self) -> &str {
-        self.uri.scheme_str().unwrap_or("http")
     }
 
     #[getter(path)]

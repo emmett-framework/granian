@@ -9,6 +9,7 @@ mod callbacks;
 mod http;
 mod rsgi;
 mod runtime;
+mod tls;
 mod tcp;
 mod utils;
 mod workers;

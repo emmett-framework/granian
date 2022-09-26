@@ -1,9 +1,10 @@
+from pathlib import Path
 from typing import Optional
 
 import typer
 
 from .__version__ import __version__
-from .constants import Interfaces, ThreadModes
+from .constants import Interfaces, HTTPModes, ThreadModes
 from .server import Granian
 
 
@@ -25,6 +26,10 @@ def main(
         Interfaces.RSGI.value,
         help="Application interface type."
     ),
+    http: HTTPModes = typer.Option(
+        HTTPModes.auto.value,
+        help="HTTP version."
+    ),
     websockets: bool = typer.Option(
         True,
         "--ws/--no-ws",
@@ -41,6 +46,22 @@ def main(
         1024,
         min=128,
         help="Maximum number of connections to hold in backlog."
+    ),
+    ssl_keyfile: Optional[Path] = typer.Option(
+        None,
+        help="SSL key file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True
+    ),
+    ssl_certificate: Optional[Path] = typer.Option(
+        None,
+        help="SSL certificate file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True
     ),
     _: Optional[bool] = typer.Option(
         None,
@@ -59,5 +80,8 @@ def main(
         threads=threads,
         threading_mode=threading_mode,
         interface=interface,
-        websockets=websockets
+        http=http,
+        websockets=websockets,
+        ssl_cert=ssl_certificate,
+        ssl_key=ssl_keyfile
     ).serve()
