@@ -230,7 +230,6 @@ class Granian:
 
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)
-        sock.setblocking(False)
 
         def socket_loader():
             return sock

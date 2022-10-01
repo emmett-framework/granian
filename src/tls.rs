@@ -1,6 +1,7 @@
-use hyper::server::conn::{AddrIncoming, AddrStream};
-use std::{fs, io, net::TcpListener, sync::Arc};
-use tls_listener::hyper::WrappedAccept;
+use futures::stream::StreamExt;
+use hyper::server::{accept, conn::{AddrIncoming, AddrStream}};
+use std::{fs, future, io, iter::Iterator, net::TcpListener, sync::Arc};
+use tls_listener::{Error as TlsError, TlsListener};
 use tokio_rustls::{
     TlsAcceptor,
     rustls::{Certificate, PrivateKey, ServerConfig},
@@ -8,13 +9,24 @@ use tokio_rustls::{
 };
 
 
-pub(crate) type TlsListener = tls_listener::TlsListener<WrappedAccept<AddrIncoming>, TlsAcceptor>;
 pub(crate) type TlsAddrStream = TlsStream<AddrStream>;
 
-pub(crate) fn tls_listen(config: Arc<ServerConfig>, tcp: TcpListener) -> TlsListener {
-    let listener = tokio::net::TcpListener::from_std(tcp).unwrap();
-    let incoming = AddrIncoming::from_listener(listener).unwrap();
-    TlsListener::new_hyper(tokio_rustls::TlsAcceptor::from(config), incoming)
+pub(crate) fn tls_listen(
+    config: Arc<ServerConfig>,
+    tcp: TcpListener
+) -> impl accept::Accept<Conn=TlsAddrStream, Error=TlsError<io::Error, io::Error>> {
+    tcp.set_nonblocking(true).unwrap();
+    let tcp_listener = tokio::net::TcpListener::from_std(tcp).unwrap();
+    let incoming = AddrIncoming::from_listener(tcp_listener).unwrap();
+    let listener = TlsListener::new_hyper(TlsAcceptor::from(config), incoming).filter(|conn| {
+        if let Err(err) = conn {
+            println!("{:?}", err);
+            future::ready(false)
+        } else {
+            future::ready(true)
+        }
+    });
+    accept::from_stream(listener)
 }
 
 fn tls_error(err: String) -> io::Error {
