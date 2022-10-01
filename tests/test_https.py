@@ -3,11 +3,9 @@ import json
 import pathlib
 import pytest
 import ssl
-import sys
 import websockets
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="not working on win")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("server_tls", ["asgi", "rsgi"], indirect=True)
 @pytest.mark.parametrize("threading_mode", ["runtime", "workers"])
@@ -23,7 +21,6 @@ async def test_http_scope(server_tls, threading_mode):
     assert data['scheme'] == 'https'
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="not working on win")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("threading_mode", ["runtime", "workers"])
 async def test_asgi_ws_scope(asgi_server, threading_mode):
@@ -42,7 +39,6 @@ async def test_asgi_ws_scope(asgi_server, threading_mode):
     assert data['scheme'] == 'wss'
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="not working on win")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("threading_mode", ["runtime", "workers"])
 async def test_rsgi_ws_scope(rsgi_server, threading_mode):
