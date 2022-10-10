@@ -1,5 +1,4 @@
 import contextvars
-import os
 import multiprocessing
 import signal
 import socket
@@ -11,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ._granian import ASGIWorker, RSGIWorker
-from ._internal import CTX, load_target
+from ._internal import load_target
 from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, HTTPModes, ThreadModes
 from .log import LogLevels, configure_logging, logger
@@ -58,6 +57,7 @@ class Granian:
         self.log_level = log_level
         configure_logging(self.log_level)
         self.build_ssl_context(ssl_cert, ssl_key)
+        self._shd = None
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
         self.exit_event = threading.Event()
@@ -177,32 +177,13 @@ class Granian:
             shutdown_event.wait()
         )
 
-    @staticmethod
-    def _shared_socket_loader(pid):
-        return CTX.socks[pid]
-
-    @staticmethod
-    def _local_socket_builder(addr, port, backlog):
-        return SocketHolder.from_address(addr, port, backlog)
-
-    def _init_shared_socket(self, pid):
-        # if self.workers > 1:
-        CTX.socks[pid] = SocketHolder.from_address(
+    def _init_shared_socket(self):
+        self._shd = SocketHolder.from_address(
             self.bind_addr,
             self.bind_port,
             self.backlog
         )
-        self._sfd = CTX.socks[pid].get_fd()
-
-    def _build_socket_loader(self, pid):
-        if self.workers > 1:
-            return partial(self._shared_socket_loader, pid)
-        return partial(
-            self._local_socket_builder,
-            self.bind_addr,
-            self.bind_port,
-            self.backlog
-        )
+        self._sfd = self._shd.get_fd()
 
     def signal_handler(self, *args, **kwargs):
         self.exit_event.set()
@@ -215,6 +196,7 @@ class Granian:
         socket_loader
     ) -> multiprocessing.Process:
         return multiprocessing.get_context().Process(
+            name="granian-worker",
             target=target,
             args=(
                 id,
@@ -231,14 +213,15 @@ class Granian:
         )
 
     def startup(self, spawn_target, target_loader):
+        logger.info("Starting granian")
+
         for sig in self.SIGNALS:
             signal.signal(sig, self.signal_handler)
 
-        pid = os.getpid()
-        self._init_shared_socket(pid)
-
+        self._init_shared_socket()
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)
+        logger.info(f"Listening at: {self.bind_addr}:{self.bind_port}")
 
         def socket_loader():
             return sock
@@ -252,12 +235,12 @@ class Granian:
             )
             proc.start()
             self.procs.append(proc)
+            logger.info(f"Booting worker-{idx + 1} with pid: {proc.pid}")
 
     def shutdown(self):
-        logger.debug("send term")
+        logger.info("Shutting down granian")
         for proc in self.procs:
             proc.terminate()
-        logger.debug("joining")
         for proc in self.procs:
             proc.join()
 
@@ -269,11 +252,6 @@ class Granian:
         target_loader = target_loader or self._target_load
         spawn_target = spawn_target or default_spawners[self.interface]
 
-        # if self.workers > 1 and "fork" not in multiprocessing.get_all_start_methods():
-        #     raise RuntimeError("Multiple workers are not supported on current platform")
-
         self.startup(spawn_target, partial(target_loader, self.target, self.interface))
-        logger.info(f"started {self.procs}")
         self.exit_event.wait()
-        logger.debug("exit event received")
         self.shutdown()

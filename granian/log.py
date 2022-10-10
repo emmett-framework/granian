@@ -29,7 +29,7 @@ LOGGING_CONFIG = {
     "root": {"level": "INFO", "handlers": ["console"]},
     "formatters": {
         "generic": {
-            "class": "logging.Formatter",
+            "()": "logging.Formatter",
             "fmt": "[%(levelname)s] %(message)s",
             "datefmt": "[%Y-%m-%d %H:%M:%S %z]"
         }

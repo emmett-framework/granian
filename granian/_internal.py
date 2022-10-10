@@ -1,14 +1,10 @@
 import os
 import re
 import sys
-import threading
 import traceback
 
 from types import ModuleType
 from typing import Callable, List, Optional
-
-CTX = threading.local()
-CTX.socks = {}
 
 
 def get_import_components(path: str) -> List[Optional[str]]:

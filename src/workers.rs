@@ -182,7 +182,7 @@ macro_rules! serve_rth {
             );
 
             let worker_id = self.config.id;
-            log::info!("Listener spawned: {}", worker_id);
+            log::info!("Started worker-{}", worker_id);
 
             let svc_loop = crate::runtime::run_until_complete(
                 rt.handler(),
@@ -201,6 +201,7 @@ macro_rules! serve_rth {
                             crate::runtime::into_future(signal_rx.as_ref(py)).unwrap()
                         }).await.unwrap();
                     }).await.unwrap();
+                    log::info!("Stopping worker-{}", worker_id);
                     Ok(())
                 }
             );
@@ -238,7 +239,7 @@ macro_rules! serve_rth_ssl {
             );
 
             let worker_id = self.config.id;
-            log::info!("Listener spawned: {}", worker_id);
+            log::info!("Started worker-{}", worker_id);
 
             let svc_loop = crate::runtime::run_until_complete(
                 rt.handler(),
@@ -261,6 +262,7 @@ macro_rules! serve_rth_ssl {
                             crate::runtime::into_future(signal_rx.as_ref(py)).unwrap()
                         }).await.unwrap();
                     }).await.unwrap();
+                    log::info!("Stopping worker-{}", worker_id);
                     Ok(())
                 }
             );
@@ -289,7 +291,7 @@ macro_rules! serve_wth {
             let rtm = crate::runtime::init_runtime_mt(1);
 
             let worker_id = self.config.id;
-            log::info!("Process spawned: {}", worker_id);
+            log::info!("Started worker-{}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(
                 callback, event_loop, context
@@ -298,7 +300,7 @@ macro_rules! serve_wth {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
-                log::info!("Worker spawned: {}", thread_id);
+                log::info!("Started worker-{} runtime-{}", worker_id, thread_id);
 
                 let tcp_listener = self.config.tcp_listener();
                 let http1_only = self.config.http_mode == "1";
@@ -325,6 +327,7 @@ macro_rules! serve_wth {
                         server.with_graceful_shutdown(async move {
                             srx.changed().await.unwrap();
                         }).await.unwrap();
+                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id);
                     });
                 }));
             };
@@ -337,6 +340,7 @@ macro_rules! serve_wth {
                         crate::runtime::into_future(signal_rx.as_ref(py)).unwrap()
                     }).await.unwrap();
                     stx.send(true).unwrap();
+                    log::info!("Stopping worker-{}", worker_id);
                     while let Some(worker) = workers.pop() {
                         worker.join().unwrap();
                     }
@@ -368,7 +372,7 @@ macro_rules! serve_wth_ssl {
             let rtm = crate::runtime::init_runtime_mt(1);
 
             let worker_id = self.config.id;
-            log::info!("Process spawned: {}", worker_id);
+            log::info!("Started worker-{}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(
                 callback, event_loop, context
@@ -377,7 +381,7 @@ macro_rules! serve_wth_ssl {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
-                log::info!("Worker spawned: {}", thread_id);
+                log::info!("Started worker-{} runtime-{}", worker_id, thread_id);
 
                 let tcp_listener = self.config.tcp_listener();
                 let http1_only = self.config.http_mode == "1";
@@ -409,6 +413,7 @@ macro_rules! serve_wth_ssl {
                         server.with_graceful_shutdown(async move {
                             srx.changed().await.unwrap();
                         }).await.unwrap();
+                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id);
                     });
                 }));
             };
@@ -421,6 +426,7 @@ macro_rules! serve_wth_ssl {
                         crate::runtime::into_future(signal_rx.as_ref(py)).unwrap()
                     }).await.unwrap();
                     stx.send(true).unwrap();
+                    log::info!("Stopping worker-{}", worker_id);
                     while let Some(worker) = workers.pop() {
                         worker.join().unwrap();
                     }
