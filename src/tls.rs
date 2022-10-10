@@ -20,7 +20,7 @@ pub(crate) fn tls_listen(
     let incoming = AddrIncoming::from_listener(tcp_listener).unwrap();
     let listener = TlsListener::new_hyper(TlsAcceptor::from(config), incoming).filter(|conn| {
         if let Err(err) = conn {
-            println!("{:?}", err);
+            log::warn!("Invalid TLS request received: {:?}", err);
             future::ready(false)
         } else {
             future::ready(true)

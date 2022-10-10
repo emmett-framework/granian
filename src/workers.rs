@@ -170,6 +170,7 @@ macro_rules! serve_rth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
+            pyo3_log::init();
             let rt = crate::runtime::init_runtime_mt(self.config.threads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
@@ -181,7 +182,7 @@ macro_rules! serve_rth {
             );
 
             let worker_id = self.config.id;
-            println!("Listener spawned: {}", worker_id);
+            log::info!("Listener spawned: {}", worker_id);
 
             let svc_loop = crate::runtime::run_until_complete(
                 rt.handler(),
@@ -207,7 +208,7 @@ macro_rules! serve_rth {
             match svc_loop {
                 Ok(_) => {}
                 Err(err) => {
-                    println!("err: {}", err);
+                    log::error!("{}", err);
                     std::process::exit(1);
                 }
             };
@@ -224,6 +225,7 @@ macro_rules! serve_rth_ssl {
             context: &PyAny,
             signal_rx: PyObject
         ) {
+            pyo3_log::init();
             let rt = crate::runtime::init_runtime_mt(self.config.threads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
@@ -236,7 +238,7 @@ macro_rules! serve_rth_ssl {
             );
 
             let worker_id = self.config.id;
-            println!("Listener spawned: {}", worker_id);
+            log::info!("Listener spawned: {}", worker_id);
 
             let svc_loop = crate::runtime::run_until_complete(
                 rt.handler(),
@@ -266,7 +268,7 @@ macro_rules! serve_rth_ssl {
             match svc_loop {
                 Ok(_) => {}
                 Err(err) => {
-                    println!("err: {}", err);
+                    log::error!("{}", err);
                     std::process::exit(1);
                 }
             };
@@ -283,10 +285,11 @@ macro_rules! serve_wth {
             context: &PyAny,
             signal_rx: PyObject
         ) {
+            pyo3_log::init();
             let rtm = crate::runtime::init_runtime_mt(1);
 
             let worker_id = self.config.id;
-            println!("Process spawned: {}", worker_id);
+            log::info!("Process spawned: {}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(
                 callback, event_loop, context
@@ -295,7 +298,7 @@ macro_rules! serve_wth {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
-                println!("Worker spawned: {}", thread_id);
+                log::info!("Worker spawned: {}", thread_id);
 
                 let tcp_listener = self.config.tcp_listener();
                 let http1_only = self.config.http_mode == "1";
@@ -344,7 +347,7 @@ macro_rules! serve_wth {
             match main_loop {
                 Ok(_) => {}
                 Err(err) => {
-                    println!("err: {}", err);
+                    log::error!("{}", err);
                     std::process::exit(1);
                 }
             };
@@ -361,10 +364,11 @@ macro_rules! serve_wth_ssl {
             context: &PyAny,
             signal_rx: PyObject
         ) {
+            pyo3_log::init();
             let rtm = crate::runtime::init_runtime_mt(1);
 
             let worker_id = self.config.id;
-            println!("Process spawned: {}", worker_id);
+            log::info!("Process spawned: {}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(
                 callback, event_loop, context
@@ -373,7 +377,7 @@ macro_rules! serve_wth_ssl {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
-                println!("Worker spawned: {}", thread_id);
+                log::info!("Worker spawned: {}", thread_id);
 
                 let tcp_listener = self.config.tcp_listener();
                 let http1_only = self.config.http_mode == "1";
@@ -427,7 +431,7 @@ macro_rules! serve_wth_ssl {
             match main_loop {
                 Ok(_) => {}
                 Err(err) => {
-                    println!("err: {}", err);
+                    log::error!("{}", err);
                     std::process::exit(1);
                 }
             };

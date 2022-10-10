@@ -5,6 +5,7 @@ import typer
 
 from .__version__ import __version__
 from .constants import Interfaces, HTTPModes, ThreadModes
+from .log import LogLevels
 from .server import Granian
 
 
@@ -47,6 +48,11 @@ def main(
         min=128,
         help="Maximum number of connections to hold in backlog."
     ),
+    log_level: LogLevels = typer.Option(
+        LogLevels.info.value,
+        help="Log level",
+        case_sensitive=False
+    ),
     ssl_keyfile: Optional[Path] = typer.Option(
         None,
         help="SSL key file",
@@ -82,6 +88,7 @@ def main(
         interface=interface,
         http=http,
         websockets=websockets,
+        log_level=log_level,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile
     ).serve()

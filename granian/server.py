@@ -14,6 +14,7 @@ from ._granian import ASGIWorker, RSGIWorker
 from ._internal import CTX, load_target
 from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, HTTPModes, ThreadModes
+from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
 from .rsgi import callback_wrapper as _rsgi_call_wrap
 
@@ -36,6 +37,7 @@ class Granian:
         interface: Interfaces = Interfaces.RSGI,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
+        log_level: LogLevels = LogLevels.info,
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None
     ):
@@ -53,6 +55,8 @@ class Granian:
         self.interface = interface
         self.http = http
         self.websockets = websockets
+        self.log_level = log_level
+        configure_logging(self.log_level)
         self.build_ssl_context(ssl_cert, ssl_key)
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
@@ -92,10 +96,12 @@ class Granian:
         http_mode,
         http1_buffer_size,
         websockets,
+        log_level,
         ssl_ctx
     ):
         from granian._loops import loops, set_loop_signals
 
+        configure_logging(log_level)
         loop = loops.get("auto")
         sfd = socket.fileno()
         callback = callback_loader()
@@ -139,10 +145,12 @@ class Granian:
         http_mode,
         http1_buffer_size,
         websockets,
+        log_level,
         ssl_ctx
     ):
         from granian._loops import loops, set_loop_signals
 
+        configure_logging(log_level)
         loop = loops.get("auto")
         sfd = socket.fileno()
         callback = callback_loader()
@@ -217,6 +225,7 @@ class Granian:
                 self.http,
                 self.http1_buffer_size,
                 self.websockets,
+                self.log_level,
                 self.ssl_ctx
             )
         )
@@ -245,10 +254,10 @@ class Granian:
             self.procs.append(proc)
 
     def shutdown(self):
-        print("send term")
+        logger.debug("send term")
         for proc in self.procs:
             proc.terminate()
-        print("joining")
+        logger.debug("joining")
         for proc in self.procs:
             proc.join()
 
@@ -264,7 +273,7 @@ class Granian:
         #     raise RuntimeError("Multiple workers are not supported on current platform")
 
         self.startup(spawn_target, partial(target_loader, self.target, self.interface))
-        print("started", self.procs)
+        logger.info(f"started {self.procs}")
         self.exit_event.wait()
-        print("exit event received")
+        logger.debug("exit event received")
         self.shutdown()

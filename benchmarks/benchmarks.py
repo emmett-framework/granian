@@ -31,12 +31,12 @@ def app(name, procs=None, threads=None, thmode=None):
             f"--http httptools --workers {procs} app.asgi:app"
         ),
         "asgi": (
-            "granian --interface asgi --no-ws "
+            "granian --interface asgi --no-ws --log-level warning "
             f"--workers {procs} --threads {athreads} --threading-mode {thmode} "
             "app.asgi:app"
         ),
         "rsgi": (
-            "granian --interface rsgi --no-ws "
+            "granian --interface rsgi --no-ws --log-level warning "
             f"--workers {procs} --threads {rthreads} --threading-mode {thmode} "
             "app.rsgi:app"
         )
