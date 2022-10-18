@@ -82,13 +82,6 @@ class Granian:
         self.ssl_ctx = (True, str(cert.resolve()), str(key.resolve()))
 
     @staticmethod
-    def _target_load(target: str, interface: Interfaces):
-        obj = load_target(target)
-        if interface == Interfaces.RSGI and hasattr(obj, '__rsgi__'):
-            obj = getattr(obj, '__rsgi__')
-        return obj
-
-    @staticmethod
     def _spawn_asgi_worker(
         worker_id,
         callback_loader,
@@ -157,9 +150,18 @@ class Granian:
         configure_logging(log_level)
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
-        callback = callback_loader()
+        target = callback_loader()
+        callback = (
+            getattr(target, '__rsgi__') if hasattr(target, '__rsgi__') else
+            target
+        )
+        callback_init = (
+            getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else
+            lambda *args, **kwargs: None
+        )
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+        callback_init(loop)
 
         worker = RSGIWorker(
             worker_id,
@@ -233,7 +235,7 @@ class Granian:
 
         for idx in range(self.workers):
             proc = self._spawn_proc(
-                id=idx,
+                id=idx + 1,
                 target=spawn_target,
                 callback_loader=target_loader,
                 socket_loader=socket_loader
@@ -254,9 +256,9 @@ class Granian:
             Interfaces.ASGI: self._spawn_asgi_worker,
             Interfaces.RSGI: self._spawn_rsgi_worker
         }
-        target_loader = target_loader or self._target_load
+        target_loader = target_loader or load_target
         spawn_target = spawn_target or default_spawners[self.interface]
 
-        self.startup(spawn_target, partial(target_loader, self.target, self.interface))
+        self.startup(spawn_target, partial(target_loader, self.target))
         self.exit_event.wait()
         self.shutdown()

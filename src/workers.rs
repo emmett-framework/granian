@@ -300,7 +300,7 @@ macro_rules! serve_wth {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
-                log::info!("Started worker-{} runtime-{}", worker_id, thread_id);
+                log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);
 
                 let tcp_listener = self.config.tcp_listener();
                 let http1_only = self.config.http_mode == "1";
@@ -327,7 +327,7 @@ macro_rules! serve_wth {
                         server.with_graceful_shutdown(async move {
                             srx.changed().await.unwrap();
                         }).await.unwrap();
-                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id);
+                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
                     });
                 }));
             };
@@ -381,7 +381,7 @@ macro_rules! serve_wth_ssl {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             for thread_id in 0..self.config.threads {
-                log::info!("Started worker-{} runtime-{}", worker_id, thread_id);
+                log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);
 
                 let tcp_listener = self.config.tcp_listener();
                 let http1_only = self.config.http_mode == "1";
@@ -413,7 +413,7 @@ macro_rules! serve_wth_ssl {
                         server.with_graceful_shutdown(async move {
                             srx.changed().await.unwrap();
                         }).await.unwrap();
-                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id);
+                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
                     });
                 }));
             };
