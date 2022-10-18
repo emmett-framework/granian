@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyString};
 use std::net::SocketAddr;
 
+
 #[pyclass(module="granian._granian")]
 #[derive(Clone)]
 pub(crate) struct RSGIHeaders {
@@ -65,6 +66,8 @@ pub(crate) struct RSGIScope {
     proto: String,
     http_version: Version,
     #[pyo3(get)]
+    rsgi_version: String,
+    #[pyo3(get)]
     scheme: String,
     #[pyo3(get)]
     method: String,
@@ -91,6 +94,7 @@ impl RSGIScope {
         Self {
             proto: proto.to_string(),
             http_version: http_version,
+            rsgi_version: "1.0".to_string(),
             scheme: scheme.to_string(),
             method: method.to_string(),
             uri: uri,

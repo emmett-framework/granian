@@ -28,6 +28,7 @@ class RSGIHeaders:
 class RSGIScope:
     proto: str
     http_version: str
+    rsgi_version: str
     client: str
     scheme: str
     method: str
