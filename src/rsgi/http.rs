@@ -6,7 +6,7 @@ use hyper::{
     header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
     http::response::Builder as ResponseBuilder
 };
-use std::{collections::HashMap, net::SocketAddr};
+use std::net::SocketAddr;
 use tokio::{fs::File, sync::mpsc};
 use tokio_util::codec::{BytesCodec, FramedRead};
 
@@ -33,7 +33,7 @@ pub trait HTTPResponseData {}
 
 pub struct HTTPResponse<R: HTTPResponseData> {
     status: i32,
-    headers: HashMap<String, String>,
+    headers: Vec<(String, String)>,
     response_data: R
 }
 
@@ -42,10 +42,10 @@ impl<T: HTTPResponseData> HTTPResponse<T> {
         let mut builder = Response::builder().status(self.status as u16);
         let headers = builder.headers_mut().unwrap();
         headers.insert(HK_SERVER, HV_SERVER);
-        for (key, value) in self.headers.iter() {
-            headers.insert(
-                HeaderName::from_bytes(&key.clone().into_bytes()).unwrap(),
-                HeaderValue::from_str(&value.clone().as_str()).unwrap()
+        for (key, value) in &self.headers {
+            headers.append(
+                HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                HeaderValue::from_str(value.as_str()).unwrap()
             );
         };
         builder
@@ -69,7 +69,7 @@ pub struct HTTPEmptyResponse {}
 impl HTTPResponseData for HTTPEmptyResponse {}
 
 impl HTTPResponse<HTTPEmptyResponse> {
-    pub fn new(status: i32, headers: HashMap<String, String>) -> Self {
+    pub fn new(status: i32, headers: Vec<(String, String)>) -> Self {
         Self {
             status: status,
             headers: headers,
@@ -95,7 +95,7 @@ impl HTTPResponse<HTTPEmptyResponse> {
 // impl HTTPResponseData for HTTPBodyResponse {}
 
 // impl HTTPResponse<HTTPBodyResponse> {
-//     pub fn new(status: i32, headers: HashMap<String, String>) -> Self {
+//     pub fn new(status: i32, headers: Vec<(String, String)>) -> Self {
 //         Self {
 //             status: status,
 //             headers: headers,
@@ -124,7 +124,7 @@ impl HTTPFileResponse {
 impl HTTPResponseData for HTTPFileResponse {}
 
 impl HTTPResponse<HTTPFileResponse> {
-    pub fn new(status: i32, headers: HashMap<String, String>, file_path: String) -> Self {
+    pub fn new(status: i32, headers: Vec<(String, String)>, file_path: String) -> Self {
         Self {
             status: status,
             headers: headers,

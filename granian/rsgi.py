@@ -34,13 +34,13 @@ class WebsocketMessage:
 RSGIResponse = namedtuple(
     "RSGIResponse",
     ["mode", "status", "headers", "bytes_data", "str_data", "file_path"],
-    defaults=[ResponseType.empty, 200, {}, None, None, None]
+    defaults=[ResponseType.empty, 200, [], None, None, None]
 )
 
 
 class Response:
     @classmethod
-    def empty(cls, status=200, headers={}):
+    def empty(cls, status=200, headers=[]):
         return RSGIResponse(
             ResponseType.empty,
             status,
@@ -48,7 +48,7 @@ class Response:
         )
 
     @classmethod
-    def bytes(cls, data, status=200, headers={}):
+    def bytes(cls, data, status=200, headers=[]):
         return RSGIResponse(
             ResponseType.bytes,
             status,
@@ -57,7 +57,7 @@ class Response:
         )
 
     @classmethod
-    def str(cls, data, status=200, headers={}):
+    def str(cls, data, status=200, headers=[]):
         return RSGIResponse(
             ResponseType.string,
             status,
@@ -66,7 +66,7 @@ class Response:
         )
 
     @classmethod
-    def file(cls, data, status=200, headers={}):
+    def file(cls, data, status=200, headers=[]):
         return RSGIResponse(
             ResponseType.file_path,
             status,

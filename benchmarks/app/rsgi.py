@@ -2,7 +2,7 @@ import sys
 
 from granian.rsgi import Response
 
-HEADERS = {'content-type': 'text/plain; charset=utf-8'}
+HEADERS = [('content-type', 'text/plain; charset=utf-8')]
 
 BODY_BYTES_SHORT = b"Test"
 BODY_BYTES_LONG = b"Test" * 20_000

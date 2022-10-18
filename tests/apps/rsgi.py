@@ -14,13 +14,14 @@ async def info(scope: Scope, _):
         json.dumps({
             'proto': scope.proto,
             'http_version': scope.http_version,
+            'rsgi_version': scope.rsgi_version,
             'scheme': scope.scheme,
             'method': scope.method,
             'path': scope.path,
             'query_string': scope.query_string,
             'headers': {k: v for k, v in scope.headers.items()}
         }).encode("utf8"),
-        headers={'content-type': 'application/json'}
+        headers=[('content-type', 'application/json')]
     )
 
 
@@ -28,7 +29,7 @@ async def echo(_, protocol: HTTPProtocol):
     msg = await protocol()
     return Response.bytes(
         msg,
-        headers={'content-type': 'text/plain; charset=utf-8'}
+        headers=[('content-type', 'text/plain; charset=utf-8')]
     )
 
 
@@ -36,12 +37,13 @@ async def ws_reject(_, protocol: WebsocketProtocol):
     return protocol.close(403)
 
 
-async def ws_info(scope, protocol: WebsocketProtocol):
+async def ws_info(scope: Scope, protocol: WebsocketProtocol):
     trx = await protocol.accept()
 
     await trx.send_str(json.dumps({
         'proto': scope.proto,
         'http_version': scope.http_version,
+        'rsgi_version': scope.rsgi_version,
         'scheme': scope.scheme,
         'method': scope.method,
         'path': scope.path,

@@ -1,5 +1,4 @@
 use pyo3::prelude::*;
-use std::collections::HashMap;
 use tokio::sync::oneshot;
 
 use crate::callbacks::CallbackWrapper;
@@ -14,7 +13,7 @@ use super::{
 pub(crate) struct CallbackResponse {
     pub mode: u32,
     pub status: i32,
-    pub headers: HashMap<String, String>,
+    pub headers: Vec<(String, String)>,
     pub bytes_data: Option<Vec<u8>>,
     pub str_data: Option<String>,
     pub file_path: Option<String>
