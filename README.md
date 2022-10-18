@@ -13,7 +13,7 @@ The main reasons behind Granian design are:
 
 ## Features
 
-- Supports ASGI/3 and RSGI interface applications
+- Supports ASGI/3 and [RSGI](https://github.com/emmett-framework/granian/blob/master/docs/spec/RSGI.md) interface applications
 - Implements HTTP/1 and HTTP/2 protocols
 - Supports HTTPS
 - Supports websockets over HTTP/1 and HTTP/2
