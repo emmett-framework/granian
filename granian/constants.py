@@ -15,3 +15,9 @@ class HTTPModes(str, Enum):
 class ThreadModes(str, Enum):
     runtime = "runtime"
     workers = "workers"
+
+
+class Loops(str, Enum):
+    auto = "auto"
+    asyncio = "asyncio"
+    uvloop = "uvloop"

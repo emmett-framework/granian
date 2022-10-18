@@ -4,7 +4,7 @@ from typing import Optional
 import typer
 
 from .__version__ import __version__
-from .constants import Interfaces, HTTPModes, ThreadModes
+from .constants import Interfaces, HTTPModes, Loops, ThreadModes
 from .log import LogLevels
 from .server import Granian
 
@@ -43,6 +43,7 @@ def main(
         ThreadModes.runtime.value,
         help="Threading mode to use."
     ),
+    loop: Loops = typer.Option(Loops.auto.value, help="Event loop implementation"),
     backlog: int = typer.Option(
         1024,
         min=128,
@@ -81,13 +82,14 @@ def main(
         app,
         address=host,
         port=port,
+        interface=interface,
         workers=workers,
-        backlog=backlog,
         threads=threads,
         threading_mode=threading_mode,
-        interface=interface,
+        loop=loop,
         http=http,
         websockets=websockets,
+        backlog=backlog,
         log_level=log_level,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile

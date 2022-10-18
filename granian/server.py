@@ -12,7 +12,7 @@ from typing import List, Optional
 from ._granian import ASGIWorker, RSGIWorker
 from ._internal import load_target
 from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
-from .constants import Interfaces, HTTPModes, ThreadModes
+from .constants import Interfaces, HTTPModes, Loops, ThreadModes
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
 from .rsgi import callback_wrapper as _rsgi_call_wrap
@@ -28,14 +28,15 @@ class Granian:
         target: str,
         address: str = "127.0.0.1",
         port: int = 8000,
+        interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
-        backlog: int = 1024,
         threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.runtime,
-        http1_buffer_size: int = 65535,
-        interface: Interfaces = Interfaces.RSGI,
+        loop: Loops = Loops.auto,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
+        backlog: int = 1024,
+        http1_buffer_size: int = 65535,
         log_level: LogLevels = LogLevels.info,
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None
@@ -43,17 +44,18 @@ class Granian:
         self.target = target
         self.bind_addr = address
         self.bind_port = port
+        self.interface = interface
         self.workers = max(1, workers)
-        self.backlog = max(128, backlog)
         self.threads = (
             max(1, threads) if threads is not None else
             max(2, multiprocessing.cpu_count() // workers)
         )
         self.threading_mode = threading_mode
-        self.http1_buffer_size = http1_buffer_size
-        self.interface = interface
+        self.loop = loop
         self.http = http
         self.websockets = websockets
+        self.backlog = max(128, backlog)
+        self.http1_buffer_size = http1_buffer_size
         self.log_level = log_level
         configure_logging(self.log_level)
         self.build_ssl_context(ssl_cert, ssl_key)
@@ -91,6 +93,7 @@ class Granian:
         worker_id,
         callback_loader,
         socket,
+        loop_impl,
         threads,
         threading_mode,
         http_mode,
@@ -102,7 +105,7 @@ class Granian:
         from granian._loops import loops, set_loop_signals
 
         configure_logging(log_level)
-        loop = loops.get("auto")
+        loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
         lifespan_handler = LifespanProtocol(callback)
@@ -140,6 +143,7 @@ class Granian:
         worker_id,
         callback_loader,
         socket,
+        loop_impl,
         threads,
         threading_mode,
         http_mode,
@@ -151,7 +155,7 @@ class Granian:
         from granian._loops import loops, set_loop_signals
 
         configure_logging(log_level)
-        loop = loops.get("auto")
+        loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
 
@@ -202,6 +206,7 @@ class Granian:
                 id,
                 callback_loader,
                 socket_loader(),
+                self.loop,
                 self.threads,
                 self.threading_mode,
                 self.http,
