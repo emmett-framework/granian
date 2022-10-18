@@ -15,9 +15,12 @@ async def test_scope(rsgi_server, threading_mode):
         res = httpx.get(f"http://localhost:{port}/info?test=true")
 
     assert res.status_code == 200
+    assert res.headers["content-type"] == "application/json"
+
     data = res.json()
     assert data['proto'] == "http"
     assert data['http_version'] == '1.1'
+    assert data['rsgi_version'] == '1.0'
     assert data['scheme'] == 'http'
     assert data['method'] == "GET"
     assert data['path'] == '/info'

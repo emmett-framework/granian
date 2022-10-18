@@ -15,6 +15,8 @@ async def test_scope(asgi_server, threading_mode):
         res = httpx.get(f"http://localhost:{port}/info?test=true")
 
     assert res.status_code == 200
+    assert res.headers["content-type"] == "application/json"
+
     data = res.json()
     assert data['asgi'] == {
         'version': '3.0',
