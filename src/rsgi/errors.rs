@@ -62,8 +62,15 @@ impl std::convert::From<ApplicationError> for PyErr {
 
 macro_rules! error_proto {
     () => {
-        Err(RSGIProtocolError.into())
+        Err(super::errors::RSGIProtocolError.into())
+    };
+}
+
+macro_rules! error_app {
+    () => {
+        Err(super::errors::ApplicationError.into())
     };
 }
 
 pub(crate) use error_proto;
+pub(crate) use error_app;

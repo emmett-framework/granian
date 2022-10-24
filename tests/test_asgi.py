@@ -45,3 +45,33 @@ async def test_body(asgi_server, threading_mode):
 
     assert res.status_code == 200
     assert res.text == "test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
+async def test_app_error(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f"http://localhost:{port}/err_app")
+
+    assert res.status_code == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
+async def test_protocol_error(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f"http://localhost:{port}/err_proto")
+
+    assert res.status_code == 500

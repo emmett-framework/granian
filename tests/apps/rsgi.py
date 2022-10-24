@@ -73,11 +73,21 @@ async def ws_echo(_, protocol: WebsocketProtocol):
     return protocol.close()
 
 
+async def err_app(scope: Scope, protocol: HTTPProtocol):
+    1 / 0
+
+
+async def err_proto(scope: Scope, protocol: HTTPProtocol):
+    return "bad"
+
+
 def app(scope, protocol):
     return {
         "/info": info,
         "/echo": echo,
         "/ws_reject": ws_reject,
         "/ws_info": ws_info,
-        "/ws_echo": ws_echo
+        "/ws_echo": ws_echo,
+        "/err_app": err_app,
+        "/err_proto": err_proto
     }[scope.path](scope, protocol)

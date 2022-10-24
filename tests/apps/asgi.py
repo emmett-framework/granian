@@ -85,11 +85,21 @@ async def ws_echo(scope, receive, send):
         })
 
 
+async def err_app(scope, receive, send):
+    1 / 0
+
+
+async def err_proto(scope, receive, send):
+    await send({'type': 'wrong.msg'})
+
+
 def app(scope, receive, send):
     return {
         "/info": info,
         "/echo": echo,
         "/ws_reject": ws_reject,
         "/ws_info": ws_info,
-        "/ws_echo": ws_echo
+        "/ws_echo": ws_echo,
+        "/err_app": err_app,
+        "/err_proto": err_proto
     }[scope['path']](scope, receive, send)

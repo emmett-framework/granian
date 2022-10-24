@@ -55,6 +55,10 @@ pub(crate) async fn call(
 
     match rx.await {
         Ok(true) => Ok(()),
+        Ok(false) => {
+            log::warn!("Application callable raised an exception");
+            error_flow!()
+        },
         _ => error_flow!()
     }
 }

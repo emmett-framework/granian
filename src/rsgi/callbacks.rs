@@ -3,13 +3,13 @@ use tokio::sync::oneshot;
 
 use crate::callbacks::CallbackWrapper;
 use super::{
-    errors::ApplicationError,
+    errors::{error_proto, error_app},
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
     types::RSGIScope as Scope
 };
 
 
-#[derive(FromPyObject)]
+#[derive(FromPyObject, Debug)]
 pub(crate) struct CallbackResponse {
     pub mode: u32,
     pub status: i32,
@@ -21,7 +21,7 @@ pub(crate) struct CallbackResponse {
 
 #[pyclass]
 pub(crate) struct CallbackResponseWatcher {
-    tx: Option<oneshot::Sender<CallbackResponse>>,
+    tx: Option<oneshot::Sender<Option<CallbackResponse>>>,
     #[pyo3(get)]
     event_loop: PyObject,
     #[pyo3(get)]
@@ -32,7 +32,7 @@ impl CallbackResponseWatcher {
     pub fn new(
         py: Python,
         cb: CallbackWrapper,
-        tx: oneshot::Sender<CallbackResponse>
+        tx: oneshot::Sender<Option<CallbackResponse>>
     ) -> Self {
         Self {
             tx: Some(tx),
@@ -46,8 +46,22 @@ impl CallbackResponseWatcher {
 impl CallbackResponseWatcher {
     fn done(&mut self, py: Python, result: PyObject) -> PyResult<()> {
         if let Some(tx) = self.tx.take() {
-            // FIXME: handle failure
-            let _ = tx.send(result.extract(py)?);
+            match result.extract(py) {
+                Ok(res) => {
+                    let _ = tx.send(res);
+                    return Ok(())
+                },
+                _ => {
+                    let _ = tx.send(None);
+                }
+            }
+        };
+        error_proto!()
+    }
+
+    fn err(&mut self) -> PyResult<()> {
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send(None);
         };
         Ok(())
     }
@@ -55,7 +69,7 @@ impl CallbackResponseWatcher {
 
 #[pyclass]
 pub(crate) struct CallbackProtocolWatcher {
-    tx: Option<oneshot::Sender<(i32, bool)>>,
+    tx: Option<oneshot::Sender<Option<(i32, bool)>>>,
     #[pyo3(get)]
     event_loop: PyObject,
     #[pyo3(get)]
@@ -66,7 +80,7 @@ impl CallbackProtocolWatcher {
     pub fn new(
         py: Python,
         cb: CallbackWrapper,
-        tx: oneshot::Sender<(i32, bool)>
+        tx: oneshot::Sender<Option<(i32, bool)>>
     ) -> Self {
         Self {
             tx: Some(tx),
@@ -80,8 +94,22 @@ impl CallbackProtocolWatcher {
 impl CallbackProtocolWatcher {
     fn done(&mut self, py: Python, result: PyObject) -> PyResult<()> {
         if let Some(tx) = self.tx.take() {
-            // FIXME: handle failure
-            let _ = tx.send(result.extract(py)?);
+            match result.extract(py) {
+                Ok(res) => {
+                    let _ = tx.send(res);
+                    return Ok(())
+                },
+                _ => {
+                    let _ = tx.send(None);
+                }
+            }
+        };
+        error_proto!()
+    }
+
+    fn err(&mut self) -> PyResult<()> {
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send(None);
         };
         Ok(())
     }
@@ -99,8 +127,19 @@ pub(crate) async fn call_response(
     })?;
 
     match rx.await {
-        Ok(v) => Ok(v),
-        _ => Err(ApplicationError.into())
+        Ok(res) => {
+            match res {
+                Some(res) => Ok(res),
+                _ => {
+                    log::warn!("Application failed to return a response");
+                    error_app!()
+                }
+            }
+        },
+        _ => {
+            log::error!("RSGI protocol failure");
+            error_proto!()
+        }
     }
 }
 
@@ -116,7 +155,18 @@ pub(crate) async fn call_protocol(
     })?;
 
     match rx.await {
-        Ok(v) => Ok(v),
-        _ => Err(ApplicationError.into())
+        Ok(res) => {
+            match res {
+                Some(res) => Ok(res),
+                _ => {
+                    log::warn!("Application failed to close protocol");
+                    error_app!()
+                }
+            }
+        },
+        _ => {
+            log::error!("RSGI protocol failure");
+            error_proto!()
+        }
     }
 }

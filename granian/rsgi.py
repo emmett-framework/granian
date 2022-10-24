@@ -95,6 +95,7 @@ def future_handler(watcher):
         try:
             res = task.result()
         except Exception:
-            res = None
+            watcher.err()
+            raise
         watcher.done(res)
     return handler

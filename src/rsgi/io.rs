@@ -12,7 +12,7 @@ use crate::{
     runtime::{RuntimeRef, future_into_py},
     ws::{HyperWebsocket, UpgradeData}
 };
-use super::errors::{RSGIProtocolError, error_proto};
+use super::errors::error_proto;
 
 
 #[pyclass(module="granian._granian")]

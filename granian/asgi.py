@@ -141,7 +141,8 @@ def future_handler(watcher):
     def handler(task):
         try:
             task.result()
-            watcher.done(True)
         except Exception:
             watcher.done(False)
+            raise
+        watcher.done(True)
     return handler
