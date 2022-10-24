@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "granian"
-version = "0.1.0-beta.2"
+version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
