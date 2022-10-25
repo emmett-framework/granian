@@ -3,23 +3,27 @@ name: benchmarks
 on: workflow_dispatch
 
 env:
-  MATURIN_VERSION: 0.12.19
+  MATURIN_VERSION: 0.13.6
 
 jobs:
   benchmarks:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11']
 
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: "3.10"
+        python-version: ${{ matrix.python-version }}
     - uses: messense/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
-        args: --release --strip --no-sdist --interpreter python3.10
+        args: --release --strip --interpreter python${{ matrix.python-version }}
         target: x64
         manylinux: auto
         container: off
@@ -27,7 +31,7 @@ jobs:
       run: |
         export _whl=$(ls target/wheels/granian-*.whl)
         pip install $_whl
-        pip install uvicorn==0.17.6
+        pip install uvicorn==0.19.0
         pip install httptools
     - name: wrk
       run: |
@@ -44,5 +48,5 @@ jobs:
     - name: Upload results
       uses: actions/upload-artifact@v2
       with:
-        name: results
+        name: results-${{ matrix.python-version }}
         path: benchmarks/results/*

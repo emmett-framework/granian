@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 
 CPU = multiprocessing.cpu_count()
-CONCURRENCIES = [CPU * 2 ** i for i in range(3, 7)]
+WRK_CONCURRENCIES = [CPU * 2 ** i for i in range(3, 7)]
 
 
 @contextmanager
@@ -48,7 +48,7 @@ def app(name, procs=None, threads=None, thmode=None):
 
 
 def wrk(duration, concurrency, endpoint):
-    threads = max(4, CPU // 2)
+    threads = max(2, CPU // 2)
     proc = subprocess.run(
         f"wrk -d{duration}s -H \"Connection: keep-alive\" -t{threads} -c{concurrency} "
         f"-s wrk.lua http://localhost:8000/{endpoint}",
@@ -67,34 +67,36 @@ def benchmark(endpoint):
     results = {}
     # primer
     wrk(5, 8, endpoint)
-    time.sleep(5)
+    time.sleep(2)
     # warmup
-    wrk(10, max(CONCURRENCIES), endpoint)
-    time.sleep(5)
+    wrk(5, max(WRK_CONCURRENCIES), endpoint)
+    time.sleep(3)
     # bench
-    for concurrency in CONCURRENCIES:
+    for concurrency in WRK_CONCURRENCIES:
         res = wrk(15, concurrency, endpoint)
         results[concurrency] = res
         time.sleep(3)
-    time.sleep(5)
+    time.sleep(2)
     return results
 
 
-def procs_threads():
+def concurrencies():
     results = {}
     for interface in ["asgi", "rsgi"]:
         results[interface] = {}
         for thmode in ["runtime", "workers"]:
             results[interface][thmode] = {}
-    for procs in sorted(list(set(
-        [2 ** i for i in range(0, math.ceil(math.log2(CPU)) + 1)] + [CPU + 1]
-    ))):
-        for threads in sorted(list(set([1, 2, CPU, CPU + 1, CPU * 2]))):
-            for interface in results.keys():
-                for thmode in results[interface].keys():
-                    with app(interface, procs, threads, thmode):
-                        res = results[interface][thmode]
-                        res[f"{procs} procs - {threads} threads"] = benchmark("b")
+    for key, procs, threads in [
+        ("none", 1, 1),
+        ("min", 1, CPU),
+        ("realistic", CPU, 2),
+        ("max", CPU, CPU + 1)
+    ]:
+        for interface in results.keys():
+            for thmode in results[interface].keys():
+                with app(interface, procs, threads, thmode):
+                    res = results[interface][thmode]
+                    res[key] = benchmark("b")
     return results
 
 
@@ -135,8 +137,7 @@ def uvicorn():
 def run():
     now = datetime.datetime.utcnow()
     results = {}
-    if os.environ.get("BENCHMARK_THREADS") == "true":
-        results["procs_threads"] = procs_threads()
+    results["concurrencies"] = concurrencies()
     results["rsgi_body"] = rsgi_body_type()
     results["rsgi_asgi"] = rsgi_vs_asgi()
     results["uvicorn"] = uvicorn()

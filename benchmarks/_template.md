@@ -1,5 +1,3 @@
-{{ import datetime }}
-{{ import multiprocessing }}
 # Granian benchmarks
 
 Run at: {{ =data.run_at }}
