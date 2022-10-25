@@ -29,6 +29,7 @@ class RSGIScope:
     proto: str
     http_version: str
     rsgi_version: str
+    server: str
     client: str
     scheme: str
     method: str
