@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3_asyncio::TaskLocals;
 
 pub(super) const TEST_MOD: &'static str = r#"
-import asyncio 
+import asyncio
 
 async def py_sleep(duration):
     await asyncio.sleep(duration)

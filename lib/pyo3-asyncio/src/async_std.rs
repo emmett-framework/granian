@@ -9,7 +9,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["unstable-streams"]
 //! ```
 
@@ -210,7 +210,7 @@ where
 ///             Ok(())
 ///         })
 ///         .map_err(|e| {
-///             e.print_and_set_sys_last_vars(py);  
+///             e.print_and_set_sys_last_vars(py);
 ///         })
 ///         .unwrap();
 ///     })
@@ -497,7 +497,7 @@ where
 ///         )
 ///     })?
 ///     .await?;
-///     Ok(())    
+///     Ok(())
 /// }
 /// ```
 pub fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<PyObject>> + Send> {
@@ -524,7 +524,7 @@ pub fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -537,7 +537,7 @@ pub fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::async_std::into_stream_v1(test_mod.call_method0("gen")?)
 /// })?;
 ///
@@ -581,7 +581,7 @@ pub fn into_stream_v1<'p>(
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -594,7 +594,7 @@ pub fn into_stream_v1<'p>(
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::async_std::into_stream_with_locals_v1(
 ///         pyo3_asyncio::async_std::get_current_locals(py)?,
 ///         test_mod.call_method0("gen")?
@@ -642,7 +642,7 @@ pub fn into_stream_with_locals_v1<'p>(
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -655,7 +655,7 @@ pub fn into_stream_with_locals_v1<'p>(
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::async_std::into_stream_with_locals_v2(
 ///         pyo3_asyncio::async_std::get_current_locals(py)?,
 ///         test_mod.call_method0("gen")?
@@ -702,7 +702,7 @@ pub fn into_stream_with_locals_v2<'p>(
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -715,7 +715,7 @@ pub fn into_stream_with_locals_v2<'p>(
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::async_std::into_stream_v2(test_mod.call_method0("gen")?)
 /// })?;
 ///

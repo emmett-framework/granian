@@ -9,7 +9,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["unstable-streams"]
 //! ```
 
@@ -310,20 +310,31 @@ pub fn cancelled(future: &PyAny) -> PyResult<bool> {
     future.getattr("cancelled")?.call0()?.is_true()
 }
 
+#[pyclass]
+struct CheckedCompletor;
+
+#[pymethods]
+impl CheckedCompletor {
+    fn __call__(&self, future: &PyAny, complete: &PyAny, value: &PyAny) -> PyResult<()> {
+        if cancelled(future)? {
+            return Ok(());
+        }
+
+        complete.call1((value,))?;
+
+        Ok(())
+    }
+}
+
 pub fn set_result(event_loop: &PyAny, future: &PyAny, result: PyResult<PyObject>) -> PyResult<()> {
     let py = event_loop.py();
     let none = py.None().into_ref(py);
 
-    match result {
-        Ok(val) => {
-            let set_result = future.getattr("set_result")?;
-            call_soon_threadsafe(event_loop, none, (set_result, val))?;
-        }
-        Err(err) => {
-            let set_exception = future.getattr("set_exception")?;
-            call_soon_threadsafe(event_loop, none, (set_exception, err))?;
-        }
-    }
+    let (complete, val) = match result {
+        Ok(val) => (future.getattr("set_result")?, val.into_py(py)),
+        Err(err) => (future.getattr("set_exception")?, err.into_py(py)),
+    };
+    call_soon_threadsafe(event_loop, none, (CheckedCompletor, future, complete, val))?;
 
     Ok(())
 }

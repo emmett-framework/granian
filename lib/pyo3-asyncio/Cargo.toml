@@ -1,7 +1,7 @@
 [package]
 name = "pyo3-asyncio"
 description = "PyO3 utilities for Python's Asyncio library"
-version = "0.16.0"
+version = "0.17.0"
 authors = ["Andrew J Westlake <awestlake87@yahoo.com>"]
 readme = "README.md"
 keywords = ["pyo3", "python", "ffi", "async", "asyncio"]
@@ -15,7 +15,7 @@ edition = "2018"
 
 [features]
 async-std-runtime = ["async-std"]
-attributes = ["inventory"]
+attributes = []
 testing = ["clap", "inventory"]
 tokio-runtime = ["tokio"]
 unstable-streams = ["async-channel"]
@@ -99,12 +99,19 @@ path = "pytests/test_tokio_multi_thread_uvloop.rs"
 harness = false
 required-features = ["tokio-runtime", "testing"]
 
+
+[[test]]
+name = "test_race_condition_regression"
+path = "pytests/test_race_condition_regression.rs"
+harness = false
+required-features = ["async-std-runtime", "testing"]
+
 [dependencies]
 async-channel = { version = "1.6", optional = true }
-clap = { version = "3.1.5", optional = true }
+clap = { version = "3.2", optional = true }
 futures = "0.3"
-inventory = { version = "0.2", optional = true }
-once_cell = "1.5"
+inventory = { version = "0.3", optional = true }
+once_cell = "1.14"
 pin-project-lite = "0.2"
 pyo3 = "0.17"
 
@@ -112,7 +119,7 @@ pyo3 = "0.17"
 pyo3 = { version = "0.17", features = ["macros"] }
 
 [dependencies.async-std]
-version = "1.10"
+version = "1.12"
 features = ["unstable"]
 optional = true
 

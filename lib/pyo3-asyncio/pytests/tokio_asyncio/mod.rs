@@ -6,7 +6,6 @@ use std::{
 
 use pyo3::{
     prelude::*,
-    proc_macro::pymodule,
     types::{IntoPyDict, PyType},
     wrap_pyfunction, wrap_pymodule,
 };
@@ -229,15 +228,15 @@ fn test_local_cancel(event_loop: PyObject) -> PyResult<()> {
 #[pymodule]
 fn test_mod(_py: Python, m: &PyModule) -> PyResult<()> {
     #![allow(deprecated)]
-    #[pyfunction]
-    fn sleep(py: Python) -> PyResult<&PyAny> {
+    #[pyfunction(name = "sleep")]
+    fn sleep_(py: Python) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
             Ok(())
         })
     }
 
-    m.add_function(wrap_pyfunction!(sleep, m)?)?;
+    m.add_function(wrap_pyfunction!(sleep_, m)?)?;
 
     Ok(())
 }
@@ -293,12 +292,12 @@ fn cvars_mod(_py: Python, m: &PyModule) -> PyResult<()> {
 
 #[cfg(feature = "unstable-streams")]
 const TOKIO_TEST_MOD: &str = r#"
-import asyncio 
+import asyncio
 
 async def gen():
     for i in range(10):
         await asyncio.sleep(0.1)
-        yield i        
+        yield i
 "#;
 
 #[cfg(feature = "unstable-streams")]

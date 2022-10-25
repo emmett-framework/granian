@@ -9,7 +9,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["unstable-streams"]
 //! ```
 
@@ -227,7 +227,7 @@ where
 ///             Ok(())
 ///         })
 ///         .map_err(|e| {
-///             e.print_and_set_sys_last_vars(py);  
+///             e.print_and_set_sys_last_vars(py);
 ///         })
 ///         .unwrap();
 ///     })
@@ -396,7 +396,7 @@ where
 ///         // LocalSet allows us to work with !Send futures within tokio. Without it, any calls to
 ///         // pyo3_asyncio::tokio::local_future_into_py will panic.
 ///         tokio::task::LocalSet::new().block_on(
-///             pyo3_asyncio::tokio::get_runtime(),  
+///             pyo3_asyncio::tokio::get_runtime(),
 ///             pyo3_asyncio::tokio::scope_local(locals, async {
 ///                 Python::with_gil(|py| {
 ///                     let py_future = sleep_for(py, 1)?;
@@ -476,7 +476,7 @@ where
 ///         // LocalSet allows us to work with !Send futures within tokio. Without it, any calls to
 ///         // pyo3_asyncio::tokio::local_future_into_py will panic.
 ///         tokio::task::LocalSet::new().block_on(
-///             pyo3_asyncio::tokio::get_runtime(),  
+///             pyo3_asyncio::tokio::get_runtime(),
 ///             pyo3_asyncio::tokio::scope_local(locals, async {
 ///                 Python::with_gil(|py| {
 ///                     let py_future = sleep_for(py, 1)?;
@@ -545,7 +545,7 @@ where
 ///         )
 ///     })?
 ///     .await?;
-///     Ok(())    
+///     Ok(())
 /// }
 /// ```
 pub fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<PyObject>> + Send> {
@@ -573,7 +573,7 @@ pub fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -586,7 +586,7 @@ pub fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::tokio::into_stream_with_locals_v1(
 ///         pyo3_asyncio::tokio::get_current_locals(py)?,
 ///         test_mod.call_method0("gen")?
@@ -633,7 +633,7 @@ pub fn into_stream_with_locals_v1<'p>(
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -646,7 +646,7 @@ pub fn into_stream_with_locals_v1<'p>(
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::tokio::into_stream_v1(test_mod.call_method0("gen")?)
 /// })?;
 ///
@@ -690,7 +690,7 @@ pub fn into_stream_v1<'p>(
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -703,7 +703,7 @@ pub fn into_stream_v1<'p>(
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::tokio::into_stream_with_locals_v2(
 ///         pyo3_asyncio::tokio::get_current_locals(py)?,
 ///         test_mod.call_method0("gen")?
@@ -750,7 +750,7 @@ pub fn into_stream_with_locals_v2<'p>(
 /// async def gen():
 ///     for i in range(10):
 ///         await asyncio.sleep(0.1)
-///         yield i        
+///         yield i
 /// "#;
 ///
 /// # #[cfg(all(feature = "unstable-streams", feature = "attributes"))]
@@ -763,7 +763,7 @@ pub fn into_stream_with_locals_v2<'p>(
 ///         "test_rust_coroutine/test_mod.py",
 ///         "test_mod",
 ///     )?;
-///   
+///
 ///     pyo3_asyncio::tokio::into_stream_v2(test_mod.call_method0("gen")?)
 /// })?;
 ///

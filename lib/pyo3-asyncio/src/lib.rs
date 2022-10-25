@@ -1,4 +1,5 @@
 #![warn(missing_docs)]
+#![allow(clippy::borrow_deref_ref)]
 
 //! Rust Bindings to the Python Asyncio Event Loop
 //!
@@ -299,7 +300,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["attributes"]
 //! ```
 //!
@@ -312,7 +313,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["async-std-runtime"]
 //! ```
 //!
@@ -325,7 +326,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["tokio-runtime"]
 //! ```
 //!
@@ -338,7 +339,7 @@
 //!
 //! ```toml
 //! [dependencies.pyo3-asyncio]
-//! version = "0.16"
+//! version = "0.17"
 //! features = ["testing"]
 //! ```
 
@@ -522,7 +523,6 @@ impl PyTaskCompleter {
     #[args(task)]
     pub fn __call__(&mut self, task: &PyAny) -> PyResult<()> {
         debug_assert!(task.call_method0("done")?.extract()?);
-
         let result = match task.call_method0("result") {
             Ok(val) => Ok(val.into()),
             Err(e) => Err(e),
