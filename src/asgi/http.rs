@@ -6,8 +6,8 @@ use hyper::{
     header::SERVER as HK_SERVER,
     http::response::Builder as ResponseBuilder
 };
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{sync::{Mutex, mpsc, oneshot}};
+use std::net::SocketAddr;
+use tokio::sync::mpsc;
 
 use crate::{
     callbacks::CallbackWrapper,
@@ -16,8 +16,7 @@ use crate::{
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade}
 };
 use super::{
-    callbacks::call as callback_caller,
-    io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol},
+    callbacks::{call_http, call_ws},
     types::ASGIScope as Scope
 };
 
@@ -37,16 +36,9 @@ macro_rules! default_scope {
 }
 
 macro_rules! handle_http_response {
-    ($rt:expr, $callback:expr, $req:expr, $scope:expr, $tx:expr, $rx:expr) => {
-        match callback_caller(
-            $callback, HTTPProtocol::new($rt, $req, $tx), $scope
-        ).await {
-            Ok(_) => {
-                match $rx.await {
-                    Ok(res) => res,
-                    _ => response_500()
-                }
-            },
+    ($rt:expr, $callback:expr, $req:expr, $scope:expr) => {
+        match call_http($callback, $rt, $req, $scope).await {
+            Ok(res) => res,
             _ => response_500()
         }
     }
@@ -61,9 +53,7 @@ pub(crate) async fn handle_request(
     scheme: &str
 ) -> Response<Body> {
     let scope = default_scope!(server_addr, client_addr, &req, scheme);
-    let (tx, rx) = oneshot::channel();
-
-    handle_http_response!(rt, callback, req, scope, tx, rx)
+    handle_http_response!(rt, callback, req, scope)
 }
 
 pub(crate) async fn handle_request_with_ws(
@@ -86,14 +76,16 @@ pub(crate) async fn handle_request_with_ws(
 
                 rt.inner.spawn(async move {
                     let tx_ref = restx.clone();
-                    let upgrade = Arc::new(Mutex::new(UpgradeData::new(res, restx)));
-                    let upgrade_ref = upgrade.clone();
-                    let protocol = WebsocketProtocol::new(rth, ws, upgrade);
 
-                    match callback_caller(callback, protocol, scope).await {
-                        Ok(_) => {
-                            let upgrade_res = upgrade_ref.lock().await;
-                            if !(*upgrade_res).consumed {
+                    match call_ws(
+                        callback,
+                        rth,
+                        ws,
+                        UpgradeData::new(res, restx),
+                        scope
+                    ).await {
+                        Ok(consumed) => {
+                            if !consumed {
                                 let _ = tx_ref.send(
                                     ResponseBuilder::new()
                                         .status(StatusCode::FORBIDDEN)
@@ -104,10 +96,7 @@ pub(crate) async fn handle_request_with_ws(
                             };
                         },
                         _ => {
-                            let upgrade_res = upgrade_ref.lock().await;
-                            if !(*upgrade_res).consumed {
-                                let _ = tx_ref.send(response_500()).await;
-                            };
+                            let _ = tx_ref.send(response_500()).await;
                         }
                     }
                 });
@@ -130,7 +119,5 @@ pub(crate) async fn handle_request_with_ws(
         };
     }
 
-    let (tx, rx) = oneshot::channel();
-
-    handle_http_response!(rt, callback, req, scope, tx, rx)
+    handle_http_response!(rt, callback, req, scope)
 }

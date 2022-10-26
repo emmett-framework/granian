@@ -3,7 +3,7 @@ use hyper::{
     Request,
     Response,
     StatusCode,
-    header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
+    header::SERVER as HK_SERVER,
     http::response::Builder as ResponseBuilder
 };
 use std::net::SocketAddr;
@@ -17,131 +17,15 @@ use crate::{
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade}
 };
 use super::{
-    callbacks::{call_response, call_protocol},
-    io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
+    callbacks::{call_http, call_ws},
     types::{ResponseType, RSGIScope as Scope}
 };
 
 
-const RESPONSE_BYTES: u32 = ResponseType::Bytes as u32;
-const RESPONSE_FILEPATH: u32 = ResponseType::FilePath as u32;
-const RESPONSE_STR: u32 = ResponseType::String as u32;
-
-pub(crate) const EMPTY_BODY: &[u8] = b"";
-
-pub trait HTTPResponseData {}
-
-pub struct HTTPResponse<R: HTTPResponseData> {
-    status: i32,
-    headers: Vec<(String, String)>,
-    response_data: R
-}
-
-impl<T: HTTPResponseData> HTTPResponse<T> {
-    pub fn response(&self) -> ResponseBuilder {
-        let mut builder = Response::builder().status(self.status as u16);
-        let headers = builder.headers_mut().unwrap();
-        headers.insert(HK_SERVER, HV_SERVER);
-        for (key, value) in &self.headers {
-            headers.append(
-                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                HeaderValue::from_str(value.as_str()).unwrap()
-            );
-        };
-        builder
-    }
-
-    // pub fn apply(&self, builder: ResponseBuilder) -> ResponseBuilder {
-    //     let mut mbuilder = builder.status(self.status as u16);
-    //     let headers = mbuilder.headers_mut().unwrap();
-    //     for (key, value) in self.headers.iter() {
-    //         headers.insert(
-    //             HeaderName::from_bytes(&key.clone().into_bytes()).unwrap(),
-    //             HeaderValue::from_str(&value.clone().as_str()).unwrap()
-    //         );
-    //     };
-    //     mbuilder
-    // }
-}
-
-pub struct HTTPEmptyResponse {}
-
-impl HTTPResponseData for HTTPEmptyResponse {}
-
-impl HTTPResponse<HTTPEmptyResponse> {
-    pub fn new(status: i32, headers: Vec<(String, String)>) -> Self {
-        Self {
-            status: status,
-            headers: headers,
-            response_data: HTTPEmptyResponse{}
-        }
-    }
-
-    pub fn get_body(&mut self) -> Body {
-        Body::from(EMPTY_BODY)
-    }
-}
-
-// pub struct HTTPBodyResponse {
-//     body: Vec<u8>
-// }
-
-// impl HTTPBodyResponse {
-//     fn new() -> Self {
-//         Self { body: EMPTY_BODY.to_owned() }
-//     }
-// }
-
-// impl HTTPResponseData for HTTPBodyResponse {}
-
-// impl HTTPResponse<HTTPBodyResponse> {
-//     pub fn new(status: i32, headers: Vec<(String, String)>) -> Self {
-//         Self {
-//             status: status,
-//             headers: headers,
-//             response_data: HTTPBodyResponse::new()
-//         }
-//     }
-
-//     pub fn get_body(&mut self) -> Body {
-//         // let stream = futures_util::stream::iter(self.response_data.body);
-//         // Body::wrap_stream(stream)
-//         // Body::from(std::mem::take(&mut self.response_data.body))
-//         Body::from(self.response_data.body.to_owned())
-//     }
-// }
-
-pub(crate) struct HTTPFileResponse {
-    file_path: String
-}
-
-impl HTTPFileResponse {
-    fn new(file_path: String) -> Self {
-        Self { file_path: file_path }
-    }
-}
-
-impl HTTPResponseData for HTTPFileResponse {}
-
-impl HTTPResponse<HTTPFileResponse> {
-    pub fn new(status: i32, headers: Vec<(String, String)>, file_path: String) -> Self {
-        Self {
-            status: status,
-            headers: headers,
-            response_data: HTTPFileResponse::new(file_path)
-        }
-    }
-
-    pub async fn get_body(&self) -> Body {
-        // if let Ok(file) = File::open(&self.file_path.as_str()).await {
-        //     let stream = FramedRead::new(file, BytesCodec::new());
-        //     return Ok(Body::wrap_stream(stream));
-        // }
-        // Ok(Body::empty())
-        let file = File::open(&self.response_data.file_path.as_str()).await.unwrap();
-        let stream = FramedRead::new(file, BytesCodec::new());
-        Body::wrap_stream(stream)
-    }
+async fn file_body(file_path: String) -> Body {
+    let file = File::open(file_path).await.unwrap();
+    let stream = FramedRead::new(file, BytesCodec::new());
+    Body::wrap_stream(stream)
 }
 
 macro_rules! default_scope {
@@ -161,35 +45,14 @@ macro_rules! default_scope {
 
 macro_rules! handle_http_response {
     ($rt:expr, $callback:expr, $req:expr, $scope:expr) => {
-        match call_response($callback, HTTPProtocol::new($rt, $req), $scope).await {
+        match call_http($callback, $rt, $req, $scope).await {
             Ok(pyres) => {
                 let res = match pyres.mode {
-                    RESPONSE_BYTES => {
-                        HTTPResponse::<HTTPEmptyResponse>::new(
-                            pyres.status,
-                            pyres.headers
-                        ).response().body(pyres.bytes_data.unwrap().into())
+                    ResponseType::Body => {
+                        pyres.inner.body(pyres.body)
                     },
-                    RESPONSE_STR => {
-                        HTTPResponse::<HTTPEmptyResponse>::new(
-                            pyres.status,
-                            pyres.headers
-                        ).response().body(pyres.str_data.unwrap().into())
-                    },
-                    RESPONSE_FILEPATH => {
-                        let http_obj = HTTPResponse::<HTTPFileResponse>::new(
-                            pyres.status,
-                            pyres.headers,
-                            pyres.file_path.unwrap().to_owned()
-                        );
-                        http_obj.response().body(http_obj.get_body().await)
-                    },
-                    _ => {
-                        let mut http_obj = HTTPResponse::<HTTPEmptyResponse>::new(
-                            pyres.status,
-                            pyres.headers
-                        );
-                        http_obj.response().body(http_obj.get_body())
+                    ResponseType::File => {
+                        pyres.inner.body(file_body(pyres.file.unwrap()).await)
                     }
                 };
                 match res {
@@ -235,9 +98,11 @@ pub(crate) async fn handle_request_with_ws(
                 rt.inner.spawn(async move {
                     let tx_ref = restx.clone();
 
-                    match call_protocol(
+                    match call_ws(
                         callback,
-                        WebsocketProtocol::new(rth, ws, UpgradeData::new(res, restx)),
+                        rth,
+                        ws,
+                        UpgradeData::new(res, restx),
                         scope
                     ).await {
                         Ok((status, consumed)) => {

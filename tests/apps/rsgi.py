@@ -2,15 +2,16 @@ import json
 
 from granian.rsgi import (
     HTTPProtocol,
-    Response,
     Scope,
     WebsocketMessageType,
     WebsocketProtocol
 )
 
 
-async def info(scope: Scope, _):
-    return Response.bytes(
+async def info(scope: Scope, protocol: HTTPProtocol):
+    protocol.response_bytes(
+        200,
+        [('content-type', 'application/json')],
         json.dumps({
             'proto': scope.proto,
             'http_version': scope.http_version,
@@ -20,21 +21,21 @@ async def info(scope: Scope, _):
             'path': scope.path,
             'query_string': scope.query_string,
             'headers': {k: v for k, v in scope.headers.items()}
-        }).encode("utf8"),
-        headers=[('content-type', 'application/json')]
+        }).encode("utf8")
     )
 
 
 async def echo(_, protocol: HTTPProtocol):
     msg = await protocol()
-    return Response.bytes(
-        msg,
-        headers=[('content-type', 'text/plain; charset=utf-8')]
+    protocol.response_bytes(
+        200,
+        [('content-type', 'text/plain; charset=utf-8')],
+        msg
     )
 
 
 async def ws_reject(_, protocol: WebsocketProtocol):
-    return protocol.close(403)
+    protocol.close(403)
 
 
 async def ws_info(scope: Scope, protocol: WebsocketProtocol):
@@ -55,7 +56,7 @@ async def ws_info(scope: Scope, protocol: WebsocketProtocol):
         if message.kind == WebsocketMessageType.close:
             break
 
-    return protocol.close()
+    protocol.close()
 
 
 async def ws_echo(_, protocol: WebsocketProtocol):
@@ -70,15 +71,11 @@ async def ws_echo(_, protocol: WebsocketProtocol):
         else:
             await trx.send_str(message.data)
 
-    return protocol.close()
+    protocol.close()
 
 
 async def err_app(scope: Scope, protocol: HTTPProtocol):
     1 / 0
-
-
-async def err_proto(scope: Scope, protocol: HTTPProtocol):
-    return "bad"
 
 
 def app(scope, protocol):
@@ -88,6 +85,5 @@ def app(scope, protocol):
         "/ws_reject": ws_reject,
         "/ws_info": ws_info,
         "/ws_echo": ws_echo,
-        "/err_app": err_app,
-        "/err_proto": err_proto
+        "/err_app": err_app
     }[scope.path](scope, protocol)

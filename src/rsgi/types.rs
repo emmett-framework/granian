@@ -1,7 +1,12 @@
-use hyper::{Uri, Version, header::{HeaderMap}};
+use hyper::{
+    header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
+    http::response::Builder as ResponseBuilder, Body, Uri, Version
+};
 use pyo3::prelude::*;
 use pyo3::types::{PyString};
 use std::net::SocketAddr;
+
+use crate::http::HV_SERVER;
 
 
 #[pyclass(module="granian._granian")]
@@ -133,10 +138,51 @@ impl RSGIScope {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum ResponseType {
-    Bytes = 1,
-    String = 2,
-    FilePath = 10,
-    // Chunks = 20,
-    // AsyncIter = 30
+    Body = 1,
+    File = 10
+}
+
+#[pyclass(frozen)]
+#[derive(Debug)]
+pub(crate) struct Response {
+    pub inner: ResponseBuilder,
+    pub mode: ResponseType,
+    pub body: Body,
+    pub file: Option<String>
+}
+
+impl Response {
+    pub fn new() -> Self {
+        Self {
+            inner: ResponseBuilder::new().status(200),
+            mode: ResponseType::Body,
+            body: Body::empty(),
+            file: None
+        }
+    }
+
+    pub fn head(&mut self, status: u16, headers: &Vec<(&str, &str)>) {
+        match status {
+            200 => {},
+            _ => {
+                self.inner = ResponseBuilder::new().status(status);
+            }
+        }
+
+        let rh = self.inner.headers_mut().unwrap();
+        rh.insert(HK_SERVER, HV_SERVER);
+        for (key, value) in headers {
+            rh.append(
+                HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                HeaderValue::from_str(value).unwrap()
+            );
+        }
+    }
+
+    pub fn error(&mut self) {
+        self.inner = ResponseBuilder::new().status(500);
+        self.body = Body::from("Internal server error");
+    }
 }

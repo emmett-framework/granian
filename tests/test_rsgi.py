@@ -57,18 +57,3 @@ async def test_app_error(rsgi_server, threading_mode):
         res = httpx.get(f"http://localhost:{port}/err_app")
 
     assert res.status_code == 500
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "threading_mode",
-    [
-        "runtime",
-        "workers"
-    ]
-)
-async def test_protocol_error(rsgi_server, threading_mode):
-    async with rsgi_server(threading_mode) as port:
-        res = httpx.get(f"http://localhost:{port}/err_proto")
-
-    assert res.status_code == 500
