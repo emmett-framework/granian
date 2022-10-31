@@ -5,28 +5,40 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use std::sync::Arc;
 use tokio_tungstenite::WebSocketStream;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tungstenite::Message;
 
 use crate::{
     runtime::{RuntimeRef, future_into_py},
     ws::{HyperWebsocket, UpgradeData}
 };
-use super::errors::error_proto;
+use super::{errors::error_proto, types::{Response, ResponseType}};
 
 
 #[pyclass(module="granian._granian")]
 pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
-    request: Arc<Mutex<Request<Body>>>
+    tx: Option<oneshot::Sender<Response>>,
+    request: Arc<Mutex<Request<Body>>>,
+    response: Option<Response>
 }
 
 impl RSGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, request: Request<Body>) -> Self {
+    pub fn new(
+        rt: RuntimeRef,
+        tx: oneshot::Sender<Response>,
+        request: Request<Body>
+    ) -> Self {
         Self {
             rt: rt,
-            request: Arc::new(Mutex::new(request))
+            tx: Some(tx),
+            request: Arc::new(Mutex::new(request)),
+            response: Some(Response::new())
         }
+    }
+
+    pub fn tx(&mut self) -> (Option<oneshot::Sender<Response>>, Option<Response>) {
+        return (self.tx.take(), self.response.take())
     }
 }
 
@@ -45,6 +57,50 @@ impl RSGIHTTPProtocol {
                 }).unwrap().as_ref().to_object(py)
             }))
         })
+    }
+
+    #[args(status="200", headers="vec![]")]
+    fn response_empty(&mut self, status: u16, headers: Vec<(&str, &str)>) {
+        if let Some(mut response) = self.response.take() {
+            response.head(status, &headers);
+            if let Some(tx) = self.tx.take() {
+                let _ = tx.send(response);
+            }
+        }
+    }
+
+    #[args(status="200", headers="vec![]")]
+    fn response_bytes(&mut self, status: u16, headers: Vec<(&str, &str)>, body: Vec<u8>) {
+        if let Some(mut response) = self.response.take() {
+            response.head(status, &headers);
+            response.body = Body::from(body);
+            if let Some(tx) = self.tx.take() {
+                let _ = tx.send(response);
+            }
+        }
+    }
+
+    #[args(status="200", headers="vec![]")]
+    fn response_str(&mut self, status: u16, headers: Vec<(&str, &str)>, body: String) {
+        if let Some(mut response) = self.response.take() {
+            response.head(status, &headers);
+            response.body = Body::from(body);
+            if let Some(tx) = self.tx.take() {
+                let _ = tx.send(response);
+            }
+        }
+    }
+
+    #[args(status="200", headers="vec![]")]
+    fn response_file(&mut self, status: u16, headers: Vec<(&str, &str)>, file: String) {
+        if let Some(mut response) = self.response.take() {
+            response.mode = ResponseType::File;
+            response.head(status, &headers);
+            response.file = Some(file);
+            if let Some(tx) = self.tx.take() {
+                let _ = tx.send(response);
+            }
+        }
     }
 }
 
@@ -107,6 +163,7 @@ impl RSGIWebsocketTransport {
 #[pyclass(module="granian._granian")]
 pub(crate) struct RSGIWebsocketProtocol {
     rt: RuntimeRef,
+    tx: Option<oneshot::Sender<(i32, bool)>>,
     websocket: Arc<Mutex<HyperWebsocket>>,
     upgrade: Option<UpgradeData>,
     status: i32
@@ -115,15 +172,28 @@ pub(crate) struct RSGIWebsocketProtocol {
 impl RSGIWebsocketProtocol {
     pub fn new(
         rt: RuntimeRef,
+        tx: oneshot::Sender<(i32, bool)>,
         websocket: HyperWebsocket,
         upgrade: UpgradeData
     ) -> Self {
         Self {
             rt: rt,
+            tx: Some(tx),
             websocket: Arc::new(Mutex::new(websocket)),
             upgrade: Some(upgrade),
             status: 0
         }
+    }
+
+    fn consumed(&self) -> bool {
+        match &self.upgrade {
+            Some(_) => false,
+            _ => true
+        }
+    }
+
+    pub fn tx(&mut self) -> (Option<oneshot::Sender<(i32, bool)>>, (i32, bool)) {
+        (self.tx.take(), (self.status, self.consumed()))
     }
 }
 
@@ -176,17 +246,12 @@ impl WebsocketInboundTextMessage {
 #[pymethods]
 impl RSGIWebsocketProtocol {
     #[args(status="None")]
-    fn close(&mut self, status: Option<i32>) -> PyResult<(i32, bool)> {
-        let consumed = match &self.upgrade {
-            Some(_) => false,
-            _ => true
-        };
-        let status = match status {
-            Some(v) => v,
-            _ => 0
-        };
-        self.status = status;
-        Ok((status, consumed))
+    fn close(&mut self, status: Option<i32>) -> PyResult<()> {
+        self.status = status.unwrap_or(0);
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send((self.status, self.consumed()));
+        }
+        Ok(())
     }
 
     fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {

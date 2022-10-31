@@ -33,13 +33,13 @@ pub(crate) trait ASGIProtocol: PyClass {
 #[pyclass(module="granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
+    tx: Option<oneshot::Sender<Response<Body>>>,
     request: Arc<Mutex<Request<Body>>>,
     response_inited: bool,
     response_built: bool,
     response_status: i16,
     response_headers: HeaderMap,
-    response_body: Vec<u8>,
-    tx: Option<oneshot::Sender<Response<Body>>>
+    response_body: Vec<u8>
 }
 
 impl ASGIHTTPProtocol {
@@ -50,13 +50,13 @@ impl ASGIHTTPProtocol {
     ) -> Self {
         Self {
             rt: rt,
+            tx: Some(tx),
             request: Arc::new(Mutex::new(request)),
             response_inited: false,
             response_built: false,
             response_status: 0,
             response_headers: HeaderMap::new(),
-            response_body: Vec::new(),
-            tx: Some(tx)
+            response_body: Vec::new()
         }
     }
 
@@ -74,6 +74,10 @@ impl ASGIHTTPProtocol {
             self.response_built = true;
         }
     }
+
+    pub fn tx(&mut self) -> Option<oneshot::Sender<Response<Body>>> {
+        return self.tx.take()
+    }
 }
 
 #[pymethods]
@@ -90,30 +94,32 @@ impl ASGIHTTPProtocol {
 #[pyclass(module="granian._granian")]
 pub(crate) struct ASGIWebsocketProtocol {
     rt: RuntimeRef,
+    tx: Option<oneshot::Sender<bool>>,
     websocket: Arc<Mutex<WebsocketTransport>>,
-    upgrade: Arc<Mutex<UpgradeData>>
+    upgrade: Option<UpgradeData>
 }
 
 impl ASGIWebsocketProtocol {
     pub fn new(
         rt: RuntimeRef,
+        tx: oneshot::Sender<bool>,
         websocket: HyperWebsocket,
-        upgrade: Arc<Mutex<UpgradeData>>
+        upgrade: UpgradeData
     ) -> Self {
         Self {
             rt: rt,
+            tx: Some(tx),
             websocket: Arc::new(Mutex::new(WebsocketTransport::new(websocket))),
-            upgrade: upgrade
+            upgrade: Some(upgrade)
         }
     }
 
     fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let upgrade = self.upgrade.clone();
+        let mut upgrade = self.upgrade.take().unwrap();
         let transport = self.websocket.clone();
         future_into_py(self.rt.clone(), py, async move {
-            let mut res = upgrade.lock().await;
             let mut ws = transport.lock().await;
-            match res.send().await {
+            match upgrade.send().await {
                 Ok(_) => {
                     match ws.accept().await {
                         Ok(_) => Ok(()),
@@ -151,6 +157,17 @@ impl ASGIWebsocketProtocol {
                 _ => error_flow!()
             }
         })
+    }
+
+    fn consumed(&self) -> bool {
+        match &self.upgrade {
+            Some(_) => false,
+            _ => true
+        }
+    }
+
+    pub fn tx(&mut self) -> (Option<oneshot::Sender<bool>>, bool) {
+        (self.tx.take(), self.consumed())
     }
 }
 

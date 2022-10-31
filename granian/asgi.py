@@ -4,7 +4,6 @@ from functools import wraps
 
 from ._futures import future_wrapper
 from ._granian import ASGIScope as Scope
-from ._types import ASGIProtocol
 
 
 class LifespanProtocol:
@@ -104,7 +103,7 @@ class LifespanProtocol:
 
 def callback_wrapper(callback):
     @wraps(callback)
-    def wrapper(watcher, scope: Scope, protocol: ASGIProtocol):
+    def wrapper(watcher, scope: Scope):
         coro = callback(
             {
                 "type": scope.proto,
@@ -124,25 +123,13 @@ def callback_wrapper(callback):
                 "headers": scope.headers,
                 "extensions": {}
             },
-            protocol.receive,
-            protocol.send
+            watcher.proto.receive,
+            watcher.proto.send
         )
         watcher.event_loop.call_soon_threadsafe(
             future_wrapper,
-            watcher,
             coro,
-            future_handler,
+            watcher,
             context=watcher.context
         )
     return wrapper
-
-
-def future_handler(watcher):
-    def handler(task):
-        try:
-            task.result()
-        except Exception:
-            watcher.done(False)
-            raise
-        watcher.done(True)
-    return handler

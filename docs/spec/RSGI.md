@@ -83,32 +83,14 @@ And here are descriptions for the upper attributes:
 
 #### HTTP protocol interface
 
-HTTP protocol object implements just a single awaitable method on `__call__`, which returns the request body in `bytes` format.
+HTTP protocol object implements a single awaitable method on `__call__` to receive the request body in `bytes` format, and four different methods to send data, in particular:
 
-#### HTTP protocol responses
+- `response_empty` to send back an empty response
+- `response_str` to send back a response with a `str` body
+- `response_bytes` to send back a response with `bytes` body
+- `response_file` to send back a file response (from its path)
 
-HTTP protocol expects a `namedtuple` object to be returned from applications once the request handling is completed and a response should be sent back to clients. For clarity reasons, we represent this `namedtuple` as a class with attributes:
-
-```python
-class Response:
-    mode: int
-    status: int
-    headers: List[Tuple[str, str]]
-    bytes_data: Optional[bytes]
-    string_data: Optional[str]
-    file_path: Optional[str]
-```
-
-The `status` item represents the HTTP status code and `mode` defines the response type within the following options:
-
-| value | response type |
-| --- | --- |
-| 0 | Empty response |
-| 1 | Bytes response |
-| 2 | String response |
-| 10 | Filepath response |
-
-RSGI applications are responsible to accordingly fill `bytes_data`, `string_data` and `file_path` fields with `mode` value.
+All the upper-mentioned methods accepts an integer `status` parameter, a list of string tuples for the `headers` parameter, and the relevant typed `body` parameter.
 
 ### Websocket protocol
 
@@ -174,7 +156,3 @@ where `kind` is an integer with the following values:
 | 0 | Websocket closed by client |
 | 1 | Bytes message |
 | 2 | String message |
-
-#### Websocket protocol responses
-
-RSGI applications should always return the result of protocol `close` method.

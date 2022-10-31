@@ -1,7 +1,5 @@
 import sys
 
-from granian.rsgi import Response
-
 HEADERS = [('content-type', 'text/plain; charset=utf-8')]
 
 BODY_BYTES_SHORT = b"Test"
@@ -11,23 +9,43 @@ BODY_STR_LONG = "Test" * 20_000
 
 
 async def b_short(scope, proto):
-    return Response.bytes(BODY_BYTES_SHORT, 200, HEADERS)
+    proto.response_bytes(
+        200,
+        HEADERS,
+        BODY_BYTES_SHORT
+    )
 
 
 async def b_long(scope, proto):
-    return Response.bytes(BODY_BYTES_LONG, 200, HEADERS)
+    proto.response_bytes(
+        200,
+        HEADERS,
+        BODY_BYTES_LONG
+    )
 
 
 async def s_short(scope, proto):
-    return Response.str(BODY_STR_SHORT, 200, HEADERS)
+    proto.response_str(
+        200,
+        HEADERS,
+        BODY_STR_SHORT
+    )
 
 
 async def s_long(scope, proto):
-    return Response.str(BODY_STR_LONG, 200, HEADERS)
+    proto.response_str(
+        200,
+        HEADERS,
+        BODY_STR_LONG
+    )
 
 
 async def handle_404(scope, proto):
-    return Response.str("not found", 404, HEADERS)
+    proto.response_str(
+        404,
+        HEADERS,
+        "not found"
+    )
 
 
 routes = {

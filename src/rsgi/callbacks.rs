@@ -1,41 +1,77 @@
 use pyo3::prelude::*;
 use tokio::sync::oneshot;
 
-use crate::callbacks::CallbackWrapper;
+use crate::{
+    callbacks::CallbackWrapper,
+    runtime::RuntimeRef,
+    ws::{HyperWebsocket, UpgradeData}
+};
 use super::{
-    errors::{error_proto, error_app},
+    errors::error_proto,
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
-    types::RSGIScope as Scope
+    types::{RSGIScope as Scope, Response}
 };
 
 
-#[derive(FromPyObject, Debug)]
-pub(crate) struct CallbackResponse {
-    pub mode: u32,
-    pub status: i32,
-    pub headers: Vec<(String, String)>,
-    pub bytes_data: Option<Vec<u8>>,
-    pub str_data: Option<String>,
-    pub file_path: Option<String>
-}
-
 #[pyclass]
-pub(crate) struct CallbackResponseWatcher {
-    tx: Option<oneshot::Sender<Option<CallbackResponse>>>,
+pub(crate) struct CallbackWatcherHTTP {
+    #[pyo3(get)]
+    proto: Py<HTTPProtocol>,
     #[pyo3(get)]
     event_loop: PyObject,
     #[pyo3(get)]
     context: PyObject
 }
 
-impl CallbackResponseWatcher {
+impl CallbackWatcherHTTP {
     pub fn new(
         py: Python,
         cb: CallbackWrapper,
-        tx: oneshot::Sender<Option<CallbackResponse>>
+        proto: HTTPProtocol
     ) -> Self {
         Self {
-            tx: Some(tx),
+            proto: Py::new(py, proto).unwrap(),
+            event_loop: cb.context.event_loop(py).into(),
+            context: cb.context.context(py).into()
+        }
+    }
+}
+
+#[pymethods]
+impl CallbackWatcherHTTP {
+    fn done(&mut self, py: Python) {
+        if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
+            if let (Some(tx), Some(mut res)) = proto.tx() {
+                res.error();
+                let _ = tx.send(res);
+            }
+        }
+    }
+
+    fn err(&mut self, py: Python) {
+        log::warn!("Application callable raised an exception");
+        self.done(py)
+    }
+}
+
+#[pyclass]
+pub(crate) struct CallbackWatcherWebsocket {
+    #[pyo3(get)]
+    proto: Py<WebsocketProtocol>,
+    #[pyo3(get)]
+    event_loop: PyObject,
+    #[pyo3(get)]
+    context: PyObject
+}
+
+impl CallbackWatcherWebsocket {
+    pub fn new(
+        py: Python,
+        cb: CallbackWrapper,
+        proto: WebsocketProtocol
+    ) -> Self {
+        Self {
+            proto: Py::new(py, proto).unwrap(),
             event_loop: cb.context.event_loop(py).into(),
             context: cb.context.context(py).into(),
         }
@@ -43,98 +79,38 @@ impl CallbackResponseWatcher {
 }
 
 #[pymethods]
-impl CallbackResponseWatcher {
-    fn done(&mut self, py: Python, result: PyObject) -> PyResult<()> {
-        if let Some(tx) = self.tx.take() {
-            match result.extract(py) {
-                Ok(res) => {
-                    let _ = tx.send(res);
-                    return Ok(())
-                },
-                _ => {
-                    let _ = tx.send(None);
-                }
+impl CallbackWatcherWebsocket {
+    fn done(&mut self, py: Python) {
+        if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
+            if let (Some(tx), res) = proto.tx() {
+                let _ = tx.send(res);
             }
-        };
-        error_proto!()
-    }
-
-    fn err(&mut self) -> PyResult<()> {
-        if let Some(tx) = self.tx.take() {
-            let _ = tx.send(None);
-        };
-        Ok(())
-    }
-}
-
-#[pyclass]
-pub(crate) struct CallbackProtocolWatcher {
-    tx: Option<oneshot::Sender<Option<(i32, bool)>>>,
-    #[pyo3(get)]
-    event_loop: PyObject,
-    #[pyo3(get)]
-    context: PyObject
-}
-
-impl CallbackProtocolWatcher {
-    pub fn new(
-        py: Python,
-        cb: CallbackWrapper,
-        tx: oneshot::Sender<Option<(i32, bool)>>
-    ) -> Self {
-        Self {
-            tx: Some(tx),
-            event_loop: cb.context.event_loop(py).into(),
-            context: cb.context.context(py).into(),
         }
     }
-}
 
-#[pymethods]
-impl CallbackProtocolWatcher {
-    fn done(&mut self, py: Python, result: PyObject) -> PyResult<()> {
-        if let Some(tx) = self.tx.take() {
-            match result.extract(py) {
-                Ok(res) => {
-                    let _ = tx.send(res);
-                    return Ok(())
-                },
-                _ => {
-                    let _ = tx.send(None);
-                }
-            }
-        };
-        error_proto!()
-    }
-
-    fn err(&mut self) -> PyResult<()> {
-        if let Some(tx) = self.tx.take() {
-            let _ = tx.send(None);
-        };
-        Ok(())
+    fn err(&mut self, py: Python) {
+        log::warn!("Application callable raised an exception");
+        self.done(py)
     }
 }
 
-pub(crate) async fn call_response(
+pub(crate) async fn call_http(
     cb: CallbackWrapper,
-    protocol: HTTPProtocol,
+    rt: RuntimeRef,
+    req: hyper::Request<hyper::Body>,
     scope: Scope
-) -> PyResult<CallbackResponse> {
-    let (tx, rx) = oneshot::channel();
+) -> PyResult<Response> {
     let callback = cb.callback.clone();
+    let (tx, rx) = oneshot::channel();
+    let protocol = HTTPProtocol::new(rt, tx, req);
+
     Python::with_gil(|py| {
-        callback.call1(py, (CallbackResponseWatcher::new(py, cb, tx), scope, protocol))
+        callback.call1(py, (CallbackWatcherHTTP::new(py, cb, protocol), scope))
     })?;
 
     match rx.await {
         Ok(res) => {
-            match res {
-                Some(res) => Ok(res),
-                _ => {
-                    log::warn!("Application failed to return a response");
-                    error_app!()
-                }
-            }
+            Ok(res)
         },
         _ => {
             log::error!("RSGI protocol failure");
@@ -143,26 +119,24 @@ pub(crate) async fn call_response(
     }
 }
 
-pub(crate) async fn call_protocol(
+pub(crate) async fn call_ws(
     cb: CallbackWrapper,
-    protocol: WebsocketProtocol,
+    rt: RuntimeRef,
+    ws: HyperWebsocket,
+    upgrade: UpgradeData,
     scope: Scope
 ) -> PyResult<(i32, bool)> {
-    let (tx, rx) = oneshot::channel();
     let callback = cb.callback.clone();
+    let (tx, rx) = oneshot::channel();
+    let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+
     Python::with_gil(|py| {
-        callback.call1(py, (CallbackProtocolWatcher::new(py, cb, tx), scope, protocol))
+        callback.call1(py, (CallbackWatcherWebsocket::new(py, cb, protocol), scope))
     })?;
 
     match rx.await {
         Ok(res) => {
-            match res {
-                Some(res) => Ok(res),
-                _ => {
-                    log::warn!("Application failed to close protocol");
-                    error_app!()
-                }
-            }
+            Ok(res)
         },
         _ => {
             log::error!("RSGI protocol failure");
