@@ -39,10 +39,7 @@ jobs:
         cd .wrk && make && sudo mv wrk /usr/local/bin
     - name: Benchmarks
       env:
-        BENCHMARK_THREADS: true
         PROCS: 2
-        ASGI_THREADS: 4
-        RSGI_THREADS: 3
       run: |
         cd benchmarks && python benchmarks.py
     - name: Upload results
