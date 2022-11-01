@@ -76,6 +76,3 @@ incremental = false
 lto = "thin"
 opt-level = 3
 panic = "abort"
-
-[profile.release.build-override]
-opt-level = 0
