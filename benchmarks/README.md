@@ -36,7 +36,7 @@ CPUs: 2
 ### ASGI
 
 | Concurrency | Threading mode | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- |
 | none | runtime (c64) | 89417 | 5952 | 10.748ms | 30.215ms |
 | none | workers (c32) | 103271 | 6877 | 4.671ms | 22.133ms |
 | min | runtime (c128) | 82400 | 5480 | 23.281ms | 45.508ms |
@@ -49,7 +49,7 @@ CPUs: 2
 ### RSGI
 
 | Concurrency | Threading mode | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- |
 | none | runtime (c128) | 208580 | 13852 | 9.192ms | 35.284ms |
 | none | workers (c128) | 229219 | 15223 | 8.433ms | 60.556ms |
 | min | runtime (c128) | 187869 | 12485 | 10.211ms | 43.581ms |
@@ -97,7 +97,7 @@ CPUs: 2
 ### ASGI
 
 | Concurrency | Threading mode | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- |
 | none | runtime (c32) | 110799 | 7382 | 4.33ms | 10.224ms |
 | none | workers (c16) | 115343 | 7686 | 2.07ms | 4.708ms |
 | min | runtime (c32) | 97805 | 6518 | 4.905ms | 9.92ms |
@@ -110,7 +110,7 @@ CPUs: 2
 ### RSGI
 
 | Concurrency | Threading mode | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- |
 | none | runtime (c128) | 239457 | 15897 | 8.002ms | 14.425ms |
 | none | workers (c64) | 228192 | 15192 | 4.188ms | 8.49ms |
 | min | runtime (c128) | 220338 | 14649 | 8.7ms | 20.487ms |

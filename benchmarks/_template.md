@@ -44,7 +44,7 @@ CPUs: {{ =data.cpu }}
 ### {{ =interface.upper() }}
 
 | Concurrency | Threading mode | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- |
 {{ for key in data.results["concurrencies"][interface]["runtime"].keys(): }}
 {{ for thmode in ["runtime", "workers"]: }}
 {{ runs = data.results["concurrencies"][interface][thmode][key] }}
