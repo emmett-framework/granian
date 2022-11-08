@@ -11,11 +11,11 @@ from typing import List, Optional
 
 from ._granian import ASGIWorker, RSGIWorker
 from ._internal import load_target
-from .asgi import LifespanProtocol, callback_wrapper as _asgi_call_wrap
+from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, HTTPModes, Loops, ThreadModes
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
-from .rsgi import callback_wrapper as _rsgi_call_wrap
+from .rsgi import _callback_wrapper as _rsgi_call_wrap
 
 multiprocessing.allow_connection_pickling()
 

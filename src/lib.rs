@@ -16,9 +16,9 @@ mod workers;
 mod ws;
 
 #[pymodule]
-fn _granian(_py: Python, module: &PyModule) -> PyResult<()> {
+fn _granian(py: Python, module: &PyModule) -> PyResult<()> {
     asgi::init_pymodule(module)?;
-    rsgi::init_pymodule(module)?;
+    rsgi::init_pymodule(py, module)?;
     tcp::init_pymodule(module)?;
     workers::init_pymodule(module)?;
 

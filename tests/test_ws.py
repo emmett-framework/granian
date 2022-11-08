@@ -31,6 +31,21 @@ async def test_reject(server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip
+@pytest.mark.parametrize("server", ["asgi", "rsgi"], indirect=True)
+@pytest.mark.parametrize("threading_mode", ["runtime", "workers"])
+async def test_disconnect(server, threading_mode):
+    count = 0
+    async with server(threading_mode) as port:
+        async with websockets.connect(f"ws://localhost:{port}/ws_push") as ws:
+            while count < 3:
+                await ws.recv()
+                count += 1
+
+    assert count == 3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "threading_mode",
     [

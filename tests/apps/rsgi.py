@@ -74,6 +74,18 @@ async def ws_echo(_, protocol: WebsocketProtocol):
     protocol.close()
 
 
+async def ws_push(_, protocol: WebsocketProtocol):
+    trx = await protocol.accept()
+
+    try:
+        while True:
+            await trx.send_str("ping")
+    except Exception:
+        pass
+
+    protocol.close()
+
+
 async def err_app(scope: Scope, protocol: HTTPProtocol):
     1 / 0
 
@@ -85,5 +97,6 @@ def app(scope, protocol):
         "/ws_reject": ws_reject,
         "/ws_info": ws_info,
         "/ws_echo": ws_echo,
+        "/ws_push": ws_push,
         "/err_app": err_app
     }[scope.path](scope, protocol)

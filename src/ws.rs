@@ -1,4 +1,3 @@
-use futures::{sink::SinkExt, stream::StreamExt};
 use hyper::{
     Body,
     Request,
@@ -13,10 +12,9 @@ use tungstenite::{
     protocol::{Role, WebSocketConfig}
 };
 use pin_project::pin_project;
-use std::{future::Future, pin::Pin, sync::Arc, task::{Context, Poll}};
+use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use tokio_tungstenite::WebSocketStream;
-use tokio::sync::{Mutex, mpsc};
-use tungstenite::Message;
+use tokio::sync::mpsc;
 
 use super::utils::header_contains_value;
 
@@ -53,61 +51,6 @@ impl Future for HyperWebsocket {
         match stream.as_mut().poll(cx) {
             Poll::Pending => unreachable!(),
             Poll::Ready(x) => Poll::Ready(Ok(x)),
-        }
-    }
-}
-
-pub(crate) struct WebsocketTransport {
-    socket: Mutex<HyperWebsocket>,
-    stream: Option<Arc<Mutex<WebSocketStream<hyper::upgrade::Upgraded>>>>,
-    pub accepted: bool,
-    pub closed: bool
-}
-
-impl WebsocketTransport {
-    pub fn new(socket: HyperWebsocket) -> Self {
-        Self {
-            socket: Mutex::new(socket),
-            stream: None,
-            accepted: false,
-            closed: false
-        }
-    }
-
-    pub fn set_closed(&mut self) {
-        self.closed = true;
-    }
-
-    pub async fn accept(&mut self) -> Result<(), tungstenite::Error> {
-        self.stream = Some(
-            Arc::new(Mutex::new((&mut *(self.socket.lock().await)).await?))
-        );
-        self.accepted = true;
-        Ok(())
-    }
-
-    pub async fn receive(&self) -> Result<Message, tungstenite::Error> {
-        match &self.stream {
-            Some(wrapped) => {
-                let wsw = wrapped.clone();
-                let mut sock = wsw.lock().await;
-                match (&mut *sock).next().await {
-                    Some(message) => message,
-                    _ => Err(tungstenite::Error::ConnectionClosed)
-                }
-            },
-            _ => Err(tungstenite::Error::ConnectionClosed)
-        }
-    }
-
-    pub async fn send(&self, data: Message) -> Result<(), tungstenite::Error> {
-        match &self.stream {
-            Some(wrapped) => {
-                let wsw = wrapped.clone();
-                let mut sock = wsw.lock().await;
-                (&mut sock).send(data).await
-            },
-            _ => Err(tungstenite::Error::ConnectionClosed)
         }
     }
 }

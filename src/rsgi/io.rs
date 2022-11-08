@@ -1,5 +1,5 @@
 use bytes::Buf;
-use futures::{sink::SinkExt, stream::StreamExt};
+use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
 use hyper::{Body, Request};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -12,7 +12,7 @@ use crate::{
     runtime::{RuntimeRef, future_into_py},
     ws::{HyperWebsocket, UpgradeData}
 };
-use super::{errors::error_proto, types::{Response, ResponseType}};
+use super::{errors::{error_proto, error_stream}, types::{Response, ResponseType}};
 
 
 #[pyclass(module="granian._granian")]
@@ -107,7 +107,8 @@ impl RSGIHTTPProtocol {
 #[pyclass(module="granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
-    transport: Arc<Mutex<WebSocketStream<hyper::upgrade::Upgraded>>>
+    tx: Arc<Mutex<SplitSink<WebSocketStream<hyper::upgrade::Upgraded>, Message>>>,
+    rx: Arc<Mutex<SplitStream<WebSocketStream<hyper::upgrade::Upgraded>>>>
 }
 
 impl RSGIWebsocketTransport {
@@ -115,47 +116,55 @@ impl RSGIWebsocketTransport {
         rt: RuntimeRef,
         transport: WebSocketStream<hyper::upgrade::Upgraded>
     ) -> Self {
-        Self { rt: rt, transport: Arc::new(Mutex::new(transport)) }
+        let (tx, rx) = transport.split();
+        Self { rt: rt, tx: Arc::new(Mutex::new(tx)), rx: Arc::new(Mutex::new(rx)) }
     }
 }
 
 #[pymethods]
 impl RSGIWebsocketTransport {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let transport = self.transport.clone();
+        let transport = self.rx.clone();
         future_into_py(self.rt.clone(), py, async move {
-            let mut stream = transport.lock().await;
-            match stream.next().await {
-                Some(recv) => {
-                    match recv {
-                        Ok(message) => message_into_py(message),
-                        _ => error_proto!()
+            if let Ok(mut stream) = transport.try_lock_owned() {
+                match stream.next().await {
+                    Some(recv) => {
+                        if let Ok(message) = recv {
+                            return message_into_py(message)
+                        }
+                    },
+                    _ => {
+                        return error_stream!()
                     }
-                },
-                _ => error_proto!()
+                }
             }
+            error_proto!()
         })
     }
 
     fn send_bytes<'p>(&self, py: Python<'p>, data: Vec<u8>) -> PyResult<&'p PyAny> {
-        let transport = self.transport.clone();
+        let transport = self.tx.clone();
         future_into_py(self.rt.clone(), py, async move {
-            let mut stream = transport.lock().await;
-            match stream.send(Message::Binary(data)).await {
-                Ok(_) => Ok(()),
-                _ => error_proto!()
+            if let Ok(mut stream) = transport.try_lock_owned() {
+                return match stream.send(Message::Binary(data)).await {
+                    Ok(_) => Ok(()),
+                    _ => error_stream!()
+                }
             }
+            error_proto!()
         })
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
-        let transport = self.transport.clone();
+        let transport = self.tx.clone();
         future_into_py(self.rt.clone(), py, async move {
-            let mut stream = transport.lock().await;
-            match stream.send(Message::Text(data)).await {
-                Ok(_) => Ok(()),
-                _ => error_proto!()
+            if let Ok(mut stream) = transport.try_lock_owned() {
+                return match stream.send(Message::Text(data)).await {
+                    Ok(_) => Ok(()),
+                    _ => error_stream!()
+                }
             }
+            error_proto!()
         })
     }
 }
@@ -277,7 +286,7 @@ impl RSGIWebsocketProtocol {
     }
 }
 
-#[inline]
+#[inline(always)]
 fn message_into_py(message: Message) -> PyResult<PyObject> {
     match message {
         Message::Binary(message) => {

@@ -101,7 +101,7 @@ class LifespanProtocol:
         handler(message)
 
 
-def callback_wrapper(callback):
+def _callback_wrapper(callback):
     @wraps(callback)
     def wrapper(watcher, scope: Scope):
         coro = callback(

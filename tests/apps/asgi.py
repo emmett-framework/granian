@@ -76,6 +76,8 @@ async def ws_echo(scope, receive, send):
 
     while True:
         msg = await receive()
+        if msg['type'] == 'websocket.connect':
+            continue
         if msg['type'] == 'websocket.disconnect':
             break
         key = 'text' if 'text' in msg else 'bytes'
@@ -83,6 +85,19 @@ async def ws_echo(scope, receive, send):
             'type': 'websocket.send',
             key: msg[key]
         })
+
+
+async def ws_push(scope, receive, send):
+    await send({'type': 'websocket.accept'})
+
+    try:
+        while True:
+            await send({
+                'type': 'websocket.send',
+                'text': 'ping'
+            })
+    except Exception:
+        pass
 
 
 async def err_app(scope, receive, send):
@@ -100,6 +115,7 @@ def app(scope, receive, send):
         "/ws_reject": ws_reject,
         "/ws_info": ws_info,
         "/ws_echo": ws_echo,
+        "/ws_push": ws_push,
         "/err_app": err_app,
         "/err_proto": err_proto
     }[scope['path']](scope, receive, send)

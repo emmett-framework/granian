@@ -7,7 +7,9 @@ from ._granian import (
     RSGIHTTPProtocol as HTTPProtocol,
     RSGIWebsocketProtocol as WebsocketProtocol,
     RSGIHeaders as Headers,
-    RSGIScope as Scope
+    RSGIScope as Scope,
+    RSGIProtocolError as ProtocolError,
+    RSGIProtocolClosed as ProtocolClosed
 )
 
 
@@ -22,7 +24,7 @@ class WebsocketMessage:
     data: Union[bytes, str]
 
 
-def callback_wrapper(callback):
+def _callback_wrapper(callback):
     @wraps(callback)
     def wrapper(watcher, scope: Scope):
         watcher.event_loop.call_soon_threadsafe(

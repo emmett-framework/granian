@@ -55,13 +55,13 @@ impl std::convert::From<ASGIFlowError> for PyErr {
 
 macro_rules! error_flow {
     () => {
-        Err(ASGIFlowError.into())
+        Err(super::errors::ASGIFlowError.into())
     };
 }
 
 macro_rules! error_message {
     () => {
-        Err(UnsupportedASGIMessage.into())
+        Err(super::errors::UnsupportedASGIMessage.into())
     };
 }
 
