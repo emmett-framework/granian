@@ -127,14 +127,24 @@ impl RSGIWebsocketTransport {
         let transport = self.rx.clone();
         future_into_py(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock_owned() {
-                match stream.next().await {
-                    Some(recv) => {
-                        if let Ok(message) = recv {
-                            return message_into_py(message)
+                loop {
+                    match stream.next().await {
+                        Some(recv) => {
+                            match recv {
+                                Ok(Message::Ping(_)) => {
+                                    continue
+                                },
+                                Ok(message) => {
+                                    return message_into_py(message)
+                                },
+                                _ => {
+                                    return error_stream!()
+                                }
+                            }
+                        },
+                        _ => {
+                            return error_stream!()
                         }
-                    },
-                    _ => {
-                        return error_stream!()
                     }
                 }
             }
@@ -306,6 +316,9 @@ fn message_into_py(message: Message) -> PyResult<PyObject> {
                 WebsocketInboundCloseMessage::new().into_py(py)
             }))
         }
-        _ => error_proto!()
+        v => {
+            log::warn!("Unsupported websocket message received {:?}", v);
+            error_proto!()
+        }
     }
 }

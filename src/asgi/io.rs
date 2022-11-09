@@ -281,33 +281,43 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
                 }
             }
             if let Some(ws) = &mut *(transport.lock().await) {
-                if let Some(recv) = ws.next().await {
-                    if let Ok(message) = recv {
-                        return match message {
-                            Message::Binary(message) => {
-                                Python::with_gil(|py| {
-                                    let dict = PyDict::new(py);
-                                    dict.set_item("type", "websocket.receive")?;
-                                    dict.set_item("bytes", PyBytes::new(py, &message[..]))?;
-                                    Ok(dict.to_object(py))
-                                })
-                            },
-                            Message::Text(message) => {
-                                Python::with_gil(|py| {
-                                    let dict = PyDict::new(py);
-                                    dict.set_item("type", "websocket.receive")?;
-                                    dict.set_item("text", message)?;
-                                    Ok(dict.to_object(py))
-                                })
-                            },
-                            Message::Close(_) => {
-                                Python::with_gil(|py| {
-                                    let dict = PyDict::new(py);
-                                    dict.set_item("type", "websocket.disconnect")?;
-                                    Ok(dict.to_object(py))
-                                })
-                            },
-                            _ => error_flow!()
+                loop {
+                    match ws.next().await {
+                        Some(recv) => {
+                            match recv {
+                                Ok(Message::Ping(_)) => {
+                                    continue
+                                },
+                                Ok(Message::Binary(message)) => {
+                                    return Python::with_gil(|py| {
+                                        let dict = PyDict::new(py);
+                                        dict.set_item("type", "websocket.receive")?;
+                                        dict.set_item("bytes", PyBytes::new(py, &message[..]))?;
+                                        Ok(dict.to_object(py))
+                                    })
+                                },
+                                Ok(Message::Text(message)) => {
+                                    return Python::with_gil(|py| {
+                                        let dict = PyDict::new(py);
+                                        dict.set_item("type", "websocket.receive")?;
+                                        dict.set_item("text", message)?;
+                                        Ok(dict.to_object(py))
+                                    })
+                                },
+                                Ok(Message::Close(_)) => {
+                                    return Python::with_gil(|py| {
+                                        let dict = PyDict::new(py);
+                                        dict.set_item("type", "websocket.disconnect")?;
+                                        Ok(dict.to_object(py))
+                                    })
+                                },
+                                _ => {
+                                    break
+                                }
+                            }
+                        },
+                        _ => {
+                            break
                         }
                     }
                 }
