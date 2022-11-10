@@ -79,7 +79,7 @@ impl ASGIHTTPProtocol {
     }
 
     pub fn tx(&mut self) -> Option<oneshot::Sender<Response<Body>>> {
-        return self.tx.take()
+        self.tx.take()
     }
 }
 
@@ -162,7 +162,7 @@ impl ASGIWebsocketProtocol {
     ) -> PyResult<&'p PyAny> {
         let transport = self.ws_tx.clone();
         let closed = self.closed.clone();
-        let message = adapt_ws_message(data);
+        let message = ws_message_into_rs(data);
         future_into_py(self.rt.clone(), py, async move {
             if !closed {
                 if let Some(ws) = &mut *(transport.lock().await) {
@@ -288,28 +288,8 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
                                 Ok(Message::Ping(_)) => {
                                     continue
                                 },
-                                Ok(Message::Binary(message)) => {
-                                    return Python::with_gil(|py| {
-                                        let dict = PyDict::new(py);
-                                        dict.set_item("type", "websocket.receive")?;
-                                        dict.set_item("bytes", PyBytes::new(py, &message[..]))?;
-                                        Ok(dict.to_object(py))
-                                    })
-                                },
-                                Ok(Message::Text(message)) => {
-                                    return Python::with_gil(|py| {
-                                        let dict = PyDict::new(py);
-                                        dict.set_item("type", "websocket.receive")?;
-                                        dict.set_item("text", message)?;
-                                        Ok(dict.to_object(py))
-                                    })
-                                },
-                                Ok(Message::Close(_)) => {
-                                    return Python::with_gil(|py| {
-                                        let dict = PyDict::new(py);
-                                        dict.set_item("type", "websocket.disconnect")?;
-                                        Ok(dict.to_object(py))
-                                    })
+                                Ok(message) => {
+                                    return ws_message_into_py(message)
                                 },
                                 _ => {
                                     break
@@ -321,7 +301,7 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
                         }
                     }
                 }
-            };
+            }
             error_flow!()
         })
     }
@@ -415,7 +395,7 @@ fn adapt_body(message: &PyDict) -> (Vec<u8>, bool) {
 }
 
 #[inline(always)]
-fn adapt_ws_message(message: &PyDict) -> Message {
+fn ws_message_into_rs(message: &PyDict) -> Message {
     match message.contains("bytes") {
         Ok(true) => {
             let data = match message.get_item("bytes") {
@@ -436,5 +416,38 @@ fn adapt_ws_message(message: &PyDict) -> Message {
             Message::Text(data)
         },
         _ => Message::Binary(EMPTY_BYTES)
+    }
+}
+
+#[inline(always)]
+fn ws_message_into_py(message: Message) -> PyResult<PyObject> {
+    match message {
+        Message::Binary(message) => {
+            Python::with_gil(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("type", "websocket.receive")?;
+                dict.set_item("bytes", PyBytes::new(py, &message[..]))?;
+                Ok(dict.to_object(py))
+            })
+        },
+        Message::Text(message) => {
+            Python::with_gil(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("type", "websocket.receive")?;
+                dict.set_item("text", message)?;
+                Ok(dict.to_object(py))
+            })
+        },
+        Message::Close(_) => {
+            Python::with_gil(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("type", "websocket.disconnect")?;
+                Ok(dict.to_object(py))
+            })
+        },
+        v => {
+            log::warn!("Unsupported websocket message received {:?}", v);
+            error_flow!()
+        }
     }
 }

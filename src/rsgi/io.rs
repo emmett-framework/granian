@@ -138,15 +138,16 @@ impl RSGIWebsocketTransport {
                                     return message_into_py(message)
                                 },
                                 _ => {
-                                    return error_stream!()
+                                    break
                                 }
                             }
                         },
                         _ => {
-                            return error_stream!()
+                            break
                         }
                     }
                 }
+                return error_stream!()
             }
             error_proto!()
         })
