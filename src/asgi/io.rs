@@ -215,9 +215,12 @@ impl ASGIProtocol for ASGIHTTPProtocol {
             let body = hyper::body::to_bytes(&mut *req).await.unwrap();
             Python::with_gil(|py| {
                 let dict = PyDict::new(py);
-                dict.set_item("type", "http.request")?;
-                dict.set_item("body", &body.to_vec())?;
-                dict.set_item("more_body", false)?;
+                dict.set_item(
+                    pyo3::intern!(py, "type"),
+                    pyo3::intern!(py, "http.request")
+                )?;
+                dict.set_item(pyo3::intern!(py, "body"), &body.to_vec())?;
+                dict.set_item(pyo3::intern!(py, "more_body"), false)?;
                 Ok(dict.to_object(py))
             })
         })
@@ -266,7 +269,10 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
                         Ok(true) => {
                             return Python::with_gil(|py| {
                                 let dict = PyDict::new(py);
-                                dict.set_item("type", "websocket.connect")?;
+                                dict.set_item(
+                                    pyo3::intern!(py, "type"),
+                                    pyo3::intern!(py, "websocket.connect")
+                                )?;
                                 Ok(dict.to_object(py))
                             })
                         },
@@ -425,23 +431,35 @@ fn ws_message_into_py(message: Message) -> PyResult<PyObject> {
         Message::Binary(message) => {
             Python::with_gil(|py| {
                 let dict = PyDict::new(py);
-                dict.set_item("type", "websocket.receive")?;
-                dict.set_item("bytes", PyBytes::new(py, &message[..]))?;
+                dict.set_item(
+                    pyo3::intern!(py, "type"),
+                    pyo3::intern!(py, "websocket.receive")
+                )?;
+                dict.set_item(
+                    pyo3::intern!(py, "bytes"),
+                    PyBytes::new(py, &message[..])
+                )?;
                 Ok(dict.to_object(py))
             })
         },
         Message::Text(message) => {
             Python::with_gil(|py| {
                 let dict = PyDict::new(py);
-                dict.set_item("type", "websocket.receive")?;
-                dict.set_item("text", message)?;
+                dict.set_item(
+                    pyo3::intern!(py, "type"),
+                    pyo3::intern!(py, "websocket.receive")
+                )?;
+                dict.set_item(pyo3::intern!(py, "text"), message)?;
                 Ok(dict.to_object(py))
             })
         },
         Message::Close(_) => {
             Python::with_gil(|py| {
                 let dict = PyDict::new(py);
-                dict.set_item("type", "websocket.disconnect")?;
+                dict.set_item(
+                    pyo3::intern!(py, "type"),
+                    pyo3::intern!(py, "websocket.disconnect")
+                )?;
                 Ok(dict.to_object(py))
             })
         },
