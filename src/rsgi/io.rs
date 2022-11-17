@@ -2,7 +2,7 @@ use bytes::Buf;
 use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
 use hyper::{Body, Request};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyString};
 use std::sync::Arc;
 use tokio_tungstenite::WebSocketStream;
 use tokio::sync::{oneshot, Mutex};
@@ -126,7 +126,7 @@ impl RSGIWebsocketTransport {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.rx.clone();
         future_into_py(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock_owned() {
+            if let Ok(mut stream) = transport.try_lock() {
                 loop {
                     match stream.next().await {
                         Some(recv) => {
@@ -156,7 +156,7 @@ impl RSGIWebsocketTransport {
     fn send_bytes<'p>(&self, py: Python<'p>, data: Vec<u8>) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
         future_into_py(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock_owned() {
+            if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Binary(data)).await {
                     Ok(_) => Ok(()),
                     _ => error_stream!()
@@ -169,7 +169,7 @@ impl RSGIWebsocketTransport {
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
         future_into_py(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock_owned() {
+            if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Text(data)).await {
                     Ok(_) => Ok(()),
                     _ => error_stream!()
@@ -240,11 +240,11 @@ struct WebsocketInboundBytesMessage {
     #[pyo3(get)]
     kind: usize,
     #[pyo3(get)]
-    data: Vec<u8>
+    data: Py<PyBytes>
 }
 
 impl WebsocketInboundBytesMessage {
-    pub fn new(data: Vec<u8>) -> Self {
+    pub fn new(data:Py<PyBytes>) -> Self {
         Self { kind: WebsocketMessageType::Bytes as usize, data: data }
     }
 }
@@ -254,11 +254,11 @@ struct WebsocketInboundTextMessage {
     #[pyo3(get)]
     kind: usize,
     #[pyo3(get)]
-    data: String
+    data: Py<PyString>
 }
 
 impl WebsocketInboundTextMessage {
-    pub fn new(data: String) -> Self {
+    pub fn new(data: Py<PyString>) -> Self {
         Self { kind: WebsocketMessageType::Text as usize, data: data }
     }
 }
@@ -303,13 +303,15 @@ fn message_into_py(message: Message) -> PyResult<PyObject> {
         Message::Binary(message) => {
             Ok(Python::with_gil(|py| {
                 WebsocketInboundBytesMessage::new(
-                    message.to_vec()
+                    PyBytes::new(py, &message).into()
                 ).into_py(py)
             }))
         },
         Message::Text(message) => {
             Ok(Python::with_gil(|py| {
-                WebsocketInboundTextMessage::new(message).into_py(py)
+                WebsocketInboundTextMessage::new(
+                    PyString::new(py, &message).into()
+                ).into_py(py)
             }))
         },
         Message::Close(_) => {
