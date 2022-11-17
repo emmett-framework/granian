@@ -1,6 +1,6 @@
 [package]
 name = "granian"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Rust HTTP server for Python applications"
 authors = ["Giovanni Barillari <gi0baro@d4net.org>"]
 license = "BSD-3-Clause"
