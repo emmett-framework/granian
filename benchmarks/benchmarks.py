@@ -68,7 +68,7 @@ def benchmark(endpoint):
     # primer
     wrk(5, 8, endpoint)
     time.sleep(2)
-    # warmup
+    # warm up
     wrk(5, max(WRK_CONCURRENCIES), endpoint)
     time.sleep(3)
     # bench

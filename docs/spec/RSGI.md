@@ -22,7 +22,7 @@ There are two separate parts to an RSGI connection:
 - A *connection scope*, like ASGI, which represents a protocol connection to a user and survives until the connection closes.
 - A *connection protocol* interface the application can interact with, that will responsible of trasmitting data from and to the client.
 
-Applications are consequentially called and awaited with a connection scope and a connection protocol to interact with. All this happening in an asynchronous event loop.
+Applications are consequently called and awaited with a connection scope and a connection protocol to interact with. All this happening in an asynchronous event loop.
 
 Each call of the application callable maps to a single incoming “socket” or connection, and is expected to last the lifetime of that connection plus a little longer if there is cleanup to do.
 
