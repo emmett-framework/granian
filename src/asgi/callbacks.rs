@@ -129,9 +129,13 @@ pub(crate) async fn call_http(
     let (tx, rx) = oneshot::channel();
     let protocol = ASGIHTTPProtocol::new(rt, req, tx);
 
-    Python::with_gil(|py| {
-        callback.call1(py, (CallbackWatcherHTTP::new(py, cb, protocol), scope))
-    })?;
+    tokio::task::spawn_blocking(move || {
+        Python::with_gil(|py| {
+            let _ = callback.call1(
+                py, (CallbackWatcherHTTP::new(py, cb, protocol), scope)
+            );
+        });
+    });
 
     match rx.await {
         Ok(res) => {
@@ -155,9 +159,13 @@ pub(crate) async fn call_ws(
     let (tx, rx) = oneshot::channel();
     let protocol = ASGIWebsocketProtocol::new(rt, tx, ws, upgrade);
 
-    Python::with_gil(|py| {
-        callback.call1(py, (CallbackWatcherWebsocket::new(py, cb, protocol), scope))
-    })?;
+    tokio::task::spawn_blocking(move || {
+        Python::with_gil(|py| {
+            let _ = callback.call1(
+                py, (CallbackWatcherWebsocket::new(py, cb, protocol), scope)
+            );
+        });
+    });
 
     match rx.await {
         Ok(res) => {
