@@ -30,7 +30,7 @@ async def info(scope, receive, send):
             'query_string': scope['query_string'].decode("latin-1"),
             'headers': {
                 k.decode("utf8"): v.decode("utf8")
-                for k, v in scope['headers'].items()
+                for k, v in scope['headers']
             }
         }).encode("utf8"),
         'more_body': False
@@ -64,7 +64,7 @@ async def ws_info(scope, receive, send):
             'query_string': scope['query_string'].decode("latin-1"),
             'headers': {
                 k.decode("utf8"): v.decode("utf8")
-                for k, v in scope['headers'].items()
+                for k, v in scope['headers']
             }
         })
     })

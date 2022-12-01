@@ -1,6 +1,5 @@
 use hyper::{Uri, Version, header::{HeaderMap}};
 use pyo3::prelude::*;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 
 
@@ -76,10 +75,10 @@ impl ASGIScope {
     }
 
     #[getter(headers)]
-    fn get_headers(&self) -> HashMap<&[u8], &[u8]> {
-        let mut ret = HashMap::new();
+    fn get_headers(&self) -> Vec<(&[u8], &[u8])> {
+        let mut ret = Vec::with_capacity(self.headers.len());
         for (key, value) in self.headers.iter() {
-            ret.insert(key.as_str().as_bytes(), value.as_bytes());
+            ret.push((key.as_str().as_bytes(), value.as_bytes()));
         }
         ret
     }

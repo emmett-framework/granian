@@ -8,13 +8,15 @@ class ASGIScope:
     client_port: int
     server_ip: str
     server_port: int
-    headers: Dict[bytes, bytes]
     http_version: str
     method: str
     path: str
     proto: str
     query_string: str
     scheme: str
+
+    @property
+    def headers(self) -> List[Tuple[bytes, bytes]]: ...
 
 
 class RSGIHeaders:
