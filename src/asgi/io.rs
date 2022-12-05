@@ -102,8 +102,7 @@ pub(crate) struct ASGIWebsocketProtocol {
     upgrade: Option<UpgradeData>,
     ws_tx: Arc<Mutex<Option<SplitSink<WebSocketStream<hyper::upgrade::Upgraded>, Message>>>>,
     ws_rx: Arc<Mutex<Option<SplitStream<WebSocketStream<hyper::upgrade::Upgraded>>>>>,
-    accepted_rx: Option<oneshot::Receiver<bool>>,
-    accepted_tx: Option<oneshot::Sender<bool>>,
+    accepted: Arc<Mutex<bool>>,
     closed: bool
 }
 
@@ -114,8 +113,6 @@ impl ASGIWebsocketProtocol {
         websocket: HyperWebsocket,
         upgrade: UpgradeData
     ) -> Self {
-        let (accepted_tx, accepted_rx) = oneshot::channel();
-
         Self {
             rt: rt,
             tx: Some(tx),
@@ -123,8 +120,7 @@ impl ASGIWebsocketProtocol {
             upgrade: Some(upgrade),
             ws_tx: Arc::new(Mutex::new(None)),
             ws_rx: Arc::new(Mutex::new(None)),
-            accepted_rx: Some(accepted_rx),
-            accepted_tx: Some(accepted_tx),
+            accepted: Arc::new(Mutex::new(false)),
             closed: false
         }
     }
@@ -133,7 +129,7 @@ impl ASGIWebsocketProtocol {
     fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let mut upgrade = self.upgrade.take().unwrap();
         let websocket = self.websocket.take().unwrap();
-        let accepted = self.accepted_tx.take().unwrap();
+        let accepted = self.accepted.clone();
         let tx = self.ws_tx.clone();
         let rx = self.ws_rx.clone();
         future_into_py(self.rt.clone(), py, async move {
@@ -141,13 +137,12 @@ impl ASGIWebsocketProtocol {
                 if let Ok(stream) = websocket.await {
                     let mut wtx = tx.lock().await;
                     let mut wrx = rx.lock().await;
+                    let mut accepted = accepted.lock().await;
                     let (tx, rx) = stream.split();
                     *wtx = Some(tx);
                     *wrx = Some(rx);
-                    return match accepted.send(true) {
-                        Ok(_) => Ok(()),
-                        _ => error_flow!()
-                    }
+                    *accepted = true;
+                    return Ok(())
                 }
             }
             error_flow!()
@@ -262,28 +257,22 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
     #[inline(always)]
     fn _recv<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.ws_rx.clone();
+        let accepted = self.accepted.clone();
         let closed = self.closed.clone();
-        let accepted = self.accepted_rx.take();
         future_into_py(self.rt.clone(), py, async move {
-            match (accepted, closed) {
-                (Some(accepted), false) => {
-                    match accepted.await {
-                        Ok(true) => {
-                            return Python::with_gil(|py| {
-                                let dict = PyDict::new(py);
-                                dict.set_item(
-                                    pyo3::intern!(py, "type"),
-                                    pyo3::intern!(py, "websocket.connect")
-                                )?;
-                                Ok(dict.to_object(py))
-                            })
-                        },
-                        _ => {
-                            return error_flow!()
-                        }
-                    }
+            let accepted = accepted.lock().await;
+            match (*accepted, closed) {
+                (false, false) => {
+                    return Python::with_gil(|py| {
+                        let dict = PyDict::new(py);
+                        dict.set_item(
+                            pyo3::intern!(py, "type"),
+                            pyo3::intern!(py, "websocket.connect")
+                        )?;
+                        Ok(dict.to_object(py))
+                    })
                 },
-                (None, false) => {},
+                (true, false) => {},
                 _ => {
                     return error_flow!()
                 }
