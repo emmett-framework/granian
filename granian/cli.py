@@ -39,6 +39,7 @@ def main(
     ),
     workers: int = typer.Option(1, min=1, help="Number of worker processes."),
     threads: Optional[int] = typer.Option(None, min=1, help="Number of threads."),
+    pthreads: Optional[int] = typer.Option(1, min=1, help="Number of Python threads"),
     threading_mode: ThreadModes = typer.Option(
         ThreadModes.runtime.value,
         help="Threading mode to use."
@@ -85,6 +86,7 @@ def main(
         interface=interface,
         workers=workers,
         threads=threads,
+        pthreads=pthreads,
         threading_mode=threading_mode,
         loop=loop,
         http=http,

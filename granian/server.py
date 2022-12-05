@@ -31,6 +31,7 @@ class Granian:
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         threads: Optional[int] = None,
+        pthreads: int = 1,
         threading_mode: ThreadModes = ThreadModes.runtime,
         loop: Loops = Loops.auto,
         http: HTTPModes = HTTPModes.auto,
@@ -50,6 +51,7 @@ class Granian:
             max(1, threads) if threads is not None else
             max(2, multiprocessing.cpu_count() // workers)
         )
+        self.pthreads = pthreads
         self.threading_mode = threading_mode
         self.loop = loop
         self.http = http
@@ -88,6 +90,7 @@ class Granian:
         socket,
         loop_impl,
         threads,
+        pthreads,
         threading_mode,
         http_mode,
         http1_buffer_size,
@@ -113,6 +116,7 @@ class Granian:
             worker_id,
             sfd,
             threads,
+            pthreads,
             http_mode,
             http1_buffer_size,
             websockets,
@@ -138,6 +142,7 @@ class Granian:
         socket,
         loop_impl,
         threads,
+        pthreads,
         threading_mode,
         http_mode,
         http1_buffer_size,
@@ -167,6 +172,7 @@ class Granian:
             worker_id,
             sfd,
             threads,
+            pthreads,
             http_mode,
             http1_buffer_size,
             websockets,
@@ -210,6 +216,7 @@ class Granian:
                 socket_loader(),
                 self.loop,
                 self.threads,
+                self.pthreads,
                 self.threading_mode,
                 self.http,
                 self.http1_buffer_size,
