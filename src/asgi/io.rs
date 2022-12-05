@@ -165,10 +165,12 @@ impl ASGIWebsocketProtocol {
         let message = ws_message_into_rs(data);
         future_into_py(self.rt.clone(), py, async move {
             if !closed {
-                if let Some(ws) = &mut *(transport.lock().await) {
-                    if let Ok(_) = ws.send(message).await {
-                        return Ok(())
-                    }
+                if let Ok(message) = message {
+                    if let Some(ws) = &mut *(transport.lock().await) {
+                        if let Ok(_) = ws.send(message).await {
+                            return Ok(())
+                        }
+                    };
                 };
             };
             error_flow!()
@@ -401,27 +403,28 @@ fn adapt_body(message: &PyDict) -> (Vec<u8>, bool) {
 }
 
 #[inline(always)]
-fn ws_message_into_rs(message: &PyDict) -> Message {
-    match message.contains("bytes") {
-        Ok(true) => {
-            let data = match message.get_item("bytes") {
-                Some(item) => {
-                    item.extract().unwrap_or(EMPTY_BYTES)
-                },
-                _ => EMPTY_BYTES
-            };
-            Message::Binary(data)
+fn ws_message_into_rs(message: &PyDict) -> PyResult<Message> {
+    match (message.get_item("bytes"), message.get_item("text")) {
+        (Some(item), None) => {
+            Ok(Message::Binary(item.extract().unwrap_or(EMPTY_BYTES)))
         },
-        Ok(false) => {
-            let data = match message.get_item("text") {
-                Some(item) => {
-                    item.extract().unwrap_or(EMPTY_STRING)
-                },
-                _ => EMPTY_STRING
-            };
-            Message::Text(data)
+        (None, Some(item)) => {
+            Ok(Message::Text(item.extract().unwrap_or(EMPTY_STRING)))
         },
-        _ => Message::Binary(EMPTY_BYTES)
+        (Some(itemb), Some(itemt)) => {
+            match (itemb.extract().unwrap_or(None), itemt.extract().unwrap_or(None)) {
+                (Some(msgb), None) => {
+                    Ok(Message::Binary(msgb))
+                },
+                (None, Some(msgt)) => {
+                    Ok(Message::Text(msgt))
+                },
+                _ => error_flow!()
+            }
+        },
+        _ => {
+            error_flow!()
+        }
     }
 }
 

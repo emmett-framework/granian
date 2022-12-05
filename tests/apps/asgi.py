@@ -80,11 +80,10 @@ async def ws_echo(scope, receive, send):
             continue
         if msg['type'] == 'websocket.disconnect':
             break
+        rv = {'type': 'websocket.send', 'bytes': None, 'text': None}
         key = 'text' if 'text' in msg else 'bytes'
-        await send({
-            'type': 'websocket.send',
-            key: msg[key]
-        })
+        rv[key] = msg[key]
+        await send(rv)
 
 
 async def ws_push(scope, receive, send):
