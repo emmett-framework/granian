@@ -14,6 +14,7 @@ mod tcp;
 mod utils;
 mod workers;
 mod ws;
+mod wsgi;
 
 #[pymodule]
 fn _granian(py: Python, module: &PyModule) -> PyResult<()> {
@@ -21,6 +22,7 @@ fn _granian(py: Python, module: &PyModule) -> PyResult<()> {
     rsgi::init_pymodule(py, module)?;
     tcp::init_pymodule(module)?;
     workers::init_pymodule(module)?;
+    wsgi::init_pymodule(py, module)?;
 
     pyo3::prepare_freethreaded_python();
 

@@ -52,6 +52,11 @@ def rsgi_server(server_port):
 
 
 @pytest.fixture(scope="function")
+def wsgi_server(server_port):
+    return partial(_server, "wsgi", server_port)
+
+
+@pytest.fixture(scope="function")
 def server(server_port, request):
     return partial(_server, request.param, server_port)
 

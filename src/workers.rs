@@ -8,6 +8,7 @@ use std::os::windows::io::FromRawSocket;
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
+use super::wsgi::serve::WSGIWorker;
 use super::tls::{load_certs as tls_load_certs, load_private_key as tls_load_pkey};
 
 pub(crate) struct WorkerConfig {
@@ -460,6 +461,7 @@ pub(crate) use serve_wth_ssl;
 pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
     module.add_class::<ASGIWorker>()?;
     module.add_class::<RSGIWorker>()?;
+    module.add_class::<WSGIWorker>()?;
 
     Ok(())
 }
