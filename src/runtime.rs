@@ -56,8 +56,8 @@ pub(crate) struct RuntimeWrapper {
 }
 
 impl RuntimeWrapper {
-    pub fn new() -> Self {
-        Self { rt: default_runtime().unwrap() }
+    pub fn new(blocking_threads: usize) -> Self {
+        Self { rt: default_runtime(blocking_threads).unwrap() }
     }
 
     pub fn with_runtime(rt: tokio::runtime::Runtime) -> Self {
@@ -152,24 +152,26 @@ impl LocalContextExt for RuntimeRef {
     }
 }
 
-fn default_runtime() -> io::Result<tokio::runtime::Runtime> {
+fn default_runtime(blocking_threads: usize) -> io::Result<tokio::runtime::Runtime> {
     Builder::new_current_thread()
+        .max_blocking_threads(blocking_threads)
         .enable_all()
         .build()
 }
 
-pub(crate) fn init_runtime_mt(threads: usize) -> RuntimeWrapper {
+pub(crate) fn init_runtime_mt(threads: usize, blocking_threads: usize) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         Builder::new_multi_thread()
             .worker_threads(threads)
+            .max_blocking_threads(blocking_threads)
             .enable_all()
             .build()
             .unwrap()
     )
 }
 
-pub(crate) fn init_runtime_st() -> RuntimeWrapper {
-    RuntimeWrapper::new()
+pub(crate) fn init_runtime_st(blocking_threads: usize) -> RuntimeWrapper {
+    RuntimeWrapper::new(blocking_threads)
 }
 
 pub(crate) fn into_future(

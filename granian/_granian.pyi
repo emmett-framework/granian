@@ -67,3 +67,14 @@ class RSGIProtocolError(RuntimeError):
 
 class RSGIProtocolClosed(RuntimeError):
     ...
+
+
+class WSGIScope:
+    server: str
+    client: str
+    scheme: str
+    method: str
+    path: str
+    query_string: str
+    headers: Dict[str, str]
+    body: bytes

@@ -9,13 +9,14 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional
 
-from ._granian import ASGIWorker, RSGIWorker
+from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, HTTPModes, Loops, ThreadModes
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
 from .rsgi import _callback_wrapper as _rsgi_call_wrap
+from .wsgi import _callback_wrapper as _wsgi_call_wrap
 
 multiprocessing.allow_connection_pickling()
 
@@ -30,8 +31,9 @@ class Granian:
         port: int = 8000,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
-        threads: Optional[int] = None,
-        threading_mode: ThreadModes = ThreadModes.runtime,
+        threads: int = 1,
+        pthreads: int = 1,
+        threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
@@ -46,10 +48,8 @@ class Granian:
         self.bind_port = port
         self.interface = interface
         self.workers = max(1, workers)
-        self.threads = (
-            max(1, threads) if threads is not None else
-            max(2, multiprocessing.cpu_count() // workers)
-        )
+        self.threads = max(1, threads)
+        self.pthreads = max(1, pthreads)
         self.threading_mode = threading_mode
         self.loop = loop
         self.http = http
@@ -88,6 +88,7 @@ class Granian:
         socket,
         loop_impl,
         threads,
+        pthreads,
         threading_mode,
         http_mode,
         http1_buffer_size,
@@ -113,6 +114,7 @@ class Granian:
             worker_id,
             sfd,
             threads,
+            pthreads,
             http_mode,
             http1_buffer_size,
             websockets,
@@ -138,6 +140,7 @@ class Granian:
         socket,
         loop_impl,
         threads,
+        pthreads,
         threading_mode,
         http_mode,
         http1_buffer_size,
@@ -167,6 +170,7 @@ class Granian:
             worker_id,
             sfd,
             threads,
+            pthreads,
             http_mode,
             http1_buffer_size,
             websockets,
@@ -178,6 +182,50 @@ class Granian:
         }[threading_mode])
         serve(
             _rsgi_call_wrap(callback),
+            loop,
+            contextvars.copy_context(),
+            shutdown_event.wait()
+        )
+
+    @staticmethod
+    def _spawn_wsgi_worker(
+        worker_id,
+        callback_loader,
+        socket,
+        loop_impl,
+        threads,
+        pthreads,
+        threading_mode,
+        http_mode,
+        http1_buffer_size,
+        websockets,
+        log_level,
+        ssl_ctx
+    ):
+        from granian._loops import loops, set_loop_signals
+
+        configure_logging(log_level)
+        loop = loops.get(loop_impl)
+        sfd = socket.fileno()
+        callback = callback_loader()
+
+        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+
+        worker = WSGIWorker(
+            worker_id,
+            sfd,
+            threads,
+            pthreads,
+            http_mode,
+            http1_buffer_size,
+            *ssl_ctx
+        )
+        serve = getattr(worker, {
+            ThreadModes.runtime: "serve_rth",
+            ThreadModes.workers: "serve_wth"
+        }[threading_mode])
+        serve(
+            _wsgi_call_wrap(callback),
             loop,
             contextvars.copy_context(),
             shutdown_event.wait()
@@ -210,6 +258,7 @@ class Granian:
                 socket_loader(),
                 self.loop,
                 self.threads,
+                self.pthreads,
                 self.threading_mode,
                 self.http,
                 self.http1_buffer_size,
@@ -254,7 +303,8 @@ class Granian:
     def serve(self, spawn_target = None, target_loader = None):
         default_spawners = {
             Interfaces.ASGI: self._spawn_asgi_worker,
-            Interfaces.RSGI: self._spawn_rsgi_worker
+            Interfaces.RSGI: self._spawn_rsgi_worker,
+            Interfaces.WSGI: self._spawn_wsgi_worker
         }
         target_loader = target_loader or load_target
         spawn_target = spawn_target or default_spawners[self.interface]

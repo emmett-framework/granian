@@ -8,12 +8,14 @@ use std::os::windows::io::FromRawSocket;
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
+use super::wsgi::serve::WSGIWorker;
 use super::tls::{load_certs as tls_load_certs, load_private_key as tls_load_pkey};
 
 pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
+    pub pthreads: usize,
     pub http_mode: String,
     pub http1_buffer_max: usize,
     pub websockets_enabled: bool,
@@ -27,6 +29,7 @@ impl WorkerConfig {
         id: i32,
         socket_fd: i32,
         threads: usize,
+        pthreads: usize,
         http_mode: String,
         http1_buffer_max: usize,
         websockets_enabled: bool,
@@ -38,6 +41,7 @@ impl WorkerConfig {
             id,
             socket_fd,
             threads,
+            pthreads,
             http_mode,
             http1_buffer_max,
             websockets_enabled,
@@ -171,7 +175,7 @@ macro_rules! serve_rth {
             signal_rx: PyObject
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(self.config.threads);
+            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.pthreads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
             let http1_only = self.config.http_mode == "1";
@@ -227,7 +231,7 @@ macro_rules! serve_rth_ssl {
             signal_rx: PyObject
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(self.config.threads);
+            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.pthreads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
             let http1_only = self.config.http_mode == "1";
@@ -288,7 +292,7 @@ macro_rules! serve_wth {
             signal_rx: PyObject
         ) {
             pyo3_log::init();
-            let rtm = crate::runtime::init_runtime_mt(1);
+            let rtm = crate::runtime::init_runtime_mt(1, 1);
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
@@ -306,11 +310,12 @@ macro_rules! serve_wth {
                 let http1_only = self.config.http_mode == "1";
                 let http2_only = self.config.http_mode == "2";
                 let http1_buffer_max = self.config.http1_buffer_max.clone();
+                let pthreads = self.config.pthreads.clone();
                 let callback_wrapper = callback_wrapper.clone();
                 let mut srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st();
+                    let rt = crate::runtime::init_runtime_st(pthreads);
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 
@@ -369,7 +374,7 @@ macro_rules! serve_wth_ssl {
             signal_rx: PyObject
         ) {
             pyo3_log::init();
-            let rtm = crate::runtime::init_runtime_mt(1);
+            let rtm = crate::runtime::init_runtime_mt(1, 1);
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
@@ -388,11 +393,12 @@ macro_rules! serve_wth_ssl {
                 let http2_only = self.config.http_mode == "2";
                 let http1_buffer_max = self.config.http1_buffer_max.clone();
                 let tls_cfg = self.config.tls_cfg();
+                let pthreads = self.config.pthreads.clone();
                 let callback_wrapper = callback_wrapper.clone();
                 let mut srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st();
+                    let rt = crate::runtime::init_runtime_st(pthreads);
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 
@@ -455,6 +461,7 @@ pub(crate) use serve_wth_ssl;
 pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
     module.add_class::<ASGIWorker>()?;
     module.add_class::<RSGIWorker>()?;
+    module.add_class::<WSGIWorker>()?;
 
     Ok(())
 }
