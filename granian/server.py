@@ -31,9 +31,9 @@ class Granian:
         port: int = 8000,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
-        threads: Optional[int] = None,
+        threads: int = 1,
         pthreads: int = 1,
-        threading_mode: ThreadModes = ThreadModes.runtime,
+        threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
@@ -48,11 +48,8 @@ class Granian:
         self.bind_port = port
         self.interface = interface
         self.workers = max(1, workers)
-        self.threads = (
-            max(1, threads) if threads is not None else
-            max(2, multiprocessing.cpu_count() // workers)
-        )
-        self.pthreads = pthreads
+        self.threads = max(1, threads)
+        self.pthreads = max(1, pthreads)
         self.threading_mode = threading_mode
         self.loop = loop
         self.http = http
