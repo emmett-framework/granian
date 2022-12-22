@@ -115,7 +115,7 @@ def rsgi_body_type():
     return results
 
 
-def rsgi_vs_asgi():
+def interfaces():
     results = {}
     with app("rsgi"):
         results["RSGI bytes"] = benchmark("b")
@@ -123,6 +123,9 @@ def rsgi_vs_asgi():
     with app("asgi"):
         results["ASGI bytes"] = benchmark("b")
         results["ASGI str"] = benchmark("s")
+    with app("wsgi"):
+        results["WSGI bytes"] = benchmark("b")
+        results["WSGI str"] = benchmark("s")
     return results
 
 
@@ -150,18 +153,43 @@ def vs_3rd_sync():
     return results
 
 
+def vs_3rd_maxc():
+    results = {}
+    procs = {
+        "asgi": (int(os.environ.get("P_ASGI", 1)), int(os.environ.get("T_ASGI", 1))),
+        "rsgi": (int(os.environ.get("P_RSGI", 1)), int(os.environ.get("T_RSGI", 1))),
+        "wsgi": (int(os.environ.get("P_WSGI", 1)), int(os.environ.get("T_WSGI", 1))),
+        "other": int(os.environ.get("P_OTH", CPU)),
+    }
+    with app("asgi", procs["asgi"][0], procs["asgi"][1]):
+        results["Granian ASGI"] = benchmark("b")
+    with app("rsgi", procs["rsgi"][0], procs["rsgi"][1]):
+        results["Granian RSGI"] = benchmark("b")
+    with app("wsgi", procs["wsgi"][0], procs["wsgi"][1]):
+        results["Granian WSGI"] = benchmark("b")
+    with app("uvicorn_httptools", procs["other"]):
+        results["Uvicorn http-tools"] = benchmark("b")
+    with app("hypercorn", procs["other"]):
+        results["Hypercorn"] = benchmark("b")
+    with app("gunicorn", procs["other"]):
+        results["Gunicorn meinheld"] = benchmark("b")
+    return results
+
+
 def run():
     now = datetime.datetime.utcnow()
     results = {}
     if os.environ.get("BENCHMARK_BASE", "true") == "true":
         results["rsgi_body"] = rsgi_body_type()
-        results["rsgi_asgi"] = rsgi_vs_asgi()
+        results["interfaces"] = interfaces()
     if os.environ.get("BENCHMARK_CONCURRENCIES") == "true":
         results["concurrencies"] = concurrencies()
     if os.environ.get("BENCHMARK_VSA") == "true":
         results["vs_async"] = vs_3rd_async()
     if os.environ.get("BENCHMARK_VSS") == "true":
         results["vs_sync"] = vs_3rd_sync()
+    if os.environ.get("BENCHMARK_VSC") == "true":
+        results["vs_maxc"] = vs_3rd_maxc()
     with open(f"results/data.json", "w") as f:
         f.write(json.dumps({
             "cpu": CPU,
