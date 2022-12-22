@@ -1,6 +1,5 @@
 import datetime
 import json
-import math
 import multiprocessing
 import os
 import signal
@@ -15,11 +14,25 @@ WRK_CONCURRENCIES = [CPU * 2 ** i for i in range(3, 7)]
 
 @contextmanager
 def app(name, procs=None, threads=None, thmode=None):
-    procs = procs or int(os.environ.get("PROCS", CPU))
-    athreads = threads or max(2, int(os.environ.get("ASGI_THREADS", CPU // 2)))
-    rthreads = threads or max(2, int(os.environ.get("RSGI_THREADS", CPU // 2)))
-    thmode = thmode or "runtime"
+    procs = procs or 1
+    threads = threads or 1
+    thmode = thmode or "workers"
     proc = {
+        "asgi": (
+            "granian --interface asgi --no-ws --log-level warning --backlog 2048 "
+            f"--workers {procs} --threads {threads} --threading-mode {thmode} "
+            "app.asgi:app"
+        ),
+        "rsgi": (
+            "granian --interface rsgi --no-ws --log-level warning --backlog 2048 "
+            f"--workers {procs} --threads {threads} --threading-mode {thmode} "
+            "app.rsgi:app"
+        ),
+        "wsgi": (
+            "granian --interface wsgi --no-ws --log-level warning --backlog 2048 "
+            f"--workers {procs} --threads {threads} --threading-mode {thmode} "
+            "app.wsgi:app"
+        ),
         "uvicorn_h11": (
             "uvicorn --interface asgi3 "
             "--no-access-log --log-level warning "
@@ -30,15 +43,13 @@ def app(name, procs=None, threads=None, thmode=None):
             "--no-access-log --log-level warning "
             f"--http httptools --workers {procs} app.asgi:app"
         ),
-        "asgi": (
-            "granian --interface asgi --no-ws --log-level warning "
-            f"--workers {procs} --threads {athreads} --threading-mode {thmode} "
-            "app.asgi:app"
+        "hypercorn": (
+            "hypercorn -b localhost:8000 -k uvloop --backlog 2048 "
+            f"--workers {procs} app.asgi:app"
         ),
-        "rsgi": (
-            "granian --interface rsgi --no-ws --log-level warning "
-            f"--workers {procs} --threads {rthreads} --threading-mode {thmode} "
-            "app.rsgi:app"
+        "gunicorn": (
+            "gunicorn -k meinheld.gmeinheld.MeinheldWorker "
+            f"--workers {procs} app.wsgi:app"
         )
     }
     proc = subprocess.Popen(proc[name], shell=True, preexec_fn=os.setsid)
@@ -81,22 +92,16 @@ def benchmark(endpoint):
 
 
 def concurrencies():
+    nperm = sorted(set([1, 2, round(CPU / 2), CPU]))
     results = {}
-    for interface in ["asgi", "rsgi"]:
+    for interface in ["asgi", "rsgi", "wsgi"]:
         results[interface] = {}
-        for thmode in ["runtime", "workers"]:
-            results[interface][thmode] = {}
-    for key, procs, threads in [
-        ("none", 1, 1),
-        ("min", 1, CPU),
-        ("realistic", CPU, 2),
-        ("max", CPU, CPU + 1)
-    ]:
-        for interface in results.keys():
-            for thmode in results[interface].keys():
-                with app(interface, procs, threads, thmode):
-                    res = results[interface][thmode]
-                    res[key] = benchmark("b")
+        for idx, np in enumerate(nperm):
+            tlimit = -idx if idx else None
+            for nt in nperm[:tlimit]:
+                key = f"P{np} T{nt}"
+                with app(interface, np, nt):
+                    results[interface][key] = benchmark("b")
     return results
 
 
@@ -121,7 +126,7 @@ def rsgi_vs_asgi():
     return results
 
 
-def uvicorn():
+def vs_3rd_async():
     results = {}
     with app("asgi"):
         results["Granian ASGI"] = benchmark("b")
@@ -131,16 +136,32 @@ def uvicorn():
         results["Uvicorn H11"] = benchmark("b")
     with app("uvicorn_httptools"):
         results["Uvicorn http-tools"] = benchmark("b")
+    with app("hypercorn"):
+        results["Hypercorn"] = benchmark("b")
+    return results
+
+
+def vs_3rd_sync():
+    results = {}
+    with app("wsgi"):
+        results["Granian WSGI"] = benchmark("b")
+    with app("gunicorn"):
+        results["Gunicorn meinheld"] = benchmark("b")
     return results
 
 
 def run():
     now = datetime.datetime.utcnow()
     results = {}
-    results["concurrencies"] = concurrencies()
-    results["rsgi_body"] = rsgi_body_type()
-    results["rsgi_asgi"] = rsgi_vs_asgi()
-    results["uvicorn"] = uvicorn()
+    if os.environ.get("BENCHMARK_BASE", "true") == "true":
+        results["rsgi_body"] = rsgi_body_type()
+        results["rsgi_asgi"] = rsgi_vs_asgi()
+    if os.environ.get("BENCHMARK_CONCURRENCIES") == "true":
+        results["concurrencies"] = concurrencies()
+    if os.environ.get("BENCHMARK_VSA") == "true":
+        results["vs_async"] = vs_3rd_async()
+    if os.environ.get("BENCHMARK_VSS") == "true":
+        results["vs_sync"] = vs_3rd_sync()
     with open(f"results/data.json", "w") as f:
         f.write(json.dumps({
             "cpu": CPU,

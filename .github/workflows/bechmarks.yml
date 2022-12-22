@@ -6,24 +6,20 @@ env:
   MATURIN_VERSION: 0.13.6
 
 jobs:
-  benchmarks:
+  benchmark-base:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.10', '3.11']
 
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.10'
     - uses: messense/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
-        args: --release --strip --interpreter python${{ matrix.python-version }}
+        args: --release --strip --interpreter python3.10
         target: x64
         manylinux: auto
         container: off
@@ -31,19 +27,131 @@ jobs:
       run: |
         export _whl=$(ls target/wheels/granian-*.whl)
         pip install $_whl
-        pip install uvicorn==0.19.0
-        pip install httptools
+    - name: wrk
+      run: |
+        git clone https://github.com/wg/wrk.git .wrk
+        cd .wrk && make && sudo mv wrk /usr/local/bin
+    - name: Benchmarks
+      run: |
+        cd benchmarks && python benchmarks.py
+    - name: Upload results
+      uses: actions/upload-artifact@v2
+      with:
+        name: results-base
+        path: benchmarks/results/*
+
+  benchmark-concurrency:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.10'
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: v${{ env.MATURIN_VERSION }}
+        command: build
+        args: --release --strip --interpreter python3.10
+        target: x64
+        manylinux: auto
+        container: off
+    - name: Deps
+      run: |
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
     - name: wrk
       run: |
         git clone https://github.com/wg/wrk.git .wrk
         cd .wrk && make && sudo mv wrk /usr/local/bin
     - name: Benchmarks
       env:
-        PROCS: 2
+        BENCHMARK_BASE: false
+        BENCHMARK_CONCURRENCIES: true
       run: |
         cd benchmarks && python benchmarks.py
     - name: Upload results
       uses: actions/upload-artifact@v2
       with:
-        name: results-${{ matrix.python-version }}
+        name: results-concurrency
+        path: benchmarks/results/*
+
+  benchmark-vsa:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.10'
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: v${{ env.MATURIN_VERSION }}
+        command: build
+        args: --release --strip --interpreter python3.10
+        target: x64
+        manylinux: auto
+        container: off
+    - name: Deps
+      run: |
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
+        pip install uvicorn
+        pip install httptools
+        pip install hypercorn
+    - name: wrk
+      run: |
+        git clone https://github.com/wg/wrk.git .wrk
+        cd .wrk && make && sudo mv wrk /usr/local/bin
+    - name: Benchmarks
+      env:
+        BENCHMARK_BASE: false
+        BENCHMARK_VSA: true
+      run: |
+        cd benchmarks && python benchmarks.py
+    - name: Upload results
+      uses: actions/upload-artifact@v2
+      with:
+        name: results-vsa
+        path: benchmarks/results/*
+
+  benchmark-vss:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: v${{ env.MATURIN_VERSION }}
+        command: build
+        args: --release --strip --interpreter python3.9
+        target: x64
+        manylinux: auto
+        container: off
+    - name: Deps
+      run: |
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
+        pip install gunicorn
+        pip install meinheld
+    - name: wrk
+      run: |
+        git clone https://github.com/wg/wrk.git .wrk
+        cd .wrk && make && sudo mv wrk /usr/local/bin
+    - name: Benchmarks
+      env:
+        BENCHMARK_BASE: false
+        BENCHMARK_VSS: true
+      run: |
+        cd benchmarks && python benchmarks.py
+    - name: Upload results
+      uses: actions/upload-artifact@v2
+      with:
+        name: results-vss
         path: benchmarks/results/*
