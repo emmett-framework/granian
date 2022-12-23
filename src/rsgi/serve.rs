@@ -9,7 +9,7 @@ use crate::{
         serve_wth_ssl
     }
 };
-use super::http::{handle_request, handle_request_with_ws};
+use super::http::{handle_rtb, handle_rtt, handle_rtb_ws, handle_rtt_ws};
 
 #[pyclass(module="granian._granian")]
 pub struct RSGIWorker {
@@ -17,14 +17,14 @@ pub struct RSGIWorker {
 }
 
 impl RSGIWorker {
-    serve_rth!(_serve_rth, handle_request);
-    serve_rth!(_serve_rth_ws, handle_request_with_ws);
-    serve_wth!(_serve_wth, handle_request);
-    serve_wth!(_serve_wth_ws, handle_request_with_ws);
-    serve_rth_ssl!(_serve_rth_ssl, handle_request);
-    serve_rth_ssl!(_serve_rth_ssl_ws, handle_request_with_ws);
-    serve_wth_ssl!(_serve_wth_ssl, handle_request);
-    serve_wth_ssl!(_serve_wth_ssl_ws, handle_request_with_ws);
+    serve_rth!(_serve_rth, handle_rtb);
+    serve_rth!(_serve_rth_ws, handle_rtb_ws);
+    serve_wth!(_serve_wth, handle_rtt);
+    serve_wth!(_serve_wth_ws, handle_rtt_ws);
+    serve_rth_ssl!(_serve_rth_ssl, handle_rtb);
+    serve_rth_ssl!(_serve_rth_ssl_ws, handle_rtb_ws);
+    serve_wth_ssl!(_serve_wth_ssl, handle_rtt);
+    serve_wth_ssl!(_serve_wth_ssl_ws, handle_rtt_ws);
 }
 
 #[pymethods]

@@ -119,7 +119,32 @@ impl CallbackWatcherWebsocket {
 //     }
 // }
 
-pub(crate) async fn call_http(
+pub(crate) async fn call_rtb_http(
+    cb: CallbackWrapper,
+    rt: RuntimeRef,
+    req: Request<Body>,
+    scope: Scope
+) -> Result<Response<Body>, ASGIFlowError> {
+    let callback = cb.callback.clone();
+    let (tx, rx) = oneshot::channel();
+    let protocol = ASGIHTTPProtocol::new(rt, req, tx);
+
+    Python::with_gil(|py| {
+        callback.call1(py, (CallbackWatcherHTTP::new(py, cb, protocol), scope))
+    })?;
+
+    match rx.await {
+        Ok(res) => {
+            Ok(res)
+        },
+        _ => {
+            log::error!("ASGI protocol failure");
+            error_flow!()
+        }
+    }
+}
+
+pub(crate) async fn call_rtt_http(
     cb: CallbackWrapper,
     rt: RuntimeRef,
     req: Request<Body>,
@@ -148,7 +173,33 @@ pub(crate) async fn call_http(
     }
 }
 
-pub(crate) async fn call_ws(
+pub(crate) async fn call_rtb_ws(
+    cb: CallbackWrapper,
+    rt: RuntimeRef,
+    ws: HyperWebsocket,
+    upgrade: UpgradeData,
+    scope: Scope
+) -> Result<bool, ASGIFlowError> {
+    let callback = cb.callback.clone();
+    let (tx, rx) = oneshot::channel();
+    let protocol = ASGIWebsocketProtocol::new(rt, tx, ws, upgrade);
+
+    Python::with_gil(|py| {
+        callback.call1(py, (CallbackWatcherWebsocket::new(py, cb, protocol), scope))
+    })?;
+
+    match rx.await {
+        Ok(res) => {
+            Ok(res)
+        },
+        _ => {
+            log::error!("ASGI protocol failure");
+            error_flow!()
+        }
+    }
+}
+
+pub(crate) async fn call_rtt_ws(
     cb: CallbackWrapper,
     rt: RuntimeRef,
     ws: HyperWebsocket,
