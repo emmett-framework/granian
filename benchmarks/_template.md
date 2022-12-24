@@ -26,8 +26,10 @@ CPUs: {{ =data.cpu }}
 | {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
 {{ pass }}
 
+{{ if any(key in data.results for key in ["vs_async", "vs_sync"]): }}
 ## vs 3rd parties
 
+{{ if "vs_async" in data.results: }}
 ### async
 
 | Mode | Total requests | RPS | avg latency | max latency |
@@ -38,7 +40,9 @@ CPUs: {{ =data.cpu }}
 {{ run = runs[max_res] }}
 | {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
 {{ pass }}
+{{ pass }}
 
+{{ if "vs_sync" in data.results: }}
 ### sync
 
 | Mode | Total requests | RPS | avg latency | max latency |
@@ -49,7 +53,9 @@ CPUs: {{ =data.cpu }}
 {{ run = runs[max_res] }}
 | {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
 {{ pass }}
+{{ pass }}
 
+{{ if "vs_maxc" in data.results: }}
 ### concurrency
 
 | Mode | Total requests | RPS | avg latency | max latency |
@@ -59,6 +65,9 @@ CPUs: {{ =data.cpu }}
 {{ max_res = concurrency_values[max(concurrency_values.keys())] }}
 {{ run = runs[max_res] }}
 | {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
+{{ pass }}
+{{ pass }}
+
 {{ pass }}
 
 {{ if "concurrencies" in data.results: }}

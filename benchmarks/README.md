@@ -1,6 +1,6 @@
 # Granian benchmarks
 
-Run at: 2022-12-22T15:40:40.441840
+Run at: 2022-12-24T16:18:45.098896
 
 CPUs: 2
 
@@ -8,21 +8,21 @@ CPUs: 2
 
 | Type | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| bytes small (c128) | 725390 | 48260 | 2.655ms | 12.012ms |
-| str small (c64) | 618776 | 41192 | 1.547ms | 3.867ms |
-| bytes big (c32) | 7262 | 483 | 65.998ms | 68.958ms |
-| str big (c64) | 292313 | 19454 | 3.257ms | 6.707ms |
+| bytes small (c128) | 542771 | 36078 | 3.537ms | 9.631ms |
+| str small (c64) | 570614 | 37969 | 1.688ms | 7.12ms |
+| bytes big (c64) | 6793 | 452 | 140.675ms | 148.736ms |
+| str big (c32) | 245041 | 16330 | 1.954ms | 13.606ms |
 
 ## Interfaces
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI bytes (c128) | 668512 | 44469 | 2.875ms | 11.947ms |
-| RSGI str (c128) | 583007 | 38772 | 3.292ms | 11.416ms |
-| ASGI bytes (c64) | 222584 | 14820 | 4.307ms | 10.085ms |
-| ASGI str (c16) | 226676 | 15107 | 1.053ms | 5.385ms |
-| WSGI bytes (c16) | 725179 | 48026 | 0.33ms | 3.328ms |
-| WSGI str (c64) | 729150 | 48553 | 1.313ms | 4.178ms |
+| RSGI bytes (c128) | 552696 | 36735 | 3.485ms | 14.695ms |
+| RSGI str (c128) | 549006 | 36471 | 3.5ms | 13.68ms |
+| ASGI bytes (c64) | 356831 | 23727 | 2.715ms | 16.297ms |
+| ASGI str (c128) | 340393 | 22619 | 5.647ms | 18.226ms |
+| WSGI bytes (c32) | 496912 | 33098 | 0.968ms | 12.507ms |
+| WSGI str (c32) | 597875 | 39594 | 0.809ms | 10.341ms |
 
 ## vs 3rd parties
 
@@ -30,29 +30,20 @@ CPUs: 2
 
 | Mode | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian ASGI (c16) | 200308 | 13349 | 1.19ms | 5.85ms |
-| Granian RSGI (c64) | 493291 | 32860 | 1.943ms | 7.803ms |
-| Uvicorn H11 (c32) | 84582 | 5633 | 5.635ms | 11.395ms |
-| Uvicorn http-tools (c64) | 391978 | 26088 | 2.396ms | 6.489ms |
-| Hypercorn (c32) | 20009 | 1332 | 23.761ms | 54.669ms |
+| Granian ASGI (c32) | 340934 | 22723 | 1.405ms | 7.187ms |
+| Granian RSGI (c128) | 504322 | 33520 | 3.806ms | 16.204ms |
+| Uvicorn H11 (c64) | 86607 | 5763 | 11.032ms | 18.021ms |
+| Uvicorn http-tools (c64) | 398311 | 26513 | 2.359ms | 7.234ms |
+| Hypercorn (c32) | 21244 | 1415 | 22.514ms | 50.035ms |
 
 ### sync
 
 | Mode | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian WSGI (c64) | 505795 | 33677 | 1.898ms | 11.425ms |
-| Gunicorn meinheld (c128) | 565238 | 37591 | 3.393ms | 19.902ms |
+| Granian WSGI (c32) | 358628 | 23901 | 1.361ms | 12.425ms |
+| Gunicorn meinheld (c128) | 377223 | 25060 | 5.089ms | 31.482ms |
 
-### concurrency
 
-| Mode | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- |
-| Granian ASGI (c128) | 519199 | 34505 | 3.609ms | 13.95ms |
-| Granian RSGI (c128) | 625018 | 41582 | 3.127ms | 21.783ms |
-| Granian WSGI (c128) | 627782 | 41751 | 3.054ms | 13.595ms |
-| Uvicorn http-tools (c64) | 584417 | 38909 | 1.64ms | 9.175ms |
-| Hypercorn (c128) | 23335 | 1550 | 82.805ms | 283.305ms |
-| Gunicorn meinheld (c64) | 720059 | 47923 | 1.424ms | 17.058ms |
 
 ## Concurrency
 
@@ -60,23 +51,37 @@ CPUs: 2
 
 | Concurrency | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| P1 T1 (c16) | 203167 | 13540 | 1.175ms | 5.897ms |
-| P1 T2 (c64) | 206359 | 13734 | 4.67ms | 21.886ms |
-| P2 T1 (c128) | 474074 | 31485 | 4.0ms | 15.335ms |
+| P1 T1 wth (c32) | 369833 | 24646 | 1.296ms | 9.805ms |
+| P1 T1 rth (c64) | 348848 | 23232 | 2.853ms | 61.176ms |
+| P1 T2 wth (c128) | 364937 | 24239 | 5.267ms | 68.508ms |
+| P1 T2 rth (c128) | 364872 | 24262 | 5.262ms | 16.738ms |
+| P2 T1 wth (c64) | 485318 | 32286 | 2.018ms | 13.556ms |
+| P2 T1 rth (c32) | 456040 | 30394 | 1.051ms | 5.655ms |
+| P2 T2 wth (c128) | 551048 | 36664 | 3.488ms | 21.416ms |
+| P2 T2 rth (c128) | 669873 | 44474 | 2.82ms | 12.25ms |
 
 ### RSGI
 
 | Concurrency | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| P1 T1 (c128) | 687648 | 45730 | 2.808ms | 10.555ms |
-| P1 T2 (c128) | 591438 | 39324 | 3.282ms | 20.661ms |
-| P2 T1 (c64) | 467274 | 31108 | 2.086ms | 23.158ms |
+| P1 T1 wth (c128) | 660383 | 43916 | 2.908ms | 11.842ms |
+| P1 T1 rth (c64) | 402756 | 26803 | 2.369ms | 18.191ms |
+| P1 T2 wth (c128) | 555691 | 36944 | 3.57ms | 23.035ms |
+| P1 T2 rth (c64) | 402589 | 26804 | 2.38ms | 11.169ms |
+| P2 T1 wth (c32) | 494607 | 32754 | 0.976ms | 5.41ms |
+| P2 T1 rth (c64) | 651498 | 43365 | 1.478ms | 15.609ms |
+| P2 T2 wth (c128) | 630891 | 41936 | 3.084ms | 32.546ms |
+| P2 T2 rth (c128) | 860261 | 57152 | 2.06ms | 15.287ms |
 
 ### WSGI
 
 | Concurrency | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| P1 T1 (c16) | 700562 | 46396 | 0.343ms | 5.611ms |
-| P1 T2 (c128) | 696358 | 46324 | 2.763ms | 17.47ms |
-| P2 T1 (c32) | 633740 | 42228 | 0.763ms | 13.658ms |
-
+| P1 T1 wth (c64) | 671457 | 44707 | 1.429ms | 12.205ms |
+| P1 T1 rth (c64) | 564375 | 37542 | 1.707ms | 10.247ms |
+| P1 T2 wth (c64) | 712701 | 47460 | 1.364ms | 8.053ms |
+| P1 T2 rth (c128) | 448673 | 29840 | 4.275ms | 11.408ms |
+| P2 T1 wth (c16) | 638735 | 42300 | 0.385ms | 18.074ms |
+| P2 T1 rth (c16) | 724302 | 47968 | 0.364ms | 10.494ms |
+| P2 T2 wth (c32) | 706388 | 47090 | 0.682ms | 8.813ms |
+| P2 T2 rth (c128) | 817544 | 54188 | 2.654ms | 23.652ms |
