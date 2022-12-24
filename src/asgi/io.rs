@@ -6,7 +6,6 @@ use hyper::{
     header::{HeaderName, HeaderValue, HeaderMap, SERVER as HK_SERVER}
 };
 use pyo3::prelude::*;
-use pyo3::pyclass::PyClass;
 use pyo3::types::{PyBytes, PyDict};
 use std::sync::Arc;
 use tokio_tungstenite::WebSocketStream;
@@ -26,11 +25,6 @@ use super::{
 
 const EMPTY_BYTES: Vec<u8> = Vec::new();
 const EMPTY_STRING: String = String::new();
-
-pub(crate) trait ASGIProtocol: PyClass {
-    fn _recv<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny>;
-    fn _send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny>;
-}
 
 #[pyclass(module="granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
@@ -86,11 +80,81 @@ impl ASGIHTTPProtocol {
 #[pymethods]
 impl ASGIHTTPProtocol {
     fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        self._recv(py)
+        let transport = self.request.clone();
+        future_into_py(self.rt.clone(), py, async move {
+            let mut req = transport.lock().await;
+            let body = hyper::body::to_bytes(&mut *req).await.unwrap();
+            Python::with_gil(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item(
+                    pyo3::intern!(py, "type"),
+                    pyo3::intern!(py, "http.request")
+                )?;
+                dict.set_item(pyo3::intern!(py, "body"), &body.to_vec())?;
+                dict.set_item(pyo3::intern!(py, "more_body"), false)?;
+                Ok(dict.to_object(py))
+            })
+        })
     }
 
-    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        self._send(py, data)
+    fn send(&mut self, data: &PyDict) -> PyResult<()> {
+        match adapt_message_type(data) {
+            Ok(ASGIMessageType::HTTPStart) => {
+                match self.response_inited {
+                    false => {
+                        self.response_status = adapt_status_code(data).unwrap();
+                        self.response_headers = adapt_headers(data);
+                        self.response_inited = true;
+                        Ok(())
+                    },
+                    _ => error_flow!()
+                }
+            },
+            Ok(ASGIMessageType::HTTPBody) => {
+                match (self.response_inited, self.response_built) {
+                    (true, false) => {
+                        let (body, more) = adapt_body(data);
+                        self.send_body(&body[..], !more);
+                        Ok(())
+                    },
+                    _ => error_flow!()
+                }
+            },
+            Err(err) => Err(err.into()),
+            _ => error_message!()
+        }
+    }
+
+    fn response_start(&mut self, status: i16, pyheaders: Vec<Vec<&[u8]>>) -> PyResult<()> {
+        let mut headers = HeaderMap::new();
+        headers.insert(HK_SERVER, HV_SERVER);
+        self.response_status = status;
+        for tup in pyheaders.iter() {
+            match (
+                HeaderName::from_bytes(tup[0]),
+                HeaderValue::from_bytes(tup[1])
+            ) {
+                (Ok(key), Ok(val)) => {
+                    headers.insert(key, val);
+                },
+                _ => {
+                    return error_flow!()
+                }
+            }
+        };
+        self.response_headers = headers;
+        self.response_inited = true;
+        Ok(())
+    }
+
+    fn response_body(&mut self, body: &[u8], has_more: bool) -> PyResult<()> {
+        match (self.response_inited, self.response_built) {
+            (true, false) => {
+                self.send_body(body, !has_more);
+                Ok(())
+            },
+            _ => error_flow!()
+        }
     }
 }
 
@@ -195,67 +259,6 @@ macro_rules! empty_future {
 #[pymethods]
 impl ASGIWebsocketProtocol {
     fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        self._recv(py)
-    }
-
-    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        self._send(py, data)
-    }
-}
-
-impl ASGIProtocol for ASGIHTTPProtocol {
-    #[inline(always)]
-    fn _recv<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let transport = self.request.clone();
-        future_into_py(self.rt.clone(), py, async move {
-            let mut req = transport.lock().await;
-            let body = hyper::body::to_bytes(&mut *req).await.unwrap();
-            Python::with_gil(|py| {
-                let dict = PyDict::new(py);
-                dict.set_item(
-                    pyo3::intern!(py, "type"),
-                    pyo3::intern!(py, "http.request")
-                )?;
-                dict.set_item(pyo3::intern!(py, "body"), &body.to_vec())?;
-                dict.set_item(pyo3::intern!(py, "more_body"), false)?;
-                Ok(dict.to_object(py))
-            })
-        })
-    }
-
-    #[inline(always)]
-    fn _send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        match adapt_message_type(data) {
-            Ok(ASGIMessageType::HTTPStart) => {
-                match self.response_inited {
-                    false => {
-                        self.response_status = adapt_status_code(data).unwrap();
-                        self.response_headers = adapt_headers(data);
-                        self.response_inited = true;
-                        empty_future!(self.rt.clone(), py)
-                    },
-                    _ => error_flow!()
-                }
-            },
-            Ok(ASGIMessageType::HTTPBody) => {
-                match (self.response_inited, self.response_built) {
-                    (true, false) => {
-                        let (body, more) = adapt_body(data);
-                        self.send_body(&body[..], !more);
-                        empty_future!(self.rt.clone(), py)
-                    },
-                    _ => error_flow!()
-                }
-            },
-            Err(err) => Err(err.into()),
-            _ => error_message!()
-        }
-    }
-}
-
-impl ASGIProtocol for ASGIWebsocketProtocol {
-    #[inline(always)]
-    fn _recv<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.ws_rx.clone();
         let accepted = self.accepted.clone();
         let closed = self.closed.clone();
@@ -303,8 +306,7 @@ impl ASGIProtocol for ASGIWebsocketProtocol {
         })
     }
 
-    #[inline(always)]
-    fn _send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::WSAccept) => {
                 self.accept(py)

@@ -16,7 +16,6 @@ def info(environ, protocol):
 
 
 def echo(environ, protocol):
-    print(environ)
     protocol(
         '200 OK',
         [('content-type', 'text/plain; charset=utf-8')]
