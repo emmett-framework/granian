@@ -96,12 +96,12 @@ def concurrencies():
     results = {}
     for interface in ["asgi", "rsgi", "wsgi"]:
         results[interface] = {}
-        for idx, np in enumerate(nperm):
-            tlimit = -idx if idx else None
-            for nt in nperm[:tlimit]:
-                key = f"P{np} T{nt}"
-                with app(interface, np, nt):
-                    results[interface][key] = benchmark("b")
+        for np in nperm:
+            for nt in [1, 2]:
+                for threading_mode in ["workers", "runtime"]:
+                    key = f"P{np} T{nt} {threading_mode[0]}th"
+                    with app(interface, np, nt, threading_mode):
+                        results[interface][key] = benchmark("b")
     return results
 
 
