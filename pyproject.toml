@@ -3,7 +3,7 @@ name = "granian"
 repository = "https://github.com/emmett-framework/granian"
 dependencies = [
     "typer~=0.4.1",
-    "uvloop~=0.17.0; sys_platform != 'win32'"
+    "uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython'"
 ]
 
 [project.optional-dependencies]

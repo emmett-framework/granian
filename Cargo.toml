@@ -1,6 +1,6 @@
 [package]
 name = "granian"
-version = "0.2.0"
+version = "0.2.1"
 description = "A Rust HTTP server for Python applications"
 authors = ["Giovanni Barillari <gi0baro@d4net.org>"]
 license = "BSD-3-Clause"
@@ -42,6 +42,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python",
     "Programming Language :: Rust",
     "Topic :: Internet :: WWW/HTTP"
@@ -68,6 +69,9 @@ tungstenite = "0.17"
 
 [target.'cfg(not(all(target_os="linux", target_arch="aarch64")))'.dependencies]
 mimalloc = "0.1.28"
+
+[build-dependencies]
+pyo3-build-config = { version = "=0.17", features = ["resolve-config"] }
 
 [profile.release]
 codegen-units = 1

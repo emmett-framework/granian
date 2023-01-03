@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "granian"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "futures",
@@ -232,6 +232,7 @@ dependencies = [
  "pin-project",
  "pyo3",
  "pyo3-asyncio",
+ "pyo3-build-config",
  "pyo3-log",
  "rustls-pemfile",
  "socket2",
