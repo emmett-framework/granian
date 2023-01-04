@@ -44,7 +44,8 @@ def _callback_wrapper(callback):
             'QUERY_STRING': scope.query_string,
             'REMOTE_ADDR': scope.client,
             'wsgi.url_scheme': scope.scheme,
-            'wsgi.input': scope.body
+            'wsgi.input': scope.body,
+            "CONTENT_LENGTH": scope.length
         }
         resp = Response()
 

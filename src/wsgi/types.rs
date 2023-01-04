@@ -1,10 +1,9 @@
-use hyper::{Body, Uri, Request, body::Bytes};
+use hyper::{body::Bytes, Body, Request, Uri};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use std::{collections::HashMap, net::SocketAddr};
 
-
-#[pyclass(module="granian._granian")]
+#[pyclass(module = "granian._granian")]
 pub(crate) struct WSGIScope {
     #[pyo3(get)]
     scheme: String,
@@ -17,7 +16,9 @@ pub(crate) struct WSGIScope {
     client: String,
     #[pyo3(get)]
     headers: HashMap<String, String>,
-    body: Bytes
+    body: Bytes,
+    #[pyo3(get)]
+    length: usize,
 }
 
 impl WSGIScope {
@@ -25,21 +26,33 @@ impl WSGIScope {
         scheme: &str,
         server: SocketAddr,
         client: SocketAddr,
-        request: Request<Body>
+        request: Request<Body>,
     ) -> Self {
         let headers = request.headers();
         let mut pyheaders = HashMap::with_capacity(headers.keys_len());
         for (key, val) in headers.iter() {
-            pyheaders.insert(format!("HTTP_{}", key.as_str().replace("-", "_").to_uppercase()), val.to_str().unwrap().into());
-        };
+            pyheaders.insert(
+                format!("HTTP_{}", key.as_str().replace("-", "_").to_uppercase()),
+                val.to_str().unwrap().into(),
+            );
+        }
+
+        let method = request.method().to_string();
+        let uri = request.uri().clone();
+
+        let body = hyper::body::to_bytes(request)
+            .await
+            .unwrap_or(bytes::Bytes::new());
+
         Self {
             scheme: scheme.to_string(),
-            method: request.method().to_string(),
-            uri: request.uri().clone(),
+            method,
+            uri,
             server: server.to_string(),
             client: client.to_string(),
             headers: pyheaders,
-            body: hyper::body::to_bytes(request).await.unwrap_or(bytes::Bytes::new())
+            length: body.len(),
+            body,
         }
     }
 }

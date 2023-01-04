@@ -78,3 +78,4 @@ class WSGIScope:
     query_string: str
     headers: Dict[str, str]
     body: bytes
+    length: int
