@@ -44,9 +44,13 @@ def _callback_wrapper(callback):
             'QUERY_STRING': scope.query_string,
             'REMOTE_ADDR': scope.client,
             'wsgi.url_scheme': scope.scheme,
-            'wsgi.input': scope.body,
-            "CONTENT_LENGTH": scope.length
+            'wsgi.input': scope.body
         }
+        if 'HTTP_CONTENT-TYPE' in environ:
+            environ['CONTENT_TYPE'] = environ.pop('HTTP_CONTENT-TYPE')
+        if 'HTTP_CONTENT-LENGTH' in environ:
+            environ['CONTENT_LENGTH'] = environ.pop('HTTP_CONTENT-LENGTH')
+
         resp = Response()
 
         def start_response(status: str, headers: List[Tuple[str, str]]):
