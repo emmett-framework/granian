@@ -16,9 +16,7 @@ pub(crate) struct WSGIScope {
     client: String,
     #[pyo3(get)]
     headers: HashMap<String, String>,
-    body: Bytes,
-    #[pyo3(get)]
-    length: usize,
+    body: Bytes
 }
 
 impl WSGIScope {
@@ -51,8 +49,7 @@ impl WSGIScope {
             server: server.to_string(),
             client: client.to_string(),
             headers: pyheaders,
-            length: body.len(),
-            body,
+            body
         }
     }
 }

@@ -27,7 +27,6 @@ async def test_scope(wsgi_server, threading_mode):
     assert data['content_length'] == len(payload)
 
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "threading_mode",
