@@ -11,6 +11,7 @@ def info(environ, protocol):
         'method': environ['REQUEST_METHOD'],
         'path': environ["PATH_INFO"],
         'query_string': environ["QUERY_STRING"],
+        'content_length': environ['CONTENT_LENGTH'],
         'headers': {k: v for k, v in environ.items() if k.startswith("HTTP_")}
     }).encode("utf8")]
 

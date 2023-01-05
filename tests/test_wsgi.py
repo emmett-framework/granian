@@ -11,18 +11,20 @@ import pytest
     ]
 )
 async def test_scope(wsgi_server, threading_mode):
+    payload = "body_payload"
     async with wsgi_server(threading_mode) as port:
-        res = httpx.get(f"http://localhost:{port}/info?test=true")
+        res = httpx.post(f"http://localhost:{port}/info?test=true", data=payload)
 
     assert res.status_code == 200
     assert res.headers["content-type"] == "application/json"
 
     data = res.json()
     assert data['scheme'] == 'http'
-    assert data['method'] == "GET"
+    assert data['method'] == "POST"
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['HTTP_HOST'] == f'localhost:{port}'
+    assert data['content_length'] == len(payload)
 
 
 @pytest.mark.asyncio
