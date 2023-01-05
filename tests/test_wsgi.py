@@ -24,7 +24,7 @@ async def test_scope(wsgi_server, threading_mode):
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['HTTP_HOST'] == f'localhost:{port}'
-    assert data['content_length'] == len(payload)
+    assert data['content_length'] == str(len(payload))
 
 
 @pytest.mark.asyncio
