@@ -2,7 +2,7 @@ import asyncio
 
 from functools import wraps
 
-from ._futures import future_wrapper
+from ._futures import future_with_watcher
 from ._granian import ASGIScope as Scope
 
 
@@ -144,7 +144,7 @@ def _callback_wrapper(callback):
             _send_wrappers[scope.proto](watcher.proto.send)
         )
         watcher.event_loop.call_soon_threadsafe(
-            future_wrapper,
+            future_with_watcher,
             coro,
             watcher,
             context=watcher.context

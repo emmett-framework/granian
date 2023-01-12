@@ -1,12 +1,11 @@
-import asyncio
-
-async def task_wrapper(task, watcher):
+async def future_watcher_wrapper(fut, watcher):
     try:
-        await task
+        await fut
     except Exception:
         watcher.err()
         raise
     watcher.done()
 
-def future_wrapper(coro, watcher):
-    return asyncio.create_task(task_wrapper(coro, watcher))
+
+def future_with_watcher(coro, watcher):
+    return watcher.event_loop.create_task(future_watcher_wrapper(coro, watcher))
