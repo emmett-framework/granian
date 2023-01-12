@@ -1,4 +1,3 @@
-use bytes::Buf;
 use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
 use hyper::{Body, Request};
 use pyo3::prelude::*;
@@ -48,12 +47,9 @@ impl RSGIHTTPProtocol {
         let req_ref = self.request.clone();
         future_into_py(self.rt.clone(), py, async move {
             let mut req = req_ref.lock().await;
-            let mut body = hyper::body::to_bytes(&mut *req).await.unwrap();
+            let body = hyper::body::to_bytes(&mut *req).await.unwrap();
             Ok(Python::with_gil(|py| {
-                PyBytes::new_with(py, body.len(), |bytes: &mut [u8]| {
-                    body.copy_to_slice(bytes);
-                    Ok(())
-                }).unwrap().as_ref().to_object(py)
+                PyBytes::new(py, &body[..]).as_ref().to_object(py)
             }))
         })
     }

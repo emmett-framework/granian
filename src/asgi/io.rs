@@ -90,7 +90,7 @@ impl ASGIHTTPProtocol {
                     pyo3::intern!(py, "type"),
                     pyo3::intern!(py, "http.request")
                 )?;
-                dict.set_item(pyo3::intern!(py, "body"), &body.to_vec())?;
+                dict.set_item(pyo3::intern!(py, "body"), PyBytes::new(py, &body[..]))?;
                 dict.set_item(pyo3::intern!(py, "more_body"), false)?;
                 Ok(dict.to_object(py))
             })

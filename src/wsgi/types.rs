@@ -1,4 +1,4 @@
-use hyper::{body::Bytes, Body, Request, Uri};
+use hyper::{body::Bytes, Body, Method, Request, Uri};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use std::{collections::HashMap, net::SocketAddr};
@@ -109,16 +109,21 @@ impl WSGIScope {
             );
         }
 
-        let method = request.method().to_string();
+        let method = request.method().clone();
         let uri = request.uri().clone();
 
-        let body = hyper::body::to_bytes(request)
-            .await
-            .unwrap_or(bytes::Bytes::new());
+        let body = match &method {
+            &Method::HEAD | &Method::GET | &Method::OPTIONS => { Bytes::new() },
+            _ => {
+                hyper::body::to_bytes(request)
+                    .await
+                    .unwrap_or(bytes::Bytes::new())
+            }
+        };
 
         Self {
             scheme: scheme.to_string(),
-            method,
+            method: method.to_string(),
             uri,
             server: server.to_string(),
             client: client.to_string(),
