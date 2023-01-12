@@ -21,7 +21,7 @@ def echo(environ, protocol):
         '200 OK',
         [('content-type', 'text/plain; charset=utf-8')]
     )
-    return [environ['wsgi.input']]
+    return [environ['wsgi.input'].read()]
 
 
 def err_app(environ, protocol):

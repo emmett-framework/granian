@@ -44,7 +44,7 @@ def _callback_wrapper(callback):
             'QUERY_STRING': scope.query_string,
             'REMOTE_ADDR': scope.client,
             'wsgi.url_scheme': scope.scheme,
-            'wsgi.input': scope.body
+            'wsgi.input': scope.input()
         }
         if 'HTTP_CONTENT_TYPE' in environ:
             environ['CONTENT_TYPE'] = environ.pop('HTTP_CONTENT_TYPE')

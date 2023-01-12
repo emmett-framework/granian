@@ -1,7 +1,81 @@
 use hyper::{body::Bytes, Body, Request, Uri};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyList};
 use std::{collections::HashMap, net::SocketAddr};
+
+const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
+
+
+#[pyclass(module = "granian._granian")]
+pub(crate) struct WSGIBody {
+    inner: Bytes
+}
+
+impl WSGIBody {
+    pub fn new(body: Bytes) -> Self {
+        Self { inner: body }
+    }
+}
+
+#[pymethods]
+impl WSGIBody {
+    fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __next__<'p>(&mut self, py: Python<'p>) -> Option<&'p PyBytes> {
+        match self.inner.iter().position(|&c| c == LINE_SPLIT) {
+            Some(next_split) => {
+                let bytes = self.inner.split_to(next_split);
+                Some(PyBytes::new(py, &bytes[..]))
+            },
+            _ => None
+        }
+    }
+
+    #[args(size="None")]
+    fn read<'p>(&mut self, py: Python<'p>, size: Option<usize>) -> &'p PyBytes {
+        match size {
+            None => {
+                let bytes = self.inner.split_to(self.inner.len());
+                PyBytes::new(py, &bytes[..])
+            },
+            Some(size) => {
+                match size {
+                    0 => PyBytes::new(py, b""),
+                    size => {
+                        let limit = self.inner.len();
+                        let rsize = if size > limit { limit } else { size };
+                        let bytes = self.inner.split_to(rsize);
+                        PyBytes::new(py, &bytes[..])
+                    }
+                }
+            }
+        }
+    }
+
+    fn readline<'p>(&mut self, py: Python<'p>) -> &'p PyBytes {
+        match self.inner.iter().position(|&c| c == LINE_SPLIT) {
+            Some(next_split) => {
+                let bytes = self.inner.split_to(next_split);
+                self.inner = self.inner.slice(1..);
+                PyBytes::new(py, &bytes[..])
+            },
+            _ => PyBytes::new(py, b"")
+        }
+    }
+
+    #[args(_hint="None")]
+    fn readlines<'p>(&mut self, py: Python<'p>, _hint: Option<PyObject>) -> &'p PyList {
+        println!("{:?}", &self.inner[..]);
+        let lines: Vec<&PyBytes> = self.inner
+            .split(|&c| c == LINE_SPLIT)
+            .map(|item| PyBytes::new(py, &item[..]))
+            .collect();
+        self.inner.clear();
+        PyList::new(py, lines)
+    }
+}
 
 #[pyclass(module = "granian._granian")]
 pub(crate) struct WSGIScope {
@@ -66,8 +140,7 @@ impl WSGIScope {
         self.uri.query().unwrap_or("")
     }
 
-    #[getter(body)]
-    fn get_body<'p>(&self, py: Python<'p>) -> &'p PyBytes {
-        PyBytes::new(py, &self.body.to_vec()[..])
+    fn input(pyself: PyRef<'_, Self>) -> PyResult<Py<WSGIBody>> {
+        Py::new(pyself.py(), WSGIBody::new(pyself.body.to_owned()))
     }
 }
