@@ -1,7 +1,7 @@
 import os
 
 from functools import wraps
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from ._granian import WSGIScope as Scope
 
@@ -53,11 +53,18 @@ def _callback_wrapper(callback):
 
         resp = Response()
 
-        def start_response(status: str, headers: List[Tuple[str, str]]):
+        def start_response(
+            status: str,
+            headers: List[Tuple[str, str]],
+            exc_info: Any = None
+        ):
             resp.status = int(status.split(' ', 1)[0])
             resp.headers = headers
 
         rv = callback(environ, start_response)
-        return (resp.status, resp.headers, b"".join(rv))
+        body = b"".join(rv)
+        if hasattr(rv, "close"):
+            rv.close()
+        return (resp.status, resp.headers, body)
 
     return wrapper
