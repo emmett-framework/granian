@@ -14,10 +14,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    - uses: messense/maturin-action@v1
+    - uses: pyo3/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
@@ -52,7 +52,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: messense/maturin-action@v1
+    - uses: pyo3/maturin-action@v1
       env:
         PYO3_CROSS_PYTHON_VERSION: '${{ matrix.python-config.version }}'
         PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python-config.lib }}/lib
@@ -61,6 +61,30 @@ jobs:
         command: build
         args: --release --strip --interpreter python${{ matrix.python-config.version }}
         target: ${{ matrix.target.arch }}
+        manylinux: auto
+    - name: Upload wheels
+      uses: actions/upload-artifact@v2
+      with:
+        name: wheels
+        path: target/wheels
+
+  linux-gnu-pypy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pypy:
+          - pypy3.7
+          - pypy3.8
+          - pypy3.9
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: pyo3/maturin-action@v1
+      with:
+        maturin-version: v${{ env.MATURIN_VERSION }}
+        command: build
+        args: --release --strip --interpreter ${{ matrix.pypy }}
+        target: x86_64
         manylinux: auto
     - name: Upload wheels
       uses: actions/upload-artifact@v2
@@ -93,25 +117,37 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        python-version: [3.7, 3.8, 3.9, '3.10', '3.11']
+        python-config:
+          - version: 3.7
+            interpreter: python3.7
+          - version: 3.8
+            interpreter: python3.8
+          - version: 3.9
+            interpreter: python3.9
+          - version: '3.10'
+            interpreter: python3.10
+          - version: '3.11'
+            interpreter: python3.11
+          - version: 'pypy3.9'
+            interpreter: pypy
 
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+    - name: Set up Python ${{ matrix.python-config.version }}
+      uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
-    - uses: messense/maturin-action@v1
+        python-version: ${{ matrix.python-config.version }}
+    - uses: pyo3/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
-        args: --release --strip --interpreter python${{ matrix.python-version }}
+        args: --release --strip --interpreter ${{ matrix.python-config.interpreter }}
         target: x86_64
-    - uses: messense/maturin-action@v1
+    - uses: pyo3/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
-        args: --release --strip --universal2 --interpreter python${{ matrix.python-version }}
+        args: --release --strip --universal2 --interpreter ${{ matrix.python-config.interpreter }}
     - name: Upload wheels
       uses: actions/upload-artifact@v2
       with:
@@ -122,15 +158,15 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python-version: [3.8, 3.9, '3.10', '3.11']
+        python-version: [3.8, 3.9, '3.10', '3.11', 'pypy3.9']
 
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-    - uses: messense/maturin-action@v1
+    - uses: pyo3/maturin-action@v1
       with:
         maturin-version: v${{ env.MATURIN_VERSION }}
         command: build
@@ -149,7 +185,7 @@ jobs:
       - uses: actions/download-artifact@v2
         with:
           name: wheels
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       - name: Publish to PyPi
