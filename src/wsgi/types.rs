@@ -67,7 +67,6 @@ impl WSGIBody {
 
     #[args(_hint="None")]
     fn readlines<'p>(&mut self, py: Python<'p>, _hint: Option<PyObject>) -> &'p PyList {
-        println!("{:?}", &self.inner[..]);
         let lines: Vec<&PyBytes> = self.inner
             .split(|&c| c == LINE_SPLIT)
             .map(|item| PyBytes::new(py, &item[..]))
@@ -117,7 +116,7 @@ impl WSGIScope {
             _ => {
                 hyper::body::to_bytes(request)
                     .await
-                    .unwrap_or(bytes::Bytes::new())
+                    .unwrap_or(Bytes::new())
             }
         };
 
