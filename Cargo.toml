@@ -61,7 +61,7 @@ pyo3-log = "=0.7"
 rustls-pemfile = "1.0"
 socket2 = { version = "0.4", features = ["all"] }
 tls-listener = { version = "0.5", features = ["rustls", "hyper-h1", "hyper-h2"] }
-tokio = { version = "1.17", features = ["full"] }
+tokio = { version = "1.24", features = ["full"] }
 tokio-rustls = "0.23"
 tokio-tungstenite = "0.17"
 tokio-util = { version = "0.7", features = ["codec"] }
