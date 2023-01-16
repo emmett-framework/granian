@@ -9,7 +9,7 @@ use crate::{
 use super::{
     errors::error_proto,
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
-    types::{RSGIScope as Scope, Response}
+    types::{RSGIScope as Scope, PyResponse, PyResponseBytes}
 };
 
 
@@ -41,9 +41,10 @@ impl CallbackWatcherHTTP {
 impl CallbackWatcherHTTP {
     fn done(&mut self, py: Python) {
         if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
-            if let (Some(tx), Some(mut res)) = proto.tx() {
-                res.error();
-                let _ = tx.send(res);
+            if let Some(tx) = proto.tx() {
+                let _ = tx.send(
+                    PyResponse::Bytes(PyResponseBytes::empty(500, Vec::new()))
+                );
             }
         }
     }
@@ -99,7 +100,7 @@ pub(crate) async fn call_rtb_http(
     rt: RuntimeRef,
     req: hyper::Request<hyper::Body>,
     scope: Scope
-) -> PyResult<Response> {
+) -> PyResult<PyResponse> {
     let callback = cb.callback.clone();
     let (tx, rx) = oneshot::channel();
     let protocol = HTTPProtocol::new(rt, tx, req);
@@ -124,7 +125,7 @@ pub(crate) async fn call_rtt_http(
     rt: RuntimeRef,
     req: hyper::Request<hyper::Body>,
     scope: Scope
-) -> PyResult<Response> {
+) -> PyResult<PyResponse> {
     let callback = cb.callback.clone();
     let (tx, rx) = oneshot::channel();
     let protocol = HTTPProtocol::new(rt, tx, req);

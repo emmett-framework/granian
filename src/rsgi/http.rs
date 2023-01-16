@@ -7,8 +7,7 @@ use hyper::{
     http::response::Builder as ResponseBuilder
 };
 use std::net::SocketAddr;
-use tokio::{fs::File, sync::mpsc};
-use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio::sync::mpsc;
 
 use crate::{
     callbacks::CallbackWrapper,
@@ -18,15 +17,9 @@ use crate::{
 };
 use super::{
     callbacks::{call_rtb_http, call_rtb_ws, call_rtt_http, call_rtt_ws},
-    types::{ResponseType, RSGIScope as Scope}
+    types::{RSGIScope as Scope, PyResponse}
 };
 
-
-async fn file_body(file_path: String) -> Body {
-    let file = File::open(file_path).await.unwrap();
-    let stream = FramedRead::new(file, BytesCodec::new());
-    Body::wrap_stream(stream)
-}
 
 macro_rules! default_scope {
     ($server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
@@ -46,19 +39,11 @@ macro_rules! default_scope {
 macro_rules! handle_http_response {
     ($handler:expr, $rt:expr, $callback:expr, $req:expr, $scope:expr) => {
         match $handler($callback, $rt, $req, $scope).await {
-            Ok(pyres) => {
-                let res = match pyres.mode {
-                    ResponseType::Body => {
-                        pyres.inner.body(pyres.body)
-                    },
-                    ResponseType::File => {
-                        pyres.inner.body(file_body(pyres.file.unwrap()).await)
-                    }
-                };
-                match res {
-                    Ok(res) => res,
-                    _ => response_500()
-                }
+            Ok(PyResponse::Bytes(pyres)) => {
+                pyres.to_response()
+            },
+            Ok(PyResponse::File(pyres)) => {
+                pyres.to_response().await
             },
             _ => response_500()
         }

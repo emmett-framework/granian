@@ -1,10 +1,12 @@
 use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    http::response::Builder as ResponseBuilder, Body, Uri, Version
+    Body, Uri, Version
 };
 use pyo3::prelude::*;
-use pyo3::types::{PyString};
+use pyo3::types::PyString;
 use std::net::SocketAddr;
+use tokio::fs::File;
+use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::http::HV_SERVER;
 
@@ -138,51 +140,84 @@ impl RSGIScope {
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum ResponseType {
-    Body = 1,
-    File = 10
+pub(crate) enum PyResponse {
+    Bytes(PyResponseBytes),
+    File(PyResponseFile)
 }
 
-#[pyclass(frozen)]
-#[derive(Debug)]
-pub(crate) struct Response {
-    pub inner: ResponseBuilder,
-    pub mode: ResponseType,
-    pub body: Body,
-    pub file: Option<String>
+pub(crate) struct PyResponseBytes {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: hyper::body::Bytes
 }
 
-impl Response {
-    pub fn new() -> Self {
-        Self {
-            inner: ResponseBuilder::new().status(200),
-            mode: ResponseType::Body,
-            body: Body::empty(),
-            file: None
-        }
-    }
+pub(crate) struct PyResponseFile {
+    status: u16,
+    headers: Vec<(String, String)>,
+    file_path: String
+}
 
-    pub fn head(&mut self, status: u16, headers: &Vec<(&str, &str)>) {
-        match status {
-            200 => {},
-            _ => {
-                self.inner = ResponseBuilder::new().status(status);
+macro_rules! response_head_from_py {
+    ($status:expr, $headers:expr, $res:expr) => {
+        {
+            let mut rh = hyper::http::HeaderMap::new();
+
+            rh.insert(HK_SERVER, HV_SERVER);
+            for (key, value) in $headers {
+                rh.append(
+                    HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                    HeaderValue::from_str(&value).unwrap()
+                );
             }
-        }
 
-        let rh = self.inner.headers_mut().unwrap();
-        rh.insert(HK_SERVER, HV_SERVER);
-        for (key, value) in headers {
-            rh.append(
-                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                HeaderValue::from_str(value).unwrap()
-            );
+            *$res.status_mut() = $status.try_into().unwrap();
+            *$res.headers_mut() = rh;
+        }
+    }
+}
+
+impl PyResponseBytes {
+    pub fn empty(status: u16, headers: Vec<(String, String)>) -> Self {
+        Self {
+            status,
+            headers,
+            body: hyper::body::Bytes::new()
         }
     }
 
-    pub fn error(&mut self) {
-        self.inner = ResponseBuilder::new().status(500);
-        self.body = Body::from("Internal server error");
+    pub fn from_bytes(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            headers,
+            body: hyper::body::Bytes::from(body)
+        }
+    }
+
+    pub fn from_string(status: u16, headers: Vec<(String, String)>, body: String) -> Self {
+        Self {
+            status,
+            headers,
+            body: hyper::body::Bytes::from(body)
+        }
+    }
+
+    pub fn to_response(&self) -> hyper::Response::<Body> {
+        let mut res = hyper::Response::<Body>::new(self.body.to_owned().into());
+        response_head_from_py!(self.status, &self.headers, res);
+        res
+    }
+}
+
+impl PyResponseFile {
+    pub fn new(status: u16, headers: Vec<(String, String)>, file_path: String) -> Self {
+        Self { status, headers, file_path }
+    }
+
+    pub async fn to_response(&self) -> hyper::Response::<Body> {
+        let file = File::open(&self.file_path).await.unwrap();
+        let stream = FramedRead::new(file, BytesCodec::new());
+        let mut res = hyper::Response::<Body>::new(Body::wrap_stream(stream));
+        response_head_from_py!(self.status, &self.headers, res);
+        res
     }
 }
