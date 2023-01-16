@@ -62,9 +62,13 @@ def _callback_wrapper(callback):
             resp.headers = headers
 
         rv = callback(environ, start_response)
-        body = b"".join(rv)
-        if hasattr(rv, "close"):
-            rv.close()
+
+        try:
+            body = b"".join(rv)
+        finally:
+            if hasattr(rv, "close"):
+                rv.close()
+
         return (resp.status, resp.headers, body)
 
     return wrapper
