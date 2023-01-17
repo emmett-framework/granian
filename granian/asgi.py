@@ -98,7 +98,7 @@ class LifespanProtocol:
 
     async def send(self, message):
         handler = self._event_handlers[message["type"]]
-        handler(message)
+        handler(self, message)
 
 
 def _noop_wrapper(proto):
