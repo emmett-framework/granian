@@ -1,9 +1,13 @@
 name: test
 
 on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - master
   push:
     branches:
-      - "**"
+      - master
 
 env:
   MATURIN_VERSION: 0.13.6
