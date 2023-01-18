@@ -1,4 +1,5 @@
 import os
+import sys
 
 from functools import wraps
 from typing import Any, List, Tuple
@@ -21,8 +22,7 @@ def _callback_wrapper(callback):
         'SCRIPT_NAME': '',
         'SERVER_PROTOCOL': 'HTTP/1.1',
         'SERVER_SOFTWARE': 'Granian',
-        'wsgi.errors': None,
-        'wsgi.file_wrapper': None,
+        'wsgi.errors': sys.stderr,
         'wsgi.input_terminated': True,
         'wsgi.input': None,
         'wsgi.multiprocess': False,
