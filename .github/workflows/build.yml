@@ -4,151 +4,72 @@ on: workflow_dispatch
 
 env:
   MATURIN_VERSION: 0.14.10
+  PY_ALL: 3.7 3.8 3.9 3.10 3.11 pypy3.7 pypy3.8 pypy3.9
 
 jobs:
-  linux-gnu:
-    runs-on: ubuntu-latest
+  unix:
+    name: unix ${{ matrix.platform || matrix.os }}(${{ matrix.target }}) - ${{ matrix.manylinux || 'auto' }}
+    runs-on: ${{ matrix.os }}-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-config:
-          - version: 3.7
-            lib: cp37-cp37m
-          - version: 3.8
-            lib: cp38-cp38
-          - version: 3.9
-            lib: cp39-cp39
-          - version: '3.10'
-            lib: cp310-cp310
-          - version: '3.11'
-            lib: cp311-cp311
-        target:
-          - arch: x86_64
-          - arch: aarch64
-
+        os: [ubuntu, macos]
+        target: [x86_64, aarch64]
+        manylinux: [auto]
+        include:
+          - os: ubuntu
+            platform: linux
+          - os: macos
+            interpreter: 3.7 3.8 3.9 3.10 3.11 pypy3.9
+          - os: ubuntu
+            platform: linux
+            target: aarch64
+            container: messense/manylinux_2_24-cross:aarch64
+          - os: ubuntu
+            platform: linux
+            target: x86_64
+            manylinux: musllinux_1_1
+          - os: ubuntu
+            platform: linux
+            target: aarch64
+            manylinux: musllinux_1_1
+        exclude:
+          - os: windows
+            target: aarch64
     steps:
-    - uses: actions/checkout@v2
-    - uses: pyo3/maturin-action@v1
-      env:
-        PYO3_CROSS_PYTHON_VERSION: '${{ matrix.python-config.version }}'
-        PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python-config.lib }}/lib
-      with:
-        maturin-version: v${{ env.MATURIN_VERSION }}
-        command: build
-        args: --release --strip --interpreter python${{ matrix.python-config.version }}
-        target: ${{ matrix.target.arch }}
-        manylinux: auto
-    - name: Upload wheels
-      uses: actions/upload-artifact@v2
-      with:
-        name: wheels
-        path: target/wheels
+      - uses: actions/checkout@v2
+      - uses: pyo3/maturin-action@v1
+        with:
+          maturin-version: v${{ env.MATURIN_VERSION }}
+          command: build
+          args: --release --interpreter ${{ matrix.interpreter || env.PY_ALL }}
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          container: ${{ matrix.container }}
+      - name: Upload wheels
+        uses: actions/upload-artifact@v2
+        with:
+          name: wheels
+          path: target/wheels
 
-  linux-gnu-pypy:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        pypy:
-          - pypy3.7
-          - pypy3.8
-          - pypy3.9
-
-    steps:
-    - uses: actions/checkout@v2
-    - uses: pyo3/maturin-action@v1
-      with:
-        maturin-version: v${{ env.MATURIN_VERSION }}
-        command: build
-        args: --release --strip --interpreter ${{ matrix.pypy }}
-        target: x86_64
-        manylinux: auto
-    - name: Upload wheels
-      uses: actions/upload-artifact@v2
-      with:
-        name: wheels
-        path: target/wheels
-
-  linux-musl:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: [x86_64-unknown-linux-musl]
-        python-version: [3.7, 3.8, 3.9, '3.10', '3.11']
-
-    container:
-      image: cr.amira.io/gi0baro/maturin-builds/musl/${{ matrix.python-version }}:latest
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build
-      run: |
-        maturin build --release --strip --compatibility musllinux_1_1 --target ${{ matrix.target }}
-    - name: Upload wheels
-      uses: actions/upload-artifact@v2
-      with:
-        name: wheels
-        path: target/wheels
-
-  macos:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        python-config:
-          - version: 3.7
-            interpreter: python3.7
-          - version: 3.8
-            interpreter: python3.8
-          - version: 3.9
-            interpreter: python3.9
-          - version: '3.10'
-            interpreter: python3.10
-          - version: '3.11'
-            interpreter: python3.11
-          - version: 'pypy3.9'
-            interpreter: pypy
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-config.version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-config.version }}
-    - uses: pyo3/maturin-action@v1
-      with:
-        maturin-version: v${{ env.MATURIN_VERSION }}
-        command: build
-        args: --release --strip --interpreter ${{ matrix.python-config.interpreter }}
-        target: x86_64
-    - uses: pyo3/maturin-action@v1
-      with:
-        maturin-version: v${{ env.MATURIN_VERSION }}
-        command: build
-        args: --release --strip --universal2 --interpreter ${{ matrix.python-config.interpreter }}
-    - name: Upload wheels
-      uses: actions/upload-artifact@v2
-      with:
-        name: wheels
-        path: target/wheels
-
-  windows:
+  win:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        python-version: [3.8, 3.9, '3.10', '3.11', 'pypy3.9']
-
+    env:
+      PY_ALL: 3.8 3.9 3.10 3.11 C:\hostedtoolcache\windows\PyPy\3.9.16\x86\python3.exe
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-    - uses: pyo3/maturin-action@v1
-      with:
-        maturin-version: v${{ env.MATURIN_VERSION }}
-        command: build
-        args: --release --strip
-        target: x86_64
-    - name: Upload wheels
-      uses: actions/upload-artifact@v2
-      with:
-        name: wheels
-        path: target/wheels
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v4
+        with:
+          python-version: pypy3.9
+      - uses: pyo3/maturin-action@v1
+        with:
+          maturin-version: v${{ env.MATURIN_VERSION }}
+          command: build
+          args: --release --interpreter ${{ env.PY_ALL }}
+          target: x86_64
+          manylinux: auto
+      - name: Upload wheels
+        uses: actions/upload-artifact@v2
+        with:
+          name: wheels
+          path: target/wheels
