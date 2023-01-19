@@ -1,6 +1,29 @@
 [project]
 name = "granian"
-repository = "https://github.com/emmett-framework/granian"
+authors = [
+    {name = "Giovanni Barillari", email = "g@baro.dev"}
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python",
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP"
+]
+
+requires-python = ">=3.7"
 dependencies = [
     "typer~=0.4.1",
     "uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython'"
@@ -14,6 +37,19 @@ test = [
     "websockets~=10.3"
 ]
 
+dynamic = [
+    "description",
+    "keywords",
+    "license",
+    "readme",
+    "version"
+]
+
+[project.urls]
+Homepage = "https://github.com/emmett-framework/granian"
+Funding = "https://github.com/sponsors/gi0baro"
+Source = "https://github.com/emmett-framework/granian"
+
 [project.scripts]
 granian = "granian:cli.cli"
 
@@ -22,10 +58,10 @@ requires = ["maturin>=0.12,<0.13"]
 build-backend = "maturin"
 
 [tool.maturin]
-sdist-include = [
+bindings = "pyo3"
+include = [
     "Cargo.lock",
     "granian/*.py",
     "granian/*.pyi",
     "tests/**/*.py"
 ]
-strip = true

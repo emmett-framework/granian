@@ -2,7 +2,7 @@
 name = "granian"
 version = "0.2.5"
 description = "A Rust HTTP server for Python applications"
-authors = ["Giovanni Barillari <gi0baro@d4net.org>"]
+authors = ["Giovanni Barillari <g@baro.dev>"]
 license = "BSD-3-Clause"
 edition = "2021"
 
@@ -26,27 +26,6 @@ crate-type = ["cdylib"]
 
 [package.metadata.maturin]
 name = "granian._granian"
-requires-python = ">=3.7"
-
-classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: BSD License",
-    "Operating System :: MacOS",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-    "Programming Language :: Python",
-    "Programming Language :: Rust",
-    "Topic :: Internet :: WWW/HTTP"
-]
 
 [dependencies]
 bytes = "1"
@@ -77,6 +56,7 @@ pyo3-build-config = { version = "=0.17", features = ["resolve-config"] }
 codegen-units = 1
 debug = false
 incremental = false
-lto = "thin"
+lto = "fat"
 opt-level = 3
 panic = "abort"
+strip = true
