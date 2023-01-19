@@ -37,7 +37,7 @@ macro_rules! handle_request {
                     let headers = res.headers_mut();
                     headers.insert(HK_SERVER, HV_SERVER);
                     for (key, val) in pyheaders {
-                        headers.insert(
+                        headers.append(
                             HeaderName::from_bytes(key.as_bytes()).unwrap(),
                             HeaderValue::from_str(&val).unwrap()
                         );

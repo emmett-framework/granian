@@ -366,7 +366,7 @@ fn adapt_headers(message: &PyDict) -> HeaderMap {
                     HeaderName::from_bytes(tup[0]),
                     HeaderValue::from_bytes(tup[1])
                 ) {
-                    (Ok(key), Ok(val)) => { ret.insert(key, val); },
+                    (Ok(key), Ok(val)) => { ret.append(key, val); },
                     _ => {}
                 }
             };
