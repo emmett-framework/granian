@@ -33,14 +33,14 @@ jobs:
         path: target/wheels/*.tar.gz
 
   wheel-unix:
-    name: wheel ${{ matrix.platform || matrix.os }}(${{ matrix.target }})
+    name: wheel ${{ matrix.platform || matrix.os }}(${{ matrix.target }}) - ${{ matrix.manylinux || 'auto' }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos]
         target: [x86_64, aarch64]
-        # manylinux: [auto]
+        manylinux: [auto]
         include:
           - os: ubuntu
             platform: linux
@@ -50,14 +50,14 @@ jobs:
             platform: linux
             target: aarch64
             container: messense/manylinux_2_24-cross:aarch64
-          # - os: ubuntu
-          #   platform: linux
-          #   target: x86_64
-          #   manylinux: musllinux_1_1
-          # - os: ubuntu
-          #   platform: linux
-          #   target: aarch64
-          #   manylinux: musllinux_1_1
+          - os: ubuntu
+            platform: linux
+            target: x86_64
+            manylinux: musllinux_1_1
+          - os: ubuntu
+            platform: linux
+            target: aarch64
+            manylinux: musllinux_1_1
         exclude:
           - os: windows
             target: aarch64
@@ -69,8 +69,7 @@ jobs:
           command: build
           args: --release --interpreter ${{ matrix.interpreter || env.PY_ALL }}
           target: ${{ matrix.target }}
-          # manylinux: ${{ matrix.manylinux || 'auto' }}
-          manylinux: auto
+          manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
       - name: Upload wheels
         uses: actions/upload-artifact@v2
