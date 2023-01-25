@@ -32,6 +32,7 @@ bytes = "1"
 futures = "0.3"
 hyper = { version = "=0.14", features = ["http1", "http2", "server", "stream", "runtime", "tcp"] }
 log = "0.4"
+mimalloc = { version = "0.1.34", default-features = false, features = ["local_dynamic_tls"] }
 once_cell = "1.5"
 pin-project = "1.0"
 pyo3 = { version = "=0.17", features = ["extension-module"] }
@@ -45,9 +46,6 @@ tokio-rustls = "0.23"
 tokio-tungstenite = "0.17"
 tokio-util = { version = "0.7", features = ["codec"] }
 tungstenite = "0.17"
-
-[target.'cfg(not(all(target_os="linux", target_arch="aarch64")))'.dependencies]
-mimalloc = "0.1.28"
 
 [build-dependencies]
 pyo3-build-config = { version = "=0.17", features = ["resolve-config"] }
