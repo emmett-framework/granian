@@ -8,7 +8,7 @@ use tokio::sync::{oneshot, Mutex};
 use tungstenite::Message;
 
 use crate::{
-    runtime::{RuntimeRef, future_into_py},
+    runtime::{RuntimeRef, future_into_py_iter, future_into_py_futlike},
     ws::{HyperWebsocket, UpgradeData}
 };
 use super::{
@@ -31,7 +31,7 @@ impl RSGIHTTPProtocol {
         request: Request<Body>
     ) -> Self {
         Self {
-            rt: rt,
+            rt,
             tx: Some(tx),
             request: Arc::new(Mutex::new(request))
         }
@@ -46,7 +46,7 @@ impl RSGIHTTPProtocol {
 impl RSGIHTTPProtocol {
     fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let req_ref = self.request.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             let mut req = req_ref.lock().await;
             let body = hyper::body::to_bytes(&mut *req).await.unwrap();
             Ok(Python::with_gil(|py| {
@@ -113,7 +113,7 @@ impl RSGIWebsocketTransport {
 impl RSGIWebsocketTransport {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.rx.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 loop {
                     match stream.next().await {
@@ -143,7 +143,7 @@ impl RSGIWebsocketTransport {
 
     fn send_bytes<'p>(&self, py: Python<'p>, data: Vec<u8>) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Binary(data)).await {
                     Ok(_) => Ok(()),
@@ -156,7 +156,7 @@ impl RSGIWebsocketTransport {
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Text(data)).await {
                     Ok(_) => Ok(()),
@@ -266,7 +266,7 @@ impl RSGIWebsocketProtocol {
         let rth = self.rt.clone();
         let mut upgrade = self.upgrade.take().unwrap();
         let transport = self.websocket.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             let mut ws = transport.lock().await;
             match upgrade.send().await {
                 Ok(_) => {

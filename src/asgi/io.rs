@@ -14,7 +14,7 @@ use tungstenite::Message;
 
 use crate::{
     http::HV_SERVER,
-    runtime::{RuntimeRef, future_into_py},
+    runtime::{RuntimeRef, future_into_py_iter, future_into_py_futlike},
     ws::{HyperWebsocket, UpgradeData}
 };
 use super::{
@@ -81,7 +81,7 @@ impl ASGIHTTPProtocol {
 impl ASGIHTTPProtocol {
     fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let transport = self.request.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             let mut req = transport.lock().await;
             let body = hyper::body::to_bytes(&mut *req).await.unwrap();
             Python::with_gil(|py| {
@@ -196,7 +196,7 @@ impl ASGIWebsocketProtocol {
         let accepted = self.accepted.clone();
         let tx = self.ws_tx.clone();
         let rx = self.ws_rx.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(_) = upgrade.send().await {
                 if let Ok(stream) = websocket.await {
                     let mut wtx = tx.lock().await;
@@ -222,7 +222,7 @@ impl ASGIWebsocketProtocol {
         let transport = self.ws_tx.clone();
         let closed = self.closed.clone();
         let message = ws_message_into_rs(data);
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_iter(self.rt.clone(), py, async move {
             if !closed {
                 if let Ok(message) = message {
                     if let Some(ws) = &mut *(transport.lock().await) {
@@ -250,7 +250,7 @@ impl ASGIWebsocketProtocol {
 
 macro_rules! empty_future {
     ($rt:expr, $py:expr) => {
-        future_into_py($rt, $py, async move {
+        future_into_py_iter($rt, $py, async move {
             Ok(())
         })
     };
@@ -262,7 +262,7 @@ impl ASGIWebsocketProtocol {
         let transport = self.ws_rx.clone();
         let accepted = self.accepted.clone();
         let closed = self.closed.clone();
-        future_into_py(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             let accepted = accepted.lock().await;
             match (*accepted, closed) {
                 (false, false) => {
