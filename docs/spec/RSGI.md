@@ -4,9 +4,21 @@
 
 ## Abstract
 
-This document proposes a standard interface between Rust network protocol servers (particularly web servers) and Python applications, intended to allow handling of multiple common protocol styles (including HTTP, HTTP/2, and WebSocket).
+This document proposes a standard interface between Rust network protocol servers (particularly web servers) and Python applications, intended to allow the handling of multiple common protocol styles (including HTTP, HTTP/2, and WebSocket).
 
 This base specification is intended to fix in place the set of APIs by which these servers interact and run application code; each supported protocol (such as HTTP) has a sub-specification that outlines how to handle it in a specific way.
+
+## Rationale
+
+The ASGI specification works well in a *Python-only world*, allowing the same great flexibility WSGI introduced. However, its design is irrevocably tied to the Python language itself, and the AsyncIO implementation. For instance, ASGI design is built around the idea that the socket transport and the threading paradigm is handled by Python itself; a condition that might lead to inefficient paradigms when looking at implementation coming from different languages. We can summarise this concept into this phrase: *ASGI expects the lower protocol to be handled by Python*.
+
+As the abstract suggests, RSGI is designed to solve the inefficiencies we described for servers written in the Rust language, where the actual I/O communication and threading components are handled outside the Python interpreter, to allow applications to take advantage of the performance provided by the protocol implementation.
+
+RSGI attempts to preserve a simple application interface like ASGI does, while providing an abstraction that allows data to be sent and received through Rust built protocols. This is why, for example, RSGI keeps the same interfaces on the application layer both for HTTP requests and Websockets, but expects different usage of those interfaces based on the protocols: unlike ASGI, requests won't be handled using *messages*.
+
+As we said, RSGI is not built around the idea of Python handling the lower protocols, and thus its design is not meant to preserve interoperability with ASGI and WSGI: the I/O fundamentals changed, and supporting the previous one would have been a flawed decision since its begin.
+
+Its primary goal is to provide a way to write HTTP/1, HTTP/2, HTTP/3 and WebSocket code in Python, taking advantage of an efficient lower protocol.
 
 ## Overview
 
@@ -28,7 +40,7 @@ Each call of the application callable maps to a single incoming “socket” or 
 
 ## Applications
 
-ASGI applications should be a single async callable:
+RSGI applications should be a single async callable:
 
 ```
 coroutine application(scope, protocol)
