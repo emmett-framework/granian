@@ -120,9 +120,7 @@ impl PyAwaitableResultFutureLike {
         Ok(())
     }
 
-    fn result(&self) -> () {
-        ()
-    }
+    fn result(&self) {}
 
     fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
         pyself

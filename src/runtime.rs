@@ -428,20 +428,31 @@ where
     let py = event_loop.py();
     let result_tx = Arc::new(Mutex::new(None));
     let result_rx = Arc::clone(&result_tx);
-    let coro = future_into_py_with_locals::<R, _, ()>(
-        rt,
-        py,
-        TaskLocals::new(event_loop).copy_context(py)?,
-        async move {
-            let val = fut.await?;
-            if let Ok(mut result) = result_tx.lock() {
-                *result = Some(val);
-            }
-            Ok(())
-        },
-    )?;
 
-    event_loop.call_method1("run_until_complete", (coro,))?;
+    let task_locals = TaskLocals::new(event_loop).copy_context(py)?;
+    let py_fut = event_loop.call_method0("create_future")?;
+    let loop_tx = event_loop.into_py(py);
+    let future_tx = py_fut.into_py(py);
+
+    let rth = rt.handler();
+
+    rt.spawn(async move {
+        let val = rth.scope(
+            task_locals.clone(),
+            fut
+        )
+        .await;
+        if let Ok(mut result) = result_tx.lock() {
+            *result = Some(val.unwrap());
+        }
+
+        Python::with_gil(move |py| {
+            let res_method = future_tx.getattr(py, "set_result").unwrap();
+            let _ = loop_tx.call_method(py, "call_soon_threadsafe", (res_method, py.None()), None);
+        });
+    });
+
+    event_loop.call_method1("run_until_complete", (py_fut,))?;
 
     let result = result_rx.lock().unwrap().take().unwrap();
     Ok(result)
