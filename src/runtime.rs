@@ -1,5 +1,5 @@
 use once_cell::{unsync::OnceCell as UnsyncOnceCell};
-use pyo3_asyncio::{TaskLocals, generic as pyrt_generic};
+use pyo3_asyncio::TaskLocals;
 use pyo3::prelude::*;
 use std::{future::Future, io, pin::Pin, sync::{Arc, Mutex}};
 use tokio::{runtime::Builder, task::{JoinHandle, LocalSet}};
@@ -189,160 +189,6 @@ pub(crate) fn into_future(
     )
 }
 
-pub(crate) fn future_into_py_with_locals<R, F, T>(
-    rt: R,
-    py: Python,
-    locals: TaskLocals,
-    fut: F,
-) -> PyResult<&PyAny>
-where
-    R: Runtime + ContextExt + Clone,
-    F: Future<Output = PyResult<T>> + Send + 'static,
-    T: IntoPy<PyObject>,
-{
-    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
-
-    let py_fut = pyo3_asyncio::create_future(locals.event_loop(py))?;
-    py_fut.call_method1(
-        "add_done_callback",
-        (pyrt_generic::PyDoneCallback {
-            cancel_tx: Some(cancel_tx),
-        },),
-    )?;
-
-    let future_tx1 = PyObject::from(py_fut);
-    let future_tx2 = future_tx1.clone();
-    let rth = rt.handler();
-
-    rt.spawn(async move {
-        let rti = rth.handler();
-        let locals2 = locals.clone();
-
-        if let Err(e) = rth.spawn(async move {
-            let result = rti.scope(
-                locals2.clone(),
-                pyrt_generic::Cancellable::new_with_cancel_rx(fut, cancel_rx),
-            )
-            .await;
-
-            Python::with_gil(move |py| {
-                if pyrt_generic::cancelled(future_tx1.as_ref(py))
-                    .map_err(pyo3_asyncio::dump_err(py))
-                    .unwrap_or(false)
-                {
-                    return;
-                }
-
-                let _ = pyrt_generic::set_result(
-                    locals2.event_loop(py),
-                    future_tx1.as_ref(py),
-                    result.map(|val| val.into_py(py)),
-                )
-                .map_err(pyo3_asyncio::dump_err(py));
-            });
-        })
-        .await
-        {
-            if e.is_panic() {
-                Python::with_gil(move |py| {
-                    if pyrt_generic::cancelled(future_tx2.as_ref(py))
-                        .map_err(pyo3_asyncio::dump_err(py))
-                        .unwrap_or(false)
-                    {
-                        return;
-                    }
-
-                    let _ = pyrt_generic::set_result(
-                        locals.event_loop(py),
-                        future_tx2.as_ref(py),
-                        Err(pyo3_asyncio::err::RustPanic::new_err("rust future panicked")),
-                    )
-                    .map_err(pyo3_asyncio::dump_err(py));
-                });
-            }
-        }
-    });
-
-    Ok(py_fut)
-}
-
-pub fn local_future_into_py_with_locals<R, F, T>(
-    rt: R,
-    py: Python,
-    locals: TaskLocals,
-    fut: F,
-) -> PyResult<&PyAny>
-where
-    R: Runtime + SpawnLocalExt + LocalContextExt,
-    F: Future<Output = PyResult<T>> + 'static,
-    T: IntoPy<PyObject>,
-{
-    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
-
-    let py_fut = pyo3_asyncio::create_future(locals.event_loop(py))?;
-    py_fut.call_method1(
-        "add_done_callback",
-        (pyrt_generic::PyDoneCallback {
-            cancel_tx: Some(cancel_tx),
-        },),
-    )?;
-
-    let future_tx1 = PyObject::from(py_fut);
-    let future_tx2 = future_tx1.clone();
-    let rth = rt.handler();
-
-    rt.spawn_local(async move {
-        let rti = rth.handler();
-        let locals2 = locals.clone();
-
-        if let Err(e) = rth.spawn_local(async move {
-            let result = rti.scope_local(
-                locals2.clone(),
-                pyrt_generic::Cancellable::new_with_cancel_rx(fut, cancel_rx),
-            )
-            .await;
-
-            Python::with_gil(move |py| {
-                if pyrt_generic::cancelled(future_tx1.as_ref(py))
-                    .map_err(pyo3_asyncio::dump_err(py))
-                    .unwrap_or(false)
-                {
-                    return;
-                }
-
-                let _ = pyrt_generic::set_result(
-                    locals2.event_loop(py),
-                    future_tx1.as_ref(py),
-                    result.map(|val| val.into_py(py)),
-                )
-                .map_err(pyo3_asyncio::dump_err(py));
-            });
-        })
-        .await
-        {
-            if e.is_panic() {
-                Python::with_gil(move |py| {
-                    if pyrt_generic::cancelled(future_tx2.as_ref(py))
-                        .map_err(pyo3_asyncio::dump_err(py))
-                        .unwrap_or(false)
-                    {
-                        return;
-                    }
-
-                    let _ = pyrt_generic::set_result(
-                        locals.event_loop(py),
-                        future_tx2.as_ref(py),
-                        Err(pyo3_asyncio::err::RustPanic::new_err("Rust future panicked")),
-                    )
-                    .map_err(pyo3_asyncio::dump_err(py));
-                });
-            }
-        }
-    });
-
-    Ok(py_fut)
-}
-
 #[inline]
 fn get_current_locals<R>(py: Python) -> PyResult<TaskLocals>
 where
@@ -407,16 +253,6 @@ where
     });
 
     Ok(py_fut)
-}
-
-#[allow(dead_code)]
-pub fn local_future_into_py<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
-where
-    R: Runtime + ContextExt + SpawnLocalExt + LocalContextExt,
-    F: Future<Output = PyResult<T>> + 'static,
-    T: IntoPy<PyObject>,
-{
-    local_future_into_py_with_locals::<R, F, T>(rt, py, get_current_locals::<R>(py)?, fut)
 }
 
 pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>
