@@ -4,7 +4,7 @@ PLAINTEXT_RESPONSE = {
     'type': 'http.response.start',
     'status': 200,
     'headers': [
-        [b'content-type', b'text/plain; charset=utf-8'],
+        (b'content-type', b'text/plain; charset=utf-8'),
     ]
 }
 
@@ -50,6 +50,16 @@ async def s_long(scope, receive, send):
     })
 
 
+async def echo(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    msg = await receive()
+    await send({
+        'type': 'http.response.body',
+        'body': msg['body'],
+        'more_body': False
+    })
+
+
 async def handle_404(scope, receive, send):
     content = b'Not found'
     await send(PLAINTEXT_RESPONSE)
@@ -64,7 +74,8 @@ routes = {
     '/b': b_short,
     '/bb': b_long,
     '/s': s_short,
-    '/ss': s_long
+    '/ss': s_long,
+    '/echo': echo
 }
 
 

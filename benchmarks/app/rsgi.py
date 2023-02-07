@@ -40,6 +40,14 @@ async def s_long(scope, proto):
     )
 
 
+async def echo(scope, proto):
+    proto.response_bytes(
+        200,
+        HEADERS,
+        await proto()
+    )
+
+
 async def handle_404(scope, proto):
     proto.response_str(
         404,
@@ -52,7 +60,8 @@ routes = {
     '/b': b_short,
     '/bb': b_long,
     '/s': s_short,
-    '/ss': s_long
+    '/ss': s_long,
+    '/echo': echo
 }
 
 

@@ -26,6 +26,11 @@ def s_long(environ, proto):
     return [BODY_STR_LONG.encode("utf8")]
 
 
+def echo(environ, proto):
+    proto('200 OK', HEADERS)
+    return [environ['wsgi.input'].read()]
+
+
 def handle_404(environ, proto):
     proto('404 NOT FOUND', HEADERS)
     return [b"not found"]
@@ -35,7 +40,8 @@ routes = {
     '/b': b_short,
     '/bb': b_long,
     '/s': s_short,
-    '/ss': s_long
+    '/ss': s_long,
+    '/echo': echo
 }
 
 

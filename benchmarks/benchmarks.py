@@ -58,11 +58,12 @@ def app(name, procs=None, threads=None, thmode=None):
     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
-def wrk(duration, concurrency, endpoint):
+def wrk(duration, concurrency, endpoint, post=False):
+    script = "wrk.post.lua" if post else "wrk.lua"
     threads = max(2, CPU // 2)
     proc = subprocess.run(
         f"wrk -d{duration}s -H \"Connection: keep-alive\" -t{threads} -c{concurrency} "
-        f"-s wrk.lua http://localhost:8000/{endpoint}",
+        f"-s {script} http://localhost:8000/{endpoint}",
         shell=True,
         check=True,
         capture_output=True
@@ -74,17 +75,17 @@ def wrk(duration, concurrency, endpoint):
     }
 
 
-def benchmark(endpoint):
+def benchmark(endpoint, post=False):
     results = {}
     # primer
-    wrk(5, 8, endpoint)
+    wrk(5, 8, endpoint, post=post)
     time.sleep(2)
     # warm up
-    wrk(5, max(WRK_CONCURRENCIES), endpoint)
+    wrk(5, max(WRK_CONCURRENCIES), endpoint, post=post)
     time.sleep(3)
     # bench
     for concurrency in WRK_CONCURRENCIES:
-        res = wrk(15, concurrency, endpoint)
+        res = wrk(15, concurrency, endpoint, post=post)
         results[concurrency] = res
         time.sleep(3)
     time.sleep(2)
@@ -120,36 +121,46 @@ def interfaces():
     with app("rsgi"):
         results["RSGI bytes"] = benchmark("b")
         results["RSGI str"] = benchmark("s")
+        results["RSGI echo"] = benchmark("echo", post=True)
     with app("asgi"):
         results["ASGI bytes"] = benchmark("b")
         results["ASGI str"] = benchmark("s")
+        results["ASGI echo"] = benchmark("echo", post=True)
     with app("wsgi"):
         results["WSGI bytes"] = benchmark("b")
         results["WSGI str"] = benchmark("s")
+        results["WSGI echo"] = benchmark("echo", post=True)
     return results
 
 
 def vs_3rd_async():
     results = {}
     with app("asgi"):
-        results["Granian ASGI"] = benchmark("b")
+        results["Granian ASGI [GET]"] = benchmark("b")
+        results["Granian ASGI [POST]"] = benchmark("echo", post=True)
     with app("rsgi"):
-        results["Granian RSGI"] = benchmark("b")
+        results["Granian RSGI [GET]"] = benchmark("b")
+        results["Granian RSGI [POST]"] = benchmark("echo", post=True)
     with app("uvicorn_h11"):
-        results["Uvicorn H11"] = benchmark("b")
+        results["Uvicorn H11 [GET]"] = benchmark("b")
+        results["Uvicorn H11 [POST]"] = benchmark("echo", post=True)
     with app("uvicorn_httptools"):
-        results["Uvicorn http-tools"] = benchmark("b")
+        results["Uvicorn http-tools [GET]"] = benchmark("b")
+        results["Uvicorn http-tools [POST]"] = benchmark("echo", post=True)
     with app("hypercorn"):
-        results["Hypercorn"] = benchmark("b")
+        results["Hypercorn [GET]"] = benchmark("b")
+        results["Hypercorn [POST]"] = benchmark("echo", post=True)
     return results
 
 
 def vs_3rd_sync():
     results = {}
     with app("wsgi"):
-        results["Granian WSGI"] = benchmark("b")
+        results["Granian WSGI [GET]"] = benchmark("b")
+        results["Granian WSGI [POST]"] = benchmark("echo", post=True)
     with app("gunicorn"):
-        results["Gunicorn meinheld"] = benchmark("b")
+        results["Gunicorn meinheld [GET]"] = benchmark("b")
+        results["Gunicorn meinheld [POST]"] = benchmark("echo", post=True)
     return results
 
 
@@ -190,7 +201,7 @@ def run():
         results["vs_sync"] = vs_3rd_sync()
     if os.environ.get("BENCHMARK_VSC") == "true":
         results["vs_maxc"] = vs_3rd_maxc()
-    with open(f"results/data.json", "w") as f:
+    with open("results/data.json", "w") as f:
         f.write(json.dumps({
             "cpu": CPU,
             "run_at": now.isoformat(),
