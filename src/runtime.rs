@@ -1,8 +1,15 @@
 use once_cell::{unsync::OnceCell as UnsyncOnceCell};
-use pyo3_asyncio::{TaskLocals, generic as pyrt_generic};
+use pyo3_asyncio::TaskLocals;
 use pyo3::prelude::*;
 use std::{future::Future, io, pin::Pin, sync::{Arc, Mutex}};
 use tokio::{runtime::Builder, task::{JoinHandle, LocalSet}};
+
+use super::callbacks::{
+    PyIterAwaitableResult,
+    PyFutureAwaitableResult,
+    PyAwaitableResultFutureLike
+};
+
 
 tokio::task_local! {
     static TASK_LOCALS: UnsyncOnceCell<TaskLocals>;
@@ -182,160 +189,6 @@ pub(crate) fn into_future(
     )
 }
 
-pub(crate) fn future_into_py_with_locals<R, F, T>(
-    rt: R,
-    py: Python,
-    locals: TaskLocals,
-    fut: F,
-) -> PyResult<&PyAny>
-where
-    R: Runtime + ContextExt + Clone,
-    F: Future<Output = PyResult<T>> + Send + 'static,
-    T: IntoPy<PyObject>,
-{
-    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
-
-    let py_fut = pyo3_asyncio::create_future(locals.event_loop(py))?;
-    py_fut.call_method1(
-        "add_done_callback",
-        (pyrt_generic::PyDoneCallback {
-            cancel_tx: Some(cancel_tx),
-        },),
-    )?;
-
-    let future_tx1 = PyObject::from(py_fut);
-    let future_tx2 = future_tx1.clone();
-    let rth = rt.handler();
-
-    rt.spawn(async move {
-        let rti = rth.handler();
-        let locals2 = locals.clone();
-
-        if let Err(e) = rth.spawn(async move {
-            let result = rti.scope(
-                locals2.clone(),
-                pyrt_generic::Cancellable::new_with_cancel_rx(fut, cancel_rx),
-            )
-            .await;
-
-            Python::with_gil(move |py| {
-                if pyrt_generic::cancelled(future_tx1.as_ref(py))
-                    .map_err(pyo3_asyncio::dump_err(py))
-                    .unwrap_or(false)
-                {
-                    return;
-                }
-
-                let _ = pyrt_generic::set_result(
-                    locals2.event_loop(py),
-                    future_tx1.as_ref(py),
-                    result.map(|val| val.into_py(py)),
-                )
-                .map_err(pyo3_asyncio::dump_err(py));
-            });
-        })
-        .await
-        {
-            if e.is_panic() {
-                Python::with_gil(move |py| {
-                    if pyrt_generic::cancelled(future_tx2.as_ref(py))
-                        .map_err(pyo3_asyncio::dump_err(py))
-                        .unwrap_or(false)
-                    {
-                        return;
-                    }
-
-                    let _ = pyrt_generic::set_result(
-                        locals.event_loop(py),
-                        future_tx2.as_ref(py),
-                        Err(pyo3_asyncio::err::RustPanic::new_err("rust future panicked")),
-                    )
-                    .map_err(pyo3_asyncio::dump_err(py));
-                });
-            }
-        }
-    });
-
-    Ok(py_fut)
-}
-
-pub fn local_future_into_py_with_locals<R, F, T>(
-    rt: R,
-    py: Python,
-    locals: TaskLocals,
-    fut: F,
-) -> PyResult<&PyAny>
-where
-    R: Runtime + SpawnLocalExt + LocalContextExt,
-    F: Future<Output = PyResult<T>> + 'static,
-    T: IntoPy<PyObject>,
-{
-    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
-
-    let py_fut = pyo3_asyncio::create_future(locals.event_loop(py))?;
-    py_fut.call_method1(
-        "add_done_callback",
-        (pyrt_generic::PyDoneCallback {
-            cancel_tx: Some(cancel_tx),
-        },),
-    )?;
-
-    let future_tx1 = PyObject::from(py_fut);
-    let future_tx2 = future_tx1.clone();
-    let rth = rt.handler();
-
-    rt.spawn_local(async move {
-        let rti = rth.handler();
-        let locals2 = locals.clone();
-
-        if let Err(e) = rth.spawn_local(async move {
-            let result = rti.scope_local(
-                locals2.clone(),
-                pyrt_generic::Cancellable::new_with_cancel_rx(fut, cancel_rx),
-            )
-            .await;
-
-            Python::with_gil(move |py| {
-                if pyrt_generic::cancelled(future_tx1.as_ref(py))
-                    .map_err(pyo3_asyncio::dump_err(py))
-                    .unwrap_or(false)
-                {
-                    return;
-                }
-
-                let _ = pyrt_generic::set_result(
-                    locals2.event_loop(py),
-                    future_tx1.as_ref(py),
-                    result.map(|val| val.into_py(py)),
-                )
-                .map_err(pyo3_asyncio::dump_err(py));
-            });
-        })
-        .await
-        {
-            if e.is_panic() {
-                Python::with_gil(move |py| {
-                    if pyrt_generic::cancelled(future_tx2.as_ref(py))
-                        .map_err(pyo3_asyncio::dump_err(py))
-                        .unwrap_or(false)
-                    {
-                        return;
-                    }
-
-                    let _ = pyrt_generic::set_result(
-                        locals.event_loop(py),
-                        future_tx2.as_ref(py),
-                        Err(pyo3_asyncio::err::RustPanic::new_err("Rust future panicked")),
-                    )
-                    .map_err(pyo3_asyncio::dump_err(py));
-                });
-            }
-        }
-    });
-
-    Ok(py_fut)
-}
-
 #[inline]
 fn get_current_locals<R>(py: Python) -> PyResult<TaskLocals>
 where
@@ -348,23 +201,58 @@ where
     }
 }
 
-pub(crate) fn future_into_py<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+// NOTE:
+//  `future_into_py_iter` relies on what CPython refers as "bare yield".
+//  This is generally ~55% faster than `pyo3_asyncio.future_into_py` implementation.
+//  It consumes more cpu-cycles than `future_into_py_futlike`,
+//  but for "quick" operations it's something like 12% faster.
+pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
     T: IntoPy<PyObject>,
 {
-    future_into_py_with_locals::<R, F, T>(rt, py, get_current_locals::<R>(py)?, fut)
+    let aw = PyIterAwaitableResult::new(py)?;
+    let fut_res = aw.inner.clone();
+    let py_fut = aw.into_py(py).into_ref(py);
+
+    rt.spawn(async move {
+        let result = fut.await;
+        Python::with_gil(move |py| {
+            fut_res.as_ref(py).borrow_mut().set_result(result.map(|v| v.into_py(py)));
+        });
+    });
+
+    Ok(py_fut)
 }
 
-#[allow(dead_code)]
-pub fn local_future_into_py<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+// NOTE:
+//  `future_into_py_futlike` relies on an `asyncio.Future` like implementation.
+//  This is generally ~38% faster than `pyo3_asyncio.future_into_py` implementation.
+//  It won't consume more cpu-cycles than standard asyncio implementation,
+//  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
+pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
 where
-    R: Runtime + ContextExt + SpawnLocalExt + LocalContextExt,
-    F: Future<Output = PyResult<T>> + 'static,
+    R: Runtime + ContextExt + Clone,
+    F: Future<Output = PyResult<T>> + Send + 'static,
     T: IntoPy<PyObject>,
 {
-    local_future_into_py_with_locals::<R, F, T>(rt, py, get_current_locals::<R>(py)?, fut)
+    let task_locals = get_current_locals::<R>(py)?;
+    let aw = PyFutureAwaitableResult::new(py, task_locals.event_loop(py))?;
+    let fut_res = aw.inner.clone();
+    let py_fut = aw.into_py(py).into_ref(py);
+
+    rt.spawn(async move {
+        let result = fut.await;
+        Python::with_gil(move |py| {
+            PyAwaitableResultFutureLike::set_result(
+                fut_res.as_ref(py).borrow_mut(),
+                result.map(|v| v.into_py(py))
+            );
+        });
+    });
+
+    Ok(py_fut)
 }
 
 pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>
@@ -376,20 +264,31 @@ where
     let py = event_loop.py();
     let result_tx = Arc::new(Mutex::new(None));
     let result_rx = Arc::clone(&result_tx);
-    let coro = future_into_py_with_locals::<R, _, ()>(
-        rt,
-        py,
-        TaskLocals::new(event_loop).copy_context(py)?,
-        async move {
-            let val = fut.await?;
-            if let Ok(mut result) = result_tx.lock() {
-                *result = Some(val);
-            }
-            Ok(())
-        },
-    )?;
 
-    event_loop.call_method1("run_until_complete", (coro,))?;
+    let task_locals = TaskLocals::new(event_loop).copy_context(py)?;
+    let py_fut = event_loop.call_method0("create_future")?;
+    let loop_tx = event_loop.into_py(py);
+    let future_tx = py_fut.into_py(py);
+
+    let rth = rt.handler();
+
+    rt.spawn(async move {
+        let val = rth.scope(
+            task_locals.clone(),
+            fut
+        )
+        .await;
+        if let Ok(mut result) = result_tx.lock() {
+            *result = Some(val.unwrap());
+        }
+
+        Python::with_gil(move |py| {
+            let res_method = future_tx.getattr(py, "set_result").unwrap();
+            let _ = loop_tx.call_method(py, "call_soon_threadsafe", (res_method, py.None()), None);
+        });
+    });
+
+    event_loop.call_method1("run_until_complete", (py_fut,))?;
 
     let result = result_rx.lock().unwrap().take().unwrap();
     Ok(result)
