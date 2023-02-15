@@ -16,6 +16,7 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: [3.7, 3.8, 3.9, '3.10', '3.11']
 
@@ -39,6 +40,7 @@ jobs:
   macos:
     runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: [3.7, 3.8, 3.9, '3.10', '3.11']
 
@@ -62,6 +64,7 @@ jobs:
   windows:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: [3.8, 3.9, '3.10', '3.11']
 
