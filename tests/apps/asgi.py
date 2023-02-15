@@ -85,6 +85,8 @@ async def ws_echo(scope, receive, send):
         rv[key] = msg[key]
         await send(rv)
 
+    await send({'type': 'websocket.close'})
+
 
 async def ws_push(scope, receive, send):
     await send({'type': 'websocket.accept'})

@@ -236,6 +236,22 @@ impl ASGIWebsocketProtocol {
         })
     }
 
+    #[inline(always)]
+    fn close<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        let transport = self.ws_tx.clone();
+        let closed = self.closed.clone();
+        future_into_py_iter(self.rt.clone(), py, async move {
+            if !closed {
+                if let Some(ws) = &mut *(transport.lock().await) {
+                    if let Ok(_) = ws.close().await {
+                        return Ok(())
+                    }
+                }
+            };
+            error_flow!()
+        })
+    }
+
     fn consumed(&self) -> bool {
         match &self.upgrade {
             Some(_) => false,
@@ -246,14 +262,6 @@ impl ASGIWebsocketProtocol {
     pub fn tx(&mut self) -> (Option<oneshot::Sender<bool>>, bool) {
         (self.tx.take(), self.consumed())
     }
-}
-
-macro_rules! empty_future {
-    ($rt:expr, $py:expr) => {
-        future_into_py_iter($rt, $py, async move {
-            Ok(())
-        })
-    };
 }
 
 #[pymethods]
@@ -312,8 +320,7 @@ impl ASGIWebsocketProtocol {
                 self.accept(py)
             },
             Ok(ASGIMessageType::WSClose) => {
-                self.closed = true;
-                empty_future!(self.rt.clone(), py)
+                self.close(py)
             },
             Ok(ASGIMessageType::WSMessage) => {
                 self.send_message(py, data)
