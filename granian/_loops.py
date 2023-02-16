@@ -2,6 +2,7 @@ import asyncio
 import os
 import signal
 import sys
+from ._tasks import create_task
 
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -72,6 +73,8 @@ loops = BuilderRegistry()
 @loops.register('asyncio')
 def build_asyncio_loop():
     loop = asyncio.new_event_loop() if os.name != 'nt' else asyncio.ProactorEventLoop()
+    # this installs the custom task as default everywhere
+    loop.set_task_factory(lambda loop, coro, context=None: create_task(loop, coro, context=context))
     asyncio.set_event_loop(loop)
     return loop
 
@@ -80,6 +83,8 @@ def build_asyncio_loop():
 def build_uv_loop(uvloop):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.new_event_loop()
+    # this installs the custom task as default everywhere (yes is compatible with uvloop on CPython)
+    loop.set_task_factory(lambda loop, coro, context=None: create_task(loop, coro, context=context))
     asyncio.set_event_loop(loop)
     return loop
 
