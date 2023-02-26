@@ -29,6 +29,14 @@ dependencies = [
     "uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython'"
 ]
 
+dynamic = [
+    "description",
+    "keywords",
+    "license",
+    "readme",
+    "version"
+]
+
 [project.optional-dependencies]
 test = [
     "httpx~=0.23.0",
@@ -37,12 +45,8 @@ test = [
     "websockets~=10.3"
 ]
 
-dynamic = [
-    "description",
-    "keywords",
-    "license",
-    "readme",
-    "version"
+gunicorn = [
+    "gunicorn~=20.1.0"
 ]
 
 [project.urls]
