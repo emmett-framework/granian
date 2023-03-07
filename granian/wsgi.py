@@ -15,11 +15,11 @@ class Response:
         self.headers = []
 
 
-def _callback_wrapper(callback):
+def _callback_wrapper(callback, scope_opts):
     basic_env = dict(os.environ)
     basic_env.update({
         'GATEWAY_INTERFACE': 'CGI/1.1',
-        'SCRIPT_NAME': '',
+        'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
         'SERVER_PROTOCOL': 'HTTP/1.1',
         'SERVER_SOFTWARE': 'Granian',
         'wsgi.errors': sys.stderr,

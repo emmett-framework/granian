@@ -118,7 +118,9 @@ _send_wrappers = {
 }
 
 
-def _callback_wrapper(callback):
+def _callback_wrapper(callback, scope_opts):
+    root_url_path = scope_opts.get('url_path_prefix') or ''
+
     @wraps(callback)
     def wrapper(watcher, scope: Scope):
         coro = callback(
@@ -133,7 +135,7 @@ def _callback_wrapper(callback):
                 "client": (scope.client_ip, scope.client_port),
                 "scheme": scope.scheme,
                 "method": scope.method,
-                "root_path": "",
+                "root_path": root_url_path,
                 "path": scope.path,
                 "raw_path": scope.path.encode("ascii"),
                 "query_string": scope.query_string.encode('latin-1'),
