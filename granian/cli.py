@@ -70,6 +70,10 @@ def main(
         dir_okay=False,
         readable=True
     ),
+    url_path_prefix: Optional[str] = typer.Option(
+        None,
+        help="URL path prefix the app is mounted on"
+    ),
     _: Optional[bool] = typer.Option(
         None,
         "--version",
@@ -93,5 +97,6 @@ def main(
         backlog=backlog,
         log_level=log_level,
         ssl_cert=ssl_certificate,
-        ssl_key=ssl_keyfile
+        ssl_key=ssl_keyfile,
+        url_path_prefix=url_path_prefix
     ).serve()

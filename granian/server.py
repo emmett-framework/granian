@@ -41,7 +41,8 @@ class Granian:
         http1_buffer_size: int = 65535,
         log_level: LogLevels = LogLevels.info,
         ssl_cert: Optional[Path] = None,
-        ssl_key: Optional[Path] = None
+        ssl_key: Optional[Path] = None,
+        url_path_prefix: Optional[str] = None
     ):
         self.target = target
         self.bind_addr = address
@@ -57,6 +58,7 @@ class Granian:
         self.backlog = max(128, backlog)
         self.http1_buffer_size = http1_buffer_size
         self.log_level = log_level
+        self.url_path_prefix = url_path_prefix
         configure_logging(self.log_level)
         self.build_ssl_context(ssl_cert, ssl_key)
         self._shd = None
@@ -94,7 +96,8 @@ class Granian:
         http1_buffer_size,
         websockets,
         log_level,
-        ssl_ctx
+        ssl_ctx,
+        scope_opts
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -125,7 +128,7 @@ class Granian:
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
         serve(
-            _asgi_call_wrap(callback),
+            _asgi_call_wrap(callback, scope_opts),
             loop,
             contextvars.copy_context(),
             shutdown_event.wait()
@@ -146,7 +149,8 @@ class Granian:
         http1_buffer_size,
         websockets,
         log_level,
-        ssl_ctx
+        ssl_ctx,
+        scope_opts
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -200,7 +204,8 @@ class Granian:
         http1_buffer_size,
         websockets,
         log_level,
-        ssl_ctx
+        ssl_ctx,
+        scope_opts
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -225,7 +230,7 @@ class Granian:
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
         serve(
-            _wsgi_call_wrap(callback),
+            _wsgi_call_wrap(callback, scope_opts),
             loop,
             contextvars.copy_context(),
             shutdown_event.wait()
@@ -264,7 +269,10 @@ class Granian:
                 self.http1_buffer_size,
                 self.websockets,
                 self.log_level,
-                self.ssl_ctx
+                self.ssl_ctx,
+                {
+                    "url_path_prefix": self.url_path_prefix
+                }
             )
         )
 
