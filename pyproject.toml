@@ -23,9 +23,17 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP"
 ]
 
+dynamic = [
+    "description",
+    "keywords",
+    "license",
+    "readme",
+    "version"
+]
+
 requires-python = ">=3.7"
 dependencies = [
-    "typer~=0.4.1",
+    "typer~=0.4",
     "uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython'"
 ]
 
@@ -35,14 +43,6 @@ test = [
     "pytest~=7.1.2",
     "pytest-asyncio~=0.18.3",
     "websockets~=10.3"
-]
-
-dynamic = [
-    "description",
-    "keywords",
-    "license",
-    "readme",
-    "version"
 ]
 
 [project.urls]
