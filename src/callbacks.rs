@@ -120,7 +120,17 @@ impl PyAwaitableResultFutureLike {
         Ok(())
     }
 
+    fn cancel(mut pyself: PyRefMut<'_, Self>, py: Python) -> bool {
+        if let Some((cb, kwctx)) = pyself.cb.take() {
+            let _ = pyself.event_loop.call_method(
+                py, "call_soon", (cb, &pyself), Some(kwctx.as_ref(py))
+            );
+        }
+        false
+    }
+
     fn result(&self) {}
+    fn exception(&self) {}
 
     fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
         pyself
