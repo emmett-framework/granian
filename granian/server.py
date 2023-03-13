@@ -9,6 +9,8 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional
 
+import watchfiles
+
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -42,7 +44,8 @@ class Granian:
         log_level: LogLevels = LogLevels.info,
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
-        url_path_prefix: Optional[str] = None
+        url_path_prefix: Optional[str] = None,
+        reload: bool = False
     ):
         self.target = target
         self.bind_addr = address
@@ -59,6 +62,7 @@ class Granian:
         self.http1_buffer_size = http1_buffer_size
         self.log_level = log_level
         self.url_path_prefix = url_path_prefix
+        self.reload_on_changes = reload
         configure_logging(self.log_level)
         self.build_ssl_context(ssl_cert, ssl_key)
         self._shd = None
@@ -276,17 +280,7 @@ class Granian:
             )
         )
 
-    def startup(self, spawn_target, target_loader):
-        logger.info("Starting granian")
-
-        for sig in self.SIGNALS:
-            signal.signal(sig, self.signal_handler)
-
-        self._init_shared_socket()
-        sock = socket.socket(fileno=self._sfd)
-        sock.set_inheritable(True)
-        logger.info(f"Listening at: {self.bind_addr}:{self.bind_port}")
-
+    def _spawn_workers(self, sock, spawn_target, target_loader):
         def socket_loader():
             return sock
 
@@ -299,14 +293,49 @@ class Granian:
             )
             proc.start()
             self.procs.append(proc)
-            logger.info(f"Booting worker-{idx + 1} with pid: {proc.pid}")
+            logger.info(f"Spawning worker-{idx + 1} with pid: {proc.pid}")
 
-    def shutdown(self):
-        logger.info("Shutting down granian")
+    def _stop_workers(self):
         for proc in self.procs:
             proc.terminate()
         for proc in self.procs:
             proc.join()
+
+    def startup(self, spawn_target, target_loader):
+        logger.info("Starting granian")
+
+        for sig in self.SIGNALS:
+            signal.signal(sig, self.signal_handler)
+
+        self._init_shared_socket()
+        sock = socket.socket(fileno=self._sfd)
+        sock.set_inheritable(True)
+        logger.info(f"Listening at: {self.bind_addr}:{self.bind_port}")
+
+        self._spawn_workers(sock, spawn_target, target_loader)
+        return sock
+
+    def shutdown(self):
+        logger.info("Shutting down granian")
+        self._stop_workers()
+
+    def _serve(self, spawn_target, target_loader):
+        self.startup(spawn_target, target_loader)
+        self.exit_event.wait()
+        self.shutdown()
+
+    def _serve_with_reloader(self, spawn_target, target_loader):
+        reload_path = Path.cwd()
+        sock = self.startup(spawn_target, target_loader)
+
+        try:
+            for _ in watchfiles.watch(reload_path, stop_event=self.exit_event):
+                self._stop_workers()
+                self._spawn_workers(sock, spawn_target, target_loader)
+        except StopIteration:
+            pass
+
+        self.shutdown()
 
     def serve(self, spawn_target = None, target_loader = None):
         default_spawners = {
@@ -317,6 +346,8 @@ class Granian:
         target_loader = target_loader or load_target
         spawn_target = spawn_target or default_spawners[self.interface]
 
-        self.startup(spawn_target, partial(target_loader, self.target))
-        self.exit_event.wait()
-        self.shutdown()
+        serve_method = (
+            self._serve_with_reloader if self.reload_on_changes else
+            self._serve
+        )
+        serve_method(spawn_target, partial(target_loader, self.target))
