@@ -74,6 +74,11 @@ def main(
         None,
         help="URL path prefix the app is mounted on"
     ),
+    reload: bool = typer.Option(
+        False,
+        "--reload/--no-reload",
+        help="Enable auto reload on application's files changes"
+    ),
     _: Optional[bool] = typer.Option(
         None,
         "--version",
@@ -98,5 +103,6 @@ def main(
         log_level=log_level,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
-        url_path_prefix=url_path_prefix
+        url_path_prefix=url_path_prefix,
+        reload=reload
     ).serve()

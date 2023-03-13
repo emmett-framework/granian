@@ -33,6 +33,7 @@ dynamic = [
 
 requires-python = ">=3.7"
 dependencies = [
+    "watchfiles~=0.18",
     "typer~=0.4",
     "uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython'"
 ]
