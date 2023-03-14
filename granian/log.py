@@ -3,6 +3,7 @@ import logging
 import logging.config
 
 from enum import Enum
+from typing import Any, Dict, Optional
 
 
 class LogLevels(str, Enum):
@@ -46,7 +47,9 @@ LOGGING_CONFIG = {
 logger = logging.getLogger()
 
 
-def configure_logging(level: LogLevels):
-    config = copy.deepcopy(LOGGING_CONFIG)
-    config["root"]["level"] = log_levels_map[level]
-    logging.config.dictConfig(config)
+def configure_logging(level: LogLevels, config: Optional[Dict[str, Any]] = None):
+    log_config = copy.deepcopy(LOGGING_CONFIG)
+    if config:
+        log_config.update(config)
+    log_config["root"]["level"] = log_levels_map[level]
+    logging.config.dictConfig(log_config)
