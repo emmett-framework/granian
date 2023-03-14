@@ -19,17 +19,20 @@ def app(name, procs=None, threads=None, thmode=None):
     thmode = thmode or "workers"
     proc = {
         "asgi": (
-            "granian --interface asgi --no-ws --log-level warning --backlog 2048 "
+            "granian --interface asgi --log-level warning --backlog 2048 "
+            "--no-ws --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.asgi:app"
         ),
         "rsgi": (
-            "granian --interface rsgi --no-ws --log-level warning --backlog 2048 "
+            "granian --interface rsgi --log-level warning --backlog 2048 "
+            "--no-ws --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.rsgi:app"
         ),
         "wsgi": (
-            "granian --interface wsgi --no-ws --log-level warning --backlog 2048 "
+            "granian --interface wsgi --log-level warning --backlog 2048 "
+            "--no-ws --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.wsgi:app"
         ),
@@ -44,10 +47,10 @@ def app(name, procs=None, threads=None, thmode=None):
             f"--http httptools --workers {procs} app.asgi:app"
         ),
         "hypercorn": (
-            "hypercorn -b localhost:8000 -k uvloop --backlog 2048 "
-            f"--workers {procs} app.asgi:app"
+            "hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 "
+            f"--workers {procs} asgi:app.asgi:app"
         ),
-        "gunicorn": (
+        "gunicorn_meinheld": (
             "gunicorn -k meinheld.gmeinheld.MeinheldWorker "
             f"--workers {procs} app.wsgi:app"
         )
@@ -93,74 +96,87 @@ def benchmark(endpoint, post=False):
 
 
 def concurrencies():
-    nperm = sorted(set([1, 2, round(CPU / 2), CPU]))
+    nperm = sorted(set([1, 2, round(CPU / 2.5), round(CPU / 2), CPU]))
     results = {}
     for interface in ["asgi", "rsgi", "wsgi"]:
         results[interface] = {}
         for np in nperm:
-            for nt in [1, 2]:
+            for nt in [1, 2, 4]:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} {threading_mode[0]}th"
                     with app(interface, np, nt, threading_mode):
+                        print(f"Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}")
                         results[interface][key] = benchmark("b")
     return results
 
 
 def rsgi_body_type():
     results = {}
-    with app("rsgi"):
-        results["bytes small"] = benchmark("b")
-        results["str small"] = benchmark("s")
-        results["bytes big"] = benchmark("bb")
-        results["str big"] = benchmark("ss")
+    benches = {
+        "bytes small": "b",
+        "str small": "s",
+        "bytes big": "bb",
+        "str big": "ss"
+    }
+    for title, route in benches.items():
+        with app("rsgi"):
+            results[title] = benchmark(route)
     return results
 
 
 def interfaces():
     results = {}
-    with app("rsgi"):
-        results["RSGI bytes"] = benchmark("b")
-        results["RSGI str"] = benchmark("s")
-        results["RSGI echo"] = benchmark("echo", post=True)
-    with app("asgi"):
-        results["ASGI bytes"] = benchmark("b")
-        results["ASGI str"] = benchmark("s")
-        results["ASGI echo"] = benchmark("echo", post=True)
-    with app("wsgi"):
-        results["WSGI bytes"] = benchmark("b")
-        results["WSGI str"] = benchmark("s")
-        results["WSGI echo"] = benchmark("echo", post=True)
+    benches = {
+        "bytes": ("b", {}),
+        "str": ("s", {}),
+        "echo": ("echo", {"post": True})
+    }
+    for interface in ["rsgi", "asgi", "wsgi"]:
+        for key, bench_data in benches.items():
+            route, opts = bench_data
+            with app(interface):
+                results[f"{interface.upper()} {key}"] = benchmark(route, **opts)
     return results
 
 
 def vs_3rd_async():
     results = {}
-    with app("asgi"):
-        results["Granian ASGI [GET]"] = benchmark("b")
-        results["Granian ASGI [POST]"] = benchmark("echo", post=True)
-    with app("rsgi"):
-        results["Granian RSGI [GET]"] = benchmark("b")
-        results["Granian RSGI [POST]"] = benchmark("echo", post=True)
-    with app("uvicorn_h11"):
-        results["Uvicorn H11 [GET]"] = benchmark("b")
-        results["Uvicorn H11 [POST]"] = benchmark("echo", post=True)
-    with app("uvicorn_httptools"):
-        results["Uvicorn http-tools [GET]"] = benchmark("b")
-        results["Uvicorn http-tools [POST]"] = benchmark("echo", post=True)
-    with app("hypercorn"):
-        results["Hypercorn [GET]"] = benchmark("b")
-        results["Hypercorn [POST]"] = benchmark("echo", post=True)
+    benches = {
+        "[GET]": ("b", {}),
+        "[POST]": ("echo", {"post": True})
+    }
+    for fw in [
+        "granian_asgi",
+        "granian_rsgi",
+        "uvicorn_h11",
+        "uvicorn_httptools",
+        "hypercorn"
+    ]:
+        for key, bench_data in benches.items():
+            route, opts = bench_data
+            fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
+            title = " ".join(item.title() for item in fw.split("_"))
+            with app(fw_app):
+                results[f"{title} {key}"] = benchmark(route, **opts)
     return results
 
 
 def vs_3rd_sync():
     results = {}
-    with app("wsgi"):
-        results["Granian WSGI [GET]"] = benchmark("b")
-        results["Granian WSGI [POST]"] = benchmark("echo", post=True)
-    with app("gunicorn"):
-        results["Gunicorn meinheld [GET]"] = benchmark("b")
-        results["Gunicorn meinheld [POST]"] = benchmark("echo", post=True)
+    benches = {
+        "[GET]": ("b", {}),
+        "[POST]": ("echo", {"post": True})
+    }
+    for fw in [
+        "granian_wsgi",
+        "gunicorn_meinheld",
+    ]:
+        for key, bench_data in benches.items():
+            route, opts = bench_data
+            fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
+            title = " ".join(item.title() for item in fw.split("_"))
+            with app(fw_app):
+                results[f"{title} {key}"] = benchmark(route, **opts)
     return results
 
 

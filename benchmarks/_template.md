@@ -4,6 +4,7 @@ Run at: {{ =data.run_at }}
 
 CPUs: {{ =data.cpu }}
 
+{{ if "rsgi_body" in data.results: }}
 ## RSGI response types
 
 | Type | Total requests | RPS | avg latency | max latency |
@@ -15,6 +16,9 @@ CPUs: {{ =data.cpu }}
 | {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
 {{ pass }}
 
+{{ pass }}
+
+{{ if "interfaces" in data.results: }}
 ## Interfaces
 
 | Request | Total requests | RPS | avg latency | max latency |
@@ -24,6 +28,8 @@ CPUs: {{ =data.cpu }}
 {{ max_res = concurrency_values[max(concurrency_values.keys())] }}
 {{ run = runs[max_res] }}
 | {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
+{{ pass }}
+
 {{ pass }}
 
 {{ if any(key in data.results for key in ["vs_async", "vs_sync"]): }}
