@@ -7,7 +7,7 @@ import threading
 
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import watchfiles
 
@@ -343,17 +343,26 @@ class Granian:
 
         self.shutdown()
 
-    def serve(self, spawn_target = None, target_loader = None):
+    def serve(
+        self,
+        spawn_target: Optional[Callable[..., None]] = None,
+        target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
+        wrap_loader: bool = True
+    ):
         default_spawners = {
             Interfaces.ASGI: self._spawn_asgi_worker,
             Interfaces.RSGI: self._spawn_rsgi_worker,
             Interfaces.WSGI: self._spawn_wsgi_worker
         }
-        target_loader = target_loader or load_target
+        if target_loader:
+            if wrap_loader:
+                target_loader = partial(target_loader, self.target)
+        else:
+            target_loader = partial(load_target, self.target)
         spawn_target = spawn_target or default_spawners[self.interface]
 
         serve_method = (
             self._serve_with_reloader if self.reload_on_changes else
             self._serve
         )
-        serve_method(spawn_target, partial(target_loader, self.target))
+        serve_method(spawn_target, target_loader)
