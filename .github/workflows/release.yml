@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env:
-  MATURIN_VERSION: 0.14.10
+  MATURIN_VERSION: 0.14.15
   PY_ALL: 3.7 3.8 3.9 3.10 3.11 pypy3.7 pypy3.8 pypy3.9
 
 jobs:
