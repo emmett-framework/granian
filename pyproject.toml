@@ -60,9 +60,3 @@ build-backend = "maturin"
 
 [tool.maturin]
 bindings = "pyo3"
-include = [
-    "Cargo.lock",
-    "granian/*.py",
-    "granian/*.pyi",
-    "tests/**/*.py"
-]

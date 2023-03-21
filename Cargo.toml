@@ -13,11 +13,17 @@ homepage = "https://github.com/emmett-framework/granian"
 repository = "https://github.com/emmett-framework/granian"
 
 include = [
-    "Cargo.toml",
-    "LICENSE",
-    "pyproject.toml",
-    "README.md",
-    "src/*"
+    "/Cargo.toml",
+    "/pyproject.toml",
+    "/build.rs",
+    "/LICENSE",
+    "/README.md",
+    "/src",
+    "/granian",
+    "/tests",
+    "!__pycache__",
+    "!tests/.pytest_cache",
+    "!*.so",
 ]
 
 [lib]
