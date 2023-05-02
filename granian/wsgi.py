@@ -14,6 +14,15 @@ class Response:
         self.status = 200
         self.headers = []
 
+    def __call__(
+        self,
+        status: str,
+        headers: List[Tuple[str, str]],
+        exc_info: Any = None
+    ):
+        self.status = int(status.split(' ', 1)[0])
+        self.headers = headers
+
 
 def _callback_wrapper(callback, scope_opts):
     basic_env = dict(os.environ)
@@ -52,16 +61,7 @@ def _callback_wrapper(callback, scope_opts):
             environ['CONTENT_LENGTH'] = environ.pop('HTTP_CONTENT_LENGTH')
 
         resp = Response()
-
-        def start_response(
-            status: str,
-            headers: List[Tuple[str, str]],
-            exc_info: Any = None
-        ):
-            resp.status = int(status.split(' ', 1)[0])
-            resp.headers = headers
-
-        rv = callback(environ, start_response)
+        rv = callback(environ, resp)
 
         try:
             body = b"".join(rv)

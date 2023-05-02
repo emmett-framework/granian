@@ -14,15 +14,10 @@ pub(crate) async fn call_rtb_http(
 ) -> PyResult<(i32, Vec<(String, String)>, Vec<u8>)> {
     let callback = cb.callback.clone();
 
-    let fut = Python::with_gil(|py| {
+    Python::with_gil(|py| {
         callback.call1(py, (scope,))?
             .extract::<(i32, Vec<(String, String)>, Vec<u8>)>(py)
-    });
-
-    match fut {
-        Ok(res) => Ok(res),
-        _ => error_proto!()
-    }
+    })
 }
 
 pub(crate) async fn call_rtt_http(
@@ -33,18 +28,12 @@ pub(crate) async fn call_rtt_http(
 
     let fut: JoinHandle<PyResult<(i32, Vec<(String, String)>, Vec<u8>)>> = tokio::task::spawn_blocking(move || {
         Python::with_gil(|py| {
-            let res = callback.call1(py, (scope,))?.extract(py)?;
-            Ok(res)
+            callback.call1(py, (scope,))?.extract(py)
         })
     });
 
     match fut.await {
-        Ok(res) => {
-            match res {
-                Ok(res) => Ok(res),
-                _ => error_proto!()
-            }
-        },
+        Ok(res) => res,
         _ => {
             log::error!("WSGI protocol failure");
             error_proto!()
