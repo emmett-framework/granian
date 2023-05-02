@@ -2,7 +2,13 @@ use pyo3::prelude::*;
 use tokio::sync::oneshot;
 
 use crate::{
-    callbacks::CallbackWrapper,
+    callbacks::{
+        CallbackWrapper,
+        callback_impl_run,
+        callback_impl_loop_step,
+        callback_impl_loop_wake,
+        callback_impl_loop_err
+    },
     runtime::RuntimeRef,
     ws::{HyperWebsocket, UpgradeData}
 };
@@ -14,32 +20,30 @@ use super::{
 
 
 #[pyclass]
-pub(crate) struct CallbackWatcherHTTP {
-    #[pyo3(get)]
+pub(crate) struct CallbackRunnerHTTP {
     proto: Py<HTTPProtocol>,
-    #[pyo3(get)]
     event_loop: PyObject,
-    #[pyo3(get)]
-    context: PyObject
+    context: PyObject,
+    cb: PyObject
 }
 
-impl CallbackWatcherHTTP {
+impl CallbackRunnerHTTP {
     pub fn new(
         py: Python,
         cb: CallbackWrapper,
-        proto: HTTPProtocol
+        proto: HTTPProtocol,
+        scope: Scope
     ) -> Self {
+        let pyproto = Py::new(py, proto).unwrap();
         Self {
-            proto: Py::new(py, proto).unwrap(),
+            proto: pyproto.clone(),
             event_loop: cb.context.event_loop(py).into(),
-            context: cb.context.context(py).into()
+            context: cb.context.context(py).into(),
+            cb: cb.callback.call1(py, (scope, pyproto)).unwrap()
         }
     }
-}
 
-#[pymethods]
-impl CallbackWatcherHTTP {
-    fn done(&mut self, py: Python) {
+    fn done(&self, py: Python) {
         if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
             if let Some(tx) = proto.tx() {
                 let _ = tx.send(
@@ -49,39 +53,51 @@ impl CallbackWatcherHTTP {
         }
     }
 
-    fn err(&mut self, py: Python) {
+    fn err(&self, py: Python) {
         log::warn!("Application callable raised an exception");
         self.done(py)
+    }
+
+    callback_impl_run!();
+    callback_impl_loop_err!();
+}
+
+#[pymethods]
+impl CallbackRunnerHTTP {
+    fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<PyObject> {
+        callback_impl_loop_step!(pyself, py)
+    }
+
+    fn _loop_wake(pyself: PyRef<'_, Self>, py: Python, fut: PyObject) -> PyResult<PyObject> {
+        callback_impl_loop_wake!(pyself, py, fut)
     }
 }
 
 #[pyclass]
-pub(crate) struct CallbackWatcherWebsocket {
-    #[pyo3(get)]
+pub(crate) struct CallbackRunnerWebsocket {
     proto: Py<WebsocketProtocol>,
-    #[pyo3(get)]
     event_loop: PyObject,
-    #[pyo3(get)]
-    context: PyObject
+    context: PyObject,
+    cb: PyObject
 }
 
-impl CallbackWatcherWebsocket {
+impl CallbackRunnerWebsocket {
     pub fn new(
         py: Python,
         cb: CallbackWrapper,
-        proto: WebsocketProtocol
+        proto: WebsocketProtocol,
+        scope: Scope
     ) -> Self {
+        let pyproto = Py::new(py, proto).unwrap();
         Self {
-            proto: Py::new(py, proto).unwrap(),
+            proto: pyproto.clone(),
             event_loop: cb.context.event_loop(py).into(),
             context: cb.context.context(py).into(),
+            cb: cb.callback.call1(py, (scope, pyproto)).unwrap()
         }
     }
-}
 
-#[pymethods]
-impl CallbackWatcherWebsocket {
-    fn done(&mut self, py: Python) {
+    fn done(&self, py: Python) {
         if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
             if let (Some(tx), res) = proto.tx() {
                 let _ = tx.send(res);
@@ -89,9 +105,23 @@ impl CallbackWatcherWebsocket {
         }
     }
 
-    fn err(&mut self, py: Python) {
+    fn err(&self, py: Python) {
         log::warn!("Application callable raised an exception");
         self.done(py)
+    }
+
+    callback_impl_run!();
+    callback_impl_loop_err!();
+}
+
+#[pymethods]
+impl CallbackRunnerWebsocket {
+    fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<PyObject> {
+        callback_impl_loop_step!(pyself, py)
+    }
+
+    fn _loop_wake(pyself: PyRef<'_, Self>, py: Python, fut: PyObject) -> PyResult<PyObject> {
+        callback_impl_loop_wake!(pyself, py, fut)
     }
 }
 
@@ -101,12 +131,11 @@ pub(crate) async fn call_rtb_http(
     req: hyper::Request<hyper::Body>,
     scope: Scope
 ) -> PyResult<PyResponse> {
-    let callback = cb.callback.clone();
     let (tx, rx) = oneshot::channel();
     let protocol = HTTPProtocol::new(rt, tx, req);
 
     Python::with_gil(|py| {
-        callback.call1(py, (CallbackWatcherHTTP::new(py, cb, protocol), scope))
+        CallbackRunnerHTTP::new(py, cb, protocol, scope).run(py)
     })?;
 
     match rx.await {
@@ -126,15 +155,12 @@ pub(crate) async fn call_rtt_http(
     req: hyper::Request<hyper::Body>,
     scope: Scope
 ) -> PyResult<PyResponse> {
-    let callback = cb.callback.clone();
     let (tx, rx) = oneshot::channel();
     let protocol = HTTPProtocol::new(rt, tx, req);
 
     tokio::task::spawn_blocking(move || {
         Python::with_gil(|py| {
-            let _ = callback.call1(
-                py, (CallbackWatcherHTTP::new(py, cb, protocol), scope)
-            );
+            let _ = CallbackRunnerHTTP::new(py, cb, protocol, scope).run(py);
         });
     });
 
@@ -156,12 +182,11 @@ pub(crate) async fn call_rtb_ws(
     upgrade: UpgradeData,
     scope: Scope
 ) -> PyResult<(i32, bool)> {
-    let callback = cb.callback.clone();
     let (tx, rx) = oneshot::channel();
     let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 
     Python::with_gil(|py| {
-        callback.call1(py, (CallbackWatcherWebsocket::new(py, cb, protocol), scope))
+        CallbackRunnerWebsocket::new(py, cb, protocol, scope).run(py)
     })?;
 
     match rx.await {
@@ -182,15 +207,12 @@ pub(crate) async fn call_rtt_ws(
     upgrade: UpgradeData,
     scope: Scope
 ) -> PyResult<(i32, bool)> {
-    let callback = cb.callback.clone();
     let (tx, rx) = oneshot::channel();
     let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 
     tokio::task::spawn_blocking(move || {
         Python::with_gil(|py| {
-            let _ = callback.call1(
-                py, (CallbackWatcherWebsocket::new(py, cb, protocol), scope)
-            );
+            let _ = CallbackRunnerWebsocket::new(py, cb, protocol, scope).run(py);
         });
     });
 

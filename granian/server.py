@@ -17,7 +17,6 @@ from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import Interfaces, HTTPModes, Loops, ThreadModes
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
-from .rsgi import _callback_wrapper as _rsgi_call_wrap
 from .wsgi import _callback_wrapper as _wsgi_call_wrap
 
 multiprocessing.allow_connection_pickling()
@@ -193,7 +192,7 @@ class Granian:
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
         serve(
-            _rsgi_call_wrap(callback),
+            callback,
             loop,
             contextvars.copy_context(),
             shutdown_event.wait()
