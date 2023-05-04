@@ -188,3 +188,111 @@ impl PyFutureAwaitableResult {
         self.inner.to_object(py)
     }
 }
+
+macro_rules! callback_impl_run {
+    () => {
+        pub fn run(self, py: Python) -> PyResult<PyObject> {
+            let event_loop = self.event_loop.clone();
+            let context = self.context.clone();
+            let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_step"))?;
+            let kwctx = pyo3::types::PyDict::new(py);
+            kwctx.set_item("context", context)?;
+            event_loop.call_method(
+                py,
+                pyo3::intern!(py, "call_soon_threadsafe"),
+                (target,),
+                Some(kwctx)
+            )
+        }
+    };
+}
+
+macro_rules! callback_impl_loop_step {
+    ($pyself:expr, $py:expr) => {
+        match $pyself.cb.call_method1($py, pyo3::intern!($py, "send"), ($py.None(),)) {
+            Ok(res) => {
+                let blocking: bool = match res.getattr(
+                    $py,
+                    pyo3::intern!($py, "_asyncio_future_blocking")
+                ) {
+                    Ok(v) => v.extract($py)?,
+                    _ => false
+                };
+
+                let kwctx = pyo3::types::PyDict::new($py);
+                kwctx.set_item("context", $pyself.context.clone())?;
+
+                match blocking {
+                    true => {
+                        res.setattr(
+                            $py,
+                            pyo3::intern!($py, "_asyncio_future_blocking"),
+                            false
+                        )?;
+                        res.call_method(
+                            $py,
+                            pyo3::intern!($py, "add_done_callback"),
+                            (
+                                $pyself
+                                .into_py($py)
+                                .getattr($py, pyo3::intern!($py, "_loop_wake"))?,
+                            ),
+                            Some(kwctx)
+                        )?;
+                        Ok($py.None())
+                    },
+                    false => {
+                        let event_loop = $pyself.event_loop.clone();
+                        event_loop.call_method(
+                            $py,
+                            pyo3::intern!($py, "call_soon"),
+                            (
+                                $pyself
+                                .into_py($py)
+                                .getattr($py, pyo3::intern!($py, "_loop_step"))?,
+                            ),
+                            Some(kwctx)
+                        )?;
+                        Ok($py.None())
+                    }
+                }
+            },
+            Err(err) => {
+                match err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py) {
+                    true => {
+                        $pyself.done($py);
+                        Ok($py.None())
+                    },
+                    false => {
+                        $pyself.err($py);
+                        Err(err)
+                    }
+                }
+            }
+        }
+    };
+}
+
+macro_rules! callback_impl_loop_wake {
+    ($pyself:expr, $py:expr, $fut:expr) => {
+        match $fut.call_method0($py, pyo3::intern!($py, "result")) {
+            Ok(_) => $pyself.into_py($py).call_method0($py, pyo3::intern!($py, "_loop_step")),
+            Err(err) => $pyself._loop_err($py, err)
+        }
+    };
+}
+
+macro_rules! callback_impl_loop_err {
+    () => {
+        pub fn _loop_err(&self, py: Python, err: PyErr) -> PyResult<PyObject> {
+            let cberr = self.cb.call_method1(py, pyo3::intern!(py, "throw"), (err,));
+            self.err(py);
+            cberr
+        }
+    };
+}
+
+pub(crate) use callback_impl_run;
+pub(crate) use callback_impl_loop_step;
+pub(crate) use callback_impl_loop_wake;
+pub(crate) use callback_impl_loop_err;

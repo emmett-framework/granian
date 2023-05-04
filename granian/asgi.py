@@ -2,7 +2,6 @@ import asyncio
 
 from functools import wraps
 
-from ._futures import future_with_watcher
 from ._granian import ASGIScope as Scope
 
 
@@ -122,8 +121,8 @@ def _callback_wrapper(callback, scope_opts):
     root_url_path = scope_opts.get('url_path_prefix') or ''
 
     @wraps(callback)
-    def wrapper(watcher, scope: Scope):
-        coro = callback(
+    def wrapper(scope: Scope, proto):
+        return callback(
             {
                 "type": scope.proto,
                 "asgi": {
@@ -142,13 +141,7 @@ def _callback_wrapper(callback, scope_opts):
                 "headers": scope.headers,
                 "extensions": {}
             },
-            watcher.proto.receive,
-            _send_wrappers[scope.proto](watcher.proto.send)
-        )
-        watcher.event_loop.call_soon_threadsafe(
-            future_with_watcher,
-            coro,
-            watcher,
-            context=watcher.context
+            proto.receive,
+            _send_wrappers[scope.proto](proto.send)
         )
     return wrapper

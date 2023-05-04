@@ -45,7 +45,10 @@ macro_rules! handle_http_response {
             Ok(PyResponse::File(pyres)) => {
                 pyres.to_response().await
             },
-            _ => response_500()
+            _ => {
+                log::error!("RSGI protocol failure");
+                response_500()
+            }
         }
     };
 }
@@ -111,6 +114,7 @@ macro_rules! handle_request_with_ws {
                                     }
                                 },
                                 _ => {
+                                    log::error!("RSGI protocol failure");
                                     let _ = tx_ref.send(response_500()).await;
                                 }
                             }
