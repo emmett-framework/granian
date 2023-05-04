@@ -39,7 +39,10 @@ macro_rules! handle_http_response {
     ($handler:expr, $rt:expr, $callback:expr, $req:expr, $scope:expr) => {
         match $handler($callback, $rt, $req, $scope).await {
             Ok(res) => res,
-            _ => response_500()
+            _ => {
+                log::error!("ASGI protocol failure");
+                response_500()
+            }
         }
     }
 }
@@ -102,6 +105,7 @@ macro_rules! handle_request_with_ws {
                                     };
                                 },
                                 _ => {
+                                    log::error!("ASGI protocol failure");
                                     let _ = tx_ref.send(response_500()).await;
                                 }
                             }
