@@ -70,7 +70,7 @@ and serve it using:
 
 Granian is currently under active development.
 
-Granian is compatible with Python 3.7 and above versions on unix platforms and 3.8 and above on Windows.
+Granian is compatible with Python 3.8 and above versions.
 
 ## License
 

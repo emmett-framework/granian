@@ -4,7 +4,7 @@ on: workflow_dispatch
 
 env:
   MATURIN_VERSION: 0.14.15
-  PY_ALL: 3.7 3.8 3.9 3.10 3.11 pypy3.7 pypy3.8 pypy3.9
+  PY_ALL: 3.8 3.9 3.10 3.11 pypy3.8 pypy3.9
 
 jobs:
   unix:
@@ -20,7 +20,7 @@ jobs:
           - os: ubuntu
             platform: linux
           - os: macos
-            interpreter: 3.7 3.8 3.9 3.10 3.11 pypy3.9
+            interpreter: 3.8 3.9 3.10 3.11 pypy3.9
           - os: ubuntu
             platform: linux
             target: aarch64
