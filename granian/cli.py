@@ -1,3 +1,5 @@
+import json
+
 from pathlib import Path
 from typing import Optional
 
@@ -54,6 +56,14 @@ def main(
         help="Log level",
         case_sensitive=False
     ),
+    log_config: Optional[Path] = typer.Option(
+        None,
+        help="Logging configuration file (json)",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True
+    ),
     ssl_keyfile: Optional[Path] = typer.Option(
         None,
         help="SSL key file",
@@ -87,6 +97,15 @@ def main(
         help="Shows the version and exit."
     )
 ):
+    log_dictconfig = None
+    if log_config:
+        with log_config.open() as log_config_file:
+            try:
+                log_dictconfig = json.loads(log_config_file.read())
+            except Exception:
+                print("Unable to parse provided logging config.")
+                raise typer.Exit(1)
+
     Granian(
         app,
         address=host,
@@ -101,6 +120,7 @@ def main(
         websockets=websockets,
         backlog=backlog,
         log_level=log_level,
+        log_dictconfig=log_dictconfig,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
         url_path_prefix=url_path_prefix,
