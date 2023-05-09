@@ -33,7 +33,7 @@ impl WSGIBody {
         }
     }
 
-    #[args(size="None")]
+    #[pyo3(signature = (size=None))]
     fn read<'p>(&mut self, py: Python<'p>, size: Option<usize>) -> &'p PyBytes {
         match size {
             None => {
@@ -65,7 +65,7 @@ impl WSGIBody {
         }
     }
 
-    #[args(_hint="None")]
+    #[pyo3(signature = (_hint=None))]
     fn readlines<'p>(&mut self, py: Python<'p>, _hint: Option<PyObject>) -> &'p PyList {
         let lines: Vec<&PyBytes> = self.inner
             .split(|&c| c == LINE_SPLIT)

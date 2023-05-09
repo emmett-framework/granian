@@ -30,24 +30,24 @@ impl WorkerConfig {
         socket_fd: i32,
         threads: usize,
         pthreads: usize,
-        http_mode: String,
+        http_mode: &str,
         http1_buffer_max: usize,
         websockets_enabled: bool,
         ssl_enabled: bool,
-        ssl_cert: Option<String>,
-        ssl_key: Option<String>
+        ssl_cert: Option<&str>,
+        ssl_key: Option<&str>
     ) -> Self {
         Self {
             id,
             socket_fd,
             threads,
             pthreads,
-            http_mode,
+            http_mode: http_mode.into(),
             http1_buffer_max,
             websockets_enabled,
             ssl_enabled,
-            ssl_cert,
-            ssl_key
+            ssl_cert: ssl_cert.map_or(None, |v| Some(v.into())),
+            ssl_key: ssl_key.map_or(None, |v| Some(v.into()))
         }
     }
 

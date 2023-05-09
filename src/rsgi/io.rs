@@ -55,7 +55,7 @@ impl RSGIHTTPProtocol {
         })
     }
 
-    #[args(status="200", headers="vec![]")]
+    #[pyo3(signature = (status=200, headers=vec![]))]
     fn response_empty(&mut self, status: u16, headers: Vec<(String, String)>) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
@@ -64,7 +64,7 @@ impl RSGIHTTPProtocol {
         }
     }
 
-    #[args(status="200", headers="vec![]")]
+    #[pyo3(signature = (status=200, headers=vec![], body=vec![]))]
     fn response_bytes(&mut self, status: u16, headers: Vec<(String, String)>, body: Vec<u8>) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
@@ -73,7 +73,7 @@ impl RSGIHTTPProtocol {
         }
     }
 
-    #[args(status="200", headers="vec![]")]
+    #[pyo3(signature = (status=200, headers=vec![], body="".to_string()))]
     fn response_str(&mut self, status: u16, headers: Vec<(String, String)>, body: String) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
@@ -82,7 +82,7 @@ impl RSGIHTTPProtocol {
         }
     }
 
-    #[args(status="200", headers="vec![]")]
+    #[pyo3(signature = (status, headers, file))]
     fn response_file(&mut self, status: u16, headers: Vec<(String, String)>, file: String) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
@@ -264,7 +264,7 @@ impl WebsocketInboundTextMessage {
 
 #[pymethods]
 impl RSGIWebsocketProtocol {
-    #[args(status="None")]
+    #[pyo3(signature = (status=None))]
     fn close(&mut self, py: Python, status: Option<i32>) -> PyResult<()> {
         self.status = status.unwrap_or(0);
         if let Some(tx) = self.tx.take() {

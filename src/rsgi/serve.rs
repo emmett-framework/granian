@@ -30,18 +30,31 @@ impl RSGIWorker {
 #[pymethods]
 impl RSGIWorker {
     #[new]
-    #[args(socket_fd, threads="1", http1_buffer_max="65535")]
+    #[pyo3(
+        signature = (
+            worker_id,
+            socket_fd,
+            threads=1,
+            pthreads=1,
+            http_mode="1",
+            http1_buffer_max=65535,
+            websockets_enabled=false,
+            ssl_enabled=false,
+            ssl_cert=None,
+            ssl_key=None
+        )
+    )]
     fn new(
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
         pthreads: usize,
-        http_mode: String,
+        http_mode: &str,
         http1_buffer_max: usize,
         websockets_enabled: bool,
         ssl_enabled: bool,
-        ssl_cert: Option<String>,
-        ssl_key: Option<String>
+        ssl_cert: Option<&str>,
+        ssl_key: Option<&str>
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(

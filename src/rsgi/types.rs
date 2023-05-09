@@ -53,7 +53,7 @@ impl RSGIHeaders {
         self.inner.contains_key(key)
     }
 
-    #[args(key, default="None")]
+    #[pyo3(signature = (key, default=None))]
     fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
         match self.inner.get(key) {
             Some(val) => {
