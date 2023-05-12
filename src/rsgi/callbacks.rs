@@ -1,10 +1,12 @@
 use pyo3::prelude::*;
+use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use crate::{
     callbacks::{
         CallbackWrapper,
         callback_impl_run,
+        callback_impl_loop_run,
         callback_impl_loop_step,
         callback_impl_loop_wake,
         callback_impl_loop_err
@@ -21,8 +23,7 @@ use super::{
 #[pyclass]
 pub(crate) struct CallbackRunnerHTTP {
     proto: Py<HTTPProtocol>,
-    event_loop: PyObject,
-    context: PyObject,
+    context: TaskLocals,
     cb: PyObject
 }
 
@@ -36,10 +37,36 @@ impl CallbackRunnerHTTP {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
             proto: pyproto.clone(),
-            event_loop: cb.context.event_loop(py).into(),
-            context: cb.context.context(py).into(),
+            context: cb.context,
             cb: cb.callback.call1(py, (scope, pyproto)).unwrap()
         }
+    }
+
+    callback_impl_run!();
+}
+
+#[pymethods]
+impl CallbackRunnerHTTP {
+    fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        CallbackTaskHTTP::new(py, self.cb.clone(), self.proto.clone(), self.context.clone())?.run(py)
+    }
+}
+
+#[pyclass]
+pub(crate) struct CallbackTaskHTTP {
+    proto: Py<HTTPProtocol>,
+    context: TaskLocals,
+    cb: PyObject
+}
+
+impl CallbackTaskHTTP {
+    pub fn new(
+        py: Python,
+        cb: PyObject,
+        proto: Py<HTTPProtocol>,
+        context: TaskLocals
+    ) -> PyResult<Self> {
+        Ok(Self { proto, context: context.copy_context(py)?, cb })
     }
 
     fn done(&self, py: Python) {
@@ -57,12 +84,12 @@ impl CallbackRunnerHTTP {
         self.done(py)
     }
 
-    callback_impl_run!();
+    callback_impl_loop_run!();
     callback_impl_loop_err!();
 }
 
 #[pymethods]
-impl CallbackRunnerHTTP {
+impl CallbackTaskHTTP {
     fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<PyObject> {
         callback_impl_loop_step!(pyself, py)
     }
@@ -75,8 +102,7 @@ impl CallbackRunnerHTTP {
 #[pyclass]
 pub(crate) struct CallbackRunnerWebsocket {
     proto: Py<WebsocketProtocol>,
-    event_loop: PyObject,
-    context: PyObject,
+    context: TaskLocals,
     cb: PyObject
 }
 
@@ -90,10 +116,36 @@ impl CallbackRunnerWebsocket {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
             proto: pyproto.clone(),
-            event_loop: cb.context.event_loop(py).into(),
-            context: cb.context.context(py).into(),
+            context: cb.context,
             cb: cb.callback.call1(py, (scope, pyproto)).unwrap()
         }
+    }
+
+    callback_impl_run!();
+}
+
+#[pymethods]
+impl CallbackRunnerWebsocket {
+    fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        CallbackTaskWebsocket::new(py, self.cb.clone(), self.proto.clone(), self.context.clone())?.run(py)
+    }
+}
+
+#[pyclass]
+pub(crate) struct CallbackTaskWebsocket {
+    proto: Py<WebsocketProtocol>,
+    context: TaskLocals,
+    cb: PyObject
+}
+
+impl CallbackTaskWebsocket {
+    pub fn new(
+        py: Python,
+        cb: PyObject,
+        proto: Py<WebsocketProtocol>,
+        context: TaskLocals
+    ) -> PyResult<Self> {
+        Ok(Self { proto, context: context.copy_context(py)?, cb })
     }
 
     fn done(&self, py: Python) {
@@ -109,12 +161,12 @@ impl CallbackRunnerWebsocket {
         self.done(py)
     }
 
-    callback_impl_run!();
+    callback_impl_loop_run!();
     callback_impl_loop_err!();
 }
 
 #[pymethods]
-impl CallbackRunnerWebsocket {
+impl CallbackTaskWebsocket {
     fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<PyObject> {
         callback_impl_loop_step!(pyself, py)
     }

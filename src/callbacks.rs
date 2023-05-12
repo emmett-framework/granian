@@ -191,17 +191,21 @@ impl PyFutureAwaitableResult {
 
 macro_rules! callback_impl_run {
     () => {
-        pub fn run(self, py: Python) -> PyResult<PyObject> {
-            let event_loop = self.event_loop.clone();
-            let context = self.context.clone();
-            let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_step"))?;
-            let kwctx = pyo3::types::PyDict::new(py);
-            kwctx.set_item("context", context)?;
-            event_loop.call_method(
-                py,
-                pyo3::intern!(py, "call_soon_threadsafe"),
-                (target,),
-                Some(kwctx)
+        pub fn run<'p>(self, py: Python<'p>) -> PyResult<&'p PyAny> {
+            let event_loop = self.context.event_loop(py);
+            let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
+            event_loop.call_method1(pyo3::intern!(py, "call_soon_threadsafe"), (target,))
+        }
+    };
+}
+
+macro_rules! callback_impl_loop_run {
+    () => {
+        pub fn run<'p>(self, py: Python<'p>) -> PyResult<&'p PyAny> {
+            let context = self.context.context(py);
+            context.call_method1(
+                pyo3::intern!(py, "run"),
+                (self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_step"))?,)
             )
         }
     };
@@ -219,8 +223,9 @@ macro_rules! callback_impl_loop_step {
                     _ => false
                 };
 
+                let ctx = $pyself.context.context($py);
                 let kwctx = pyo3::types::PyDict::new($py);
-                kwctx.set_item("context", $pyself.context.clone())?;
+                kwctx.set_item("context", ctx)?;
 
                 match blocking {
                     true => {
@@ -242,9 +247,8 @@ macro_rules! callback_impl_loop_step {
                         Ok($py.None())
                     },
                     false => {
-                        let event_loop = $pyself.event_loop.clone();
+                        let event_loop = $pyself.context.event_loop($py);
                         event_loop.call_method(
-                            $py,
                             pyo3::intern!($py, "call_soon"),
                             (
                                 $pyself
@@ -293,6 +297,7 @@ macro_rules! callback_impl_loop_err {
 }
 
 pub(crate) use callback_impl_run;
+pub(crate) use callback_impl_loop_run;
 pub(crate) use callback_impl_loop_step;
 pub(crate) use callback_impl_loop_wake;
 pub(crate) use callback_impl_loop_err;
