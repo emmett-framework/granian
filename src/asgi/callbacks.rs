@@ -57,6 +57,7 @@ impl CallbackRunnerHTTP {
 pub(crate) struct CallbackTaskHTTP {
     proto: Py<HTTPProtocol>,
     context: TaskLocals,
+    pycontext: PyObject,
     cb: PyObject
 }
 
@@ -67,7 +68,8 @@ impl CallbackTaskHTTP {
         proto: Py<HTTPProtocol>,
         context: TaskLocals
     ) -> PyResult<Self> {
-        Ok(Self { proto, context: context.copy_context(py)?, cb })
+        let pyctx = context.context(py);
+        Ok(Self { proto, context, pycontext: pyctx.call_method0("copy")?.into(), cb })
     }
 
     fn done(&self, py: Python) {
@@ -91,7 +93,7 @@ impl CallbackTaskHTTP {
 
 #[pymethods]
 impl CallbackTaskHTTP {
-    fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<PyObject> {
+    fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<()> {
         callback_impl_loop_step!(pyself, py)
     }
 
@@ -136,6 +138,7 @@ impl CallbackRunnerWebsocket {
 pub(crate) struct CallbackTaskWebsocket {
     proto: Py<WebsocketProtocol>,
     context: TaskLocals,
+    pycontext: PyObject,
     cb: PyObject
 }
 
@@ -146,7 +149,8 @@ impl CallbackTaskWebsocket {
         proto: Py<WebsocketProtocol>,
         context: TaskLocals
     ) -> PyResult<Self> {
-        Ok(Self { proto, context: context.copy_context(py)?, cb })
+        let pyctx = context.context(py);
+        Ok(Self { proto, context, pycontext: pyctx.call_method0("copy")?.into(), cb })
     }
 
     fn done(&self, py: Python) {
@@ -168,7 +172,7 @@ impl CallbackTaskWebsocket {
 
 #[pymethods]
 impl CallbackTaskWebsocket {
-    fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<PyObject> {
+    fn _loop_step(pyself: PyRef<'_, Self>, py: Python) -> PyResult<()> {
         callback_impl_loop_step!(pyself, py)
     }
 

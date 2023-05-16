@@ -1,6 +1,10 @@
+use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
 use pyo3::pyclass::IterNextOutput;
 
+
+static CONTEXTVARS: OnceCell<PyObject> = OnceCell::new();
+static CONTEXT: OnceCell<PyObject> = OnceCell::new();
 
 #[derive(Clone)]
 pub(crate) struct CallbackWrapper {
@@ -189,12 +193,33 @@ impl PyFutureAwaitableResult {
     }
 }
 
+fn contextvars(py: Python) -> PyResult<&PyAny> {
+    Ok(CONTEXTVARS
+        .get_or_try_init(|| py.import("contextvars").map(|m| m.into()))?
+        .as_ref(py))
+}
+
+pub fn empty_pycontext(py: Python) -> PyResult<&PyAny> {
+    Ok(CONTEXT
+        .get_or_try_init(|| contextvars(py)?.getattr("Context")?.call0().map(|c| c.into()))?
+        .as_ref(py))
+}
+
 macro_rules! callback_impl_run {
     () => {
         pub fn run<'p>(self, py: Python<'p>) -> PyResult<&'p PyAny> {
             let event_loop = self.context.event_loop(py);
             let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
-            event_loop.call_method1(pyo3::intern!(py, "call_soon_threadsafe"), (target,))
+            let kwctx = pyo3::types::PyDict::new(py);
+            kwctx.set_item(
+                pyo3::intern!(py, "context"),
+                crate::callbacks::empty_pycontext(py)?
+            )?;
+            event_loop.call_method(
+                pyo3::intern!(py, "call_soon_threadsafe"),
+                (target,),
+                Some(kwctx)
+            )
         }
     };
 }
@@ -202,7 +227,7 @@ macro_rules! callback_impl_run {
 macro_rules! callback_impl_loop_run {
     () => {
         pub fn run<'p>(self, py: Python<'p>) -> PyResult<&'p PyAny> {
-            let context = self.context.context(py);
+            let context = self.pycontext.clone().into_ref(py);
             context.call_method1(
                 pyo3::intern!(py, "run"),
                 (self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_step"))?,)
@@ -223,9 +248,9 @@ macro_rules! callback_impl_loop_step {
                     _ => false
                 };
 
-                let ctx = $pyself.context.context($py);
+                let ctx = $pyself.pycontext.clone();
                 let kwctx = pyo3::types::PyDict::new($py);
-                kwctx.set_item("context", ctx)?;
+                kwctx.set_item(pyo3::intern!($py, "context"), ctx)?;
 
                 match blocking {
                     true => {
@@ -244,7 +269,7 @@ macro_rules! callback_impl_loop_step {
                             ),
                             Some(kwctx)
                         )?;
-                        Ok($py.None())
+                        Ok(())
                     },
                     false => {
                         let event_loop = $pyself.context.event_loop($py);
@@ -257,20 +282,20 @@ macro_rules! callback_impl_loop_step {
                             ),
                             Some(kwctx)
                         )?;
-                        Ok($py.None())
+                        Ok(())
                     }
                 }
             },
             Err(err) => {
-                match err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py) {
-                    true => {
-                        $pyself.done($py);
-                        Ok($py.None())
-                    },
-                    false => {
-                        $pyself.err($py);
-                        Err(err)
-                    }
+                if (
+                    err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py) ||
+                    err.is_instance_of::<pyo3::exceptions::asyncio::CancelledError>($py)
+                ) {
+                    $pyself.done($py);
+                    Ok(())
+                } else {
+                    $pyself.err($py);
+                    Err(err)
                 }
             }
         }
