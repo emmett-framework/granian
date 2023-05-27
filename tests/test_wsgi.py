@@ -51,6 +51,22 @@ async def test_body(wsgi_server, threading_mode):
         "workers"
     ]
 )
+async def test_iterbody(wsgi_server, threading_mode):
+    async with wsgi_server(threading_mode) as port:
+        res = httpx.get(f"http://localhost:{port}/iterbody")
+
+    assert res.status_code == 200
+    assert res.text == "test" * 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
 async def test_app_error(wsgi_server, threading_mode):
     async with wsgi_server(threading_mode) as port:
         res = httpx.get(f"http://localhost:{port}/err_app")
