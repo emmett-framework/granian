@@ -19,6 +19,7 @@ pub(crate) struct WorkerConfig {
     pub http_mode: String,
     pub http1_buffer_max: usize,
     pub websockets_enabled: bool,
+    pub opt_enabled: bool,
     pub ssl_enabled: bool,
     ssl_cert: Option<String>,
     ssl_key: Option<String>
@@ -33,6 +34,7 @@ impl WorkerConfig {
         http_mode: &str,
         http1_buffer_max: usize,
         websockets_enabled: bool,
+        opt_enabled: bool,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>
@@ -45,6 +47,7 @@ impl WorkerConfig {
             http_mode: http_mode.into(),
             http1_buffer_max,
             websockets_enabled,
+            opt_enabled,
             ssl_enabled,
             ssl_cert: ssl_cert.map_or(None, |v| Some(v.into())),
             ssl_key: ssl_key.map_or(None, |v| Some(v.into()))

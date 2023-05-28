@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import watchfiles
 
+from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -36,6 +37,7 @@ class Granian:
         pthreads: int = 1,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
+        loop_opt: bool = True,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
@@ -56,6 +58,7 @@ class Granian:
         self.pthreads = max(1, pthreads)
         self.threading_mode = threading_mode
         self.loop = loop
+        self.loop_opt = loop_opt
         self.http = http
         self.websockets = websockets
         self.backlog = max(128, backlog)
@@ -100,6 +103,7 @@ class Granian:
         http_mode,
         http1_buffer_size,
         websockets,
+        loop_opt,
         log_level,
         log_config,
         ssl_ctx,
@@ -119,6 +123,10 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
+        wcallback = _asgi_call_wrap(callback, scope_opts)
+        if not loop_opt:
+            wcallback = future_watcher_wrapper(wcallback)
+
         worker = ASGIWorker(
             worker_id,
             sfd,
@@ -127,6 +135,7 @@ class Granian:
             http_mode,
             http1_buffer_size,
             websockets,
+            loop_opt,
             *ssl_ctx
         )
         serve = getattr(worker, {
@@ -134,7 +143,7 @@ class Granian:
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
         serve(
-            _asgi_call_wrap(callback, scope_opts),
+            wcallback,
             loop,
             contextvars.copy_context(),
             shutdown_event.wait()
@@ -154,6 +163,7 @@ class Granian:
         http_mode,
         http1_buffer_size,
         websockets,
+        loop_opt,
         log_level,
         log_config,
         ssl_ctx,
@@ -210,6 +220,7 @@ class Granian:
         http_mode,
         http1_buffer_size,
         websockets,
+        loop_opt,
         log_level,
         log_config,
         ssl_ctx,
@@ -276,6 +287,7 @@ class Granian:
                 self.http,
                 self.http1_buffer_size,
                 self.websockets,
+                self.loop_opt,
                 self.log_level,
                 self.log_config,
                 self.ssl_ctx,

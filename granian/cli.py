@@ -46,6 +46,12 @@ def main(
         help="Threading mode to use."
     ),
     loop: Loops = typer.Option(Loops.auto.value, help="Event loop implementation"),
+    loop_opt: bool = typer.Option(
+        True,
+        "--opt/--no-opt",
+        help="Enable loop optimizations",
+        show_default="enabled"
+    ),
     backlog: int = typer.Option(
         1024,
         min=128,
@@ -116,6 +122,7 @@ def main(
         pthreads=threads,
         threading_mode=threading_mode,
         loop=loop,
+        loop_opt=loop_opt,
         http=http,
         websockets=websockets,
         backlog=backlog,

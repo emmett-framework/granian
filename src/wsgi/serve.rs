@@ -59,6 +59,7 @@ impl WSGIWorker {
                 http_mode,
                 http1_buffer_max,
                 false,
+                true,
                 ssl_enabled,
                 ssl_cert,
                 ssl_key

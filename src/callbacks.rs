@@ -224,6 +224,26 @@ macro_rules! callback_impl_run {
     };
 }
 
+macro_rules! callback_impl_run_pytask {
+    () => {
+        pub fn run<'p>(self, py: Python<'p>) -> PyResult<&'p PyAny> {
+            let event_loop = self.context.event_loop(py);
+            let context = self.context.context(py);
+            let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
+            let kwctx = pyo3::types::PyDict::new(py);
+            kwctx.set_item(
+                pyo3::intern!(py, "context"),
+                context
+            )?;
+            event_loop.call_method(
+                pyo3::intern!(py, "call_soon_threadsafe"),
+                (target,),
+                Some(kwctx)
+            )
+        }
+    };
+}
+
 macro_rules! callback_impl_loop_run {
     () => {
         pub fn run<'p>(self, py: Python<'p>) -> PyResult<&'p PyAny> {
@@ -322,6 +342,7 @@ macro_rules! callback_impl_loop_err {
 }
 
 pub(crate) use callback_impl_run;
+pub(crate) use callback_impl_run_pytask;
 pub(crate) use callback_impl_loop_run;
 pub(crate) use callback_impl_loop_step;
 pub(crate) use callback_impl_loop_wake;
