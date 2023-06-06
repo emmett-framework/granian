@@ -100,21 +100,15 @@ class LifespanProtocol:
         handler(self, message)
 
 
-def _noop_wrapper(proto):
-    return proto
+async def _noop_coro():
+    return
 
 
-def _send_http_wrapper(proto):
+def _send_wrapper(proto):
     @wraps(proto)
-    async def send(data):
-        proto(data)
+    def send(data):
+        return proto(_noop_coro, data)
     return send
-
-
-_send_wrappers = {
-    "http": _send_http_wrapper,
-    "websocket": _noop_wrapper
-}
 
 
 def _callback_wrapper(callback, scope_opts):
@@ -142,6 +136,6 @@ def _callback_wrapper(callback, scope_opts):
                 "extensions": {}
             },
             proto.receive,
-            _send_wrappers[scope.proto](proto.send)
+            _send_wrapper(proto.send)
         )
     return wrapper
