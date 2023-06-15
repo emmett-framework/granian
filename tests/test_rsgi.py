@@ -52,6 +52,22 @@ async def test_body(rsgi_server, threading_mode):
         "workers"
     ]
 )
+async def test_body_stream(rsgi_server, threading_mode):
+    async with rsgi_server(threading_mode) as port:
+        res = httpx.get(f"http://localhost:{port}/stream")
+
+    assert res.status_code == 200
+    assert res.text == "test" * 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
 async def test_app_error(rsgi_server, threading_mode):
     async with rsgi_server(threading_mode) as port:
         res = httpx.get(f"http://localhost:{port}/err_app")
