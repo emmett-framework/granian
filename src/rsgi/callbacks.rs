@@ -6,7 +6,9 @@ use crate::{
     callbacks::{
         CallbackWrapper,
         callback_impl_run,
+        callback_impl_run_pytask,
         callback_impl_loop_run,
+        callback_impl_loop_pytask,
         callback_impl_loop_step,
         callback_impl_loop_wake,
         callback_impl_loop_err
@@ -52,6 +54,25 @@ impl CallbackRunnerHTTP {
     }
 }
 
+macro_rules! callback_impl_done_http {
+    ($self:expr, $py:expr) => {
+        if let Ok(mut proto) = $self.proto.as_ref($py).try_borrow_mut() {
+            if let Some(tx) = proto.tx() {
+                let _ = tx.send(
+                    PyResponse::Bytes(PyResponseBytes::empty(500, Vec::new()))
+                );
+            }
+        }
+    }
+}
+
+macro_rules! callback_impl_done_err {
+    ($self:expr, $py:expr) => {
+        log::warn!("Application callable raised an exception");
+        $self.done($py)
+    }
+}
+
 #[pyclass]
 pub(crate) struct CallbackTaskHTTP {
     proto: Py<HTTPProtocol>,
@@ -72,18 +93,11 @@ impl CallbackTaskHTTP {
     }
 
     fn done(&self, py: Python) {
-        if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
-            if let Some(tx) = proto.tx() {
-                let _ = tx.send(
-                    PyResponse::Bytes(PyResponseBytes::empty(500, Vec::new()))
-                );
-            }
-        }
+        callback_impl_done_http!(self, py);
     }
 
     fn err(&self, py: Python) {
-        log::warn!("Application callable raised an exception");
-        self.done(py)
+        callback_impl_done_err!(self, py);
     }
 
     callback_impl_loop_run!();
@@ -98,6 +112,49 @@ impl CallbackTaskHTTP {
 
     fn _loop_wake(pyself: PyRef<'_, Self>, py: Python, fut: PyObject) -> PyResult<PyObject> {
         callback_impl_loop_wake!(pyself, py, fut)
+    }
+}
+
+#[pyclass]
+pub(crate) struct CallbackWrappedRunnerHTTP {
+    #[pyo3(get)]
+    proto: Py<HTTPProtocol>,
+    context: TaskLocals,
+    cb: PyObject,
+    #[pyo3(get)]
+    scope: PyObject
+}
+
+impl CallbackWrappedRunnerHTTP {
+    pub fn new(
+        py: Python,
+        cb: CallbackWrapper,
+        proto: HTTPProtocol,
+        scope: Scope
+    ) -> Self {
+        Self {
+            proto: Py::new(py, proto).unwrap(),
+            context: cb.context,
+            cb: cb.callback,
+            scope: scope.into_py(py)
+        }
+    }
+
+    callback_impl_run_pytask!();
+}
+
+#[pymethods]
+impl CallbackWrappedRunnerHTTP {
+    fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<&'p PyAny> {
+        callback_impl_loop_pytask!(pyself, py)
+    }
+
+    fn done(&self, py: Python) {
+        callback_impl_done_http!(self, py);
+    }
+
+    fn err(&self, py: Python) {
+        callback_impl_done_err!(self, py);
     }
 }
 
@@ -133,6 +190,16 @@ impl CallbackRunnerWebsocket {
     }
 }
 
+macro_rules! callback_impl_done_ws {
+    ($self:expr, $py:expr) => {
+        if let Ok(mut proto) = $self.proto.as_ref($py).try_borrow_mut() {
+            if let (Some(tx), res) = proto.tx() {
+                let _ = tx.send(res);
+            }
+        }
+    }
+}
+
 #[pyclass]
 pub(crate) struct CallbackTaskWebsocket {
     proto: Py<WebsocketProtocol>,
@@ -153,16 +220,11 @@ impl CallbackTaskWebsocket {
     }
 
     fn done(&self, py: Python) {
-        if let Ok(mut proto) = self.proto.as_ref(py).try_borrow_mut() {
-            if let (Some(tx), res) = proto.tx() {
-                let _ = tx.send(res);
-            }
-        }
+        callback_impl_done_ws!(self, py);
     }
 
     fn err(&self, py: Python) {
-        log::warn!("Application callable raised an exception");
-        self.done(py)
+        callback_impl_done_err!(self, py);
     }
 
     callback_impl_loop_run!();
@@ -180,72 +242,140 @@ impl CallbackTaskWebsocket {
     }
 }
 
-pub(crate) fn call_rtb_http(
-    cb: CallbackWrapper,
-    rt: RuntimeRef,
-    req: hyper::Request<hyper::Body>,
-    scope: Scope
-) -> oneshot::Receiver<PyResponse> {
-    let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt, tx, req);
-
-    Python::with_gil(|py| {
-        let _ = CallbackRunnerHTTP::new(py, cb, protocol, scope).run(py);
-    });
-
-    rx
+#[pyclass]
+pub(crate) struct CallbackWrappedRunnerWebsocket {
+    #[pyo3(get)]
+    proto: Py<WebsocketProtocol>,
+    context: TaskLocals,
+    cb: PyObject,
+    #[pyo3(get)]
+    scope: PyObject
 }
 
-pub(crate) fn call_rtt_http(
-    cb: CallbackWrapper,
-    rt: RuntimeRef,
-    req: hyper::Request<hyper::Body>,
-    scope: Scope
-) -> oneshot::Receiver<PyResponse> {
-    let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt, tx, req);
+impl CallbackWrappedRunnerWebsocket {
+    pub fn new(
+        py: Python,
+        cb: CallbackWrapper,
+        proto: WebsocketProtocol,
+        scope: Scope
+    ) -> Self {
+        Self {
+            proto: Py::new(py, proto).unwrap(),
+            context: cb.context,
+            cb: cb.callback,
+            scope: scope.into_py(py)
+        }
+    }
 
-    tokio::task::spawn_blocking(move || {
-        Python::with_gil(|py| {
-            let _ = CallbackRunnerHTTP::new(py, cb, protocol, scope).run(py);
-        });
-    });
-
-    rx
+    callback_impl_run_pytask!();
 }
 
-pub(crate) fn call_rtb_ws(
-    cb: CallbackWrapper,
-    rt: RuntimeRef,
-    ws: HyperWebsocket,
-    upgrade: UpgradeData,
-    scope: Scope
-) -> oneshot::Receiver<(i32, bool)> {
-    let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+#[pymethods]
+impl CallbackWrappedRunnerWebsocket {
+    fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<&'p PyAny> {
+        callback_impl_loop_pytask!(pyself, py)
+    }
 
-    Python::with_gil(|py| {
-        let _ = CallbackRunnerWebsocket::new(py, cb, protocol, scope).run(py);
-    });
+    fn done(&self, py: Python) {
+        callback_impl_done_ws!(self, py);
+    }
 
-    rx
+    fn err(&self, py: Python) {
+        callback_impl_done_err!(self, py);
+    }
 }
 
-pub(crate) fn call_rtt_ws(
-    cb: CallbackWrapper,
-    rt: RuntimeRef,
-    ws: HyperWebsocket,
-    upgrade: UpgradeData,
-    scope: Scope
-) -> oneshot::Receiver<(i32, bool)> {
-    let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+macro_rules! call_impl_rtb_http {
+    ($func_name:ident, $runner:ident) => {
+        pub(crate) fn $func_name(
+            cb: CallbackWrapper,
+            rt: RuntimeRef,
+            req: hyper::Request<hyper::Body>,
+            scope: Scope
+        ) -> oneshot::Receiver<PyResponse> {
+            let (tx, rx) = oneshot::channel();
+            let protocol = HTTPProtocol::new(rt, tx, req);
 
-    tokio::task::spawn_blocking(move || {
-        Python::with_gil(|py| {
-            let _ = CallbackRunnerWebsocket::new(py, cb, protocol, scope).run(py);
-        });
-    });
+            Python::with_gil(|py| {
+                let _ = $runner::new(py, cb, protocol, scope).run(py);
+            });
 
-    rx
+            rx
+        }
+    };
 }
+
+macro_rules! call_impl_rtt_http {
+    ($func_name:ident, $runner:ident) => {
+        pub(crate) fn $func_name(
+            cb: CallbackWrapper,
+            rt: RuntimeRef,
+            req: hyper::Request<hyper::Body>,
+            scope: Scope
+        ) -> oneshot::Receiver<PyResponse> {
+            let (tx, rx) = oneshot::channel();
+            let protocol = HTTPProtocol::new(rt, tx, req);
+
+            tokio::task::spawn_blocking(move || {
+                Python::with_gil(|py| {
+                    let _ = $runner::new(py, cb, protocol, scope).run(py);
+                });
+            });
+
+            rx
+        }
+    };
+}
+
+macro_rules! call_impl_rtb_ws {
+    ($func_name:ident, $runner:ident) => {
+        pub(crate) fn $func_name(
+            cb: CallbackWrapper,
+            rt: RuntimeRef,
+            ws: HyperWebsocket,
+            upgrade: UpgradeData,
+            scope: Scope
+        ) -> oneshot::Receiver<(i32, bool)> {
+            let (tx, rx) = oneshot::channel();
+            let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+
+            Python::with_gil(|py| {
+                let _ = $runner::new(py, cb, protocol, scope).run(py);
+            });
+
+            rx
+        }
+    };
+}
+
+macro_rules! call_impl_rtt_ws {
+    ($func_name:ident, $runner:ident) => {
+        pub(crate) fn $func_name(
+            cb: CallbackWrapper,
+            rt: RuntimeRef,
+            ws: HyperWebsocket,
+            upgrade: UpgradeData,
+            scope: Scope
+        ) -> oneshot::Receiver<(i32, bool)> {
+            let (tx, rx) = oneshot::channel();
+            let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+
+            tokio::task::spawn_blocking(move || {
+                Python::with_gil(|py| {
+                    let _ = $runner::new(py, cb, protocol, scope).run(py);
+                });
+            });
+
+            rx
+        }
+    };
+}
+
+call_impl_rtb_http!(call_rtb_http, CallbackRunnerHTTP);
+call_impl_rtb_http!(call_rtb_http_pyw, CallbackWrappedRunnerHTTP);
+call_impl_rtt_http!(call_rtt_http, CallbackRunnerHTTP);
+call_impl_rtt_http!(call_rtt_http_pyw, CallbackWrappedRunnerHTTP);
+call_impl_rtb_ws!(call_rtb_ws, CallbackRunnerWebsocket);
+call_impl_rtb_ws!(call_rtb_ws_pyw, CallbackWrappedRunnerWebsocket);
+call_impl_rtt_ws!(call_rtt_ws, CallbackRunnerWebsocket);
+call_impl_rtt_ws!(call_rtt_ws_pyw, CallbackWrappedRunnerWebsocket);
