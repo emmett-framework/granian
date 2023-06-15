@@ -101,7 +101,7 @@ impl RSGIScope {
         Self {
             proto: proto.to_string(),
             http_version: http_version,
-            rsgi_version: "1.0".to_string(),
+            rsgi_version: "1.1".to_string(),
             scheme: scheme.to_string(),
             method: method.to_string(),
             uri: uri,
@@ -141,14 +141,14 @@ impl RSGIScope {
 }
 
 pub(crate) enum PyResponse {
-    Bytes(PyResponseBytes),
+    Body(PyResponseBody),
     File(PyResponseFile)
 }
 
-pub(crate) struct PyResponseBytes {
+pub(crate) struct PyResponseBody {
     status: u16,
     headers: Vec<(String, String)>,
-    body: hyper::body::Bytes
+    body: Body
 }
 
 pub(crate) struct PyResponseFile {
@@ -176,33 +176,25 @@ macro_rules! response_head_from_py {
     }
 }
 
-impl PyResponseBytes {
+impl PyResponseBody {
+    pub fn new(status: u16, headers: Vec<(String, String)>, body: Body) -> Self {
+        Self { status, headers, body }
+    }
+
     pub fn empty(status: u16, headers: Vec<(String, String)>) -> Self {
-        Self {
-            status,
-            headers,
-            body: hyper::body::Bytes::new()
-        }
+        Self { status, headers, body: Body::empty() }
     }
 
     pub fn from_bytes(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
-        Self {
-            status,
-            headers,
-            body: hyper::body::Bytes::from(body)
-        }
+        Self { status, headers, body: Body::from(body) }
     }
 
     pub fn from_string(status: u16, headers: Vec<(String, String)>, body: String) -> Self {
-        Self {
-            status,
-            headers,
-            body: hyper::body::Bytes::from(body)
-        }
+        Self { status, headers, body: Body::from(body) }
     }
 
-    pub fn to_response(&self) -> hyper::Response::<Body> {
-        let mut res = hyper::Response::<Body>::new(self.body.to_owned().into());
+    pub fn to_response(self) -> hyper::Response::<Body> {
+        let mut res = hyper::Response::<Body>::new(self.body);
         response_head_from_py!(self.status, &self.headers, res);
         res
     }

@@ -18,7 +18,7 @@ use crate::{
 };
 use super::{
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
-    types::{RSGIScope as Scope, PyResponse, PyResponseBytes}
+    types::{RSGIScope as Scope, PyResponse, PyResponseBody}
 };
 
 
@@ -59,7 +59,7 @@ macro_rules! callback_impl_done_http {
         if let Ok(mut proto) = $self.proto.as_ref($py).try_borrow_mut() {
             if let Some(tx) = proto.tx() {
                 let _ = tx.send(
-                    PyResponse::Bytes(PyResponseBytes::empty(500, Vec::new()))
+                    PyResponse::Body(PyResponseBody::empty(500, Vec::new()))
                 );
             }
         }

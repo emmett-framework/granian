@@ -1,5 +1,5 @@
 use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
-use hyper::{Body, Request};
+use hyper::{body::{Body, Sender as BodySender}, Request};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::sync::Arc;
@@ -13,9 +13,53 @@ use crate::{
 };
 use super::{
     errors::{error_proto, error_stream},
-    types::{PyResponse, PyResponseBytes, PyResponseFile}
+    types::{PyResponse, PyResponseBody, PyResponseFile}
 };
 
+
+#[pyclass(module="granian._granian")]
+pub(crate) struct RSGIHTTPStreamTransport {
+    rt: RuntimeRef,
+    tx: Arc<Mutex<BodySender>>
+}
+
+impl RSGIHTTPStreamTransport {
+    pub fn new(
+        rt: RuntimeRef,
+        transport: BodySender
+    ) -> Self {
+        Self { rt: rt, tx: Arc::new(Mutex::new(transport)) }
+    }
+}
+
+#[pymethods]
+impl RSGIHTTPStreamTransport {
+    fn send_bytes<'p>(&self, py: Python<'p>, data: Vec<u8>) -> PyResult<&'p PyAny> {
+        let transport = self.tx.clone();
+        future_into_py_futlike(self.rt.clone(), py, async move {
+            if let Ok(mut stream) = transport.try_lock() {
+                return match stream.send_data(data.into()).await {
+                    Ok(_) => Ok(()),
+                    _ => error_stream!()
+                }
+            }
+            error_proto!()
+        })
+    }
+
+    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
+        let transport = self.tx.clone();
+        future_into_py_futlike(self.rt.clone(), py, async move {
+            if let Ok(mut stream) = transport.try_lock() {
+                return match stream.send_data(data.into()).await {
+                    Ok(_) => Ok(()),
+                    _ => error_stream!()
+                }
+            }
+            error_proto!()
+        })
+    }
+}
 
 #[pyclass(module="granian._granian")]
 pub(crate) struct RSGIHTTPProtocol {
@@ -59,7 +103,7 @@ impl RSGIHTTPProtocol {
     fn response_empty(&mut self, status: u16, headers: Vec<(String, String)>) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
-                PyResponse::Bytes(PyResponseBytes::empty(status, headers))
+                PyResponse::Body(PyResponseBody::empty(status, headers))
             );
         }
     }
@@ -68,7 +112,7 @@ impl RSGIHTTPProtocol {
     fn response_bytes(&mut self, status: u16, headers: Vec<(String, String)>, body: Vec<u8>) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
-                PyResponse::Bytes(PyResponseBytes::from_bytes(status, headers, body))
+                PyResponse::Body(PyResponseBody::from_bytes(status, headers, body))
             );
         }
     }
@@ -77,7 +121,7 @@ impl RSGIHTTPProtocol {
     fn response_str(&mut self, status: u16, headers: Vec<(String, String)>, body: String) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(
-                PyResponse::Bytes(PyResponseBytes::from_string(status, headers, body))
+                PyResponse::Body(PyResponseBody::from_string(status, headers, body))
             );
         }
     }
@@ -89,6 +133,24 @@ impl RSGIHTTPProtocol {
                 PyResponse::File(PyResponseFile::new(status, headers, file))
             );
         }
+    }
+
+    #[pyo3(signature = (status=200, headers=vec![]))]
+    fn response_stream<'p>(
+        &mut self,
+        py: Python<'p>,
+        status: u16,
+        headers: Vec<(String, String)>
+    ) -> PyResult<&'p PyAny> {
+        if let Some(tx) = self.tx.take() {
+            let (body_tx, body_stream) = Body::channel();
+            let _ = tx.send(
+                PyResponse::Body(PyResponseBody::new(status, headers, body_stream))
+            );
+            let trx = Py::new(py, RSGIHTTPStreamTransport::new(self.rt.clone(), body_tx))?;
+            return Ok(trx.into_ref(py))
+        }
+        error_proto!()
     }
 }
 
