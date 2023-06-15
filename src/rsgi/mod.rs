@@ -11,6 +11,7 @@ pub(crate) fn init_pymodule(py: Python, module: &PyModule) -> PyResult<()> {
     module.add("RSGIProtocolError", py.get_type::<errors::RSGIProtocolError>())?;
     module.add("RSGIProtocolClosed", py.get_type::<errors::RSGIProtocolClosed>())?;
     module.add_class::<io::RSGIHTTPProtocol>()?;
+    module.add_class::<io::RSGIHTTPStreamTransport>()?;
     module.add_class::<io::RSGIWebsocketProtocol>()?;
     module.add_class::<io::RSGIWebsocketTransport>()?;
     module.add_class::<types::RSGIHeaders>()?;

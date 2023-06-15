@@ -48,7 +48,7 @@ macro_rules! default_scope {
 macro_rules! handle_http_response {
     ($handler:expr, $rt:expr, $callback:expr, $req:expr, $scope:expr) => {
         match $handler($callback, $rt, $req, $scope).await {
-            Ok(PyResponse::Bytes(pyres)) => {
+            Ok(PyResponse::Body(pyres)) => {
                 pyres.to_response()
             },
             Ok(PyResponse::File(pyres)) => {
