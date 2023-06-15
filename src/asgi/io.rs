@@ -1,8 +1,8 @@
 use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
 use hyper::{
-    Body,
     Request,
     Response,
+    body::{Body, Sender as BodySender},
     header::{HeaderName, HeaderValue, HeaderMap, SERVER as HK_SERVER}
 };
 use pyo3::prelude::*;
@@ -18,7 +18,7 @@ use crate::{
     ws::{HyperWebsocket, UpgradeData}
 };
 use super::{
-    errors::{UnsupportedASGIMessage, error_flow, error_message},
+    errors::{UnsupportedASGIMessage, error_flow, error_transport, error_message},
     types::ASGIMessageType
 };
 
@@ -31,11 +31,11 @@ pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Option<oneshot::Sender<Response<Body>>>,
     request: Arc<Mutex<Request<Body>>>,
-    response_inited: bool,
-    response_built: bool,
-    response_status: i16,
-    response_headers: HeaderMap,
-    response_body: Vec<u8>
+    response_started: bool,
+    response_chunked: bool,
+    response_status: Option<i16>,
+    response_headers: Option<HeaderMap>,
+    body_tx: Option<Arc<Mutex<BodySender>>>
 }
 
 impl ASGIHTTPProtocol {
@@ -45,31 +45,36 @@ impl ASGIHTTPProtocol {
         tx: oneshot::Sender<Response<Body>>
     ) -> Self {
         Self {
-            rt: rt,
+            rt,
             tx: Some(tx),
             request: Arc::new(Mutex::new(request)),
-            response_inited: false,
-            response_built: false,
-            response_status: 0,
-            response_headers: HeaderMap::new(),
-            response_body: Vec::new()
+            response_started: false,
+            response_chunked: false,
+            response_status: None,
+            response_headers: None,
+            body_tx: None
         }
     }
 
     #[inline(always)]
-    fn send_body(&mut self, body: &[u8], finish: bool) {
-        self.response_body.extend_from_slice(body);
-        if finish {
-            if let Some(tx) = self.tx.take() {
-                let mut res = Response::new(self.response_body.to_owned().into());
-                *res.status_mut() = hyper::StatusCode::from_u16(
-                    self.response_status as u16
-                ).unwrap();
-                *res.headers_mut() = self.response_headers.to_owned();
-                let _ = tx.send(res);
-            }
-            self.response_built = true;
+    fn send_response(&mut self, status: i16, headers: HeaderMap<HeaderValue>, body: Body) {
+        if let Some(tx) = self.tx.take() {
+            let mut res = Response::new(body);
+            *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
+            *res.headers_mut() = headers;
+            let _ = tx.send(res);
         }
+    }
+
+    #[inline(always)]
+    fn send_body<'p>(&self, py: Python<'p>, tx: Arc<Mutex<BodySender>>, body: Vec<u8>) -> PyResult<&'p PyAny> {
+        future_into_py_iter(self.rt.clone(), py, async move {
+            let mut tx = tx.lock().await;
+            match (&mut *tx).send_data(body.into()).await {
+                Ok(_) => Ok(()),
+                _ => error_transport!()
+            }
+        })
     }
 
     pub fn tx(&mut self) -> Option<oneshot::Sender<Response<Body>>> {
@@ -97,63 +102,56 @@ impl ASGIHTTPProtocol {
         })
     }
 
-    fn send(&mut self, data: &PyDict) -> PyResult<()> {
+    fn send<'p>(&mut self, py: Python<'p>, asyncw: &'p PyAny, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::HTTPStart) => {
-                match self.response_inited {
+                match self.response_started {
                     false => {
-                        self.response_status = adapt_status_code(data).unwrap();
-                        self.response_headers = adapt_headers(data);
-                        self.response_inited = true;
-                        Ok(())
+                        self.response_status = Some(adapt_status_code(data)?);
+                        self.response_headers = Some(adapt_headers(data));
+                        self.response_started = true;
+                        asyncw.call0()
                     },
-                    _ => error_flow!()
+                    true => error_flow!()
                 }
             },
             Ok(ASGIMessageType::HTTPBody) => {
-                match (self.response_inited, self.response_built) {
-                    (true, false) => {
-                        let (body, more) = adapt_body(data);
-                        self.send_body(&body[..], !more);
-                        Ok(())
+                let (body, more) = adapt_body(data);
+                match (self.response_started, more, self.response_chunked) {
+                    (true, false, false) => {
+                        let headers = self.response_headers.take().unwrap();
+                        self.send_response(self.response_status.unwrap(), headers, body.into());
+                        asyncw.call0()
+                    },
+                    (true, true, false) => {
+                        self.response_chunked = true;
+                        let headers = self.response_headers.take().unwrap();
+                        let (body_tx, body_stream) = Body::channel();
+                        let tx = Arc::new(Mutex::new(body_tx));
+                        self.body_tx = Some(tx.clone());
+                        self.send_response(self.response_status.unwrap(), headers, body_stream);
+                        self.send_body(py, tx, body)
+                    },
+                    (true, true, true) => {
+                        match self.body_tx.as_mut() {
+                            Some(tx) => {
+                                let tx = tx.clone();
+                                self.send_body(py, tx, body)
+                            },
+                            _ => error_flow!()
+                        }
+                    },
+                    (true, false, true) => {
+                        match self.body_tx.take() {
+                            Some(tx) => self.send_body(py, tx, body),
+                            _ => error_flow!()
+                        }
                     },
                     _ => error_flow!()
                 }
             },
             Err(err) => Err(err.into()),
             _ => error_message!()
-        }
-    }
-
-    fn response_start(&mut self, status: i16, pyheaders: Vec<Vec<&[u8]>>) -> PyResult<()> {
-        let mut headers = HeaderMap::new();
-        headers.insert(HK_SERVER, HV_SERVER);
-        self.response_status = status;
-        for tup in pyheaders.iter() {
-            match (
-                HeaderName::from_bytes(tup[0]),
-                HeaderValue::from_bytes(tup[1])
-            ) {
-                (Ok(key), Ok(val)) => {
-                    headers.insert(key, val);
-                },
-                _ => {
-                    return error_flow!()
-                }
-            }
-        };
-        self.response_headers = headers;
-        self.response_inited = true;
-        Ok(())
-    }
-
-    fn response_body(&mut self, body: &[u8], has_more: bool) -> PyResult<()> {
-        match (self.response_inited, self.response_built) {
-            (true, false) => {
-                self.send_body(body, !has_more);
-                Ok(())
-            },
-            _ => error_flow!()
         }
     }
 }
@@ -178,7 +176,7 @@ impl ASGIWebsocketProtocol {
         upgrade: UpgradeData
     ) -> Self {
         Self {
-            rt: rt,
+            rt,
             tx: Some(tx),
             websocket: Some(websocket),
             upgrade: Some(upgrade),
@@ -220,16 +218,13 @@ impl ASGIWebsocketProtocol {
         data: &'p PyDict
     ) -> PyResult<&'p PyAny> {
         let transport = self.ws_tx.clone();
-        let closed = self.closed.clone();
         let message = ws_message_into_rs(data);
         future_into_py_iter(self.rt.clone(), py, async move {
-            if !closed {
-                if let Ok(message) = message {
-                    if let Some(ws) = &mut *(transport.lock().await) {
-                        if let Ok(_) = ws.send(message).await {
-                            return Ok(())
-                        }
-                    };
+            if let Ok(message) = message {
+                if let Some(ws) = &mut *(transport.lock().await) {
+                    if let Ok(_) = ws.send(message).await {
+                        return Ok(())
+                    }
                 };
             };
             error_flow!()
@@ -237,15 +232,13 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn close<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn close<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        self.closed = true;
         let transport = self.ws_tx.clone();
-        let closed = self.closed.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
-            if !closed {
-                if let Some(ws) = &mut *(transport.lock().await) {
-                    if let Ok(_) = ws.close().await {
-                        return Ok(())
-                    }
+            if let Some(ws) = &mut *(transport.lock().await) {
+                if let Ok(_) = ws.close().await {
+                    return Ok(())
                 }
             };
             error_flow!()
@@ -314,18 +307,18 @@ impl ASGIWebsocketProtocol {
         })
     }
 
-    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        match adapt_message_type(data) {
-            Ok(ASGIMessageType::WSAccept) => {
+    fn send<'p>(&mut self, py: Python<'p>, _asyncw: &'p PyAny, data: &'p PyDict) -> PyResult<&'p PyAny> {
+        match (adapt_message_type(data), self.closed) {
+            (Ok(ASGIMessageType::WSAccept), _) => {
                 self.accept(py)
             },
-            Ok(ASGIMessageType::WSClose) => {
+            (Ok(ASGIMessageType::WSClose), false) => {
                 self.close(py)
             },
-            Ok(ASGIMessageType::WSMessage) => {
+            (Ok(ASGIMessageType::WSMessage), false) => {
                 self.send_message(py, data)
             },
-            Err(err) => Err(err.into()),
+            (Err(err), _) => Err(err.into()),
             _ => error_message!()
         }
     }

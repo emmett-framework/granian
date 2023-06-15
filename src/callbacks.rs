@@ -27,8 +27,7 @@ impl CallbackWrapper {
 
 #[pyclass]
 pub(crate) struct PyAwaitableResultYielder {
-    result: Option<PyResult<PyObject>>,
-    none: PyObject
+    result: Option<PyResult<PyObject>>
 }
 
 impl PyAwaitableResultYielder {
@@ -43,15 +42,15 @@ impl PyAwaitableResultYielder {
         pyself
     }
 
-    fn __next__(mut pyself: PyRefMut<'_, Self>) -> PyResult<IterNextOutput<PyObject, PyObject>> {
-        match pyself.result.take() {
+    fn __next__(&mut self, py: Python) -> PyResult<IterNextOutput<PyObject, PyObject>> {
+        match self.result.take() {
             Some(res) => {
                 match res {
                     Ok(v) => Ok(IterNextOutput::Return(v)),
                     Err(err) => Err(err)
                 }
             },
-            _ => Ok(IterNextOutput::Yield(pyself.none.clone()))
+            _ => Ok(IterNextOutput::Yield(py.None()))
         }
     }
 }
@@ -162,7 +161,7 @@ pub(crate) struct PyIterAwaitableResult {
 
 impl PyIterAwaitableResult {
     pub(crate) fn new(py: Python) -> PyResult<Self> {
-        let inner = Py::new(py, PyAwaitableResultYielder { result: None, none: py.None() })?;
+        let inner = Py::new(py, PyAwaitableResultYielder { result: None })?;
         Ok(Self { inner })
     }
 }
