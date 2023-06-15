@@ -1,7 +1,8 @@
+use futures::Stream;
 use hyper::{body::Bytes, Body, Method, Request, Uri};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, task::{Context, Poll}};
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
@@ -146,5 +147,48 @@ impl WSGIScope {
 
     fn input(pyself: PyRef<'_, Self>) -> PyResult<Py<WSGIBody>> {
         Py::new(pyself.py(), WSGIBody::new(pyself.body.to_owned()))
+    }
+}
+
+pub(crate) struct WSGIResponseBodyIter {
+    inner: PyObject
+}
+
+impl WSGIResponseBodyIter {
+    pub fn new(body: PyObject) -> Self {
+        Self { inner: body }
+    }
+
+    fn close_inner(&self, py: Python) {
+        let _ = self.inner.call_method0(py, pyo3::intern!(py, "close"));
+    }
+}
+
+impl Stream for WSGIResponseBodyIter {
+    type Item = PyResult<Vec<u8>>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut Context<'_>
+    ) -> Poll<Option<Self::Item>> {
+        Python::with_gil(|py| {
+            match self.inner.call_method0(py, pyo3::intern!(py, "__next__")) {
+                Ok(chunk_obj) => {
+                    match chunk_obj.extract::<Vec<u8>>(py) {
+                        Ok(chunk) => Poll::Ready(Some(Ok(chunk))),
+                        _ => {
+                            self.close_inner(py);
+                            Poll::Ready(None)
+                        }
+                    }
+                },
+                Err(err) => {
+                    if err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
+                        self.close_inner(py);
+                    }
+                    Poll::Ready(None)
+                }
+            }
+        })
     }
 }

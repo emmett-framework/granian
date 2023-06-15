@@ -63,12 +63,13 @@ def _callback_wrapper(callback, scope_opts):
         resp = Response()
         rv = callback(environ, resp)
 
-        try:
-            body = b"".join(rv)
-        finally:
-            if hasattr(rv, "close"):
-                rv.close()
+        if isinstance(rv, list):
+            resp_type = 0
+            rv = b"".join(rv)
+        else:
+            resp_type = 1
+            rv = iter(rv)
 
-        return (resp.status, resp.headers, body)
+        return (resp.status, resp.headers, resp_type, rv)
 
     return wrapper

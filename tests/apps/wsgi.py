@@ -24,6 +24,18 @@ def echo(environ, protocol):
     return [environ['wsgi.input'].read()]
 
 
+def iterbody(environ, protocol):
+    def response():
+        for _ in range(0, 3):
+            yield b"test"
+
+    protocol(
+        '200 OK',
+        [('content-type', 'text/plain; charset=utf-8')]
+    )
+    return response()
+
+
 def err_app(environ, protocol):
     1 / 0
 
@@ -32,5 +44,6 @@ def app(environ, protocol):
     return {
         "/info": info,
         "/echo": echo,
+        "/iterbody": iterbody,
         "/err_app": err_app
     }[environ["PATH_INFO"]](environ, protocol)

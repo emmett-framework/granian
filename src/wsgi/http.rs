@@ -32,7 +32,7 @@ macro_rules! handle_request {
                 Scope::new(scheme, server_addr, client_addr, req).await
             ).await {
                 Ok((status, pyheaders, body)) => {
-                    let mut res = Response::new(Body::from(body));
+                    let mut res = Response::new(body);
                     *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
                     let headers = res.headers_mut();
                     headers.insert(HK_SERVER, HV_SERVER);
