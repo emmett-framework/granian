@@ -1,8 +1,10 @@
 import json
 import pytest
+import sys
 import websockets
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="skip on windows")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("server", ["asgi", "rsgi"], indirect=True)
 @pytest.mark.parametrize("threading_mode", ["runtime", "workers"])
