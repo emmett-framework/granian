@@ -20,19 +20,19 @@ def app(name, procs=None, threads=None, thmode=None):
     proc = {
         "asgi": (
             "granian --interface asgi --log-level warning --backlog 2048 "
-            "--no-ws --http 1 "
+            "--no-ws --opt --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.asgi:app"
         ),
         "rsgi": (
             "granian --interface rsgi --log-level warning --backlog 2048 "
-            "--no-ws --http 1 "
+            "--no-ws --opt --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.rsgi:app"
         ),
         "wsgi": (
             "granian --interface wsgi --log-level warning --backlog 2048 "
-            "--no-ws --http 1 "
+            "--no-ws --opt --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.wsgi:app"
         ),

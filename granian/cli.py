@@ -47,10 +47,10 @@ def main(
     ),
     loop: Loops = typer.Option(Loops.auto.value, help="Event loop implementation"),
     loop_opt: bool = typer.Option(
-        True,
+        False,
         "--opt/--no-opt",
         help="Enable loop optimizations",
-        show_default="enabled"
+        show_default="disabled"
     ),
     backlog: int = typer.Option(
         1024,

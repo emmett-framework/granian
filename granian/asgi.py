@@ -41,7 +41,7 @@ class LifespanProtocol:
 
     async def startup(self):
         loop = asyncio.get_event_loop()
-        handler_task = loop.create_task(self.handle())
+        _handler_task = loop.create_task(self.handle())
 
         await self.event_queue.put({"type": "lifespan.startup"})
         await self.event_startup.wait()

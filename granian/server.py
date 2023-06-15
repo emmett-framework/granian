@@ -37,7 +37,7 @@ class Granian:
         pthreads: int = 1,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
-        loop_opt: bool = True,
+        loop_opt: bool = False,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
