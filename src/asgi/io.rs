@@ -68,7 +68,7 @@ impl ASGIHTTPProtocol {
 
     #[inline(always)]
     fn send_body<'p>(&self, py: Python<'p>, tx: Arc<Mutex<BodySender>>, body: Vec<u8>) -> PyResult<&'p PyAny> {
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             let mut tx = tx.lock().await;
             match (&mut *tx).send_data(body.into()).await {
                 Ok(_) => Ok(()),
