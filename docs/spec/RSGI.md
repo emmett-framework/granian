@@ -1,6 +1,6 @@
 # RSGI Specification
 
-**Version:** 1.0
+**Version:** 1.1
 
 ## Abstract
 
@@ -95,14 +95,34 @@ And here are descriptions for the upper attributes:
 
 #### HTTP protocol interface
 
-HTTP protocol object implements a single awaitable method on `__call__` to receive the request body in `bytes` format, and four different methods to send data, in particular:
+HTTP protocol object implements a single awaitable method on `__call__` to receive the request body in `bytes` format, and five different methods to send data, in particular:
 
 - `response_empty` to send back an empty response
 - `response_str` to send back a response with a `str` body
 - `response_bytes` to send back a response with `bytes` body
 - `response_file` to send back a file response (from its path)
+- `response_stream` to start a stream response
 
-All the upper-mentioned methods accepts an integer `status` parameter, a list of string tuples for the `headers` parameter, and the relevant typed `body` parameter.
+All the upper-mentioned methods accepts an integer `status` parameter, a list of string tuples for the `headers` parameter, and the relevant typed `body` parameter (if applicable):
+
+```
+coroutine __call__() -> body
+function response_empty(status, headers)
+function response_str(status, headers, body)
+function response_bytes(status, headers, body)
+function response_file(status, headers, file)
+function response_stream(status, headers) -> transport
+```
+
+The `response_stream` method will return a *transport object*, which implements the async messaging interfaces, specifically:
+
+- a `send_bytes` awaitable method to produce outgoing messages from `bytes` content
+- a `send_str` awaitable method to produce outgoing messages from `str` content
+
+```
+coroutine send_bytes(bytes)
+coroutine send_str(str)
+```
 
 ### Websocket protocol
 
@@ -147,11 +167,22 @@ Websocket protocol object implements two interface methods for applications:
 - the `accept` awaitable method
 - the `close` method
 
+```
+coroutine accept() -> transport
+function close(status)
+```
+
 The `accept` awaitable method will return a *transport object*, which implements the async messaging interfaces, specifically:
 
 - a `receive` awaitable method which returns a single incoming message
 - a `send_bytes` awaitable method to produce outgoing messages from `bytes` content
 - a `send_str` awaitable method to produce outgoing messages from `str` content
+
+```
+coroutine receive() -> message
+coroutine send_bytes(bytes)
+coroutine send_str(str)
+```
 
 In RSGI websockets' incoming messages consist of objects with the form:
 
@@ -163,7 +194,7 @@ class WebsocketMessage:
 
 where `kind` is an integer with the following values:
 
-| value | response type |
+| value | description |
 | --- | --- |
 | 0 | Websocket closed by client |
 | 1 | Bytes message |
