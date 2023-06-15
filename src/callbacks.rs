@@ -255,6 +255,15 @@ macro_rules! callback_impl_loop_run {
     };
 }
 
+macro_rules! callback_impl_loop_pytask {
+    ($pyself:expr, $py:expr) => {
+        $pyself.context.event_loop($py).call_method1(
+            pyo3::intern!($py, "create_task"),
+            ($pyself.cb.clone().into_ref($py).call1(($pyself.into_py($py),))?,)
+        )
+    };
+}
+
 macro_rules! callback_impl_loop_step {
     ($pyself:expr, $py:expr) => {
         match $pyself.cb.call_method1($py, pyo3::intern!($py, "send"), ($py.None(),)) {
@@ -343,6 +352,7 @@ macro_rules! callback_impl_loop_err {
 pub(crate) use callback_impl_run;
 pub(crate) use callback_impl_run_pytask;
 pub(crate) use callback_impl_loop_run;
+pub(crate) use callback_impl_loop_pytask;
 pub(crate) use callback_impl_loop_step;
 pub(crate) use callback_impl_loop_wake;
 pub(crate) use callback_impl_loop_err;

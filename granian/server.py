@@ -195,6 +195,7 @@ class Granian:
             http_mode,
             http1_buffer_size,
             websockets,
+            loop_opt,
             *ssl_ctx
         )
         serve = getattr(worker, {
@@ -202,7 +203,7 @@ class Granian:
             ThreadModes.workers: "serve_wth"
         }[threading_mode])
         serve(
-            callback,
+            future_watcher_wrapper(callback) if not loop_opt else callback,
             loop,
             contextvars.copy_context(),
             shutdown_event.wait()

@@ -9,6 +9,7 @@ use crate::{
         callback_impl_run,
         callback_impl_run_pytask,
         callback_impl_loop_run,
+        callback_impl_loop_pytask,
         callback_impl_loop_step,
         callback_impl_loop_wake,
         callback_impl_loop_err
@@ -151,12 +152,7 @@ impl CallbackWrappedRunnerHTTP {
 #[pymethods]
 impl CallbackWrappedRunnerHTTP {
     fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let event_loop = pyself.context.event_loop(py);
-        let target = pyself.cb.clone().into_ref(py).call1((pyself.into_py(py),))?;
-        event_loop.call_method1(
-            pyo3::intern!(py, "create_task"),
-            (target,)
-        )
+        callback_impl_loop_pytask!(pyself, py)
     }
 
     fn done(&self, py: Python) {
@@ -288,12 +284,7 @@ impl CallbackWrappedRunnerWebsocket {
 #[pymethods]
 impl CallbackWrappedRunnerWebsocket {
     fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let event_loop = pyself.context.event_loop(py);
-        let target = pyself.cb.clone().into_ref(py).call1((pyself.into_py(py),))?;
-        event_loop.call_method1(
-            pyo3::intern!(py, "create_task"),
-            (target,)
-        )
+        callback_impl_loop_pytask!(pyself, py)
     }
 
     fn done(&self, py: Python) {
