@@ -3,6 +3,7 @@ import multiprocessing
 import signal
 import socket
 import ssl
+import sys
 import threading
 
 from functools import partial
@@ -371,7 +372,16 @@ class Granian:
                 target_loader = partial(target_loader, self.target)
         else:
             target_loader = partial(load_target, self.target)
-        spawn_target = spawn_target or default_spawners[self.interface]
+
+        if not spawn_target:
+            spawn_target = default_spawners[self.interface]
+            if sys.platform == 'win32' and self.workers > 1:
+                self.workers = 1
+                logger.warn(
+                    "Due to a bug in Windows unblocking socket implementation "
+                    "granian can't support multiple workers on this platform. "
+                    "Number of workers will now fallback to 1."
+                )
 
         serve_method = (
             self._serve_with_reloader if self.reload_on_changes else
