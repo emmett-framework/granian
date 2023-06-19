@@ -26,18 +26,26 @@ impl CallbackWrapper {
 }
 
 #[pyclass]
-pub(crate) struct PyAwaitableResultYielder {
+pub(crate) struct PyIterAwaitable {
     result: Option<PyResult<PyObject>>
 }
 
-impl PyAwaitableResultYielder {
+impl PyIterAwaitable {
+    pub(crate) fn new() -> Self {
+        Self { result: None }
+    }
+
     pub(crate) fn set_result(&mut self, result: PyResult<PyObject>) {
         self.result = Some(result)
     }
 }
 
 #[pymethods]
-impl PyAwaitableResultYielder {
+impl PyIterAwaitable {
+    fn __await__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
     fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
         pyself
     }
@@ -56,14 +64,14 @@ impl PyAwaitableResultYielder {
 }
 
 #[pyclass]
-pub(crate) struct PyAwaitableResultFutureLike {
+pub(crate) struct PyFutureAwaitable {
     py_block: bool,
     event_loop: PyObject,
     result: Option<PyResult<PyObject>>,
     cb: Option<(PyObject, Py<pyo3::types::PyDict>)>
 }
 
-impl PyAwaitableResultFutureLike {
+impl PyFutureAwaitable {
     pub(crate) fn new(event_loop: PyObject) -> Self {
         Self {
             event_loop,
@@ -89,7 +97,11 @@ impl PyAwaitableResultFutureLike {
 }
 
 #[pymethods]
-impl PyAwaitableResultFutureLike {
+impl PyFutureAwaitable {
+    fn __await__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
     #[getter(_asyncio_future_blocking)]
     fn get_block(&self) -> bool {
         self.py_block
@@ -151,44 +163,6 @@ impl PyAwaitableResultFutureLike {
             },
             _ => Ok(IterNextOutput::Yield(pyself))
         }
-    }
-}
-
-#[pyclass]
-pub(crate) struct PyIterAwaitableResult {
-    pub inner: Py<PyAwaitableResultYielder>
-}
-
-impl PyIterAwaitableResult {
-    pub(crate) fn new(py: Python) -> PyResult<Self> {
-        let inner = Py::new(py, PyAwaitableResultYielder { result: None })?;
-        Ok(Self { inner })
-    }
-}
-
-#[pymethods]
-impl PyIterAwaitableResult {
-    fn __await__(&mut self, py: Python) -> PyObject {
-        self.inner.to_object(py)
-    }
-}
-
-#[pyclass]
-pub(crate) struct PyFutureAwaitableResult {
-    pub inner: Py<PyAwaitableResultFutureLike>
-}
-
-impl PyFutureAwaitableResult {
-    pub(crate) fn new(py: Python, event_loop: &PyAny) -> PyResult<Self> {
-        let inner = Py::new(py, PyAwaitableResultFutureLike::new(event_loop.to_object(py)))?;
-        Ok(Self { inner })
-    }
-}
-
-#[pymethods]
-impl PyFutureAwaitableResult {
-    fn __await__(&mut self, py: Python) -> PyObject {
-        self.inner.to_object(py)
     }
 }
 

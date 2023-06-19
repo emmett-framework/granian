@@ -4,11 +4,7 @@ use pyo3::prelude::*;
 use std::{future::Future, io, pin::Pin, sync::{Arc, Mutex}};
 use tokio::{runtime::Builder, task::{JoinHandle, LocalSet}};
 
-use super::callbacks::{
-    PyIterAwaitableResult,
-    PyFutureAwaitableResult,
-    PyAwaitableResultFutureLike
-};
+use super::callbacks::{PyFutureAwaitable, PyIterAwaitable};
 
 
 tokio::task_local! {
@@ -212,18 +208,18 @@ where
     F: Future<Output = PyResult<T>> + Send + 'static,
     T: IntoPy<PyObject>,
 {
-    let aw = PyIterAwaitableResult::new(py)?;
-    let fut_res = aw.inner.clone();
-    let py_fut = aw.into_py(py).into_ref(py);
+    let aw = PyIterAwaitable::new();
+    let py_aw = Py::new(py, aw)?;
+    let py_fut = py_aw.clone();
 
     rt.spawn(async move {
         let result = fut.await;
         Python::with_gil(move |py| {
-            fut_res.as_ref(py).borrow_mut().set_result(result.map(|v| v.into_py(py)));
+            py_aw.as_ref(py).borrow_mut().set_result(result.map(|v| v.into_py(py)));
         });
     });
 
-    Ok(py_fut)
+    Ok(py_fut.into_ref(py))
 }
 
 // NOTE:
@@ -238,21 +234,21 @@ where
     T: IntoPy<PyObject>,
 {
     let task_locals = get_current_locals::<R>(py)?;
-    let aw = PyFutureAwaitableResult::new(py, task_locals.event_loop(py))?;
-    let fut_res = aw.inner.clone();
-    let py_fut = aw.into_py(py).into_ref(py);
+    let aw = PyFutureAwaitable::new(task_locals.event_loop(py).into());
+    let py_aw = Py::new(py, aw)?;
+    let py_fut = py_aw.clone();
 
     rt.spawn(async move {
         let result = fut.await;
         Python::with_gil(move |py| {
-            PyAwaitableResultFutureLike::set_result(
-                fut_res.as_ref(py).borrow_mut(),
+            PyFutureAwaitable::set_result(
+                py_aw.as_ref(py).borrow_mut(),
                 result.map(|v| v.into_py(py))
             );
         });
     });
 
-    Ok(py_fut)
+    Ok(py_fut.into_ref(py))
 }
 
 pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>
