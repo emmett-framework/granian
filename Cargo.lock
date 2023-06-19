@@ -238,7 +238,7 @@ dependencies = [
  "pin-project",
  "pyo3",
  "pyo3-asyncio",
- "pyo3-build-config 0.17.3",
+ "pyo3-build-config",
  "pyo3-log",
  "rustls-pemfile",
  "socket2",
@@ -557,7 +557,7 @@ dependencies = [
  "libc",
  "memoffset",
  "parking_lot",
- "pyo3-build-config 0.18.3",
+ "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
  "unindent",
@@ -578,16 +578,6 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.17.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28fcd1e73f06ec85bf3280c48c67e731d8290ad3d730f8be9dc07946923005c8"
-dependencies = [
- "once_cell",
- "target-lexicon",
-]
-
-[[package]]
-name = "pyo3-build-config"
 version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cb946f5ac61bb61a5014924910d936ebd2b23b705f7a4a3c40b05c720b079a3"
@@ -603,7 +593,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd4d7c5337821916ea2a1d21d1092e8443cf34879e53a0ac653fbb98f44ff65c"
 dependencies = [
  "libc",
- "pyo3-build-config 0.18.3",
+ "pyo3-build-config",
 ]
 
 [[package]]
