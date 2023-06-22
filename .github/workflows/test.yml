@@ -10,7 +10,7 @@ on:
       - master
 
 env:
-  MATURIN_VERSION: 0.14.17
+  MATURIN_VERSION: 1.1.0
 
 jobs:
   linux:
