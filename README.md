@@ -91,6 +91,8 @@ Options:
   --threading-mode [runtime|workers]
                                   Threading mode to use.  [default: workers]
   --loop [auto|asyncio|uvloop]    Event loop implementation  [default: auto]
+  --opt / --no-opt                Enable loop optimizations  [default:
+                                  (disabled)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog.  [default: 1024; x>=128]
   --log-level [critical|error|warning|warn|info|debug]
@@ -109,6 +111,20 @@ Options:
                                   copy it or customize the installation.
   --help                          Show this message and exit.
 ```
+
+### Threading mode
+
+Granian offers two different threading paradigms, due to the fact the inner Rust runtime can be multi-threaded – in opposition to what happens in Python event-loop which can only run as a single thread.
+
+Given you specify N threads with the relevant option, in **workers** threading mode Granian will spawn N single-threaded Rust runtimes, while in **runtime** threading mode Granian will spawn a single multi-threaded runtime with N threads.
+
+Benchmarks suggests **workers** mode to be more efficient with a small amount of processes, while **runtime** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
+
+### Event loop optimizations
+
+With the `--opt` option Granian will use custom task handlers for Python coroutines and awaitables to improve Python code execution. Due to the nature of such handlers some libraries and specific application code relying on `asyncio` internals might not work.
+
+You might test the effect such optimizations cause over your application and decide wether to enable 'em or leave 'em disabled (as per default).
 
 ## Project status
 
