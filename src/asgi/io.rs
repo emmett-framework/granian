@@ -72,7 +72,10 @@ impl ASGIHTTPProtocol {
             let mut tx = tx.lock().await;
             match (&mut *tx).send_data(body.into()).await {
                 Ok(_) => Ok(()),
-                _ => error_transport!()
+                Err(err) => {
+                    log::warn!("ASGI transport tx error: {:?}", err);
+                    error_transport!()
+                }
             }
         })
     }
@@ -143,7 +146,12 @@ impl ASGIHTTPProtocol {
                     },
                     (true, false, true) => {
                         match self.body_tx.take() {
-                            Some(tx) => self.send_body(py, tx, body),
+                            Some(tx) => {
+                                match body.is_empty() {
+                                    false => self.send_body(py, tx, body),
+                                    true => asyncw.call0()
+                                }
+                            },
                             _ => error_flow!()
                         }
                     },
