@@ -1,8 +1,16 @@
 use futures::Stream;
-use hyper::{body::Bytes, Body, Method, Request, Uri};
-use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList};
-use std::{collections::HashMap, net::SocketAddr, task::{Context, Poll}};
+use hyper::{
+    body::Bytes,
+    header::{CONTENT_TYPE, CONTENT_LENGTH, HeaderMap},
+    Body,
+    Method,
+    Request,
+    Uri,
+    Version
+};
+use pyo3::{prelude::*, types::IntoPyDict};
+use pyo3::types::{PyBytes, PyDict, PyList};
+use std::{net::{IpAddr, SocketAddr}, task::{Context, Poll}};
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
@@ -79,17 +87,14 @@ impl WSGIBody {
 
 #[pyclass(module = "granian._granian")]
 pub(crate) struct WSGIScope {
-    #[pyo3(get)]
+    http_version: Version,
     scheme: String,
-    #[pyo3(get)]
     method: String,
     uri: Uri,
-    #[pyo3(get)]
-    server: String,
-    #[pyo3(get)]
+    server_ip: IpAddr,
+    server_port: u16,
     client: String,
-    #[pyo3(get)]
-    headers: HashMap<String, String>,
+    headers: HeaderMap,
     body: Bytes
 }
 
@@ -100,20 +105,13 @@ impl WSGIScope {
         client: SocketAddr,
         request: Request<Body>,
     ) -> Self {
-        let headers = request.headers();
-        let mut pyheaders = HashMap::with_capacity(headers.keys_len());
-        for (key, val) in headers.iter() {
-            pyheaders.insert(
-                format!("HTTP_{}", key.as_str().replace("-", "_").to_uppercase()),
-                val.to_str().unwrap().into(),
-            );
-        }
+        let http_version = request.version();
+        let method = request.method().to_owned();
+        let uri = request.uri().to_owned();
+        let headers = request.headers().to_owned();
 
-        let method = request.method().clone();
-        let uri = request.uri().clone();
-
-        let body = match &method {
-            &Method::HEAD | &Method::GET | &Method::OPTIONS => { Bytes::new() },
+        let body = match method {
+            Method::HEAD | Method::GET | Method::OPTIONS => { Bytes::new() },
             _ => {
                 hyper::body::to_bytes(request)
                     .await
@@ -122,31 +120,101 @@ impl WSGIScope {
         };
 
         Self {
+            http_version,
             scheme: scheme.to_string(),
             method: method.to_string(),
             uri,
-            server: server.to_string(),
+            server_ip: server.ip(),
+            server_port: server.port(),
             client: client.to_string(),
-            headers: pyheaders,
+            headers,
             body
+        }
+    }
+
+    #[inline(always)]
+    fn py_http_version(&self) -> &str {
+        match self.http_version {
+            Version::HTTP_10 => "HTTP/1",
+            Version::HTTP_11 => "HTTP/1.1",
+            Version::HTTP_2 => "HTTP/2",
+            _ => "HTTP/1"
         }
     }
 }
 
 #[pymethods]
 impl WSGIScope {
-    #[getter(path)]
-    fn get_path(&self) -> &str {
-        self.uri.path()
-    }
+    fn to_environ<'p>(&mut self, py: Python<'p>, ret: &'p PyDict) -> PyResult<&'p PyDict> {
+        let (
+            path,
+            query_string,
+            http_version,
+            server,
+            client,
+            scheme,
+            method,
+            content_type,
+            content_len,
+            headers,
+            body
+        ) = py.allow_threads(|| {
+            let (path, query_string) = self.uri.path_and_query()
+                .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
+            let content_type = self.headers.remove(CONTENT_TYPE);
+            let content_len = self.headers.remove(CONTENT_LENGTH);
+            let mut headers = Vec::with_capacity(self.headers.len());
 
-    #[getter(query_string)]
-    fn get_query_string(&self) -> &str {
-        self.uri.query().unwrap_or("")
-    }
+            for (key, val) in self.headers.iter() {
+                headers.push(
+                    (
+                        format!("HTTP_{}", key.as_str().replace("-", "_").to_uppercase()),
+                        val.to_str().unwrap_or_default()
+                    )
+                );
+            }
 
-    fn input(pyself: PyRef<'_, Self>) -> PyResult<Py<WSGIBody>> {
-        Py::new(pyself.py(), WSGIBody::new(pyself.body.to_owned()))
+            (
+                path,
+                query_string,
+                self.py_http_version(),
+                (self.server_ip.to_string(), self.server_port),
+                &self.client[..],
+                &self.scheme[..],
+                &self.method[..],
+                content_type,
+                content_len,
+                headers,
+                WSGIBody::new(self.body.to_owned())
+            )
+        });
+
+        ret.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), http_version)?;
+        ret.set_item(pyo3::intern!(py, "SERVER_NAME"), server.0)?;
+        ret.set_item(pyo3::intern!(py, "SERVER_PORT"), server.1)?;
+        ret.set_item(pyo3::intern!(py, "REMOTE_ADDR"), client)?;
+        ret.set_item(pyo3::intern!(py, "REQUEST_METHOD"), method)?;
+        ret.set_item(pyo3::intern!(py, "PATH_INFO"), path)?;
+        ret.set_item(pyo3::intern!(py, "QUERY_STRING"), query_string)?;
+        ret.set_item(pyo3::intern!(py, "wsgi.url_scheme"), scheme)?;
+        ret.set_item(pyo3::intern!(py, "wsgi.input"), Py::new(py, body)?)?;
+
+        if let Some(content_type) = content_type {
+            ret.set_item(
+                pyo3::intern!(py, "CONTENT_TYPE"),
+                content_type.to_str().unwrap_or_default()
+            )?;
+        }
+        if let Some(content_len) = content_len {
+            ret.set_item(
+                pyo3::intern!(py, "CONTENT_LENGTH"),
+                content_len.to_str().unwrap_or_default()
+            )?;
+        }
+
+        ret.update(headers.into_py_dict(py).as_mapping())?;
+
+        Ok(ret)
     }
 }
 

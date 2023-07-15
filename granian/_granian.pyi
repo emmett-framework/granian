@@ -4,19 +4,7 @@ from ._types import WebsocketMessage
 
 
 class ASGIScope:
-    client_ip: str
-    client_port: int
-    server_ip: str
-    server_port: int
-    http_version: str
-    method: str
-    path: str
-    proto: str
-    query_string: str
-    scheme: str
-
-    @property
-    def headers(self) -> List[Tuple[bytes, bytes]]: ...
+    def as_dict(self, root_path: str) -> Dict[str, Any]: ...
 
 
 class RSGIHeaders:
@@ -76,11 +64,4 @@ class RSGIProtocolClosed(RuntimeError):
 
 
 class WSGIScope:
-    server: str
-    client: str
-    scheme: str
-    method: str
-    path: str
-    query_string: str
-    headers: Dict[str, str]
-    body: bytes
+    def to_environ(self, environ: Dict[str, Any]) -> Dict[str, Any]: ...
