@@ -1,7 +1,7 @@
 use hyper::{Uri, Version, header::HeaderMap};
 use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 use std::net::{IpAddr, SocketAddr};
 
 
@@ -98,7 +98,10 @@ impl ASGIScope {
     fn py_headers<'p>(&self, py: Python<'p>) -> PyResult<&'p PyList> {
         let rv = PyList::empty(py);
         for (key, value) in self.headers.iter() {
-            rv.append((key.as_str().as_bytes(), value.as_bytes()))?;
+            rv.append((
+                PyBytes::new(py, key.as_str().as_bytes()),
+                PyBytes::new(py, value.as_bytes())
+            ))?;
         }
         Ok(rv)
     }
