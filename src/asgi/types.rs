@@ -1,11 +1,16 @@
-use hyper::{Uri, Version, header::{HeaderMap}};
+use hyper::{Uri, Version, header::HeaderMap};
+use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
-use std::net::SocketAddr;
+use pyo3::types::{PyBytes, PyDict, PyList, PyString};
+use std::net::{IpAddr, SocketAddr};
 
 
 const SCHEME_HTTPS: &str = "https";
 const SCHEME_WS: &str = "ws";
 const SCHEME_WSS: &str = "wss";
+
+static ASGI_VERSION: OnceCell<PyObject> = OnceCell::new();
+static ASGI_EXTENSIONS: OnceCell<PyObject> = OnceCell::new();
 
 pub(crate) enum ASGIMessageType {
     HTTPStart,
@@ -19,22 +24,16 @@ pub(crate) enum ASGIMessageType {
 pub(crate) struct ASGIScope {
     http_version: Version,
     scheme: String,
-    #[pyo3(get)]
     method: String,
     uri: Uri,
-    #[pyo3(get)]
-    server_ip: String,
-    #[pyo3(get)]
+    server_ip: IpAddr,
     server_port: u16,
-    #[pyo3(get)]
-    client_ip: String,
-    #[pyo3(get)]
+    client_ip: IpAddr,
     client_port: u16,
     headers: HeaderMap,
     is_websocket: bool
 }
 
-// TODO: server address
 impl ASGIScope {
     pub fn new(
         http_version: Version,
@@ -50,9 +49,9 @@ impl ASGIScope {
             scheme: scheme.to_string(),
             method: method.to_string(),
             uri: uri,
-            server_ip: server.ip().to_string(),
+            server_ip: server.ip(),
             server_port: server.port(),
-            client_ip: client.ip().to_string(),
+            client_ip: client.ip(),
             client_port: client.port(),
             headers: headers.to_owned(),
             is_websocket: false
@@ -62,29 +61,17 @@ impl ASGIScope {
     pub fn set_websocket(&mut self) {
         self.is_websocket = true
     }
-}
 
-#[pymethods]
-impl ASGIScope {
-    #[getter(proto)]
-    fn get_proto(&self) -> &str {
+    #[inline(always)]
+    fn py_proto(&self) -> &str {
         match self.is_websocket {
             false => "http",
             true => "websocket"
         }
     }
 
-    #[getter(headers)]
-    fn get_headers(&self) -> Vec<(&[u8], &[u8])> {
-        let mut ret = Vec::with_capacity(self.headers.len());
-        for (key, value) in self.headers.iter() {
-            ret.push((key.as_str().as_bytes(), value.as_bytes()));
-        }
-        ret
-    }
-
-    #[getter(http_version)]
-    fn get_http_version(&self) -> &str {
+    #[inline(always)]
+    fn py_http_version(&self) -> &str {
         match self.http_version {
             Version::HTTP_10 => "1",
             Version::HTTP_11 => "1.1",
@@ -93,10 +80,10 @@ impl ASGIScope {
         }
     }
 
-    #[getter(scheme)]
-    fn get_scheme(&self) -> &str {
+    #[inline(always)]
+    fn py_scheme(&self) -> &str {
         let scheme = &self.scheme[..];
-        match &self.is_websocket {
+        match self.is_websocket {
             false => scheme,
             true => {
                 match scheme {
@@ -107,13 +94,85 @@ impl ASGIScope {
         }
     }
 
-    #[getter(path)]
-    fn get_path(&self) -> &str {
-        self.uri.path()
+    #[inline(always)]
+    fn py_headers<'p>(&self, py: Python<'p>) -> PyResult<&'p PyList> {
+        let rv = PyList::empty(py);
+        for (key, value) in self.headers.iter() {
+            rv.append((
+                PyBytes::new(py, key.as_str().as_bytes()),
+                PyBytes::new(py, value.as_bytes())
+            ))?;
+        }
+        Ok(rv)
     }
+}
 
-    #[getter(query_string)]
-    fn get_query_string(&self) -> &str {
-        self.uri.query().unwrap_or("")
+#[pymethods]
+impl ASGIScope {
+    fn as_dict<'p>(&self, py: Python<'p>, url_path_prefix: &'p str) -> PyResult<&'p PyAny> {
+        let (
+            path,
+            query_string,
+            proto,
+            http_version,
+            server,
+            client,
+            scheme,
+            method
+        ) = py.allow_threads(|| {
+            let (path, query_string) = self.uri.path_and_query()
+                .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
+            (
+                path,
+                query_string,
+                self.py_proto(),
+                self.py_http_version(),
+                (self.server_ip.to_string(), self.server_port),
+                (self.client_ip.to_string(), self.client_port),
+                self.py_scheme(),
+                &self.method[..],
+            )
+        });
+        let dict: &PyDict = PyDict::new(py);
+        dict.set_item(
+            pyo3::intern!(py, "asgi"),
+            ASGI_VERSION.get_or_try_init(|| {
+                let rv = PyDict::new(py);
+                rv.set_item("version", "3.0")?;
+                rv.set_item("spec_version", "2.3")?;
+                Ok::<PyObject, PyErr>(rv.into())
+            })?.as_ref(py)
+        )?;
+        dict.set_item(
+            pyo3::intern!(py, "extensions"),
+            ASGI_EXTENSIONS.get_or_try_init(|| {
+                let rv = PyDict::new(py);
+                Ok::<PyObject, PyErr>(rv.into())
+            })?.as_ref(py)
+        )?;
+        dict.set_item(pyo3::intern!(py, "type"), proto)?;
+        dict.set_item(pyo3::intern!(py, "http_version"), http_version)?;
+        dict.set_item(pyo3::intern!(py, "server"), server)?;
+        dict.set_item(pyo3::intern!(py, "client"), client)?;
+        dict.set_item(pyo3::intern!(py, "scheme"), scheme)?;
+        dict.set_item(pyo3::intern!(py, "method"), method)?;
+        dict.set_item(pyo3::intern!(py, "root_path"), url_path_prefix)?;
+        dict.set_item(pyo3::intern!(py, "path"), path)?;
+        dict.set_item(
+            pyo3::intern!(py, "raw_path"),
+            PyString::new(py, path)
+                .call_method1(
+                    pyo3::intern!(py, "encode"), (pyo3::intern!(py, "ascii"),)
+                )?
+        )?;
+        dict.set_item(
+            pyo3::intern!(py, "query_string"),
+            PyString::new(py, query_string)
+                .call_method1(
+                    pyo3::intern!(py, "encode"), (pyo3::intern!(py, "latin-1"),)
+                )?
+        )?;
+        dict.set_item(pyo3::intern!(py, "headers"), self.py_headers(py)?)?;
+        Ok(dict)
     }
 }

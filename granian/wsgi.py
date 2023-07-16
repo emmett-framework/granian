@@ -29,7 +29,6 @@ def _callback_wrapper(callback, scope_opts):
     basic_env.update({
         'GATEWAY_INTERFACE': 'CGI/1.1',
         'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
-        'SERVER_PROTOCOL': 'HTTP/1.1',
         'SERVER_SOFTWARE': 'Granian',
         'wsgi.errors': sys.stderr,
         'wsgi.input_terminated': True,
@@ -42,26 +41,8 @@ def _callback_wrapper(callback, scope_opts):
 
     @wraps(callback)
     def wrapper(scope: Scope) -> Tuple[int, List[Tuple[str, str]], bytes]:
-        addr_server = scope.server.split(":")
-        environ = {
-            **basic_env,
-            **scope.headers,
-            'SERVER_NAME': addr_server[0],
-            'SERVER_PORT': str(addr_server[1]),
-            'REQUEST_METHOD': scope.method,
-            'PATH_INFO': scope.path,
-            'QUERY_STRING': scope.query_string,
-            'REMOTE_ADDR': scope.client,
-            'wsgi.url_scheme': scope.scheme,
-            'wsgi.input': scope.input()
-        }
-        if 'HTTP_CONTENT_TYPE' in environ:
-            environ['CONTENT_TYPE'] = environ.pop('HTTP_CONTENT_TYPE')
-        if 'HTTP_CONTENT_LENGTH' in environ:
-            environ['CONTENT_LENGTH'] = environ.pop('HTTP_CONTENT_LENGTH')
-
         resp = Response()
-        rv = callback(environ, resp)
+        rv = callback(scope.to_environ(dict(basic_env)), resp)
 
         if isinstance(rv, list):
             resp_type = 0

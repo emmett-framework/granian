@@ -117,24 +117,7 @@ def _callback_wrapper(callback, scope_opts):
     @wraps(callback)
     def wrapper(scope: Scope, proto):
         return callback(
-            {
-                "type": scope.proto,
-                "asgi": {
-                    "version": "3.0",
-                    "spec_version": "2.3"
-                },
-                "http_version": scope.http_version,
-                "server": (scope.server_ip, scope.server_port),
-                "client": (scope.client_ip, scope.client_port),
-                "scheme": scope.scheme,
-                "method": scope.method,
-                "root_path": root_url_path,
-                "path": scope.path,
-                "raw_path": scope.path.encode("ascii"),
-                "query_string": scope.query_string.encode('latin-1'),
-                "headers": scope.headers,
-                "extensions": {}
-            },
+            scope.as_dict(root_url_path),
             proto.receive,
             _send_wrapper(proto.send)
         )

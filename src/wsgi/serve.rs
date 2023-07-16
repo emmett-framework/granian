@@ -1,13 +1,11 @@
 use pyo3::prelude::*;
 
-use crate::{
-    workers::{
-        WorkerConfig,
-        serve_rth,
-        serve_wth,
-        serve_rth_ssl,
-        serve_wth_ssl
-    }
+use crate::workers::{
+    WorkerConfig,
+    serve_rth,
+    serve_wth,
+    serve_rth_ssl,
+    serve_wth_ssl
 };
 use super::http::{handle_rtb, handle_rtt};
 
