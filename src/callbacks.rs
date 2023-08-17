@@ -84,14 +84,13 @@ impl PyFutureAwaitable {
     pub(crate) fn set_result(mut pyself: PyRefMut<'_, Self>, result: PyResult<PyObject>) {
         pyself.result = Some(result);
         if let Some((cb, ctx)) = pyself.cb.take() {
-            Python::with_gil(|py| {
-                let _ = pyself.event_loop.call_method(
-                    py,
-                    "call_soon_threadsafe",
-                    (cb, &pyself),
-                    Some(ctx.as_ref(py))
-                );
-            })
+            let py = pyself.py();
+            let _ = pyself.event_loop.call_method(
+                py,
+                "call_soon_threadsafe",
+                (cb, &pyself),
+                Some(ctx.as_ref(py))
+            );
         }
     }
 }
