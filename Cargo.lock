@@ -280,7 +280,7 @@ dependencies = [
  "pyo3-build-config",
  "pyo3-log",
  "rustls-pemfile",
- "socket2 0.4.9",
+ "socket2 0.5.3",
  "tls-listener",
  "tokio",
  "tokio-rustls",

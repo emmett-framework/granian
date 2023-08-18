@@ -42,7 +42,7 @@ pyo3 = { version = "=0.19", features = ["extension-module"] }
 pyo3-asyncio = { version = "=0.19", features = ["tokio-runtime"] }
 pyo3-log = "=0.8"
 rustls-pemfile = "1.0"
-socket2 = { version = "0.4", features = ["all"] }
+socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "0.5", features = ["rustls", "hyper-h1", "hyper-h2"] }
 tokio = { version = "1.24", features = ["full"] }
 tokio-rustls = "0.23"
