@@ -37,7 +37,7 @@ jobs:
           - os: windows
             target: aarch64
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: pyo3/maturin-action@v1
         with:
           maturin-version: v${{ env.MATURIN_VERSION }}
@@ -57,7 +57,7 @@ jobs:
     env:
       PY_ALL: 3.8 3.9 3.10 3.11 C:\hostedtoolcache\windows\PyPy\3.9.17\x86\python3.exe
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: pypy3.9
