@@ -43,9 +43,9 @@ pyo3-asyncio = { version = "=0.19", features = ["tokio-runtime"] }
 pyo3-log = "=0.8"
 rustls-pemfile = "1.0"
 socket2 = { version = "0.5", features = ["all"] }
-tls-listener = { version = "0.5", features = ["rustls", "hyper-h1", "hyper-h2"] }
+tls-listener = { version = "0.7", features = ["rustls", "hyper-h1", "hyper-h2"] }
 tokio = { version = "1.24", features = ["full"] }
-tokio-rustls = "0.23"
+tokio-rustls = "0.24"
 tokio-tungstenite = "0.17"
 tokio-util = { version = "0.7", features = ["codec"] }
 tungstenite = "0.17"
