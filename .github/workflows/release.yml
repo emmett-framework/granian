@@ -27,7 +27,7 @@ jobs:
         manylinux: off
         container: off
     - name: Upload sdist
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: wheels
         path: target/wheels/*.tar.gz
@@ -72,7 +72,7 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: target/wheels
@@ -94,7 +94,7 @@ jobs:
           target: x86_64
           manylinux: auto
       - name: Upload wheels
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: target/wheels
