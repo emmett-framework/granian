@@ -101,7 +101,7 @@ impl RSGIScope {
         Self {
             proto: proto.to_string(),
             http_version: http_version,
-            rsgi_version: "1.1".to_string(),
+            rsgi_version: "1.2".to_string(),
             scheme: scheme.to_string(),
             method: method.to_string(),
             uri: uri,
