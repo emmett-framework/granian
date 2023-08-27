@@ -31,7 +31,7 @@ const EMPTY_STRING: String = String::new();
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Option<oneshot::Sender<Response<Body>>>,
-    request: Arc<Mutex<Body>>,
+    request_body: Arc<Mutex<Body>>,
     response_started: bool,
     response_chunked: bool,
     response_status: Option<i16>,
@@ -48,7 +48,7 @@ impl ASGIHTTPProtocol {
         Self {
             rt,
             tx: Some(tx),
-            request: Arc::new(Mutex::new(request.into_body())),
+            request_body: Arc::new(Mutex::new(request.into_body())),
             response_started: false,
             response_chunked: false,
             response_status: None,
@@ -89,10 +89,10 @@ impl ASGIHTTPProtocol {
 #[pymethods]
 impl ASGIHTTPProtocol {
     fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let transport = self.request.clone();
+        let body_ref = self.request_body.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
-            let mut req = transport.lock().await;
-            let body = &mut *req;
+            let mut bodym = body_ref.lock().await;
+            let body = &mut *bodym;
             let mut more_body = false;
             let chunk = body.data().await.map_or_else(|| Bytes::new(), |buf| {
                 buf.map_or_else(|_| Bytes::new(), |buf| {
