@@ -39,10 +39,15 @@ async def info(scope, receive, send):
 
 async def echo(scope, receive, send):
     await send(PLAINTEXT_RESPONSE)
-    msg = await receive()
+    more_body = True
+    body = b""
+    while more_body:
+        msg = await receive()
+        more_body = msg['more_body']
+        body += msg['body']
     await send({
         'type': 'http.response.body',
-        'body': msg['body'],
+        'body': body,
         'more_body': False
     })
 

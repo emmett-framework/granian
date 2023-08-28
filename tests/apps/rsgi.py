@@ -34,6 +34,15 @@ async def echo(_, protocol: HTTPProtocol):
     )
 
 
+async def echo_stream(_, protocol: HTTPProtocol):
+    trx = protocol.response_stream(
+        200,
+        [('content-type', 'text/plain; charset=utf-8')]
+    )
+    async for msg in protocol:
+        await trx.send_bytes(msg)
+
+
 async def stream(_, protocol: HTTPProtocol):
     trx = protocol.response_stream(
         200,
@@ -103,6 +112,7 @@ def app(scope, protocol):
     return {
         "/info": info,
         "/echo": echo,
+        "/echos": echo_stream,
         "/stream": stream,
         "/ws_reject": ws_reject,
         "/ws_info": ws_info,

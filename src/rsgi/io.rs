@@ -1,5 +1,6 @@
+use bytes::Bytes;
 use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
-use hyper::{body::{Body, Sender as BodySender}, Request};
+use hyper::{body::{Body, Sender as BodySender, HttpBody}, Request};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::sync::Arc;
@@ -65,7 +66,7 @@ impl RSGIHTTPStreamTransport {
 pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Option<oneshot::Sender<super::types::PyResponse>>,
-    request: Arc<Mutex<Request<Body>>>
+    body: Arc<Mutex<Body>>
 }
 
 impl RSGIHTTPProtocol {
@@ -77,7 +78,7 @@ impl RSGIHTTPProtocol {
         Self {
             rt,
             tx: Some(tx),
-            request: Arc::new(Mutex::new(request))
+            body: Arc::new(Mutex::new(request.into_body()))
         }
     }
 
@@ -89,14 +90,36 @@ impl RSGIHTTPProtocol {
 #[pymethods]
 impl RSGIHTTPProtocol {
     fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let req_ref = self.request.clone();
+        let body_ref = self.body.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
-            let mut req = req_ref.lock().await;
-            let body = hyper::body::to_bytes(&mut *req).await.unwrap();
+            let mut bodym = body_ref.lock().await;
+            let body = hyper::body::to_bytes(&mut *bodym).await.unwrap();
             Ok(Python::with_gil(|py| {
                 PyBytes::new(py, &body[..]).as_ref().to_object(py)
             }))
         })
+    }
+
+    fn __aiter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __anext__<'p>(&mut self, py: Python<'p>) -> PyResult<Option<&'p PyAny>> {
+        let body_ref = self.body.clone();
+        let fut = future_into_py_iter(self.rt.clone(), py, async move {
+            let mut bodym = body_ref.lock().await;
+            let body = &mut *bodym;
+            if body.is_end_stream() {
+                return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"))
+            }
+            let chunk = body.data().await.map_or_else(|| Bytes::new(), |buf| {
+                buf.unwrap_or_else(|_| Bytes::new())
+            });
+            Ok(Python::with_gil(|py| {
+                PyBytes::new(py, &chunk[..]).to_object(py)
+            }))
+        })?;
+        Ok(Some(fut))
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]

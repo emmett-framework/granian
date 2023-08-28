@@ -1,6 +1,6 @@
 # RSGI Specification
 
-**Version:** 1.1
+**Version:** 1.2
 
 ## Abstract
 
@@ -95,18 +95,21 @@ And here are descriptions for the upper attributes:
 
 #### HTTP protocol interface
 
-HTTP protocol object implements a single awaitable method on `__call__` to receive the request body in `bytes` format, and five different methods to send data, in particular:
+HTTP protocol object implements two awaitable methods to receive the request body, and five different methods to send data, in particular:
 
+- `__call__` to receive the entire body in `bytes` format
+- `__aiter__` to receive the body in `bytes` chunks
 - `response_empty` to send back an empty response
 - `response_str` to send back a response with a `str` body
 - `response_bytes` to send back a response with `bytes` body
 - `response_file` to send back a file response (from its path)
 - `response_stream` to start a stream response
 
-All the upper-mentioned methods accepts an integer `status` parameter, a list of string tuples for the `headers` parameter, and the relevant typed `body` parameter (if applicable):
+All the upper-mentioned response methods accepts an integer `status` parameter, a list of string tuples for the `headers` parameter, and the relevant typed `body` parameter (if applicable):
 
 ```
 coroutine __call__() -> body
+asynciterator __aiter__() -> body chunks
 function response_empty(status, headers)
 function response_str(status, headers, body)
 function response_bytes(status, headers, body)

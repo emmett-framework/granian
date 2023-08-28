@@ -1,4 +1,4 @@
-use once_cell::{unsync::OnceCell as UnsyncOnceCell};
+use once_cell::unsync::OnceCell as UnsyncOnceCell;
 use pyo3_asyncio::TaskLocals;
 use pyo3::prelude::*;
 use std::{future::Future, io, pin::Pin, sync::{Arc, Mutex}};

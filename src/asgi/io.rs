@@ -1,8 +1,9 @@
+use bytes::Bytes;
 use futures::{sink::SinkExt, stream::{SplitSink, SplitStream, StreamExt}};
 use hyper::{
     Request,
     Response,
-    body::{Body, Sender as BodySender},
+    body::{Body, HttpBody, Sender as BodySender},
     header::{HeaderName, HeaderValue, HeaderMap, SERVER as HK_SERVER}
 };
 use pyo3::prelude::*;
@@ -30,7 +31,7 @@ const EMPTY_STRING: String = String::new();
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Option<oneshot::Sender<Response<Body>>>,
-    request: Arc<Mutex<Request<Body>>>,
+    request_body: Arc<Mutex<Body>>,
     response_started: bool,
     response_chunked: bool,
     response_status: Option<i16>,
@@ -47,7 +48,7 @@ impl ASGIHTTPProtocol {
         Self {
             rt,
             tx: Some(tx),
-            request: Arc::new(Mutex::new(request)),
+            request_body: Arc::new(Mutex::new(request.into_body())),
             response_started: false,
             response_chunked: false,
             response_status: None,
@@ -88,18 +89,25 @@ impl ASGIHTTPProtocol {
 #[pymethods]
 impl ASGIHTTPProtocol {
     fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let transport = self.request.clone();
+        let body_ref = self.request_body.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
-            let mut req = transport.lock().await;
-            let body = hyper::body::to_bytes(&mut *req).await.unwrap();
+            let mut bodym = body_ref.lock().await;
+            let body = &mut *bodym;
+            let mut more_body = false;
+            let chunk = body.data().await.map_or_else(|| Bytes::new(), |buf| {
+                buf.map_or_else(|_| Bytes::new(), |buf| {
+                    more_body = !body.is_end_stream();
+                    buf
+                })
+            });
             Python::with_gil(|py| {
                 let dict = PyDict::new(py);
                 dict.set_item(
                     pyo3::intern!(py, "type"),
                     pyo3::intern!(py, "http.request")
                 )?;
-                dict.set_item(pyo3::intern!(py, "body"), PyBytes::new(py, &body[..]))?;
-                dict.set_item(pyo3::intern!(py, "more_body"), false)?;
+                dict.set_item(pyo3::intern!(py, "body"), PyBytes::new(py, &chunk[..]))?;
+                dict.set_item(pyo3::intern!(py, "more_body"), more_body)?;
                 Ok(dict.to_object(py))
             })
         })

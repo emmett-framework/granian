@@ -20,7 +20,7 @@ async def test_scope(rsgi_server, threading_mode):
     data = res.json()
     assert data['proto'] == "http"
     assert data['http_version'] == '1.1'
-    assert data['rsgi_version'] == '1.1'
+    assert data['rsgi_version'] == '1.2'
     assert data['scheme'] == 'http'
     assert data['method'] == "GET"
     assert data['path'] == '/info'
@@ -52,7 +52,24 @@ async def test_body(rsgi_server, threading_mode):
         "workers"
     ]
 )
-async def test_body_stream(rsgi_server, threading_mode):
+async def test_body_stream_req(rsgi_server, threading_mode):
+    data = "".join([f"{idx}test".zfill(8) for idx in range(0, 5000)])
+    async with rsgi_server(threading_mode) as port:
+        res = httpx.post(f"http://localhost:{port}/echos", data=data)
+
+    assert res.status_code == 200
+    assert res.text == data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "threading_mode",
+    [
+        "runtime",
+        "workers"
+    ]
+)
+async def test_body_stream_res(rsgi_server, threading_mode):
     async with rsgi_server(threading_mode) as port:
         res = httpx.get(f"http://localhost:{port}/stream")
 
