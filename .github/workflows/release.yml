@@ -5,8 +5,8 @@ on:
     types: [published]
 
 env:
-  MATURIN_VERSION: 1.1.0
-  PY_ALL: 3.8 3.9 3.10 3.11 pypy3.8 pypy3.9
+  MATURIN_VERSION: 1.2.3
+  PY_ALL: 3.8 3.9 3.10 3.11 pypy3.8 pypy3.9 pypy3.10
 
 jobs:
   sdist:
@@ -45,7 +45,7 @@ jobs:
           - os: ubuntu
             platform: linux
           - os: macos
-            interpreter: 3.8 3.9 3.10 3.11 pypy3.9
+            interpreter: 3.8 3.9 3.10 3.11 pypy3.9 pypy3.10
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -80,12 +80,9 @@ jobs:
   wheel-win:
     runs-on: windows-latest
     env:
-      PY_ALL: 3.8 3.9 3.10 3.11 C:\hostedtoolcache\windows\PyPy\3.9.17\x86\python3.exe
+      PY_ALL: 3.8 3.9 3.10 3.11 C:\hostedtoolcache\windows\PyPy\3.9.17\x86\python3.exe C:\hostedtoolcache\windows\PyPy\3.10.12\x86\python3.exe
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: pypy3.9
       - uses: pyo3/maturin-action@v1
         with:
           maturin-version: v${{ env.MATURIN_VERSION }}
