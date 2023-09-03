@@ -38,7 +38,7 @@ async def test_scope(rsgi_server, threading_mode):
 )
 async def test_body(rsgi_server, threading_mode):
     async with rsgi_server(threading_mode) as port:
-        res = httpx.post(f"http://localhost:{port}/echo", data="test")
+        res = httpx.post(f"http://localhost:{port}/echo", content="test")
 
     assert res.status_code == 200
     assert res.text == "test"
@@ -55,7 +55,7 @@ async def test_body(rsgi_server, threading_mode):
 async def test_body_stream_req(rsgi_server, threading_mode):
     data = "".join([f"{idx}test".zfill(8) for idx in range(0, 5000)])
     async with rsgi_server(threading_mode) as port:
-        res = httpx.post(f"http://localhost:{port}/echos", data=data)
+        res = httpx.post(f"http://localhost:{port}/echos", content=data)
 
     assert res.status_code == 200
     assert res.text == data

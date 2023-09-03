@@ -13,7 +13,7 @@ import pytest
 async def test_scope(wsgi_server, threading_mode):
     payload = "body_payload"
     async with wsgi_server(threading_mode) as port:
-        res = httpx.post(f"http://localhost:{port}/info?test=true", data=payload)
+        res = httpx.post(f"http://localhost:{port}/info?test=true", content=payload)
 
     assert res.status_code == 200
     assert res.headers["content-type"] == "application/json"
@@ -37,7 +37,7 @@ async def test_scope(wsgi_server, threading_mode):
 )
 async def test_body(wsgi_server, threading_mode):
     async with wsgi_server(threading_mode) as port:
-        res = httpx.post(f"http://localhost:{port}/echo", data="test")
+        res = httpx.post(f"http://localhost:{port}/echo", content="test")
 
     assert res.status_code == 200
     assert res.text == "test"
