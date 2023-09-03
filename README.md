@@ -211,6 +211,30 @@ Granian is currently under active development.
 
 Granian is compatible with Python 3.8 and above versions.
 
+## Development
+
+You need installations of Rust, [maturin](https://www.maturin.rs/) and a recent
+Python 3 version.
+
+It's recommended that you install maturin with [patchelf](https://pypi.org/project/patchelf/) support. If you're using [pipx](https://pipx.pypa.io/stable/) you can run `pipx inject maturin patchelf` in case you already installed maturin earlier.
+
+    # Set up and activate a Python virtualenv
+    python3 -m venv .venv
+    source .venv/bin/activate
+
+    # Install dependencies
+    make build-dev
+
+    # Rebuild the Rust library if you change any Rust code
+    make build-dev
+
+    # Run tests
+    make test
+
+    # You may optionally speed up the test suite by running tests in parallel
+    pip install pytest-xdist
+    pytest -v -n 16
+
 ## License
 
 Granian is released under the BSD License.
