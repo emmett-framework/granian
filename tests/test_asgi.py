@@ -41,7 +41,7 @@ async def test_scope(asgi_server, threading_mode):
 )
 async def test_body(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
-        res = httpx.post(f"http://localhost:{port}/echo", data="test")
+        res = httpx.post(f"http://localhost:{port}/echo", content="test")
 
     assert res.status_code == 200
     assert res.text == "test"
@@ -58,7 +58,7 @@ async def test_body(asgi_server, threading_mode):
 async def test_body_large(asgi_server, threading_mode):
     data = "".join([f"{idx}test".zfill(8) for idx in range(0, 5000)])
     async with asgi_server(threading_mode) as port:
-        res = httpx.post(f"http://localhost:{port}/echo", data=data)
+        res = httpx.post(f"http://localhost:{port}/echo", content=data)
 
     assert res.status_code == 200
     assert res.text == data
