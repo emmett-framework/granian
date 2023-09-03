@@ -60,3 +60,6 @@ build-backend = "maturin"
 [tool.maturin]
 module-name = "granian._granian"
 bindings = "pyo3"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
