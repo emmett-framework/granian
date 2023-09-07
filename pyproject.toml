@@ -39,9 +39,11 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "black~=23.7.0",
     "httpx~=0.23.0",
     "pytest~=7.1.2",
     "pytest-asyncio~=0.18.3",
+    "ruff~=0.0.287",
     "websockets~=10.3"
 ]
 
@@ -61,5 +63,20 @@ build-backend = "maturin"
 module-name = "granian._granian"
 bindings = "pyo3"
 
+[tool.ruff]
+line-length = 120
+extend-select = ['Q', 'RUF100', 'C90', 'I']
+extend-ignore = ['E501']
+flake8-quotes = { inline-quotes = 'single', multiline-quotes = 'double' }
+mccabe = { max-complexity = 13 }
+isort = { combine-as-imports = true, lines-after-imports = 2, known-first-party = ['granian', 'tests'] }
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.black]
+color = true
+line-length = 120
+target-version = ['py38', 'py39', 'py310', 'py311']
+skip-string-normalization = true
+skip-magic-trailing-comma = true
