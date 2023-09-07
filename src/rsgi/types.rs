@@ -1,6 +1,6 @@
 use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Body, Uri, Version
+    Body, Uri, Version,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyString;
@@ -10,11 +10,10 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::http::HV_SERVER;
 
-
-#[pyclass(module="granian._granian")]
+#[pyclass(module = "granian._granian")]
 #[derive(Clone)]
 pub(crate) struct RSGIHeaders {
-    inner: HeaderMap
+    inner: HeaderMap,
 }
 
 impl RSGIHeaders {
@@ -29,7 +28,7 @@ impl RSGIHeaders {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
         for key in self.inner.keys() {
             ret.push(key.as_str());
-        };
+        }
         ret
     }
 
@@ -37,7 +36,7 @@ impl RSGIHeaders {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
         for val in self.inner.values() {
             ret.push(val.to_str().unwrap());
-        };
+        }
         Ok(ret)
     }
 
@@ -45,7 +44,7 @@ impl RSGIHeaders {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
         for (key, val) in self.inner.iter() {
             ret.push((key.as_str(), val.to_str().unwrap()));
-        };
+        }
         Ok(ret)
     }
 
@@ -56,18 +55,16 @@ impl RSGIHeaders {
     #[pyo3(signature = (key, default=None))]
     fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
         match self.inner.get(key) {
-            Some(val) => {
-                match val.to_str() {
-                    Ok(string) => Some(PyString::new(py, string).into()),
-                    _ => default
-                }
+            Some(val) => match val.to_str() {
+                Ok(string) => Some(PyString::new(py, string).into()),
+                _ => default,
             },
-            _ => default
+            _ => default,
         }
     }
 }
 
-#[pyclass(module="granian._granian")]
+#[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIScope {
     #[pyo3(get)]
     proto: String,
@@ -84,7 +81,7 @@ pub(crate) struct RSGIScope {
     #[pyo3(get)]
     client: String,
     #[pyo3(get)]
-    headers: RSGIHeaders
+    headers: RSGIHeaders,
 }
 
 impl RSGIScope {
@@ -96,23 +93,23 @@ impl RSGIScope {
         method: &str,
         server: SocketAddr,
         client: SocketAddr,
-        headers: &HeaderMap
+        headers: &HeaderMap,
     ) -> Self {
         Self {
             proto: proto.to_string(),
-            http_version: http_version,
+            http_version,
             rsgi_version: "1.2".to_string(),
             scheme: scheme.to_string(),
             method: method.to_string(),
-            uri: uri,
+            uri,
             server: server.to_string(),
             client: client.to_string(),
-            headers: RSGIHeaders::new(headers)
+            headers: RSGIHeaders::new(headers),
         }
     }
 
     pub fn set_proto(&mut self, value: &str) {
-        self.proto = value.to_string()
+        self.proto = value.to_string();
     }
 }
 
@@ -125,7 +122,7 @@ impl RSGIScope {
             Version::HTTP_11 => "1.1",
             Version::HTTP_2 => "2",
             Version::HTTP_3 => "3",
-            _ => "1"
+            _ => "1",
         }
     }
 
@@ -142,38 +139,36 @@ impl RSGIScope {
 
 pub(crate) enum PyResponse {
     Body(PyResponseBody),
-    File(PyResponseFile)
+    File(PyResponseFile),
 }
 
 pub(crate) struct PyResponseBody {
     status: u16,
     headers: Vec<(String, String)>,
-    body: Body
+    body: Body,
 }
 
 pub(crate) struct PyResponseFile {
     status: u16,
     headers: Vec<(String, String)>,
-    file_path: String
+    file_path: String,
 }
 
 macro_rules! response_head_from_py {
-    ($status:expr, $headers:expr, $res:expr) => {
-        {
-            let mut rh = hyper::http::HeaderMap::new();
+    ($status:expr, $headers:expr, $res:expr) => {{
+        let mut rh = hyper::http::HeaderMap::new();
 
-            rh.insert(HK_SERVER, HV_SERVER);
-            for (key, value) in $headers {
-                rh.append(
-                    HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                    HeaderValue::from_str(&value).unwrap()
-                );
-            }
-
-            *$res.status_mut() = $status.try_into().unwrap();
-            *$res.headers_mut() = rh;
+        rh.insert(HK_SERVER, HV_SERVER);
+        for (key, value) in $headers {
+            rh.append(
+                HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                HeaderValue::from_str(&value).unwrap(),
+            );
         }
-    }
+
+        *$res.status_mut() = $status.try_into().unwrap();
+        *$res.headers_mut() = rh;
+    }};
 }
 
 impl PyResponseBody {
@@ -182,18 +177,30 @@ impl PyResponseBody {
     }
 
     pub fn empty(status: u16, headers: Vec<(String, String)>) -> Self {
-        Self { status, headers, body: Body::empty() }
+        Self {
+            status,
+            headers,
+            body: Body::empty(),
+        }
     }
 
     pub fn from_bytes(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
-        Self { status, headers, body: Body::from(body) }
+        Self {
+            status,
+            headers,
+            body: Body::from(body),
+        }
     }
 
     pub fn from_string(status: u16, headers: Vec<(String, String)>, body: String) -> Self {
-        Self { status, headers, body: Body::from(body) }
+        Self {
+            status,
+            headers,
+            body: Body::from(body),
+        }
     }
 
-    pub fn to_response(self) -> hyper::Response::<Body> {
+    pub fn to_response(self) -> hyper::Response<Body> {
         let mut res = hyper::Response::<Body>::new(self.body);
         response_head_from_py!(self.status, &self.headers, res);
         res
@@ -202,10 +209,14 @@ impl PyResponseBody {
 
 impl PyResponseFile {
     pub fn new(status: u16, headers: Vec<(String, String)>, file_path: String) -> Self {
-        Self { status, headers, file_path }
+        Self {
+            status,
+            headers,
+            file_path,
+        }
     }
 
-    pub async fn to_response(&self) -> hyper::Response::<Body> {
+    pub async fn to_response(&self) -> hyper::Response<Body> {
         let file = File::open(&self.file_path).await.unwrap();
         let stream = FramedRead::new(file, BytesCodec::new());
         let mut res = hyper::Response::<Body>::new(Body::wrap_stream(stream));

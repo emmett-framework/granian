@@ -1,29 +1,14 @@
 use pyo3::prelude::*;
 
-use crate::{
-    workers::{
-        WorkerConfig,
-        serve_rth,
-        serve_wth,
-        serve_rth_ssl,
-        serve_wth_ssl
-    }
-};
 use super::http::{
-    handle_rtb,
-    handle_rtb_pyw,
-    handle_rtt,
-    handle_rtt_pyw,
-    handle_rtb_ws,
-    handle_rtb_ws_pyw,
-    handle_rtt_ws,
-    handle_rtt_ws_pyw
+    handle_rtb, handle_rtb_pyw, handle_rtb_ws, handle_rtb_ws_pyw, handle_rtt, handle_rtt_pyw, handle_rtt_ws,
+    handle_rtt_ws_pyw,
 };
+use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig};
 
-
-#[pyclass(module="granian._granian")]
+#[pyclass(module = "granian._granian")]
 pub struct ASGIWorker {
-    config: WorkerConfig
+    config: WorkerConfig,
 }
 
 impl ASGIWorker {
@@ -74,7 +59,7 @@ impl ASGIWorker {
         opt_enabled: bool,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
-        ssl_key: Option<&str>
+        ssl_key: Option<&str>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -88,22 +73,16 @@ impl ASGIWorker {
                 opt_enabled,
                 ssl_enabled,
                 ssl_cert,
-                ssl_key
-            )
+                ssl_key,
+            ),
         })
     }
 
-    fn serve_rth(
-        &self,
-        callback: PyObject,
-        event_loop: &PyAny,
-        context: &PyAny,
-        signal_rx: PyObject
-    ) {
+    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal_rx: PyObject) {
         match (
             self.config.websockets_enabled,
             self.config.ssl_enabled,
-            self.config.opt_enabled
+            self.config.opt_enabled,
         ) {
             (false, false, true) => self._serve_rth(callback, event_loop, context, signal_rx),
             (false, false, false) => self._serve_rth_pyw(callback, event_loop, context, signal_rx),
@@ -112,21 +91,15 @@ impl ASGIWorker {
             (false, true, true) => self._serve_rth_ssl(callback, event_loop, context, signal_rx),
             (false, true, false) => self._serve_rth_ssl_pyw(callback, event_loop, context, signal_rx),
             (true, true, true) => self._serve_rth_ssl_ws(callback, event_loop, context, signal_rx),
-            (true, true, false) => self._serve_rth_ssl_ws_pyw(callback, event_loop, context, signal_rx)
+            (true, true, false) => self._serve_rth_ssl_ws_pyw(callback, event_loop, context, signal_rx),
         }
     }
 
-    fn serve_wth(
-        &self,
-        callback: PyObject,
-        event_loop: &PyAny,
-        context: &PyAny,
-        signal_rx: PyObject
-    ) {
+    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal_rx: PyObject) {
         match (
             self.config.websockets_enabled,
             self.config.ssl_enabled,
-            self.config.opt_enabled
+            self.config.opt_enabled,
         ) {
             (false, false, true) => self._serve_wth(callback, event_loop, context, signal_rx),
             (false, false, false) => self._serve_wth_pyw(callback, event_loop, context, signal_rx),
@@ -135,7 +108,7 @@ impl ASGIWorker {
             (false, true, true) => self._serve_wth_ssl(callback, event_loop, context, signal_rx),
             (false, true, false) => self._serve_wth_ssl_pyw(callback, event_loop, context, signal_rx),
             (true, true, true) => self._serve_wth_ssl_ws(callback, event_loop, context, signal_rx),
-            (true, true, false) => self._serve_wth_ssl_ws_pyw(callback, event_loop, context, signal_rx)
+            (true, true, false) => self._serve_wth_ssl_ws_pyw(callback, event_loop, context, signal_rx),
         }
     }
 }

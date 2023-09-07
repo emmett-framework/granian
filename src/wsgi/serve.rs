@@ -1,17 +1,11 @@
 use pyo3::prelude::*;
 
-use crate::workers::{
-    WorkerConfig,
-    serve_rth,
-    serve_wth,
-    serve_rth_ssl,
-    serve_wth_ssl
-};
 use super::http::{handle_rtb, handle_rtt};
+use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig};
 
-#[pyclass(module="granian._granian")]
+#[pyclass(module = "granian._granian")]
 pub struct WSGIWorker {
-    config: WorkerConfig
+    config: WorkerConfig,
 }
 
 impl WSGIWorker {
@@ -46,7 +40,7 @@ impl WSGIWorker {
         http1_buffer_max: usize,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
-        ssl_key: Option<&str>
+        ssl_key: Option<&str>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -60,34 +54,22 @@ impl WSGIWorker {
                 true,
                 ssl_enabled,
                 ssl_cert,
-                ssl_key
-            )
+                ssl_key,
+            ),
         })
     }
 
-    fn serve_rth(
-        &self,
-        callback: PyObject,
-        event_loop: &PyAny,
-        context: &PyAny,
-        signal_rx: PyObject
-    ) {
+    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal_rx: PyObject) {
         match self.config.ssl_enabled {
             false => self._serve_rth(callback, event_loop, context, signal_rx),
-            true => self._serve_rth_ssl(callback, event_loop, context, signal_rx)
+            true => self._serve_rth_ssl(callback, event_loop, context, signal_rx),
         }
     }
 
-    fn serve_wth(
-        &self,
-        callback: PyObject,
-        event_loop: &PyAny,
-        context: &PyAny,
-        signal_rx: PyObject
-    ) {
+    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal_rx: PyObject) {
         match self.config.ssl_enabled {
             false => self._serve_wth(callback, event_loop, context, signal_rx),
-            true => self._serve_wth_ssl(callback, event_loop, context, signal_rx)
+            true => self._serve_wth_ssl(callback, event_loop, context, signal_rx),
         }
     }
 }
