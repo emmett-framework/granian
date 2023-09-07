@@ -2,12 +2,12 @@ from enum import Enum
 from typing import Union
 
 from ._granian import (
-    RSGIHTTPProtocol as HTTPProtocol,
-    RSGIWebsocketProtocol as WebsocketProtocol,
-    RSGIHeaders as Headers,
-    RSGIScope as Scope,
-    RSGIProtocolError as ProtocolError,
-    RSGIProtocolClosed as ProtocolClosed
+    RSGIHeaders as Headers,  # noqa
+    RSGIHTTPProtocol as HTTPProtocol,  # noqa
+    RSGIProtocolClosed as ProtocolClosed,  # noqa
+    RSGIProtocolError as ProtocolError,  # noqa
+    RSGIScope as Scope,  # noqa
+    RSGIWebsocketProtocol as WebsocketProtocol,  # noqa
 )
 
 

@@ -5,7 +5,6 @@ import socket
 import ssl
 import sys
 import threading
-
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -16,10 +15,11 @@ from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
-from .constants import Interfaces, HTTPModes, Loops, ThreadModes
+from .constants import HTTPModes, Interfaces, Loops, ThreadModes
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
 from .wsgi import _callback_wrapper as _wsgi_call_wrap
+
 
 multiprocessing.allow_connection_pickling()
 
@@ -30,7 +30,7 @@ class Granian:
     def __init__(
         self,
         target: str,
-        address: str = "127.0.0.1",
+        address: str = '127.0.0.1',
         port: int = 8000,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
@@ -48,7 +48,7 @@ class Granian:
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         url_path_prefix: Optional[str] = None,
-        reload: bool = False
+        reload: bool = False,
     ):
         self.target = target
         self.bind_addr = address
@@ -75,11 +75,7 @@ class Granian:
         self.procs: List[multiprocessing.Process] = []
         self.exit_event = threading.Event()
 
-    def build_ssl_context(
-        self,
-        cert: Optional[Path],
-        key: Optional[Path]
-    ):
+    def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
         if not (cert and key):
             self.ssl_ctx = (False, None, None)
             return
@@ -108,7 +104,7 @@ class Granian:
         log_level,
         log_config,
         ssl_ctx,
-        scope_opts
+        scope_opts,
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -129,28 +125,11 @@ class Granian:
             wcallback = future_watcher_wrapper(wcallback)
 
         worker = ASGIWorker(
-            worker_id,
-            sfd,
-            threads,
-            pthreads,
-            http_mode,
-            http1_buffer_size,
-            websockets,
-            loop_opt,
-            *ssl_ctx
+            worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, websockets, loop_opt, *ssl_ctx
         )
-        serve = getattr(worker, {
-            ThreadModes.runtime: "serve_rth",
-            ThreadModes.workers: "serve_wth"
-        }[threading_mode])
-        serve(
-            wcallback,
-            loop,
-            contextvars.copy_context(),
-            shutdown_event.wait()
-        )
+        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve(wcallback, loop, contextvars.copy_context(), shutdown_event.wait())
         loop.run_until_complete(lifespan_handler.shutdown())
-
 
     @staticmethod
     def _spawn_rsgi_worker(
@@ -168,7 +147,7 @@ class Granian:
         log_level,
         log_config,
         ssl_ctx,
-        scope_opts
+        scope_opts,
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -176,38 +155,23 @@ class Granian:
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         target = callback_loader()
-        callback = (
-            getattr(target, '__rsgi__') if hasattr(target, '__rsgi__') else
-            target
-        )
+        callback = getattr(target, '__rsgi__') if hasattr(target, '__rsgi__') else target
         callback_init = (
-            getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else
-            lambda *args, **kwargs: None
+            getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else lambda *args, **kwargs: None
         )
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
         callback_init(loop)
 
         worker = RSGIWorker(
-            worker_id,
-            sfd,
-            threads,
-            pthreads,
-            http_mode,
-            http1_buffer_size,
-            websockets,
-            loop_opt,
-            *ssl_ctx
+            worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, websockets, loop_opt, *ssl_ctx
         )
-        serve = getattr(worker, {
-            ThreadModes.runtime: "serve_rth",
-            ThreadModes.workers: "serve_wth"
-        }[threading_mode])
+        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(
             future_watcher_wrapper(callback) if not loop_opt else callback,
             loop,
             contextvars.copy_context(),
-            shutdown_event.wait()
+            shutdown_event.wait(),
         )
 
     @staticmethod
@@ -226,7 +190,7 @@ class Granian:
         log_level,
         log_config,
         ssl_ctx,
-        scope_opts
+        scope_opts,
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -237,46 +201,20 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = WSGIWorker(
-            worker_id,
-            sfd,
-            threads,
-            pthreads,
-            http_mode,
-            http1_buffer_size,
-            *ssl_ctx
-        )
-        serve = getattr(worker, {
-            ThreadModes.runtime: "serve_rth",
-            ThreadModes.workers: "serve_wth"
-        }[threading_mode])
-        serve(
-            _wsgi_call_wrap(callback, scope_opts),
-            loop,
-            contextvars.copy_context(),
-            shutdown_event.wait()
-        )
+        worker = WSGIWorker(worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, *ssl_ctx)
+        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve(_wsgi_call_wrap(callback, scope_opts), loop, contextvars.copy_context(), shutdown_event.wait())
 
     def _init_shared_socket(self):
-        self._shd = SocketHolder.from_address(
-            self.bind_addr,
-            self.bind_port,
-            self.backlog
-        )
+        self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
         self._sfd = self._shd.get_fd()
 
     def signal_handler(self, *args, **kwargs):
         self.exit_event.set()
 
-    def _spawn_proc(
-        self,
-        id,
-        target,
-        callback_loader,
-        socket_loader
-    ) -> multiprocessing.Process:
+    def _spawn_proc(self, id, target, callback_loader, socket_loader) -> multiprocessing.Process:
         return multiprocessing.get_context().Process(
-            name="granian-worker",
+            name='granian-worker',
             target=target,
             args=(
                 id,
@@ -293,10 +231,8 @@ class Granian:
                 self.log_level,
                 self.log_config,
                 self.ssl_ctx,
-                {
-                    "url_path_prefix": self.url_path_prefix
-                }
-            )
+                {'url_path_prefix': self.url_path_prefix},
+            ),
         )
 
     def _spawn_workers(self, sock, spawn_target, target_loader):
@@ -305,14 +241,11 @@ class Granian:
 
         for idx in range(self.workers):
             proc = self._spawn_proc(
-                id=idx + 1,
-                target=spawn_target,
-                callback_loader=target_loader,
-                socket_loader=socket_loader
+                id=idx + 1, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
             )
             proc.start()
             self.procs.append(proc)
-            logger.info(f"Spawning worker-{idx + 1} with pid: {proc.pid}")
+            logger.info(f'Spawning worker-{idx + 1} with pid: {proc.pid}')
 
     def _stop_workers(self):
         for proc in self.procs:
@@ -321,7 +254,7 @@ class Granian:
             proc.join()
 
     def startup(self, spawn_target, target_loader):
-        logger.info("Starting granian")
+        logger.info('Starting granian')
 
         for sig in self.SIGNALS:
             signal.signal(sig, self.signal_handler)
@@ -329,13 +262,13 @@ class Granian:
         self._init_shared_socket()
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)
-        logger.info(f"Listening at: {self.bind_addr}:{self.bind_port}")
+        logger.info(f'Listening at: {self.bind_addr}:{self.bind_port}')
 
         self._spawn_workers(sock, spawn_target, target_loader)
         return sock
 
     def shutdown(self):
-        logger.info("Shutting down granian")
+        logger.info('Shutting down granian')
         self._stop_workers()
 
     def _serve(self, spawn_target, target_loader):
@@ -360,12 +293,12 @@ class Granian:
         self,
         spawn_target: Optional[Callable[..., None]] = None,
         target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
-        wrap_loader: bool = True
+        wrap_loader: bool = True,
     ):
         default_spawners = {
             Interfaces.ASGI: self._spawn_asgi_worker,
             Interfaces.RSGI: self._spawn_rsgi_worker,
-            Interfaces.WSGI: self._spawn_wsgi_worker
+            Interfaces.WSGI: self._spawn_wsgi_worker,
         }
         if target_loader:
             if wrap_loader:
@@ -383,8 +316,5 @@ class Granian:
                     "Number of workers will now fallback to 1."
                 )
 
-        serve_method = (
-            self._serve_with_reloader if self.reload_on_changes else
-            self._serve
-        )
+        serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)
