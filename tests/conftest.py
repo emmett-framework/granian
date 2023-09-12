@@ -10,7 +10,7 @@ import pytest
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode, tls=False):
+async def _server(interface, port, threading_mode, tls=False, workers=1):
     certs_path = Path.cwd() / "tests" / "fixtures" / "tls"
     tls_opts = (
         f"--ssl-certificate {certs_path / 'cert.pem'} "
@@ -20,6 +20,7 @@ async def _server(interface, port, threading_mode, tls=False):
         "".join([
             f"granian --interface {interface} --port {port} ",
             f"--threads 1 --threading-mode {threading_mode} ",
+            f"--workers {workers} ",
             tls_opts,
             f"tests.apps.{interface}:app"
         ]),
