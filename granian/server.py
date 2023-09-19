@@ -71,8 +71,7 @@ class Granian:
         self.url_path_prefix = url_path_prefix
         self.reload_on_changes = reload
 
-        if self.log:
-            configure_logging(self.log_level, self.log_config)
+        configure_logging(self.log_level, self.log_config, self.log)
 
         self.build_ssl_context(ssl_cert, ssl_key)
         self._shd = None
@@ -114,8 +113,7 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
-        if log:
-            configure_logging(log_level, log_config)
+        configure_logging(log_level, log_config, log)
 
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
@@ -160,8 +158,7 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
-        if log:
-            configure_logging(log_level, log_config)
+        configure_logging(log_level, log_config, log)
 
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
@@ -206,8 +203,7 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
-        if log:
-            configure_logging(log_level, log_config)
+        configure_logging(log_level, log_config, log)
 
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
