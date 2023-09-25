@@ -16,7 +16,7 @@ async def info(scope: Scope, protocol: HTTPProtocol):
                 'method': scope.method,
                 'path': scope.path,
                 'query_string': scope.query_string,
-                'headers': {k: v for k, v in scope.headers.items()},
+                'headers': dict(scope.headers.items()),
             }
         ).encode('utf8'),
     )
@@ -56,7 +56,7 @@ async def ws_info(scope: Scope, protocol: WebsocketProtocol):
                 'method': scope.method,
                 'path': scope.path,
                 'query_string': scope.query_string,
-                'headers': {k: v for k, v in scope.headers.items()},
+                'headers': dict(scope.headers.items()),
             }
         )
     )

@@ -1,82 +1,108 @@
 [project]
-name = "granian"
+name = 'granian'
 authors = [
-    {name = "Giovanni Barillari", email = "g@baro.dev"}
+    {name = 'Giovanni Barillari', email = 'g@baro.dev'}
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: BSD License",
-    "Operating System :: MacOS",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-    "Programming Language :: Python",
-    "Programming Language :: Rust",
-    "Topic :: Internet :: WWW/HTTP"
+    'Development Status :: 5 - Production/Stable',
+    'Intended Audience :: Developers',
+    'License :: OSI Approved :: BSD License',
+    'Operating System :: MacOS',
+    'Operating System :: Microsoft :: Windows',
+    'Operating System :: POSIX :: Linux',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: Implementation :: CPython',
+    'Programming Language :: Python :: Implementation :: PyPy',
+    'Programming Language :: Python',
+    'Programming Language :: Rust',
+    'Topic :: Internet :: WWW/HTTP'
 ]
 
 dynamic = [
-    "description",
-    "keywords",
-    "license",
-    "readme",
-    "version"
+    'description',
+    'keywords',
+    'license',
+    'readme',
+    'version'
 ]
 
-requires-python = ">=3.8"
+requires-python = '>=3.8'
 dependencies = [
-    "watchfiles~=0.18",
-    "typer~=0.4",
-    "uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython'"
+    'watchfiles~=0.18',
+    'typer~=0.4',
+    'uvloop~=0.17.0; sys_platform != 'win32' and platform_python_implementation == 'CPython''
 ]
 
 [project.optional-dependencies]
+lint = [
+    'black~=23.7.0',
+    'ruff~=0.0.287'
+]
 test = [
-    "black~=23.7.0",
-    "httpx~=0.23.0",
-    "pytest~=7.1.2",
-    "pytest-asyncio~=0.18.3",
-    "ruff~=0.0.287",
-    "websockets~=10.3"
+    'httpx~=0.23.0',
+    'pytest~=7.1.2',
+    'pytest-asyncio~=0.18.3',
+    'websockets~=10.3'
 ]
 
 [project.urls]
-Homepage = "https://github.com/emmett-framework/granian"
-Funding = "https://github.com/sponsors/gi0baro"
-Source = "https://github.com/emmett-framework/granian"
+Homepage = 'https://github.com/emmett-framework/granian'
+Funding = 'https://github.com/sponsors/gi0baro'
+Source = 'https://github.com/emmett-framework/granian'
 
 [project.scripts]
-granian = "granian:cli.cli"
+granian = 'granian:cli.cli'
 
 [build-system]
-requires = ["maturin>=1.1.0,<1.3.0"]
-build-backend = "maturin"
+requires = ['maturin>=1.1.0,<1.3.0']
+build-backend = 'maturin'
 
 [tool.maturin]
-module-name = "granian._granian"
-bindings = "pyo3"
+module-name = 'granian._granian'
+bindings = 'pyo3'
 
 [tool.ruff]
 line-length = 120
-extend-select = ['Q', 'RUF100', 'C90', 'I']
-extend-ignore = ['E501']
+extend-select = [
+    # E and F are enabled by default
+    'B',      # flake8-bugbear
+    'C4',     # flake8-comprehensions
+    'C90',    # mccabe
+    'I',      # isort
+    'N',      # pep8-naming
+    'Q',      # flake8-quotes
+    'RUF100', # ruff (unused noqa)
+    'S',      # flake8-bandit
+    'W'       # pycodestyle
+]
+extend-ignore = [
+    'B008', # function calls in args defaults are fine
+    'B009', # getattr with constants is fine
+    'B034', # re.split won't confuse us
+    'B904', # rising without from is fine
+    'E501', # leave line length to black
+    'N818', # leave to us exceptions naming
+    'S101'  # assert is fine
+]
 flake8-quotes = { inline-quotes = 'single', multiline-quotes = 'double' }
 mccabe = { max-complexity = 13 }
-isort = { combine-as-imports = true, lines-after-imports = 2, known-first-party = ['granian', 'tests'] }
+per-file-ignores = { 'tests/**' = ['B018', 'S110', 'S501'] }
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
+[tool.ruff.isort]
+combine-as-imports = true
+lines-after-imports = 2
+known-first-party = ['granian', 'tests']
 
 [tool.black]
 color = true
 line-length = 120
 target-version = ['py38', 'py39', 'py310', 'py311']
-skip-string-normalization = true
-skip-magic-trailing-comma = true
+skip-string-normalization = true # leave this to ruff
+skip-magic-trailing-comma = true # leave this to ruff
+
+[tool.pytest.ini_options]
+asyncio_mode = 'auto'
