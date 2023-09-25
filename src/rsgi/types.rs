@@ -42,7 +42,7 @@ impl RSGIHeaders {
 
     fn items(&self) -> PyResult<Vec<(&str, &str)>> {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
-        for (key, val) in self.inner.iter() {
+        for (key, val) in &self.inner {
             ret.push((key.as_str(), val.to_str().unwrap()));
         }
         Ok(ret)

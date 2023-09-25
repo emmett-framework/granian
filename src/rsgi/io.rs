@@ -268,7 +268,7 @@ impl RSGIWebsocketProtocol {
     }
 
     fn consumed(&self) -> bool {
-        !matches!(&self.upgrade, Some(_))
+        self.upgrade.is_none()
     }
 
     pub fn tx(&mut self) -> (Option<oneshot::Sender<(i32, bool)>>, (i32, bool)) {

@@ -155,7 +155,7 @@ impl WSGIScope {
             let content_len = self.headers.remove(CONTENT_LENGTH);
             let mut headers = Vec::with_capacity(self.headers.len());
 
-            for (key, val) in self.headers.iter() {
+            for (key, val) in &self.headers {
                 headers.push((
                     format!("HTTP_{}", key.as_str().replace('-', "_").to_uppercase()),
                     val.to_str().unwrap_or_default(),

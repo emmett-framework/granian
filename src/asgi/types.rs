@@ -94,7 +94,7 @@ impl ASGIScope {
     #[inline(always)]
     fn py_headers<'p>(&self, py: Python<'p>) -> PyResult<&'p PyList> {
         let rv = PyList::empty(py);
-        for (key, value) in self.headers.iter() {
+        for (key, value) in &self.headers {
             rv.append((
                 PyBytes::new(py, key.as_str().as_bytes()),
                 PyBytes::new(py, value.as_bytes()),
