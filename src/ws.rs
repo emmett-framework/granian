@@ -1,23 +1,23 @@
 use hyper::{
-    Body,
-    Request,
-    Response,
-    StatusCode,
     header::{CONNECTION, UPGRADE},
-    http::response::Builder
+    http::response::Builder,
+    Body, Request, Response, StatusCode,
 };
+use pin_project::pin_project;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tokio::sync::mpsc;
+use tokio_tungstenite::WebSocketStream;
 use tungstenite::{
     error::ProtocolError,
     handshake::derive_accept_key,
-    protocol::{Role, WebSocketConfig}
+    protocol::{Role, WebSocketConfig},
 };
-use pin_project::pin_project;
-use std::{future::Future, pin::Pin, task::{Context, Poll}};
-use tokio_tungstenite::WebSocketStream;
-use tokio::sync::mpsc;
 
 use super::utils::header_contains_value;
-
 
 #[pin_project]
 #[derive(Debug)]
@@ -37,15 +37,9 @@ impl Future for HyperWebsocket {
             Poll::Ready(x) => x,
         };
 
-        let upgraded = upgraded.map_err(|_|
-            tungstenite::Error::Protocol(ProtocolError::HandshakeIncomplete)
-        )?;
+        let upgraded = upgraded.map_err(|_| tungstenite::Error::Protocol(ProtocolError::HandshakeIncomplete))?;
 
-        let stream = WebSocketStream::from_raw_socket(
-            upgraded,
-            Role::Server,
-            this.config.take(),
-        );
+        let stream = WebSocketStream::from_raw_socket(upgraded, Role::Server, this.config.take());
         tokio::pin!(stream);
 
         match stream.as_mut().poll(cx) {
@@ -58,18 +52,15 @@ impl Future for HyperWebsocket {
 pub(crate) struct UpgradeData {
     response_builder: Option<Builder>,
     response_tx: Option<mpsc::Sender<Response<Body>>>,
-    pub consumed: bool
+    pub consumed: bool,
 }
 
 impl UpgradeData {
-    pub fn new(
-        response_builder: Builder,
-        response_tx: mpsc::Sender<Response<Body>>)
-    -> Self {
+    pub fn new(response_builder: Builder, response_tx: mpsc::Sender<Response<Body>>) -> Self {
         Self {
             response_builder: Some(response_builder),
             response_tx: Some(response_tx),
-            consumed: false
+            consumed: false,
         }
     }
 
@@ -79,19 +70,16 @@ impl UpgradeData {
             Ok(_) => {
                 self.consumed = true;
                 Ok(())
-            },
-            err => err
+            }
+            err => err,
         }
     }
 }
 
 #[inline]
 pub(crate) fn is_upgrade_request<B>(request: &Request<B>) -> bool {
-    header_contains_value(
-        request.headers(), CONNECTION, "Upgrade"
-    ) && header_contains_value(
-        request.headers(), UPGRADE, "websocket"
-    )
+    header_contains_value(request.headers(), CONNECTION, "Upgrade")
+        && header_contains_value(request.headers(), UPGRADE, "websocket")
 }
 
 pub(crate) fn upgrade_intent<B>(
@@ -100,13 +88,17 @@ pub(crate) fn upgrade_intent<B>(
 ) -> Result<(Builder, HyperWebsocket), ProtocolError> {
     let request = request.borrow_mut();
 
-    let key = request.headers()
+    let key = request
+        .headers()
         .get("Sec-WebSocket-Key")
         .ok_or(ProtocolError::MissingSecWebSocketKey)?;
 
-    if request.headers().get("Sec-WebSocket-Version").map(
-        |v| v.as_bytes()
-    ) != Some(b"13") {
+    if request
+        .headers()
+        .get("Sec-WebSocket-Version")
+        .map(hyper::http::HeaderValue::as_bytes)
+        != Some(b"13")
+    {
         return Err(ProtocolError::MissingSecWebSocketVersionHeader);
     }
 

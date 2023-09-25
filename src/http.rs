@@ -1,4 +1,7 @@
-use hyper::{Body, Response, header::{HeaderValue, SERVER as HK_SERVER}};
+use hyper::{
+    header::{HeaderValue, SERVER as HK_SERVER},
+    Body, Response,
+};
 
 pub(crate) const HV_SERVER: HeaderValue = HeaderValue::from_static("granian");
 

@@ -1,34 +1,22 @@
 use hyper::{
-    Body,
-    Request,
-    Response,
-    StatusCode,
-    header::SERVER as HK_SERVER,
-    http::response::Builder as ResponseBuilder
+    header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder, Body, Request, Response, StatusCode,
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
-use crate::{
-    callbacks::CallbackWrapper,
-    http::{HV_SERVER, response_500},
-    runtime::RuntimeRef,
-    ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade}
-};
 use super::{
     callbacks::{
-        call_rtb_http,
-        call_rtb_http_pyw,
-        call_rtb_ws,
-        call_rtb_ws_pyw,
-        call_rtt_http,
-        call_rtt_http_pyw,
-        call_rtt_ws,
-        call_rtt_ws_pyw
+        call_rtb_http, call_rtb_http_pyw, call_rtb_ws, call_rtb_ws_pyw, call_rtt_http, call_rtt_http_pyw, call_rtt_ws,
+        call_rtt_ws_pyw,
     },
-    types::ASGIScope as Scope
+    types::ASGIScope as Scope,
 };
-
+use crate::{
+    callbacks::CallbackWrapper,
+    http::{response_500, HV_SERVER},
+    runtime::RuntimeRef,
+    ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
+};
 
 macro_rules! default_scope {
     ($server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
@@ -39,7 +27,7 @@ macro_rules! default_scope {
             $req.method().as_ref(),
             $server_addr,
             $client_addr,
-            $req.headers()
+            $req.headers(),
         )
     };
 }
@@ -53,7 +41,7 @@ macro_rules! handle_http_response {
                 response_500()
             }
         }
-    }
+    };
 }
 
 macro_rules! handle_request {
@@ -64,7 +52,7 @@ macro_rules! handle_request {
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             req: Request<Body>,
-            scheme: &str
+            scheme: &str,
         ) -> Response<Body> {
             let scope = default_scope!(server_addr, client_addr, &req, scheme);
             handle_http_response!($handler, rt, callback, req, scope)
@@ -80,7 +68,7 @@ macro_rules! handle_request_with_ws {
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             req: Request<Body>,
-            scheme: &str
+            scheme: &str,
         ) -> Response<Body> {
             let mut scope = default_scope!(server_addr, client_addr, &req, scheme);
 
@@ -95,24 +83,20 @@ macro_rules! handle_request_with_ws {
                         rt.inner.spawn(async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(
-                                callback,
-                                rth,
-                                ws,
-                                UpgradeData::new(res, restx),
-                                scope
-                            ).await {
+                            match $handler_ws(callback, rth, ws, UpgradeData::new(res, restx), scope).await {
                                 Ok(consumed) => {
                                     if !consumed {
-                                        let _ = tx_ref.send(
-                                            ResponseBuilder::new()
-                                                .status(StatusCode::FORBIDDEN)
-                                                .header(HK_SERVER, HV_SERVER)
-                                                .body(Body::from(""))
-                                                .unwrap()
-                                        ).await;
+                                        let _ = tx_ref
+                                            .send(
+                                                ResponseBuilder::new()
+                                                    .status(StatusCode::FORBIDDEN)
+                                                    .header(HK_SERVER, HV_SERVER)
+                                                    .body(Body::from(""))
+                                                    .unwrap(),
+                                            )
+                                            .await;
                                     };
-                                },
+                                }
                                 _ => {
                                     log::error!("ASGI protocol failure");
                                     let _ = tx_ref.send(response_500()).await;
@@ -124,10 +108,10 @@ macro_rules! handle_request_with_ws {
                             Some(res) => {
                                 resrx.close();
                                 res
-                            },
-                            _ => response_500()
+                            }
+                            _ => response_500(),
                         }
-                    },
+                    }
                     Err(err) => {
                         return ResponseBuilder::new()
                             .status(StatusCode::BAD_REQUEST)

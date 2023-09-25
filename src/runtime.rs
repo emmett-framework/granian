@@ -1,11 +1,18 @@
 use once_cell::unsync::OnceCell as UnsyncOnceCell;
-use pyo3_asyncio::TaskLocals;
 use pyo3::prelude::*;
-use std::{future::Future, io, pin::Pin, sync::{Arc, Mutex}};
-use tokio::{runtime::Builder, task::{JoinHandle, LocalSet}};
+use pyo3_asyncio::TaskLocals;
+use std::{
+    future::Future,
+    io,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
+use tokio::{
+    runtime::Builder,
+    task::{JoinHandle, LocalSet},
+};
 
 use super::callbacks::{PyFutureAwaitable, PyIterAwaitable};
-
 
 tokio::task_local! {
     static TASK_LOCALS: UnsyncOnceCell<TaskLocals>;
@@ -27,11 +34,7 @@ pub trait Runtime: Send + 'static {
 }
 
 pub trait ContextExt: Runtime {
-    fn scope<F, R>(
-        &self,
-        locals: TaskLocals,
-        fut: F
-    ) -> Pin<Box<dyn Future<Output = R> + Send>>
+    fn scope<F, R>(&self, locals: TaskLocals, fut: F) -> Pin<Box<dyn Future<Output = R> + Send>>
     where
         F: Future<Output = R> + Send + 'static;
 
@@ -45,36 +48,34 @@ pub trait SpawnLocalExt: Runtime {
 }
 
 pub trait LocalContextExt: Runtime {
-    fn scope_local<F, R>(
-        &self,
-        locals: TaskLocals,
-        fut: F
-    ) -> Pin<Box<dyn Future<Output = R>>>
+    fn scope_local<F, R>(&self, locals: TaskLocals, fut: F) -> Pin<Box<dyn Future<Output = R>>>
     where
         F: Future<Output = R> + 'static;
 }
 
 pub(crate) struct RuntimeWrapper {
-    rt: tokio::runtime::Runtime
+    rt: tokio::runtime::Runtime,
 }
 
 impl RuntimeWrapper {
     pub fn new(blocking_threads: usize) -> Self {
-        Self { rt: default_runtime(blocking_threads).unwrap() }
+        Self {
+            rt: default_runtime(blocking_threads).unwrap(),
+        }
     }
 
     pub fn with_runtime(rt: tokio::runtime::Runtime) -> Self {
-        Self { rt: rt }
+        Self { rt }
     }
 
     pub fn handler(&self) -> RuntimeRef {
-        RuntimeRef::new(self.rt.handle().to_owned())
+        RuntimeRef::new(self.rt.handle().clone())
     }
 }
 
 #[derive(Clone)]
 pub struct RuntimeRef {
-    pub inner: tokio::runtime::Handle
+    pub inner: tokio::runtime::Handle,
 }
 
 impl RuntimeRef {
@@ -108,11 +109,7 @@ impl Runtime for RuntimeRef {
 }
 
 impl ContextExt for RuntimeRef {
-    fn scope<F, R>(
-        &self,
-        locals: TaskLocals,
-        fut: F
-    ) -> Pin<Box<dyn Future<Output = R> + Send>>
+    fn scope<F, R>(&self, locals: TaskLocals, fut: F) -> Pin<Box<dyn Future<Output = R> + Send>>
     where
         F: Future<Output = R> + Send + 'static,
     {
@@ -123,7 +120,7 @@ impl ContextExt for RuntimeRef {
     }
 
     fn get_task_locals() -> Option<TaskLocals> {
-        match TASK_LOCALS.try_with(|c| c.get().map(|locals| locals.clone())) {
+        match TASK_LOCALS.try_with(|c| c.get().cloned()) {
             Ok(locals) => locals,
             Err(_) => None,
         }
@@ -140,11 +137,7 @@ impl SpawnLocalExt for RuntimeRef {
 }
 
 impl LocalContextExt for RuntimeRef {
-    fn scope_local<F, R>(
-        &self,
-        locals: TaskLocals,
-        fut: F
-    ) -> Pin<Box<dyn Future<Output = R>>>
+    fn scope_local<F, R>(&self, locals: TaskLocals, fut: F) -> Pin<Box<dyn Future<Output = R>>>
     where
         F: Future<Output = R> + 'static,
     {
@@ -169,7 +162,7 @@ pub(crate) fn init_runtime_mt(threads: usize, blocking_threads: usize) -> Runtim
             .max_blocking_threads(blocking_threads)
             .enable_all()
             .build()
-            .unwrap()
+            .unwrap(),
     )
 }
 
@@ -177,12 +170,8 @@ pub(crate) fn init_runtime_st(blocking_threads: usize) -> RuntimeWrapper {
     RuntimeWrapper::new(blocking_threads)
 }
 
-pub(crate) fn into_future(
-    awaitable: &PyAny,
-) -> PyResult<impl Future<Output = PyResult<PyObject>> + Send> {
-    pyo3_asyncio::into_future_with_locals(
-        &get_current_locals::<RuntimeRef>(awaitable.py())?, awaitable
-    )
+pub(crate) fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<PyObject>> + Send> {
+    pyo3_asyncio::into_future_with_locals(&get_current_locals::<RuntimeRef>(awaitable.py())?, awaitable)
 }
 
 #[inline]
@@ -241,10 +230,7 @@ where
     rt.spawn(async move {
         let result = fut.await;
         Python::with_gil(move |py| {
-            PyFutureAwaitable::set_result(
-                py_aw.as_ref(py).borrow_mut(),
-                result.map(|v| v.into_py(py))
-            );
+            PyFutureAwaitable::set_result(py_aw.as_ref(py).borrow_mut(), result.map(|v| v.into_py(py)));
         });
     });
 
@@ -269,11 +255,7 @@ where
     let rth = rt.handler();
 
     rt.spawn(async move {
-        let val = rth.scope(
-            task_locals.clone(),
-            fut
-        )
-        .await;
+        let val = rth.scope(task_locals.clone(), fut).await;
         if let Ok(mut result) = result_tx.lock() {
             *result = Some(val.unwrap());
         }
@@ -292,7 +274,7 @@ where
 
 pub(crate) fn block_on_local<F>(rt: RuntimeWrapper, local: LocalSet, fut: F)
 where
-    F: Future + 'static
+    F: Future + 'static,
 {
     local.block_on(&rt.rt, fut);
 }

@@ -1,1 +1,1 @@
-from .server import Granian
+from .server import Granian  # noqa

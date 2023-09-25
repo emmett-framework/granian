@@ -1,5 +1,4 @@
 import asyncio
-
 from functools import wraps
 
 from ._granian import ASGIScope as Scope
@@ -22,12 +21,7 @@ class LifespanProtocol:
     async def handle(self):
         try:
             await self.callable(
-                {
-                    "type": "lifespan",
-                    "asgi": {"version": "3.0", "spec_version": "2.3"}
-                },
-                self.receive,
-                self.send
+                {'type': 'lifespan', 'asgi': {'version': '3.0', 'spec_version': '2.3'}}, self.receive, self.send
             )
         except Exception:
             self.errored = True
@@ -43,7 +37,7 @@ class LifespanProtocol:
         loop = asyncio.get_event_loop()
         _handler_task = loop.create_task(self.handle())
 
-        await self.event_queue.put({"type": "lifespan.startup"})
+        await self.event_queue.put({'type': 'lifespan.startup'})
         await self.event_startup.wait()
 
         if self.failure_startup or (self.errored and not self.unsupported):
@@ -53,7 +47,7 @@ class LifespanProtocol:
         if self.errored:
             return
 
-        await self.event_queue.put({"type": "lifespan.shutdown"})
+        await self.event_queue.put({'type': 'lifespan.shutdown'})
         await self.event_shutdown.wait()
 
         if self.failure_shutdown or (self.errored and not self.unsupported):
@@ -89,14 +83,14 @@ class LifespanProtocol:
         #     self.logger.error(message["message"])
 
     _event_handlers = {
-        "lifespan.startup.complete": _handle_startup_complete,
-        "lifespan.startup.failed": _handle_startup_failed,
-        "lifespan.shutdown.complete": _handle_shutdown_complete,
-        "lifespan.shutdown.failed": _handle_shutdown_failed
+        'lifespan.startup.complete': _handle_startup_complete,
+        'lifespan.startup.failed': _handle_startup_failed,
+        'lifespan.shutdown.complete': _handle_shutdown_complete,
+        'lifespan.shutdown.failed': _handle_shutdown_failed,
     }
 
     async def send(self, message):
-        handler = self._event_handlers[message["type"]]
+        handler = self._event_handlers[message['type']]
         handler(self, message)
 
 
@@ -108,6 +102,7 @@ def _send_wrapper(proto):
     @wraps(proto)
     def send(data):
         return proto(_noop_coro, data)
+
     return send
 
 
@@ -116,9 +111,6 @@ def _callback_wrapper(callback, scope_opts):
 
     @wraps(callback)
     def wrapper(scope: Scope, proto):
-        return callback(
-            scope.as_dict(root_url_path),
-            proto.receive,
-            _send_wrapper(proto.send)
-        )
+        return callback(scope.as_dict(root_url_path), proto.receive, _send_wrapper(proto.send))
+
     return wrapper

@@ -1,13 +1,15 @@
 pub(crate) fn header_contains_value(
     headers: &hyper::HeaderMap,
     header: impl hyper::header::AsHeaderName,
-    value: impl AsRef<[u8]>
+    value: impl AsRef<[u8]>,
 ) -> bool {
     let value = value.as_ref();
     for header in headers.get_all(header) {
-        if header.as_bytes().split(|&c| c == b',').any(
-            |x| trim(x).eq_ignore_ascii_case(value)
-        ) {
+        if header
+            .as_bytes()
+            .split(|&c| c == b',')
+            .any(|x| trim(x).eq_ignore_ascii_case(value))
+        {
             return true;
         }
     }
@@ -30,7 +32,7 @@ fn trim_start(data: &[u8]) -> &[u8] {
 #[inline]
 fn trim_end(data: &[u8]) -> &[u8] {
     if let Some(last) = data.iter().rposition(|x| !x.is_ascii_whitespace()) {
-        &data[..last + 1]
+        &data[..=last]
     } else {
         b""
     }

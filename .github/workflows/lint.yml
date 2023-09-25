@@ -1,0 +1,32 @@
+name: lint
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - master
+
+env:
+  MATURIN_VERSION: 1.2.3
+  PYTHON_VERSION: 3.11
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - name: Install
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        pip install maturin==${{ env.MATURIN_VERSION }}
+        maturin develop --extras=lint
+    - name: Lint
+      run: |
+        source .venv/bin/activate
+        make lint

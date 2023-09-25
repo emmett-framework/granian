@@ -1,9 +1,8 @@
-use hyper::{Uri, Version, header::HeaderMap};
+use hyper::{header::HeaderMap, Uri, Version};
 use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 use std::net::{IpAddr, SocketAddr};
-
 
 const SCHEME_HTTPS: &str = "https";
 const SCHEME_WS: &str = "ws";
@@ -17,10 +16,10 @@ pub(crate) enum ASGIMessageType {
     HTTPBody,
     WSAccept,
     WSClose,
-    WSMessage
+    WSMessage,
 }
 
-#[pyclass(module="granian._granian")]
+#[pyclass(module = "granian._granian")]
 pub(crate) struct ASGIScope {
     http_version: Version,
     scheme: String,
@@ -31,7 +30,7 @@ pub(crate) struct ASGIScope {
     client_ip: IpAddr,
     client_port: u16,
     headers: HeaderMap,
-    is_websocket: bool
+    is_websocket: bool,
 }
 
 impl ASGIScope {
@@ -42,31 +41,31 @@ impl ASGIScope {
         method: &str,
         server: SocketAddr,
         client: SocketAddr,
-        headers: &HeaderMap
+        headers: &HeaderMap,
     ) -> Self {
         Self {
-            http_version: http_version,
+            http_version,
             scheme: scheme.to_string(),
             method: method.to_string(),
-            uri: uri,
+            uri,
             server_ip: server.ip(),
             server_port: server.port(),
             client_ip: client.ip(),
             client_port: client.port(),
-            headers: headers.to_owned(),
-            is_websocket: false
+            headers: headers.clone(),
+            is_websocket: false,
         }
     }
 
     pub fn set_websocket(&mut self) {
-        self.is_websocket = true
+        self.is_websocket = true;
     }
 
     #[inline(always)]
     fn py_proto(&self) -> &str {
         match self.is_websocket {
             false => "http",
-            true => "websocket"
+            true => "websocket",
         }
     }
 
@@ -76,7 +75,7 @@ impl ASGIScope {
             Version::HTTP_10 => "1",
             Version::HTTP_11 => "1.1",
             Version::HTTP_2 => "2",
-            _ => "1"
+            _ => "1",
         }
     }
 
@@ -85,22 +84,20 @@ impl ASGIScope {
         let scheme = &self.scheme[..];
         match self.is_websocket {
             false => scheme,
-            true => {
-                match scheme {
-                    SCHEME_HTTPS => SCHEME_WSS,
-                    _ => SCHEME_WS
-                }
-            }
+            true => match scheme {
+                SCHEME_HTTPS => SCHEME_WSS,
+                _ => SCHEME_WS,
+            },
         }
     }
 
     #[inline(always)]
     fn py_headers<'p>(&self, py: Python<'p>) -> PyResult<&'p PyList> {
         let rv = PyList::empty(py);
-        for (key, value) in self.headers.iter() {
+        for (key, value) in &self.headers {
             rv.append((
                 PyBytes::new(py, key.as_str().as_bytes()),
-                PyBytes::new(py, value.as_bytes())
+                PyBytes::new(py, value.as_bytes()),
             ))?;
         }
         Ok(rv)
@@ -110,17 +107,10 @@ impl ASGIScope {
 #[pymethods]
 impl ASGIScope {
     fn as_dict<'p>(&self, py: Python<'p>, url_path_prefix: &'p str) -> PyResult<&'p PyAny> {
-        let (
-            path,
-            query_string,
-            proto,
-            http_version,
-            server,
-            client,
-            scheme,
-            method
-        ) = py.allow_threads(|| {
-            let (path, query_string) = self.uri.path_and_query()
+        let (path, query_string, proto, http_version, server, client, scheme, method) = py.allow_threads(|| {
+            let (path, query_string) = self
+                .uri
+                .path_and_query()
                 .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
             (
                 path,
@@ -136,19 +126,23 @@ impl ASGIScope {
         let dict: &PyDict = PyDict::new(py);
         dict.set_item(
             pyo3::intern!(py, "asgi"),
-            ASGI_VERSION.get_or_try_init(|| {
-                let rv = PyDict::new(py);
-                rv.set_item("version", "3.0")?;
-                rv.set_item("spec_version", "2.3")?;
-                Ok::<PyObject, PyErr>(rv.into())
-            })?.as_ref(py)
+            ASGI_VERSION
+                .get_or_try_init(|| {
+                    let rv = PyDict::new(py);
+                    rv.set_item("version", "3.0")?;
+                    rv.set_item("spec_version", "2.3")?;
+                    Ok::<PyObject, PyErr>(rv.into())
+                })?
+                .as_ref(py),
         )?;
         dict.set_item(
             pyo3::intern!(py, "extensions"),
-            ASGI_EXTENSIONS.get_or_try_init(|| {
-                let rv = PyDict::new(py);
-                Ok::<PyObject, PyErr>(rv.into())
-            })?.as_ref(py)
+            ASGI_EXTENSIONS
+                .get_or_try_init(|| {
+                    let rv = PyDict::new(py);
+                    Ok::<PyObject, PyErr>(rv.into())
+                })?
+                .as_ref(py),
         )?;
         dict.set_item(pyo3::intern!(py, "type"), proto)?;
         dict.set_item(pyo3::intern!(py, "http_version"), http_version)?;
@@ -160,17 +154,12 @@ impl ASGIScope {
         dict.set_item(pyo3::intern!(py, "path"), path)?;
         dict.set_item(
             pyo3::intern!(py, "raw_path"),
-            PyString::new(py, path)
-                .call_method1(
-                    pyo3::intern!(py, "encode"), (pyo3::intern!(py, "ascii"),)
-                )?
+            PyString::new(py, path).call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "ascii"),))?,
         )?;
         dict.set_item(
             pyo3::intern!(py, "query_string"),
             PyString::new(py, query_string)
-                .call_method1(
-                    pyo3::intern!(py, "encode"), (pyo3::intern!(py, "latin-1"),)
-                )?
+                .call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "latin-1"),))?,
         )?;
         dict.set_item(pyo3::intern!(py, "headers"), self.py_headers(py)?)?;
         Ok(dict)

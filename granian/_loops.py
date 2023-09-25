@@ -2,12 +2,11 @@ import asyncio
 import os
 import signal
 import sys
-
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 
 class Registry:
-    __slots__ = ["_data"]
+    __slots__ = ['_data']
 
     def __init__(self):
         self._data: Dict[str, Callable[..., Any]] = {}
@@ -22,6 +21,7 @@ class Registry:
         def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
             self._data[key] = builder
             return builder
+
         return wrap
 
     def get(self, key: str) -> Callable[..., Any]:
@@ -31,18 +31,13 @@ class Registry:
             raise RuntimeError(f"'{key}' implementation not available.")
 
 
-
 class BuilderRegistry(Registry):
     __slots__ = []
 
     def __init__(self):
         self._data: Dict[str, Tuple[Callable[..., Any], List[str]]] = {}
 
-    def register(
-        self,
-        key: str,
-        packages: Optional[List[str]] = None
-    ) -> Callable[[], Callable[..., Any]]:
+    def register(self, key: str, packages: Optional[List[str]] = None) -> Callable[[], Callable[..., Any]]:
         packages = packages or []
 
         def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
@@ -56,6 +51,7 @@ class BuilderRegistry(Registry):
             if implemented:
                 self._data[key] = (builder, loaded_packages)
             return builder
+
         return wrap
 
     def get(self, key: str) -> Callable[..., Any]:
