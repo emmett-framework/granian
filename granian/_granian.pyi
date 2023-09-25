@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ._types import WebsocketMessage
 
-
 class ASGIScope:
     def as_dict(self, root_path: str) -> Dict[str, Any]: ...
 
