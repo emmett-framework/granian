@@ -288,6 +288,12 @@ struct WebsocketInboundCloseMessage {
     kind: usize,
 }
 
+impl Default for WebsocketInboundCloseMessage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WebsocketInboundCloseMessage {
     pub fn new() -> Self {
         Self {
