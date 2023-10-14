@@ -67,7 +67,7 @@ impl UpgradeData {
     pub async fn send(&mut self) -> Result<(), mpsc::error::SendError<Response<Body>>> {
         let res = self.response_builder.take().unwrap().body(Body::from("")).unwrap();
         match self.response_tx.take().unwrap().send(res).await {
-            Ok(_) => {
+            Ok(()) => {
                 self.consumed = true;
                 Ok(())
             }

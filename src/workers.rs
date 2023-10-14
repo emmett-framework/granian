@@ -190,7 +190,7 @@ macro_rules! serve_rth {
             });
 
             match svc_loop {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => {
                     log::error!("{}", err);
                     std::process::exit(1);
@@ -236,7 +236,7 @@ macro_rules! serve_rth_ssl {
             });
 
             match svc_loop {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => {
                     log::error!("{}", err);
                     std::process::exit(1);
@@ -308,7 +308,7 @@ macro_rules! serve_wth {
             });
 
             match main_loop {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => {
                     log::error!("{}", err);
                     std::process::exit(1);
@@ -381,7 +381,7 @@ macro_rules! serve_wth_ssl {
             });
 
             match main_loop {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => {
                     log::error!("{}", err);
                     std::process::exit(1);

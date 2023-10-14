@@ -69,7 +69,7 @@ impl ASGIHTTPProtocol {
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut tx = tx.lock().await;
             match (*tx).send_data(body.into()).await {
-                Ok(_) => Ok(()),
+                Ok(()) => Ok(()),
                 Err(err) => {
                     log::warn!("ASGI transport tx error: {:?}", err);
                     error_transport!()

@@ -45,7 +45,7 @@ impl RSGIHTTPStreamTransport {
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send_data(data.into()).await {
-                    Ok(_) => Ok(()),
+                    Ok(()) => Ok(()),
                     _ => error_stream!(),
                 };
             }
@@ -58,7 +58,7 @@ impl RSGIHTTPStreamTransport {
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send_data(data.into()).await {
-                    Ok(_) => Ok(()),
+                    Ok(()) => Ok(()),
                     _ => error_stream!(),
                 };
             }
@@ -218,7 +218,7 @@ impl RSGIWebsocketTransport {
         future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Binary(data)).await {
-                    Ok(_) => Ok(()),
+                    Ok(()) => Ok(()),
                     _ => error_stream!(),
                 };
             }
@@ -231,7 +231,7 @@ impl RSGIWebsocketTransport {
         future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Text(data)).await {
-                    Ok(_) => Ok(()),
+                    Ok(()) => Ok(()),
                     _ => error_stream!(),
                 };
             }
@@ -357,7 +357,7 @@ impl RSGIWebsocketProtocol {
         future_into_py_iter(self.rt.clone(), py, async move {
             let mut ws = transport.lock().await;
             match upgrade.send().await {
-                Ok(_) => match (&mut *ws).await {
+                Ok(()) => match (&mut *ws).await {
                     Ok(stream) => {
                         let mut trx = itransport.lock().await;
                         Ok(Python::with_gil(|py| {

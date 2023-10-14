@@ -204,7 +204,7 @@ where
     rt.spawn(async move {
         let result = fut.await;
         Python::with_gil(move |py| {
-            py_aw.as_ref(py).borrow_mut().set_result(result.map(|v| v.into_py(py)));
+            py_aw.borrow_mut(py).set_result(result.map(|v| v.into_py(py)));
         });
     });
 
@@ -223,14 +223,21 @@ where
     T: IntoPy<PyObject>,
 {
     let task_locals = get_current_locals::<R>(py)?;
-    let aw = PyFutureAwaitable::new(task_locals.event_loop(py).into());
+    let holder: Arc<tokio::sync::Mutex<Option<PyResult<PyObject>>>> = Arc::new(tokio::sync::Mutex::new(None));
+    let aw = PyFutureAwaitable::new(task_locals.event_loop(py).into(), holder.clone());
     let py_aw = Py::new(py, aw)?;
     let py_fut = py_aw.clone();
 
     rt.spawn(async move {
-        let result = fut.await;
-        Python::with_gil(move |py| {
-            PyFutureAwaitable::set_result(py_aw.as_ref(py).borrow_mut(), result.map(|v| v.into_py(py)));
+        let result = fut.await.map(|v| Python::with_gil(|py| v.into_py(py)));
+        let mut holder = holder.lock().await;
+        *holder = Some(result);
+        drop(holder);
+
+        Python::with_gil(|py| {
+            if let Ok(py_aw) = py_aw.try_borrow(py) {
+                PyFutureAwaitable::got_result(py_aw);
+            }
         });
     });
 
