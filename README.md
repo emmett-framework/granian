@@ -78,37 +78,51 @@ Arguments:
   APP  Application target to serve.  [required]
 
 Options:
-  --host TEXT                     Host address to bind to.  [default:
-                                  127.0.0.1]
-  --port INTEGER                  Port to bind to.  [default: 8000]
-  --interface [asgi|rsgi|wsgi]    Application interface type.  [default: rsgi]
-  --http [auto|1|2]               HTTP version.  [default: auto]
-  --ws / --no-ws                  Enable websockets handling  [default:
-                                  (enabled)]
-  --workers INTEGER RANGE         Number of worker processes.  [default: 1;
-                                  x>=1]
-  --threads INTEGER RANGE         Number of threads.  [default: 1; x>=1]
+  --host TEXT                     Host address to bind to.  [env var:
+                                  GRANIAN_HOST; default: 127.0.0.1]
+  --port INTEGER                  Port to bind to.  [env var: GRANIAN_PORT;
+                                  default: 8000]
+  --interface [asgi|rsgi|wsgi]    Application interface type.  [env var:
+                                  GRANIAN_INTERFACE; default: rsgi]
+  --http [auto|1|2]               HTTP version.  [env var: GRANIAN_HTTP;
+                                  default: auto]
+  --ws / --no-ws                  Enable websockets handling  [env var:
+                                  GRANIAN_WEBSOCKETS; default: (enabled)]
+  --workers INTEGER RANGE         Number of worker processes.  [env var:
+                                  GRANIAN_WORKERS; default: 1; x>=1]
+  --threads INTEGER RANGE         Number of threads.  [env var:
+                                  GRANIAN_THREADS; default: 1; x>=1]
   --threading-mode [runtime|workers]
-                                  Threading mode to use.  [default: workers]
-  --loop [auto|asyncio|uvloop]    Event loop implementation  [default: auto]
-  --opt / --no-opt                Enable loop optimizations  [default:
-                                  (disabled)]
+                                  Threading mode to use.  [env var:
+                                  GRANIAN_THREADING_MODE; default: workers]
+  --loop [auto|asyncio|uvloop]    Event loop implementation  [env var:
+                                  GRANIAN_LOOP; default: auto]
+  --opt / --no-opt                Enable loop optimizations  [env var:
+                                  GRANIAN_LOOP_OPT; default: (disabled)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
-                                  backlog.  [default: 1024; x>=128]
+                                  backlog.  [env var: GRANIAN_BACKLOG;
+                                  default: 1024; x>=128]
   --log-level [critical|error|warning|warn|info|debug]
-                                  Log level  [default: info]
-  --log-config FILE               Logging configuration file (json)
-  --ssl-keyfile FILE              SSL key file
-  --ssl-certificate FILE          SSL certificate file
-  --url-path-prefix TEXT          URL path prefix the app is mounted on
+                                  Log level  [env var: GRANIAN_LOG_LEVEL;
+                                  default: info]
+  --log-config FILE               Logging configuration file (json)  [env var:
+                                  GRANIAN_LOG_CONFIG]
+  --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
+  --ssl-certificate FILE          SSL certificate file  [env var:
+                                  GRANIAN_SSL_CERTIFICATE]
+  --url-path-prefix TEXT          URL path prefix the app is mounted on  [env
+                                  var: GRANIAN_URL_PATH_PREFIX]
   --reload / --no-reload          Enable auto reload on application's files
-                                  changes  [default: no-reload]
+                                  changes  [env var: GRANIAN_RELOAD; default:
+                                  no-reload]
   --version                       Shows the version and exit.
   --install-completion [bash|zsh|fish|powershell|pwsh]
                                   Install completion for the specified shell.
+                                  [env var: GRANIAN_INSTALL_COMPLETION]
   --show-completion [bash|zsh|fish|powershell|pwsh]
                                   Show completion for the specified shell, to
-                                  copy it or customize the installation.
+                                  copy it or customize the installation.  [env
+                                  var: GRANIAN_SHOW_COMPLETION]
   --help                          Show this message and exit.
 ```
 
