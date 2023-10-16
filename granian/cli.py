@@ -10,7 +10,7 @@ from .log import LogLevels
 from .server import Granian
 
 
-cli = typer.Typer(name='granian', context_settings={'ignore_unknown_options': True})
+cli = typer.Typer(name='granian', context_settings={'auto_envvar_prefix': 'GRANIAN', 'ignore_unknown_options': True})
 
 
 def version_callback(value: bool):
@@ -48,7 +48,12 @@ def main(
         False, '--reload/--no-reload', help="Enable auto reload on application's files changes"
     ),
     _: Optional[bool] = typer.Option(
-        None, '--version', callback=version_callback, is_eager=True, help='Shows the version and exit.'
+        None,
+        '--version',
+        callback=version_callback,
+        is_eager=True,
+        help='Shows the version and exit.',
+        allow_from_autoenv=False,
     ),
 ):
     log_dictconfig = None
