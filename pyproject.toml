@@ -1,6 +1,8 @@
 [project]
 name = 'granian'
-authors = [{ name = 'Giovanni Barillari', email = 'g@baro.dev' }]
+authors = [
+    { name = 'Giovanni Barillari', email = 'g@baro.dev' }
+]
 classifiers = [
     'Development Status :: 5 - Production/Stable',
     'Intended Audience :: Developers',
@@ -21,7 +23,13 @@ classifiers = [
     'Topic :: Internet :: WWW/HTTP',
 ]
 
-dynamic = ['description', 'keywords', 'license', 'readme', 'version']
+dynamic = [
+    'description',
+    'keywords',
+    'license',
+    'readme',
+    'version',
+]
 
 requires-python = '>=3.8'
 dependencies = [
@@ -31,7 +39,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-lint = ['black~=23.9.0', 'ruff~=0.0.292']
+lint = [
+    'black~=23.9.0',
+    'ruff~=0.0.292',
+]
 test = [
     'httpx~=0.25.0',
     'pytest~=7.4.2',
@@ -94,8 +105,8 @@ known-first-party = ['granian', 'tests']
 color = true
 line-length = 120
 target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-skip-string-normalization = true                             # leave this to ruff
-skip-magic-trailing-comma = true                             # leave this to ruff
+skip-string-normalization = true # leave this to ruff
+skip-magic-trailing-comma = true # leave this to ruff
 
 [tool.pytest.ini_options]
 asyncio_mode = 'auto'
