@@ -8,7 +8,7 @@ on:
 
 env:
   MATURIN_VERSION: 1.2.3
-  PYTHON_VERSION: 3.11
+  PYTHON_VERSION: 3.12
 
 jobs:
   lint:
