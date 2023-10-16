@@ -3,17 +3,17 @@ name: build
 on: workflow_dispatch
 
 env:
-  MATURIN_VERSION: 1.2.3
+  MATURIN_VERSION: 1.3.0
   PY_ALL: 3.8 3.9 3.10 3.11 pypy3.8 pypy3.9 pypy3.10
 
 jobs:
-  unix:
-    name: unix ${{ matrix.platform || matrix.os }}(${{ matrix.target }}) - ${{ matrix.manylinux || 'auto' }}
+  wheels:
+    name: wheel ${{ matrix.platform || matrix.os }}(${{ matrix.target }}) - ${{ matrix.manylinux || 'auto' }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos]
+        os: [ubuntu, macos, windows]
         target: [x86_64, aarch64]
         manylinux: [auto]
         include:
@@ -41,32 +41,14 @@ jobs:
       - uses: pyo3/maturin-action@v1
         with:
           maturin-version: v${{ env.MATURIN_VERSION }}
+          rust-toolchain: stable
           command: build
-          args: --release --interpreter ${{ matrix.interpreter || env.PY_ALL }}
+          args: --release --out dist --interpreter ${{ matrix.interpreter || env.PY_ALL }}
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
-          name: wheels
-          path: target/wheels
-
-  win:
-    runs-on: windows-latest
-    env:
-      PY_ALL: 3.8 3.9 3.10 3.11 C:\hostedtoolcache\windows\PyPy\3.9.17\x86\python3.exe C:\hostedtoolcache\windows\PyPy\3.10.12\x86\python3.exe
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pyo3/maturin-action@v1
-        with:
-          maturin-version: v${{ env.MATURIN_VERSION }}
-          command: build
-          args: --release --interpreter ${{ env.PY_ALL }}
-          target: x86_64
-          manylinux: auto
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheels
-          path: target/wheels
+          name: dist
+          path: dist
