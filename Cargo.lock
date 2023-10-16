@@ -266,7 +266,7 @@ checksum = "6fb8d784f27acf97159b40fc4db5ecd8aa23b9ad5ef69cdd136d3bc80665f0c0"
 
 [[package]]
 name = "granian"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "bytes",
  "futures",
