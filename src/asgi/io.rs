@@ -296,7 +296,7 @@ impl ASGIWebsocketProtocol {
 #[inline(never)]
 fn adapt_message_type(message: &PyDict) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
     match message.get_item("type") {
-        Some(item) => {
+        Ok(Some(item)) => {
             let message_type: &str = item.extract()?;
             match message_type {
                 "http.response.start" => Ok(ASGIMessageType::HTTPStart),
@@ -313,7 +313,7 @@ fn adapt_message_type(message: &PyDict) -> Result<ASGIMessageType, UnsupportedAS
 
 #[inline(always)]
 fn adapt_status_code(message: &PyDict) -> Result<i16, UnsupportedASGIMessage> {
-    match message.get_item("status") {
+    match message.get_item("status")? {
         Some(item) => Ok(item.extract()?),
         _ => error_message!(),
     }
@@ -324,7 +324,7 @@ fn adapt_headers(message: &PyDict) -> HeaderMap {
     let mut ret = HeaderMap::new();
     ret.insert(HK_SERVER, HV_SERVER);
     match message.get_item("headers") {
-        Some(item) => {
+        Ok(Some(item)) => {
             let accum: Vec<Vec<&[u8]>> = item.extract().unwrap_or(Vec::new());
             for tup in &accum {
                 if let (Ok(key), Ok(val)) = (HeaderName::from_bytes(tup[0]), HeaderValue::from_bytes(tup[1])) {
@@ -340,11 +340,11 @@ fn adapt_headers(message: &PyDict) -> HeaderMap {
 #[inline(always)]
 fn adapt_body(message: &PyDict) -> (Vec<u8>, bool) {
     let body = match message.get_item("body") {
-        Some(item) => item.extract().unwrap_or(EMPTY_BYTES),
+        Ok(Some(item)) => item.extract().unwrap_or(EMPTY_BYTES),
         _ => EMPTY_BYTES,
     };
     let more = match message.get_item("more_body") {
-        Some(item) => item.extract().unwrap_or(false),
+        Ok(Some(item)) => item.extract().unwrap_or(false),
         _ => false,
     };
     (body, more)
@@ -352,7 +352,7 @@ fn adapt_body(message: &PyDict) -> (Vec<u8>, bool) {
 
 #[inline(always)]
 fn ws_message_into_rs(message: &PyDict) -> PyResult<Message> {
-    match (message.get_item("bytes"), message.get_item("text")) {
+    match (message.get_item("bytes")?, message.get_item("text")?) {
         (Some(item), None) => Ok(Message::Binary(item.extract().unwrap_or(EMPTY_BYTES))),
         (None, Some(item)) => Ok(Message::Text(item.extract().unwrap_or(EMPTY_STRING))),
         (Some(itemb), Some(itemt)) => match (itemb.extract().unwrap_or(None), itemt.extract().unwrap_or(None)) {
