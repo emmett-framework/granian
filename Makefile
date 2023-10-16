@@ -61,7 +61,7 @@ lint: lint-python lint-rust
 
 .PHONY: test
 test:
-	pytest -v test
+	pytest -v tests
 
 .PHONY: all
 all: format build-dev lint test
