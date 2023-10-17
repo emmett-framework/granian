@@ -94,23 +94,11 @@ class LifespanProtocol:
         handler(self, message)
 
 
-async def _noop_coro():
-    return
-
-
-def _send_wrapper(proto):
-    @wraps(proto)
-    def send(data):
-        return proto(_noop_coro, data)
-
-    return send
-
-
 def _callback_wrapper(callback, scope_opts):
     root_url_path = scope_opts.get('url_path_prefix') or ''
 
     @wraps(callback)
     def wrapper(scope: Scope, proto):
-        return callback(scope.as_dict(root_url_path), proto.receive, _send_wrapper(proto.send))
+        return callback(scope.as_dict(root_url_path), proto.receive, proto.send)
 
     return wrapper

@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     http::HV_SERVER,
-    runtime::{future_into_py_futlike, future_into_py_iter, RuntimeRef},
+    runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData},
 };
 
@@ -110,14 +110,14 @@ impl ASGIHTTPProtocol {
         })
     }
 
-    fn send<'p>(&mut self, py: Python<'p>, asyncw: &'p PyAny, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::HTTPStart) => match self.response_started {
                 false => {
                     self.response_status = Some(adapt_status_code(data)?);
                     self.response_headers = Some(adapt_headers(data));
                     self.response_started = true;
-                    asyncw.call0()
+                    empty_future_into_py(py)
                 }
                 true => error_flow!(),
             },
@@ -127,7 +127,7 @@ impl ASGIHTTPProtocol {
                     (true, false, false) => {
                         let headers = self.response_headers.take().unwrap();
                         self.send_response(self.response_status.unwrap(), headers, body.into());
-                        asyncw.call0()
+                        empty_future_into_py(py)
                     }
                     (true, true, false) => {
                         self.response_chunked = true;
@@ -148,7 +148,7 @@ impl ASGIHTTPProtocol {
                     (true, false, true) => match self.body_tx.take() {
                         Some(tx) => match body.is_empty() {
                             false => self.send_body(py, tx, body),
-                            true => asyncw.call0(),
+                            true => empty_future_into_py(py),
                         },
                         _ => error_flow!(),
                     },
@@ -282,7 +282,7 @@ impl ASGIWebsocketProtocol {
         })
     }
 
-    fn send<'p>(&mut self, py: Python<'p>, _asyncw: &'p PyAny, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match (adapt_message_type(data), self.closed) {
             (Ok(ASGIMessageType::WSAccept), _) => self.accept(py),
             (Ok(ASGIMessageType::WSClose), false) => self.close(py),

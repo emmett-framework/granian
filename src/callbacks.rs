@@ -21,6 +21,24 @@ impl CallbackWrapper {
 }
 
 #[pyclass]
+pub(crate) struct PyEmptyAwaitable {}
+
+#[pymethods]
+impl PyEmptyAwaitable {
+    fn __await__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __next__(&self, py: Python) -> IterNextOutput<PyObject, PyObject> {
+        IterNextOutput::Return(py.None())
+    }
+}
+
+#[pyclass]
 pub(crate) struct PyIterAwaitable {
     result: Option<PyResult<PyObject>>,
 }

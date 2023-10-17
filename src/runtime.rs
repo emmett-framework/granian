@@ -12,7 +12,7 @@ use tokio::{
     task::{JoinHandle, LocalSet},
 };
 
-use super::callbacks::{PyFutureAwaitable, PyIterAwaitable};
+use super::callbacks::{PyEmptyAwaitable, PyFutureAwaitable, PyIterAwaitable};
 
 tokio::task_local! {
     static TASK_LOCALS: UnsyncOnceCell<TaskLocals>;
@@ -240,6 +240,11 @@ where
 
     let aw = PyFutureAwaitable::new(Box::new(fut_spawner), event_loop_aw);
     Ok(aw.into_py(py).into_ref(py))
+}
+
+#[inline(always)]
+pub(crate) fn empty_future_into_py(py: Python) -> PyResult<&PyAny> {
+    Ok(PyEmptyAwaitable {}.into_py(py).into_ref(py))
 }
 
 pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>
