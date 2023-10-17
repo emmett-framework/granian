@@ -24,13 +24,6 @@ fn run_callback(callback: PyObject, scope: Scope) -> PyResult<(i32, Vec<(String,
     })
 }
 
-pub(crate) fn call_rtb_http(cb: CallbackWrapper, scope: Scope) -> PyResult<(i32, Vec<(String, String)>, Body)> {
-    run_callback(cb.callback, scope)
-}
-
-pub(crate) fn call_rtt_http(
-    cb: CallbackWrapper,
-    scope: Scope,
-) -> JoinHandle<PyResult<(i32, Vec<(String, String)>, Body)>> {
+pub(crate) fn call_http(cb: CallbackWrapper, scope: Scope) -> JoinHandle<PyResult<(i32, Vec<(String, String)>, Body)>> {
     tokio::task::spawn_blocking(move || run_callback(cb.callback, scope))
 }

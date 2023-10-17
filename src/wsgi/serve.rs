@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use super::http::{handle_rtb, handle_rtt};
+use super::http::handle;
 use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig};
 
 #[pyclass(module = "granian._granian")]
@@ -9,10 +9,10 @@ pub struct WSGIWorker {
 }
 
 impl WSGIWorker {
-    serve_rth!(_serve_rth, handle_rtb);
-    serve_wth!(_serve_wth, handle_rtt);
-    serve_rth_ssl!(_serve_rth_ssl, handle_rtb);
-    serve_wth_ssl!(_serve_wth_ssl, handle_rtt);
+    serve_rth!(_serve_rth, handle);
+    serve_wth!(_serve_wth, handle);
+    serve_rth_ssl!(_serve_rth_ssl, handle);
+    serve_wth_ssl!(_serve_wth_ssl, handle);
 }
 
 #[pymethods]

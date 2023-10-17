@@ -4,10 +4,7 @@ use hyper::{
 };
 use std::net::SocketAddr;
 
-use super::{
-    callbacks::{call_rtb_http, call_rtt_http},
-    types::WSGIScope as Scope,
-};
+use super::{callbacks::call_http, types::WSGIScope as Scope};
 use crate::{
     callbacks::CallbackWrapper,
     http::{response_500, HV_SERVER},
@@ -29,7 +26,7 @@ fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: Body) -> 
     res
 }
 
-pub(crate) async fn handle_rtt(
+pub(crate) async fn handle(
     _rt: RuntimeRef,
     callback: CallbackWrapper,
     server_addr: SocketAddr,
@@ -37,7 +34,8 @@ pub(crate) async fn handle_rtt(
     req: Request<Body>,
     scheme: &str,
 ) -> Response<Body> {
-    if let Ok(res) = call_rtt_http(callback, Scope::new(scheme, server_addr, client_addr, req).await).await {
+    let scope = Scope::new(scheme, server_addr, client_addr, req).await;
+    if let Ok(res) = call_http(callback, scope).await {
         if let Ok((status, headers, body)) = res {
             return build_response(status, headers, body);
         }
@@ -46,21 +44,4 @@ pub(crate) async fn handle_rtt(
         log::error!("WSGI protocol failure");
     }
     response_500()
-}
-
-pub(crate) async fn handle_rtb(
-    _rt: RuntimeRef,
-    callback: CallbackWrapper,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
-    req: Request<Body>,
-    scheme: &str,
-) -> Response<Body> {
-    match call_rtb_http(callback, Scope::new(scheme, server_addr, client_addr, req).await) {
-        Ok((status, headers, body)) => build_response(status, headers, body),
-        _ => {
-            log::warn!("Application callable raised an exception");
-            response_500()
-        }
-    }
 }
