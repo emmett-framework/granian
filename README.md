@@ -102,6 +102,8 @@ Options:
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog.  [env var: GRANIAN_BACKLOG;
                                   default: 1024; x>=128]
+  --log / --no-log                Enable logging  [env var:
+                                  GRANIAN_LOG_ENABLED; default: (enabled)]
   --log-level [critical|error|warning|warn|info|debug]
                                   Log level  [env var: GRANIAN_LOG_LEVEL;
                                   default: info]

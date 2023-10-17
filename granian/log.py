@@ -26,7 +26,6 @@ log_levels_map = {
 LOGGING_CONFIG = {
     'version': 1,
     'disable_existing_loggers': False,
-    'root': {'level': 'INFO', 'handlers': ['console']},
     'formatters': {
         'generic': {
             '()': 'logging.Formatter',
@@ -35,14 +34,21 @@ LOGGING_CONFIG = {
         }
     },
     'handlers': {'console': {'formatter': 'generic', 'class': 'logging.StreamHandler', 'stream': 'ext://sys.stdout'}},
+    'loggers': {'_granian': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}},
 }
 
-logger = logging.getLogger()
+# NOTE: to be consistent with the Rust module logger name
+logger = logging.getLogger('_granian')
 
 
-def configure_logging(level: LogLevels, config: Optional[Dict[str, Any]] = None):
+def configure_logging(level: LogLevels, config: Optional[Dict[str, Any]] = None, enabled: bool = True):
     log_config = copy.deepcopy(LOGGING_CONFIG)
+
     if config:
         log_config.update(config)
-    log_config['root']['level'] = log_levels_map[level]
+
+    log_config['loggers']['_granian']['level'] = log_levels_map[level]
     logging.config.dictConfig(log_config)
+
+    if not enabled:
+        logger.setLevel(logging.CRITICAL + 1)

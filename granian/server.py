@@ -43,6 +43,7 @@ class Granian:
         websockets: bool = True,
         backlog: int = 1024,
         http1_buffer_size: int = 65535,
+        log_enabled: bool = True,
         log_level: LogLevels = LogLevels.info,
         log_dictconfig: Optional[Dict[str, Any]] = None,
         ssl_cert: Optional[Path] = None,
@@ -64,11 +65,14 @@ class Granian:
         self.websockets = websockets
         self.backlog = max(128, backlog)
         self.http1_buffer_size = http1_buffer_size
+        self.log_enabled = log_enabled
         self.log_level = log_level
         self.log_config = log_dictconfig
         self.url_path_prefix = url_path_prefix
         self.reload_on_changes = reload
-        configure_logging(self.log_level, self.log_config)
+
+        configure_logging(self.log_level, self.log_config, self.log_enabled)
+
         self.build_ssl_context(ssl_cert, ssl_key)
         self._shd = None
         self._sfd = None
@@ -101,6 +105,7 @@ class Granian:
         http1_buffer_size,
         websockets,
         loop_opt,
+        log_enabled,
         log_level,
         log_config,
         ssl_ctx,
@@ -108,7 +113,8 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
-        configure_logging(log_level, log_config)
+        configure_logging(log_level, log_config, log_enabled)
+
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
@@ -144,6 +150,7 @@ class Granian:
         http1_buffer_size,
         websockets,
         loop_opt,
+        log_enabled,
         log_level,
         log_config,
         ssl_ctx,
@@ -151,7 +158,8 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
-        configure_logging(log_level, log_config)
+        configure_logging(log_level, log_config, log_enabled)
+
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         target = callback_loader()
@@ -187,6 +195,7 @@ class Granian:
         http1_buffer_size,
         websockets,
         loop_opt,
+        log_enabled,
         log_level,
         log_config,
         ssl_ctx,
@@ -194,7 +203,8 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
-        configure_logging(log_level, log_config)
+        configure_logging(log_level, log_config, log_enabled)
+
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
@@ -228,6 +238,7 @@ class Granian:
                 self.http1_buffer_size,
                 self.websockets,
                 self.loop_opt,
+                self.log_enabled,
                 self.log_level,
                 self.log_config,
                 self.ssl_ctx,

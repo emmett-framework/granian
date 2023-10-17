@@ -33,6 +33,7 @@ def main(
     loop: Loops = typer.Option(Loops.auto.value, help='Event loop implementation'),
     loop_opt: bool = typer.Option(False, '--opt/--no-opt', help='Enable loop optimizations', show_default='disabled'),
     backlog: int = typer.Option(1024, min=128, help='Maximum number of connections to hold in backlog.'),
+    log_enabled: bool = typer.Option(True, '--log/--no-log', help='Enable logging', show_default='enabled'),
     log_level: LogLevels = typer.Option(LogLevels.info.value, help='Log level', case_sensitive=False),
     log_config: Optional[Path] = typer.Option(
         None, help='Logging configuration file (json)', exists=True, file_okay=True, dir_okay=False, readable=True
@@ -79,6 +80,7 @@ def main(
         http=http,
         websockets=websockets,
         backlog=backlog,
+        log_enabled=log_enabled,
         log_level=log_level,
         log_dictconfig=log_dictconfig,
         ssl_cert=ssl_certificate,
