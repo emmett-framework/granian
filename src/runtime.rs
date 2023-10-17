@@ -223,25 +223,23 @@ where
     T: IntoPy<PyObject>,
 {
     let task_locals = get_current_locals::<R>(py)?;
-    let holder: Arc<tokio::sync::Mutex<Option<PyResult<PyObject>>>> = Arc::new(tokio::sync::Mutex::new(None));
-    let aw = PyFutureAwaitable::new(task_locals.event_loop(py).into(), holder.clone());
-    let py_aw = Py::new(py, aw)?;
-    let py_fut = py_aw.clone();
+    let event_loop = task_locals.event_loop(py).to_object(py);
+    let event_loop_aw = event_loop.clone();
+    let fut_spawner = move |cb: PyObject, context: PyObject, aw: Py<PyFutureAwaitable>| {
+        rt.spawn(async move {
+            let result = fut.await;
 
-    rt.spawn(async move {
-        let result = fut.await.map(|v| Python::with_gil(|py| v.into_py(py)));
-        let mut holder = holder.lock().await;
-        *holder = Some(result);
-        drop(holder);
-
-        Python::with_gil(|py| {
-            if let Ok(py_aw) = py_aw.try_borrow(py) {
-                PyFutureAwaitable::got_result(py_aw);
-            }
+            Python::with_gil(|py| {
+                PyFutureAwaitable::set_result(aw.borrow_mut(py), result.map(|v| v.into_py(py)));
+                let kwctx = pyo3::types::PyDict::new(py);
+                kwctx.set_item("context", context).unwrap();
+                let _ = event_loop.call_method(py, "call_soon_threadsafe", (cb, aw), Some(kwctx));
+            });
         });
-    });
+    };
 
-    Ok(py_fut.into_ref(py))
+    let aw = PyFutureAwaitable::new(Box::new(fut_spawner), event_loop_aw);
+    Ok(aw.into_py(py).into_ref(py))
 }
 
 pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>

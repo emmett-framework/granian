@@ -1,8 +1,6 @@
 use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
 use pyo3::pyclass::IterNextOutput;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 static CONTEXTVARS: OnceCell<PyObject> = OnceCell::new();
 static CONTEXT: OnceCell<PyObject> = OnceCell::new();
@@ -60,29 +58,27 @@ impl PyIterAwaitable {
 
 #[pyclass]
 pub(crate) struct PyFutureAwaitable {
-    py_block: bool,
+    fut_spawner: Option<Box<dyn FnOnce(PyObject, PyObject, Py<PyFutureAwaitable>) + Send>>,
+    result: Option<PyResult<PyObject>>,
     event_loop: PyObject,
-    result: Arc<Mutex<Option<PyResult<PyObject>>>>,
-    cb: Option<(PyObject, Py<pyo3::types::PyDict>)>,
+    py_block: bool,
 }
 
 impl PyFutureAwaitable {
-    pub(crate) fn new(event_loop: PyObject, holder: Arc<Mutex<Option<PyResult<PyObject>>>>) -> Self {
+    pub(crate) fn new(
+        fut_spawner: Box<dyn FnOnce(PyObject, PyObject, Py<PyFutureAwaitable>) + Send>,
+        event_loop: PyObject,
+    ) -> Self {
         Self {
+            fut_spawner: Some(fut_spawner),
+            result: None,
             event_loop,
             py_block: true,
-            result: holder,
-            cb: None,
         }
     }
 
-    pub(crate) fn got_result(pyself: PyRef<'_, Self>) {
-        if let Some((cb, ctx)) = &pyself.cb {
-            let py = pyself.py();
-            let _ = pyself
-                .event_loop
-                .call_method(py, "call_soon_threadsafe", (cb, &pyself), Some(ctx.as_ref(py)));
-        }
+    pub(crate) fn set_result(mut pyself: PyRefMut<'_, Self>, result: PyResult<PyObject>) {
+        pyself.result = Some(result);
     }
 }
 
@@ -106,30 +102,14 @@ impl PyFutureAwaitable {
         self.event_loop.clone()
     }
 
-    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, py: Python, cb: PyObject, context: PyObject) -> PyResult<()> {
-        let kwctx = pyo3::types::PyDict::new(py);
-        kwctx.set_item("context", context)?;
-        let result = pyself.result.blocking_lock();
-        match result.is_some() {
-            true => {
-                pyself
-                    .event_loop
-                    .call_method(py, "call_soon", (cb, &pyself), Some(kwctx))?;
-            }
-            false => {
-                drop(result);
-                pyself.cb = Some((cb, kwctx.into_py(py)));
-            }
+    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: PyObject) -> PyResult<()> {
+        if let Some(spawner) = pyself.fut_spawner.take() {
+            (spawner)(cb, context, pyself.into());
         }
         Ok(())
     }
 
-    fn cancel(pyself: PyRef<'_, Self>, py: Python) -> bool {
-        if let Some((cb, kwctx)) = &pyself.cb {
-            let _ = pyself
-                .event_loop
-                .call_method(py, "call_soon", (cb, &pyself), Some(kwctx.as_ref(py)));
-        }
+    fn cancel(&self) -> bool {
         false
     }
 
@@ -141,16 +121,14 @@ impl PyFutureAwaitable {
     }
 
     fn __next__(pyself: PyRef<'_, Self>) -> PyResult<IterNextOutput<PyRef<'_, Self>, PyObject>> {
-        let mut result = pyself.result.blocking_lock();
-        match (*result).take() {
-            Some(res) => match res {
-                Ok(v) => Ok(IterNextOutput::Return(v)),
-                Err(err) => Err(err),
-            },
-            _ => {
-                drop(result);
-                Ok(IterNextOutput::Yield(pyself))
+        match &pyself.result {
+            Some(res) => {
+                let py = pyself.py();
+                res.as_ref()
+                    .map(|v| IterNextOutput::Return(v.clone_ref(py)))
+                    .map_err(|err| err.clone_ref(py))
             }
+            _ => Ok(IterNextOutput::Yield(pyself)),
         }
     }
 }
