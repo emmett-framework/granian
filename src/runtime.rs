@@ -232,8 +232,8 @@ where
             Python::with_gil(|py| {
                 PyFutureAwaitable::set_result(aw.borrow_mut(py), result.map(|v| v.into_py(py)));
                 let kwctx = pyo3::types::PyDict::new(py);
-                kwctx.set_item("context", context).unwrap();
-                let _ = event_loop.call_method(py, "call_soon_threadsafe", (cb, aw), Some(kwctx));
+                kwctx.set_item(pyo3::intern!(py, "context"), context).unwrap();
+                let _ = event_loop.call_method(py, pyo3::intern!(py, "call_soon_threadsafe"), (cb, aw), Some(kwctx));
             });
         });
     };
