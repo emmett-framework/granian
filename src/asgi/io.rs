@@ -10,7 +10,7 @@ use hyper::{
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use tokio::sync::{oneshot, Mutex};
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
@@ -25,7 +25,7 @@ use crate::{
     ws::{HyperWebsocket, UpgradeData},
 };
 
-const EMPTY_BYTES: Vec<u8> = Vec::new();
+const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
 const EMPTY_STRING: String = String::new();
 
 #[pyclass(module = "granian._granian")]
@@ -65,7 +65,7 @@ impl ASGIHTTPProtocol {
     }
 
     #[inline(always)]
-    fn send_body<'p>(&self, py: Python<'p>, tx: Arc<Mutex<BodySender>>, body: Vec<u8>) -> PyResult<&'p PyAny> {
+    fn send_body<'p>(&self, py: Python<'p>, tx: Arc<Mutex<BodySender>>, body: Box<[u8]>) -> PyResult<&'p PyAny> {
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut tx = tx.lock().await;
             match (*tx).send_data(body.into()).await {
@@ -114,19 +114,19 @@ impl ASGIHTTPProtocol {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::HTTPStart) => match self.response_started {
                 false => {
-                    self.response_status = Some(adapt_status_code(data)?);
-                    self.response_headers = Some(adapt_headers(data));
+                    self.response_status = Some(adapt_status_code(py, data)?);
+                    self.response_headers = Some(adapt_headers(py, data));
                     self.response_started = true;
                     empty_future_into_py(py)
                 }
                 true => error_flow!(),
             },
             Ok(ASGIMessageType::HTTPBody) => {
-                let (body, more) = adapt_body(data);
+                let (body, more) = adapt_body(py, data);
                 match (self.response_started, more, self.response_chunked) {
                     (true, false, false) => {
                         let headers = self.response_headers.take().unwrap();
-                        self.send_response(self.response_status.unwrap(), headers, body.into());
+                        self.send_response(self.response_status.unwrap(), headers, Bytes::from(body).into());
                         empty_future_into_py(py)
                     }
                     (true, true, false) => {
@@ -214,7 +214,7 @@ impl ASGIWebsocketProtocol {
     #[inline(always)]
     fn send_message<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         let transport = self.ws_tx.clone();
-        let message = ws_message_into_rs(data);
+        let message = ws_message_into_rs(py, data);
         future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(message) = message {
                 if let Some(ws) = &mut *(transport.lock().await) {
@@ -312,18 +312,18 @@ fn adapt_message_type(message: &PyDict) -> Result<ASGIMessageType, UnsupportedAS
 }
 
 #[inline(always)]
-fn adapt_status_code(message: &PyDict) -> Result<i16, UnsupportedASGIMessage> {
-    match message.get_item("status")? {
+fn adapt_status_code(py: Python, message: &PyDict) -> Result<i16, UnsupportedASGIMessage> {
+    match message.get_item(pyo3::intern!(py, "status"))? {
         Some(item) => Ok(item.extract()?),
         _ => error_message!(),
     }
 }
 
 #[inline(always)]
-fn adapt_headers(message: &PyDict) -> HeaderMap {
+fn adapt_headers(py: Python, message: &PyDict) -> HeaderMap {
     let mut ret = HeaderMap::new();
     ret.insert(HK_SERVER, HV_SERVER);
-    match message.get_item("headers") {
+    match message.get_item(pyo3::intern!(py, "headers")) {
         Ok(Some(item)) => {
             let accum: Vec<Vec<&[u8]>> = item.extract().unwrap_or(Vec::new());
             for tup in &accum {
@@ -338,22 +338,28 @@ fn adapt_headers(message: &PyDict) -> HeaderMap {
 }
 
 #[inline(always)]
-fn adapt_body(message: &PyDict) -> (Vec<u8>, bool) {
-    let body = match message.get_item("body") {
+fn adapt_body(py: Python, message: &PyDict) -> (Box<[u8]>, bool) {
+    let body = match message.get_item(pyo3::intern!(py, "body")) {
         Ok(Some(item)) => item.extract().unwrap_or(EMPTY_BYTES),
         _ => EMPTY_BYTES,
     };
-    let more = match message.get_item("more_body") {
+    let more = match message.get_item(pyo3::intern!(py, "more_body")) {
         Ok(Some(item)) => item.extract().unwrap_or(false),
         _ => false,
     };
-    (body, more)
+    (body.into(), more)
 }
 
 #[inline(always)]
-fn ws_message_into_rs(message: &PyDict) -> PyResult<Message> {
-    match (message.get_item("bytes")?, message.get_item("text")?) {
-        (Some(item), None) => Ok(Message::Binary(item.extract().unwrap_or(EMPTY_BYTES))),
+fn ws_message_into_rs(py: Python, message: &PyDict) -> PyResult<Message> {
+    match (
+        message.get_item(pyo3::intern!(py, "bytes"))?,
+        message.get_item(pyo3::intern!(py, "text"))?,
+    ) {
+        (Some(item), None) => {
+            let data: Cow<[u8]> = item.extract().unwrap_or(EMPTY_BYTES);
+            Ok(data[..].into())
+        }
         (None, Some(item)) => Ok(Message::Text(item.extract().unwrap_or(EMPTY_STRING))),
         (Some(itemb), Some(itemt)) => match (itemb.extract().unwrap_or(None), itemt.extract().unwrap_or(None)) {
             (Some(msgb), None) => Ok(Message::Binary(msgb)),

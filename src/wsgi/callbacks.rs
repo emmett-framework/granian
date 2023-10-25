@@ -1,11 +1,13 @@
+use bytes::Bytes;
 use hyper::Body;
 use pyo3::prelude::*;
+use std::borrow::Cow;
 use tokio::task::JoinHandle;
 
 use super::types::{WSGIResponseBodyIter, WSGIScope as Scope};
 use crate::callbacks::CallbackWrapper;
 
-const WSGI_LIST_RESPONSE_BODY: i32 = 0;
+const WSGI_BYTES_RESPONSE_BODY: i32 = 0;
 const WSGI_ITER_RESPONSE_BODY: i32 = 1;
 
 #[inline(always)]
@@ -16,7 +18,10 @@ fn run_callback(callback: PyObject, scope: Scope) -> PyResult<(i32, Vec<(String,
                 .call1(py, (scope,))?
                 .extract::<(i32, Vec<(String, String)>, i32, PyObject)>(py)?;
         let body = match body_type {
-            WSGI_LIST_RESPONSE_BODY => Body::from(pybody.extract::<Vec<u8>>(py)?),
+            WSGI_BYTES_RESPONSE_BODY => {
+                let data: Box<[u8]> = pybody.extract::<Cow<[u8]>>(py)?.into();
+                Body::from(Bytes::from(data))
+            }
             WSGI_ITER_RESPONSE_BODY => Body::wrap_stream(WSGIResponseBodyIter::new(pybody)),
             _ => Body::empty(),
         };

@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 mod asgi;
 mod callbacks;
+mod conversion;
 mod http;
 mod rsgi;
 mod runtime;

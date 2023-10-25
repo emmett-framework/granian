@@ -1,10 +1,11 @@
+use bytes::Bytes;
 use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
     Body, Uri, Version,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyString;
-use std::net::SocketAddr;
+use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
@@ -184,11 +185,12 @@ impl PyResponseBody {
         }
     }
 
-    pub fn from_bytes(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
+    pub fn from_bytes(status: u16, headers: Vec<(String, String)>, body: Cow<[u8]>) -> Self {
+        let rbody: Box<[u8]> = body.into();
         Self {
             status,
             headers,
-            body: Body::from(body),
+            body: Body::from(Bytes::from(rbody)),
         }
     }
 

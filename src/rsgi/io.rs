@@ -9,7 +9,7 @@ use hyper::{
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use tokio::sync::{oneshot, Mutex};
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
@@ -19,6 +19,7 @@ use super::{
     types::{PyResponse, PyResponseBody, PyResponseFile},
 };
 use crate::{
+    conversion::BytesToPy,
     runtime::{future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -40,11 +41,12 @@ impl RSGIHTTPStreamTransport {
 
 #[pymethods]
 impl RSGIHTTPStreamTransport {
-    fn send_bytes<'p>(&self, py: Python<'p>, data: Vec<u8>) -> PyResult<&'p PyAny> {
+    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
+        let bdata: Box<[u8]> = data.into();
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send_data(data.into()).await {
+                return match stream.send_data(bdata.into()).await {
                     Ok(()) => Ok(()),
                     _ => error_stream!(),
                 };
@@ -95,9 +97,7 @@ impl RSGIHTTPProtocol {
         future_into_py_iter(self.rt.clone(), py, async move {
             let mut bodym = body_ref.lock().await;
             let body = hyper::body::to_bytes(&mut *bodym).await.unwrap();
-            Ok(Python::with_gil(|py| {
-                PyBytes::new(py, &body[..]).as_ref().to_object(py)
-            }))
+            Ok(BytesToPy(body))
         })
     }
 
@@ -117,7 +117,7 @@ impl RSGIHTTPProtocol {
                 .data()
                 .await
                 .map_or_else(Bytes::new, |buf| buf.unwrap_or_else(|_| Bytes::new()));
-            Ok(Python::with_gil(|py| PyBytes::new(py, &chunk[..]).to_object(py)))
+            Ok(BytesToPy(chunk))
         })?;
         Ok(Some(fut))
     }
@@ -129,8 +129,8 @@ impl RSGIHTTPProtocol {
         }
     }
 
-    #[pyo3(signature = (status=200, headers=vec![], body=vec![]))]
-    fn response_bytes(&mut self, status: u16, headers: Vec<(String, String)>, body: Vec<u8>) {
+    #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
+    fn response_bytes(&mut self, status: u16, headers: Vec<(String, String)>, body: Cow<[u8]>) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
         }
@@ -213,11 +213,12 @@ impl RSGIWebsocketTransport {
         })
     }
 
-    fn send_bytes<'p>(&self, py: Python<'p>, data: Vec<u8>) -> PyResult<&'p PyAny> {
+    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
+        let bdata: Box<[u8]> = data.into();
         future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send(Message::Binary(data)).await {
+                return match stream.send(bdata[..].into()).await {
                     Ok(()) => Ok(()),
                     _ => error_stream!(),
                 };

@@ -7,9 +7,12 @@ use hyper::{
 use pyo3::types::{PyBytes, PyDict, PyList};
 use pyo3::{prelude::*, types::IntoPyDict};
 use std::{
+    borrow::Cow,
     net::{IpAddr, SocketAddr},
     task::{Context, Poll},
 };
+
+use crate::conversion::HTTPVersionToPy;
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
@@ -92,7 +95,7 @@ pub(crate) struct WSGIScope {
     server_port: u16,
     client: String,
     headers: HeaderMap,
-    body: Bytes,
+    body: Option<Bytes>,
 }
 
 impl WSGIScope {
@@ -116,17 +119,7 @@ impl WSGIScope {
             server_port: server.port(),
             client: client.to_string(),
             headers,
-            body,
-        }
-    }
-
-    #[inline(always)]
-    fn py_http_version(&self) -> &str {
-        match self.http_version {
-            Version::HTTP_10 => "HTTP/1",
-            Version::HTTP_11 => "HTTP/1.1",
-            Version::HTTP_2 => "HTTP/2",
-            _ => "HTTP/1",
+            body: Some(body),
         }
     }
 }
@@ -165,7 +158,7 @@ impl WSGIScope {
             (
                 path,
                 query_string,
-                self.py_http_version(),
+                HTTPVersionToPy(self.http_version),
                 (self.server_ip.to_string(), self.server_port),
                 &self.client[..],
                 &self.scheme[..],
@@ -173,7 +166,7 @@ impl WSGIScope {
                 content_type,
                 content_len,
                 headers,
-                WSGIBody::new(self.body.clone()),
+                WSGIBody::new(self.body.take().unwrap()),
             )
         });
 
@@ -221,12 +214,12 @@ impl WSGIResponseBodyIter {
 }
 
 impl Stream for WSGIResponseBodyIter {
-    type Item = PyResult<Vec<u8>>;
+    type Item = PyResult<Box<[u8]>>;
 
     fn poll_next(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Python::with_gil(|py| match self.inner.call_method0(py, pyo3::intern!(py, "__next__")) {
-            Ok(chunk_obj) => match chunk_obj.extract::<Vec<u8>>(py) {
-                Ok(chunk) => Poll::Ready(Some(Ok(chunk))),
+            Ok(chunk_obj) => match chunk_obj.extract::<Cow<[u8]>>(py) {
+                Ok(chunk) => Poll::Ready(Some(Ok(chunk.into()))),
                 _ => {
                     self.close_inner(py);
                     Poll::Ready(None)
