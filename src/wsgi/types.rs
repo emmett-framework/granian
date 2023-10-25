@@ -12,8 +12,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::conversion::HTTPVersionToPy;
-
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
 #[pyclass(module = "granian._granian")]
@@ -122,6 +120,18 @@ impl WSGIScope {
             body: Some(body),
         }
     }
+
+    #[inline(always)]
+    fn py_http_version(&self) -> String {
+        match self.http_version {
+            Version::HTTP_10 => "HTTP/1",
+            Version::HTTP_11 => "HTTP/1.1",
+            Version::HTTP_2 => "HTTP/2",
+            Version::HTTP_3 => "HTTP/3",
+            _ => "HTTP/1",
+        }
+        .into()
+    }
 }
 
 #[pymethods]
@@ -158,7 +168,7 @@ impl WSGIScope {
             (
                 path,
                 query_string,
-                HTTPVersionToPy(self.http_version),
+                self.py_http_version(),
                 (self.server_ip.to_string(), self.server_port),
                 &self.client[..],
                 &self.scheme[..],

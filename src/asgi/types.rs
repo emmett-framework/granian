@@ -4,8 +4,6 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 use std::net::{IpAddr, SocketAddr};
 
-use crate::conversion::HTTPVersionToPy;
-
 const SCHEME_HTTPS: &str = "https";
 const SCHEME_WS: &str = "ws";
 const SCHEME_WSS: &str = "wss";
@@ -72,6 +70,17 @@ impl ASGIScope {
     }
 
     #[inline(always)]
+    fn py_http_version(&self) -> &str {
+        match self.http_version {
+            Version::HTTP_10 => "1",
+            Version::HTTP_11 => "1.1",
+            Version::HTTP_2 => "2",
+            Version::HTTP_3 => "3",
+            _ => "1",
+        }
+    }
+
+    #[inline(always)]
     fn py_scheme(&self) -> &str {
         let scheme = &self.scheme[..];
         match self.is_websocket {
@@ -108,7 +117,7 @@ impl ASGIScope {
                 path,
                 query_string,
                 self.py_proto(),
-                HTTPVersionToPy(self.http_version),
+                self.py_http_version(),
                 (self.server_ip.to_string(), self.server_port),
                 (self.client_ip.to_string(), self.client_port),
                 self.py_scheme(),
