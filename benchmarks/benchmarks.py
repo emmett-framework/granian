@@ -20,19 +20,19 @@ def app(name, procs=None, threads=None, thmode=None):
     proc = {
         "asgi": (
             "granian --interface asgi --log-level warning --backlog 2048 "
-            "--no-ws --opt --http 1 "
+            "--no-ws --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.asgi:app"
         ),
         "rsgi": (
             "granian --interface rsgi --log-level warning --backlog 2048 "
-            "--no-ws --opt --http 1 "
+            "--no-ws --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.rsgi:app"
         ),
         "wsgi": (
             "granian --interface wsgi --log-level warning --backlog 2048 "
-            "--no-ws --opt --http 1 "
+            "--no-ws --http 1 "
             f"--workers {procs} --threads {threads} --threading-mode {thmode} "
             "app.wsgi:app"
         ),
@@ -50,9 +50,8 @@ def app(name, procs=None, threads=None, thmode=None):
             "hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 "
             f"--workers {procs} asgi:app.asgi:app"
         ),
-        "gunicorn_meinheld": (
-            "gunicorn -k meinheld.gmeinheld.MeinheldWorker "
-            f"--workers {procs} app.wsgi:app"
+        "gunicorn": (
+            f"gunicorn --workers {procs} app.wsgi:app"
         )
     }
     proc = subprocess.Popen(proc[name], shell=True, preexec_fn=os.setsid)
@@ -169,7 +168,7 @@ def vs_3rd_sync():
     }
     for fw in [
         "granian_wsgi",
-        "gunicorn_meinheld",
+        "gunicorn",
     ]:
         for key, bench_data in benches.items():
             route, opts = bench_data

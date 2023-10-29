@@ -3,6 +3,7 @@
 Run at: {{ =data.run_at }}
 
 CPUs: {{ =data.cpu }}
+Python version: {{ =data.pyver }}
 
 {{ if "rsgi_body" in data.results: }}
 ## RSGI response types
