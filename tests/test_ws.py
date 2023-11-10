@@ -1,12 +1,13 @@
 import json
+import os
 import sys
 
 import pytest
 import websockets
 
 
-@pytest.mark.skipif(sys.platform == 'win32', reason='skip on windows')
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == 'win32', reason='skip on windows')
 @pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_messages(server, threading_mode):
@@ -34,6 +35,7 @@ async def test_reject(server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_asgi_scope(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
@@ -51,6 +53,7 @@ async def test_asgi_scope(asgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_rsgi_scope(rsgi_server, threading_mode):
     async with rsgi_server(threading_mode) as port:

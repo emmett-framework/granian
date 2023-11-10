@@ -1,8 +1,11 @@
+import os
+
 import httpx
 import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_scope(wsgi_server, threading_mode):
     payload = 'body_payload'
@@ -32,6 +35,18 @@ async def test_body(wsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not bool(os.getenv('PGO_RUN')), reason='not PGO build')
+@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
+async def test_body_large(wsgi_server, threading_mode):
+    data = ''.join([f'{idx}test'.zfill(8) for idx in range(0, 5000)])
+    async with wsgi_server(threading_mode) as port:
+        res = httpx.post(f'http://localhost:{port}/echo', content=data)
+
+    assert res.status_code == 200
+    assert res.text == data
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_iterbody(wsgi_server, threading_mode):
     async with wsgi_server(threading_mode) as port:
@@ -42,6 +57,7 @@ async def test_iterbody(wsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_app_error(wsgi_server, threading_mode):
     async with wsgi_server(threading_mode) as port:

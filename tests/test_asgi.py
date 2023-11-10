@@ -1,8 +1,11 @@
+import os
+
 import httpx
 import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_scope(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
@@ -44,6 +47,7 @@ async def test_body_large(asgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_app_error(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
@@ -53,6 +57,7 @@ async def test_app_error(asgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_protocol_error(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
