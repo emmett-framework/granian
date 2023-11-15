@@ -271,7 +271,6 @@ dependencies = [
  "pin-project",
  "pyo3",
  "pyo3-asyncio",
- "pyo3-build-config",
  "pyo3-log",
  "rustls-pemfile",
  "socket2 0.5.5",

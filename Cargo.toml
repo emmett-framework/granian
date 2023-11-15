@@ -50,9 +50,6 @@ tokio-tungstenite = "0.20"
 tokio-util = { version = "0.7", features = ["codec"] }
 tungstenite = "0.20"
 
-[build-dependencies]
-pyo3-build-config = { version = "=0.20", features = ["resolve-config"] }
-
 [profile.release]
 codegen-units = 1
 debug = false
