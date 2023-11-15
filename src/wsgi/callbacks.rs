@@ -29,10 +29,12 @@ fn run_callback(callback: PyObject, scope: Scope) -> PyResult<(i32, Vec<(String,
     })
 }
 
+#[inline(always)]
 pub(crate) fn call_rtb_http(cb: CallbackWrapper, scope: Scope) -> PyResult<(i32, Vec<(String, String)>, Body)> {
     run_callback(cb.callback, scope)
 }
 
+#[inline(always)]
 pub(crate) fn call_rtt_http(
     cb: CallbackWrapper,
     scope: Scope,
