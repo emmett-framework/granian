@@ -19,14 +19,6 @@ jobs:
         include:
           - os: ubuntu
             platform: linux
-          - os: ubuntu
-            platform: linux
-            target: x86_64
-            manylinux: auto
-            interpreter: pypy3.8 pypy3.9 pypy3.10
-          - os: macos
-            target: x86_64
-            interpreter: pypy3.8 pypy3.9 pypy3.10
           - os: macos
             target: aarch64
             # interpreter: 3.8 3.9 pypy3.8 pypy3.9 pypy3.10
@@ -43,12 +35,17 @@ jobs:
             platform: linux
             target: aarch64
             manylinux: musllinux_1_1
-          - os: windows
-            target: x86_64
-            interpreter: pypy3.8 pypy3.9 pypy3.10
         exclude:
           - os: windows
             target: aarch64
+          # PGO builds
+          - os: ubuntu
+            target: x86_64
+            manylinux: auto
+          - os: macos
+            target: x86_64
+          - os: windows
+            target: x86_64
     steps:
       - uses: actions/checkout@v4
       - uses: pyo3/maturin-action@v1
@@ -74,7 +71,7 @@ jobs:
         # os: [ubuntu-latest, macos-latest, macos-latest-xlarge, windows-latest]
         os: [ubuntu-latest, macos-latest, windows-latest]
         manylinux: [auto]
-        interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12", "pypy3.8", "pypy3.9", "pypy3.10"]
         include:
           - os: ubuntu-latest
             platform: linux
