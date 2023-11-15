@@ -20,6 +20,7 @@ async def _server(interface, port, threading_mode, tls=False):
                 f'granian --interface {interface} --port {port} ',
                 f'--threads 1 --threading-mode {threading_mode} ',
                 tls_opts,
+                '--opt ' if os.getenv('LOOP_OPT') else '',
                 f'tests.apps.{interface}:app',
             ]
         ),

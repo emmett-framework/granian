@@ -52,7 +52,8 @@ jobs:
             interpreter: pypy3.8 pypy3.9 pypy3.10
           - os: macos
             target: aarch64
-            interpreter: 3.8 3.9 pypy3.8 pypy3.9 pypy3.10
+            # interpreter: 3.8 3.9 pypy3.8 pypy3.9 pypy3.10
+            interpreter: 3.8 3.9 3.10 3.11 3.12 pypy3.8 pypy3.9 pypy3.10
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -93,17 +94,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, macos-latest-xlarge, windows-latest]
+        # os: [ubuntu-latest, macos-latest, macos-latest-xlarge, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         manylinux: [auto]
         interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12"]
         include:
           - os: ubuntu-latest
             platform: linux
-        exclude:
-          - os: macos-latest-xlarge
-            interpreter: '3.8'
-          - os: macos-latest-xlarge
-            interpreter: '3.9'
+        # exclude:
+        #   - os: macos-latest-xlarge
+        #     interpreter: '3.8'
+        #   - os: macos-latest-xlarge
+        #     interpreter: '3.9'
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -133,6 +135,7 @@ jobs:
           pip install .[test]
           pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
           PGO_RUN=y pytest tests
+          PGO_RUN=y LOOP_OPT=y pytest tests/test_asgi.py tests/test_rsgi.py
       - name: merge PGO data
         run: ${{ env.LLVM_PROFDATA }} merge -o ${{ github.workspace }}/merged.profdata ${{ github.workspace }}/profdata
       - name: Build PGO wheel
