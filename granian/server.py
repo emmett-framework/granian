@@ -122,7 +122,8 @@ class Granian:
 
         loop.run_until_complete(lifespan_handler.startup())
         if lifespan_handler.interrupt:
-            return
+            logger.error('ASGI lifespan startup failed')
+            sys.exit(1)
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
