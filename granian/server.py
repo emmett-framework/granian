@@ -77,7 +77,9 @@ class Granian:
         self._shd = None
         self._sfd = None
         self.procs: List[multiprocessing.Process] = []
-        self.exit_event = threading.Event()
+        self.main_loop_interrupt = threading.Event()
+        self.interrupt_signal = False
+        self.interrupt_child = None
 
     def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
         if not (cert and key):
@@ -221,7 +223,8 @@ class Granian:
         self._sfd = self._shd.get_fd()
 
     def signal_handler(self, *args, **kwargs):
-        self.exit_event.set()
+        self.interrupt_signal = True
+        self.main_loop_interrupt.set()
 
     def _spawn_proc(self, id, target, callback_loader, socket_loader) -> multiprocessing.Process:
         return multiprocessing.get_context().Process(
@@ -265,6 +268,19 @@ class Granian:
         for proc in self.procs:
             proc.join()
 
+    @staticmethod
+    def _watch_worker(proc, idx, parent):
+        proc.join()
+        if not parent.interrupt_signal:
+            logger.error(f'Unexpected exit from worker-{idx + 1}')
+            parent.interrupt_child = idx
+            parent.main_loop_interrupt.set()
+
+    def _watch_workers(self):
+        for idx, proc in enumerate(self.procs):
+            watcher = threading.Thread(target=self._watch_worker, args=(proc, idx, self))
+            watcher.start()
+
     def startup(self, spawn_target, target_loader):
         logger.info('Starting granian')
 
@@ -279,13 +295,26 @@ class Granian:
         self._spawn_workers(sock, spawn_target, target_loader)
         return sock
 
-    def shutdown(self):
+    def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
         self._stop_workers()
+        if not exit_code and self.interrupt_child is not None:
+            exit_code = 1
+        if exit_code:
+            sys.exit(exit_code)
+
+    def _serve_loop(self):
+        while True:
+            self.main_loop_interrupt.wait()
+            if self.interrupt_signal:
+                break
+            if self.interrupt_child is not None:
+                break
 
     def _serve(self, spawn_target, target_loader):
         self.startup(spawn_target, target_loader)
-        self.exit_event.wait()
+        self._watch_workers()
+        self._serve_loop()
         self.shutdown()
 
     def _serve_with_reloader(self, spawn_target, target_loader):
@@ -293,9 +322,10 @@ class Granian:
         sock = self.startup(spawn_target, target_loader)
 
         try:
-            for _ in watchfiles.watch(reload_path, stop_event=self.exit_event):
+            for _ in watchfiles.watch(reload_path, stop_event=self.main_loop_interrupt):
                 self._stop_workers()
                 self._spawn_workers(sock, spawn_target, target_loader)
+                self._watch_workers()
         except StopIteration:
             pass
 
