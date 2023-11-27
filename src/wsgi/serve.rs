@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 
 use super::http::{handle_rtb, handle_rtt};
-use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig};
+use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
 
 #[pyclass(module = "granian._granian")]
 pub struct WSGIWorker {
@@ -59,17 +59,17 @@ impl WSGIWorker {
         })
     }
 
-    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal_rx: PyObject) {
+    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal: Py<WorkerSignal>) {
         match self.config.ssl_enabled {
-            false => self._serve_rth(callback, event_loop, context, signal_rx),
-            true => self._serve_rth_ssl(callback, event_loop, context, signal_rx),
+            false => self._serve_rth(callback, event_loop, context, signal),
+            true => self._serve_rth_ssl(callback, event_loop, context, signal),
         }
     }
 
-    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal_rx: PyObject) {
+    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal: Py<WorkerSignal>) {
         match self.config.ssl_enabled {
-            false => self._serve_wth(callback, event_loop, context, signal_rx),
-            true => self._serve_wth_ssl(callback, event_loop, context, signal_rx),
+            false => self._serve_wth(callback, event_loop, context, signal),
+            true => self._serve_wth_ssl(callback, event_loop, context, signal),
         }
     }
 }

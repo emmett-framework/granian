@@ -11,6 +11,7 @@ use crate::{
         callback_impl_loop_err, callback_impl_loop_pytask, callback_impl_loop_run, callback_impl_loop_step,
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
+    http::HTTPRequest,
     runtime::RuntimeRef,
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -26,7 +27,7 @@ impl CallbackRunnerHTTP {
     pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: Scope) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
-            proto: pyproto.clone(),
+            proto: pyproto.clone_ref(py),
             context: cb.context,
             cb: cb.callback.call1(py, (scope, pyproto)).unwrap(),
         }
@@ -38,7 +39,13 @@ impl CallbackRunnerHTTP {
 #[pymethods]
 impl CallbackRunnerHTTP {
     fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        CallbackTaskHTTP::new(py, self.cb.clone(), self.proto.clone(), self.context.clone())?.run(py)
+        CallbackTaskHTTP::new(
+            py,
+            self.cb.clone_ref(py),
+            self.proto.clone_ref(py),
+            self.context.clone(),
+        )?
+        .run(py)
     }
 }
 
@@ -261,7 +268,7 @@ macro_rules! call_impl_rtb_http {
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: hyper::Request<hyper::Body>,
+            req: HTTPRequest,
             scope: Scope,
         ) -> oneshot::Receiver<PyResponse> {
             let (tx, rx) = oneshot::channel();
@@ -281,7 +288,7 @@ macro_rules! call_impl_rtt_http {
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: hyper::Request<hyper::Body>,
+            req: HTTPRequest,
             scope: Scope,
         ) -> oneshot::Receiver<PyResponse> {
             let (tx, rx) = oneshot::channel();

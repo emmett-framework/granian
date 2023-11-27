@@ -116,8 +116,8 @@ impl PyFutureAwaitable {
         self.py_block = val;
     }
 
-    fn get_loop(&self) -> PyObject {
-        self.event_loop.clone()
+    fn get_loop(&self, py: Python) -> PyObject {
+        self.event_loop.clone_ref(py)
     }
 
     fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: PyObject) -> PyResult<()> {
@@ -199,7 +199,7 @@ macro_rules! callback_impl_run_pytask {
 macro_rules! callback_impl_loop_run {
     () => {
         pub fn run(self, py: Python<'_>) -> PyResult<&PyAny> {
-            let context = self.pycontext.clone().into_ref(py);
+            let context = self.pycontext.clone_ref(py).into_ref(py);
             context.call_method1(
                 pyo3::intern!(py, "run"),
                 (self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_step"))?,),
@@ -212,7 +212,7 @@ macro_rules! callback_impl_loop_pytask {
     ($pyself:expr, $py:expr) => {
         $pyself.context.event_loop($py).call_method1(
             pyo3::intern!($py, "create_task"),
-            ($pyself.cb.clone().into_ref($py).call1(($pyself.into_py($py),))?,),
+            ($pyself.cb.clone_ref($py).into_ref($py).call1(($pyself.into_py($py),))?,),
         )
     };
 }
@@ -226,7 +226,7 @@ macro_rules! callback_impl_loop_step {
                     _ => false,
                 };
 
-                let ctx = $pyself.pycontext.clone();
+                let ctx = $pyself.pycontext.clone_ref($py);
                 let kwctx = pyo3::types::PyDict::new($py);
                 kwctx.set_item(pyo3::intern!($py, "context"), ctx)?;
 

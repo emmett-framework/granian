@@ -1,6 +1,6 @@
 use hyper::{
     header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Body, Request, Response,
+    Response,
 };
 use std::net::SocketAddr;
 
@@ -10,12 +10,12 @@ use super::{
 };
 use crate::{
     callbacks::CallbackWrapper,
-    http::{response_500, HV_SERVER},
+    http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::RuntimeRef,
 };
 
 #[inline(always)]
-fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: Body) -> Response<Body> {
+fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPResponseBody) -> HTTPResponse {
     let mut res = Response::new(body);
     *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
     let headers = res.headers_mut();
@@ -34,9 +34,9 @@ pub(crate) async fn handle_rtt(
     callback: CallbackWrapper,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
-    req: Request<Body>,
+    req: HTTPRequest,
     scheme: &str,
-) -> Response<Body> {
+) -> HTTPResponse {
     if let Ok(res) = call_rtt_http(callback, Scope::new(scheme, server_addr, client_addr, req).await).await {
         if let Ok((status, headers, body)) = res {
             return build_response(status, headers, body);
@@ -53,9 +53,9 @@ pub(crate) async fn handle_rtb(
     callback: CallbackWrapper,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
-    req: Request<Body>,
+    req: HTTPRequest,
     scheme: &str,
-) -> Response<Body> {
+) -> HTTPResponse {
     match call_rtb_http(callback, Scope::new(scheme, server_addr, client_addr, req).await) {
         Ok((status, headers, body)) => build_response(status, headers, body),
         _ => {

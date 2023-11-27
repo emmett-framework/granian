@@ -1,6 +1,5 @@
-use hyper::{
-    header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder, Body, Request, Response, StatusCode,
-};
+use http_body_util::BodyExt;
+use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder, StatusCode};
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
@@ -13,7 +12,7 @@ use super::{
 };
 use crate::{
     callbacks::CallbackWrapper,
-    http::{response_500, HV_SERVER},
+    http::{empty_body, response_500, HTTPRequest, HTTPResponse, HV_SERVER},
     runtime::RuntimeRef,
     ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
 };
@@ -53,9 +52,9 @@ macro_rules! handle_request {
             callback: CallbackWrapper,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
-            req: Request<Body>,
+            req: HTTPRequest,
             scheme: &str,
-        ) -> Response<Body> {
+        ) -> HTTPResponse {
             let scope = default_scope!(server_addr, client_addr, &req, scheme);
             handle_http_response!($handler, rt, callback, req, scope)
         }
@@ -69,9 +68,9 @@ macro_rules! handle_request_with_ws {
             callback: CallbackWrapper,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
-            req: Request<Body>,
+            req: HTTPRequest,
             scheme: &str,
-        ) -> Response<Body> {
+        ) -> HTTPResponse {
             let mut scope = default_scope!(server_addr, client_addr, &req, scheme);
 
             if is_ws_upgrade(&req) {
@@ -79,13 +78,12 @@ macro_rules! handle_request_with_ws {
 
                 match ws_upgrade(req, None) {
                     Ok((res, ws)) => {
-                        let rth = rt.clone();
                         let (restx, mut resrx) = mpsc::channel(1);
 
-                        rt.inner.spawn(async move {
+                        tokio::task::spawn(async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(callback, rth, ws, UpgradeData::new(res, restx), scope).await {
+                            match $handler_ws(callback, rt, ws, UpgradeData::new(res, restx), scope).await {
                                 Ok((status, consumed)) => {
                                     if !consumed {
                                         let _ = tx_ref
@@ -96,7 +94,7 @@ macro_rules! handle_request_with_ws {
                                                             .unwrap_or(StatusCode::FORBIDDEN),
                                                     )
                                                     .header(HK_SERVER, HV_SERVER)
-                                                    .body(Body::from(""))
+                                                    .body(empty_body())
                                                     .unwrap(),
                                             )
                                             .await;
@@ -121,7 +119,11 @@ macro_rules! handle_request_with_ws {
                         return ResponseBuilder::new()
                             .status(StatusCode::BAD_REQUEST)
                             .header(HK_SERVER, HV_SERVER)
-                            .body(Body::from(format!("{}", err)))
+                            .body(
+                                http_body_util::Full::new(format!("{}", err).into())
+                                    .map_err(|e| match e {})
+                                    .boxed(),
+                            )
                             .unwrap()
                     }
                 }

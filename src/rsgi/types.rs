@@ -1,16 +1,18 @@
-use bytes::Bytes;
+use futures::TryStreamExt;
+use http_body_util::BodyExt;
 use hyper::{
+    body::Bytes,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Body, Uri, Version,
+    Uri, Version,
 };
 use percent_encoding::percent_decode_str;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
-use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio_util::io::ReaderStream;
 
-use crate::http::HV_SERVER;
+use crate::http::{empty_body, response_404, HTTPResponseBody, HV_SERVER};
 
 #[pyclass(module = "granian._granian")]
 #[derive(Clone)]
@@ -147,7 +149,7 @@ pub(crate) enum PyResponse {
 pub(crate) struct PyResponseBody {
     status: u16,
     headers: Vec<(String, String)>,
-    body: Body,
+    body: HTTPResponseBody,
 }
 
 pub(crate) struct PyResponseFile {
@@ -174,7 +176,7 @@ macro_rules! response_head_from_py {
 }
 
 impl PyResponseBody {
-    pub fn new(status: u16, headers: Vec<(String, String)>, body: Body) -> Self {
+    pub fn new(status: u16, headers: Vec<(String, String)>, body: HTTPResponseBody) -> Self {
         Self { status, headers, body }
     }
 
@@ -182,7 +184,7 @@ impl PyResponseBody {
         Self {
             status,
             headers,
-            body: Body::empty(),
+            body: empty_body(),
         }
     }
 
@@ -191,7 +193,9 @@ impl PyResponseBody {
         Self {
             status,
             headers,
-            body: Body::from(Bytes::from(rbody)),
+            body: http_body_util::Full::new(Bytes::from(rbody))
+                .map_err(|e| match e {})
+                .boxed(),
         }
     }
 
@@ -199,12 +203,14 @@ impl PyResponseBody {
         Self {
             status,
             headers,
-            body: Body::from(body),
+            body: http_body_util::Full::new(Bytes::from(body))
+                .map_err(|e| match e {})
+                .boxed(),
         }
     }
 
-    pub fn to_response(self) -> hyper::Response<Body> {
-        let mut res = hyper::Response::<Body>::new(self.body);
+    pub fn to_response(self) -> hyper::Response<HTTPResponseBody> {
+        let mut res = hyper::Response::new(self.body);
         response_head_from_py!(self.status, &self.headers, res);
         res
     }
@@ -219,11 +225,16 @@ impl PyResponseFile {
         }
     }
 
-    pub async fn to_response(&self) -> hyper::Response<Body> {
-        let file = File::open(&self.file_path).await.unwrap();
-        let stream = FramedRead::new(file, BytesCodec::new());
-        let mut res = hyper::Response::<Body>::new(Body::wrap_stream(stream));
-        response_head_from_py!(self.status, &self.headers, res);
-        res
+    pub async fn to_response(&self) -> hyper::Response<HTTPResponseBody> {
+        match File::open(&self.file_path).await {
+            Ok(file) => {
+                let stream = ReaderStream::new(file);
+                let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+                let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                response_head_from_py!(self.status, &self.headers, res);
+                res
+            }
+            Err(_) => response_404(),
+        }
     }
 }

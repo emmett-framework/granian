@@ -1,16 +1,14 @@
-use bytes::Bytes;
 use futures::{
     sink::SinkExt,
-    stream::{SplitSink, SplitStream, StreamExt},
+    stream::{SplitSink, SplitStream},
+    StreamExt, TryStreamExt,
 };
-use hyper::{
-    body::{Body, HttpBody, Sender as BodySender},
-    Request,
-};
+use http_body_util::BodyExt;
+use hyper::body;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::{borrow::Cow, sync::Arc};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
 
@@ -20,6 +18,7 @@ use super::{
 };
 use crate::{
     conversion::BytesToPy,
+    http::HTTPRequest,
     runtime::{future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -27,15 +26,12 @@ use crate::{
 #[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
     rt: RuntimeRef,
-    tx: Arc<Mutex<BodySender>>,
+    tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
 }
 
 impl RSGIHTTPStreamTransport {
-    pub fn new(rt: RuntimeRef, transport: BodySender) -> Self {
-        Self {
-            rt,
-            tx: Arc::new(Mutex::new(transport)),
-        }
+    pub fn new(rt: RuntimeRef, transport: mpsc::Sender<Result<body::Bytes, anyhow::Error>>) -> Self {
+        Self { rt, tx: transport }
     }
 }
 
@@ -45,26 +41,20 @@ impl RSGIHTTPStreamTransport {
         let transport = self.tx.clone();
         let bdata: Box<[u8]> = data.into();
         future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send_data(bdata.into()).await {
-                    Ok(()) => Ok(()),
-                    _ => error_stream!(),
-                };
+            match transport.send(Ok(body::Bytes::from(bdata))).await {
+                Ok(()) => Ok(()),
+                _ => error_stream!(),
             }
-            error_proto!()
         })
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
         let transport = self.tx.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send_data(data.into()).await {
-                    Ok(()) => Ok(()),
-                    _ => error_stream!(),
-                };
+            match transport.send(Ok(body::Bytes::from(data))).await {
+                Ok(()) => Ok(()),
+                _ => error_stream!(),
             }
-            error_proto!()
         })
     }
 }
@@ -72,54 +62,67 @@ impl RSGIHTTPStreamTransport {
 #[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<super::types::PyResponse>>,
-    body: Arc<Mutex<Body>>,
+    tx: Option<oneshot::Sender<PyResponse>>,
+    body: Option<body::Incoming>,
+    body_stream: Option<Arc<Mutex<http_body_util::BodyStream<body::Incoming>>>>,
 }
 
 impl RSGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, tx: oneshot::Sender<super::types::PyResponse>, request: Request<Body>) -> Self {
+    pub fn new(rt: RuntimeRef, tx: oneshot::Sender<PyResponse>, request: HTTPRequest) -> Self {
         Self {
             rt,
             tx: Some(tx),
-            body: Arc::new(Mutex::new(request.into_body())),
+            body: Some(request.into_body()),
+            body_stream: None,
         }
     }
 
-    pub fn tx(&mut self) -> Option<oneshot::Sender<super::types::PyResponse>> {
+    pub fn tx(&mut self) -> Option<oneshot::Sender<PyResponse>> {
         self.tx.take()
     }
 }
 
 #[pymethods]
 impl RSGIHTTPProtocol {
-    fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let body_ref = self.body.clone();
-        future_into_py_iter(self.rt.clone(), py, async move {
-            let mut bodym = body_ref.lock().await;
-            let body = hyper::body::to_bytes(&mut *bodym).await.unwrap();
-            Ok(BytesToPy(body))
-        })
+    fn __call__<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        if let Some(body) = self.body.take() {
+            return future_into_py_iter(self.rt.clone(), py, async move {
+                let body = body
+                    .collect()
+                    .await
+                    .map_err(|_err| pyo3::exceptions::PyRuntimeError::new_err("err"))?;
+                Ok(BytesToPy(body.to_bytes()))
+            });
+        }
+        error_proto!()
     }
 
-    fn __aiter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+    fn __aiter__(mut pyself: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        if let Some(body) = pyself.body.take() {
+            pyself.body_stream = Some(Arc::new(Mutex::new(http_body_util::BodyStream::new(body))));
+        }
         pyself
     }
 
     fn __anext__<'p>(&mut self, py: Python<'p>) -> PyResult<Option<&'p PyAny>> {
-        let body_ref = self.body.clone();
-        let fut = future_into_py_iter(self.rt.clone(), py, async move {
-            let mut bodym = body_ref.lock().await;
-            let body = &mut *bodym;
-            if body.is_end_stream() {
-                return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
-            }
-            let chunk = body
-                .data()
-                .await
-                .map_or_else(Bytes::new, |buf| buf.unwrap_or_else(|_| Bytes::new()));
-            Ok(BytesToPy(chunk))
-        })?;
-        Ok(Some(fut))
+        if let Some(body_ref) = &self.body_stream {
+            let body_ref = body_ref.clone();
+            let fut = future_into_py_iter(self.rt.clone(), py, async move {
+                let mut bodym = body_ref.lock().await;
+                let body = &mut *bodym;
+                match body.next().await {
+                    Some(chunk) => {
+                        let chunk = chunk
+                            .map(|buf| buf.into_data().unwrap_or_default())
+                            .unwrap_or(body::Bytes::new());
+                        Ok(BytesToPy(chunk))
+                    }
+                    _ => Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted")),
+                }
+            })?;
+            return Ok(Some(fut));
+        }
+        error_proto!()
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
@@ -158,8 +161,15 @@ impl RSGIHTTPProtocol {
         headers: Vec<(String, String)>,
     ) -> PyResult<&'p PyAny> {
         if let Some(tx) = self.tx.take() {
-            let (body_tx, body_stream) = Body::channel();
-            let _ = tx.send(PyResponse::Body(PyResponseBody::new(status, headers, body_stream)));
+            let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
+            let body_stream = http_body_util::StreamBody::new(
+                tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(hyper::body::Frame::data),
+            );
+            let _ = tx.send(PyResponse::Body(PyResponseBody::new(
+                status,
+                headers,
+                BodyExt::boxed(BodyExt::map_err(body_stream, std::convert::Into::into)),
+            )));
             let trx = Py::new(py, RSGIHTTPStreamTransport::new(self.rt.clone(), body_tx))?;
             return Ok(trx.into_ref(py));
         }
@@ -170,12 +180,12 @@ impl RSGIHTTPProtocol {
 #[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
-    tx: Arc<Mutex<SplitSink<WebSocketStream<hyper::upgrade::Upgraded>, Message>>>,
-    rx: Arc<Mutex<SplitStream<WebSocketStream<hyper::upgrade::Upgraded>>>>,
+    tx: Arc<Mutex<SplitSink<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>, Message>>>,
+    rx: Arc<Mutex<SplitStream<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>>>,
 }
 
 impl RSGIWebsocketTransport {
-    pub fn new(rt: RuntimeRef, transport: WebSocketStream<hyper::upgrade::Upgraded>) -> Self {
+    pub fn new(rt: RuntimeRef, transport: WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>) -> Self {
         let (tx, rx) = transport.split();
         Self {
             rt,

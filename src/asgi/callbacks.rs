@@ -1,4 +1,3 @@
-use hyper::{Body, Request, Response};
 use pyo3::prelude::*;
 use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
@@ -12,6 +11,7 @@ use crate::{
         callback_impl_loop_err, callback_impl_loop_pytask, callback_impl_loop_run, callback_impl_loop_step,
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
+    http::{response_500, HTTPRequest, HTTPResponse},
     runtime::RuntimeRef,
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -27,7 +27,7 @@ impl CallbackRunnerHTTP {
     pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: Scope) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
-            proto: pyproto.clone(),
+            proto: pyproto.clone_ref(py),
             context: cb.context,
             cb: cb.callback.call1(py, (scope, pyproto)).unwrap(),
         }
@@ -39,7 +39,13 @@ impl CallbackRunnerHTTP {
 #[pymethods]
 impl CallbackRunnerHTTP {
     fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        CallbackTaskHTTP::new(py, self.cb.clone(), self.proto.clone(), self.context.clone())?.run(py)
+        CallbackTaskHTTP::new(
+            py,
+            self.cb.clone_ref(py),
+            self.proto.clone_ref(py),
+            self.context.clone(),
+        )?
+        .run(py)
     }
 }
 
@@ -47,9 +53,7 @@ macro_rules! callback_impl_done_http {
     ($self:expr, $py:expr) => {
         if let Ok(mut proto) = $self.proto.as_ref($py).try_borrow_mut() {
             if let Some(tx) = proto.tx() {
-                let mut res = Response::new("Internal server error".into());
-                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
-                let _ = tx.send(res);
+                let _ = tx.send(response_500());
             }
         }
     };
@@ -287,9 +291,9 @@ macro_rules! call_impl_rtb_http {
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: Request<Body>,
+            req: HTTPRequest,
             scope: Scope,
-        ) -> oneshot::Receiver<Response<Body>> {
+        ) -> oneshot::Receiver<HTTPResponse> {
             let (tx, rx) = oneshot::channel();
             let protocol = HTTPProtocol::new(rt, req, tx);
 
@@ -307,9 +311,9 @@ macro_rules! call_impl_rtt_http {
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: Request<Body>,
+            req: HTTPRequest,
             scope: Scope,
-        ) -> oneshot::Receiver<Response<Body>> {
+        ) -> oneshot::Receiver<HTTPResponse> {
             let (tx, rx) = oneshot::channel();
             let protocol = HTTPProtocol::new(rt, req, tx);
 

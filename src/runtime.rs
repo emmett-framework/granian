@@ -98,9 +98,7 @@ impl Runtime for RuntimeRef {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        self.inner.spawn(async move {
-            fut.await;
-        })
+        self.inner.spawn(fut)
     }
 
     fn handler(&self) -> RuntimeRef {
@@ -170,9 +168,9 @@ pub(crate) fn init_runtime_st(blocking_threads: usize) -> RuntimeWrapper {
     RuntimeWrapper::new(blocking_threads)
 }
 
-pub(crate) fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<PyObject>> + Send> {
-    pyo3_asyncio::into_future_with_locals(&get_current_locals::<RuntimeRef>(awaitable.py())?, awaitable)
-}
+// pub(crate) fn into_future(awaitable: &PyAny) -> PyResult<impl Future<Output = PyResult<PyObject>> + Send> {
+//     pyo3_asyncio::into_future_with_locals(&get_current_locals::<RuntimeRef>(awaitable.py())?, awaitable)
+// }
 
 #[inline]
 fn get_current_locals<R>(py: Python) -> PyResult<TaskLocals>

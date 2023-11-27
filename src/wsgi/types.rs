@@ -1,17 +1,21 @@
 use futures::Stream;
+use http_body_util::BodyExt;
 use hyper::{
     body::Bytes,
     header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE},
-    Body, Method, Request, Uri, Version,
+    Method, Uri, Version,
 };
 use percent_encoding::percent_decode_str;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use pyo3::{prelude::*, types::IntoPyDict};
 use std::{
     borrow::Cow,
+    convert::Infallible,
     net::{IpAddr, SocketAddr},
     task::{Context, Poll},
 };
+
+use crate::http::HTTPRequest;
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
@@ -84,6 +88,7 @@ impl WSGIBody {
     }
 }
 
+// TODO: use Arc<str> instead of strings?
 #[pyclass(module = "granian._granian")]
 pub(crate) struct WSGIScope {
     http_version: Version,
@@ -98,7 +103,7 @@ pub(crate) struct WSGIScope {
 }
 
 impl WSGIScope {
-    pub async fn new(scheme: &str, server: SocketAddr, client: SocketAddr, request: Request<Body>) -> Self {
+    pub async fn new(scheme: &str, server: SocketAddr, client: SocketAddr, request: HTTPRequest) -> Self {
         let http_version = request.version();
         let method = request.method().clone();
         let uri = request.uri().clone();
@@ -106,7 +111,10 @@ impl WSGIScope {
 
         let body = match method {
             Method::HEAD | Method::GET | Method::OPTIONS => Bytes::new(),
-            _ => hyper::body::to_bytes(request).await.unwrap_or(Bytes::new()),
+            _ => request
+                .collect()
+                .await
+                .map_or(Bytes::new(), http_body_util::Collected::to_bytes),
         };
 
         Self {
@@ -225,7 +233,7 @@ impl WSGIResponseBodyIter {
 }
 
 impl Stream for WSGIResponseBodyIter {
-    type Item = PyResult<Box<[u8]>>;
+    type Item = Result<Box<[u8]>, Infallible>;
 
     fn poll_next(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Python::with_gil(|py| match self.inner.call_method0(py, pyo3::intern!(py, "__next__")) {

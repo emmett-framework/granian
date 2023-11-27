@@ -4,6 +4,8 @@ import signal
 import sys
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from ._granian import WorkerSignal
+
 
 class Registry:
     __slots__ = ['_data']
@@ -88,7 +90,7 @@ def build_auto_loop():
 
 
 def set_loop_signals(loop, signals):
-    signal_event = asyncio.Event()
+    signal_event = WorkerSignal()
 
     def signal_handler(signum, frame):
         signal_event.set()
