@@ -2,6 +2,7 @@ import asyncio
 from functools import wraps
 
 from ._granian import ASGIScope as Scope
+from .log import logger
 
 
 class LifespanProtocol:
@@ -23,12 +24,12 @@ class LifespanProtocol:
             await self.callable(
                 {'type': 'lifespan', 'asgi': {'version': '3.0', 'spec_version': '2.3'}}, self.receive, self.send
             )
-        except Exception:
+        except Exception as exc:
             self.errored = True
             if self.failure_startup or self.failure_shutdown:
                 return
             self.unsupported = True
-            # self.logger.error(msg, exc_info=exc)
+            logger.warn('Exception in lifespan protocol', exc_info=exc)
         finally:
             self.event_startup.set()
             self.event_shutdown.set()
@@ -66,8 +67,8 @@ class LifespanProtocol:
         assert not self.event_shutdown.is_set(), self.error_transition
         self.event_startup.set()
         self.failure_startup = True
-        # if message.get("message"):
-        #     self.logger.error(message["message"])
+        if message.get('message'):
+            logger.error(message['message'])
 
     def _handle_shutdown_complete(self, message):
         assert self.event_startup.is_set(), self.error_transition
@@ -79,8 +80,8 @@ class LifespanProtocol:
         assert not self.event_shutdown.is_set(), self.error_transition
         self.event_shutdown.set()
         self.failure_shutdown = True
-        # if message.get("message"):
-        #     self.logger.error(message["message"])
+        if message.get('message'):
+            logger.error(message['message'])
 
     _event_handlers = {
         'lifespan.startup.complete': _handle_startup_complete,
