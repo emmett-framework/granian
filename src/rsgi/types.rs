@@ -1,15 +1,17 @@
+use crate::http::HV_SERVER;
 use bytes::Bytes;
+use hyper::{header, Body, Response, StatusCode};
 use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Body, Uri, Version,
+    Uri, Version,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
 use tokio_util::codec::{BytesCodec, FramedRead};
-
-use crate::http::HV_SERVER;
 
 #[pyclass(module = "granian._granian")]
 #[derive(Clone)]
@@ -153,6 +155,8 @@ pub(crate) struct PyResponseFile {
     status: u16,
     headers: Vec<(String, String)>,
     file_path: String,
+    start: Option<u64>,
+    end: Option<u64>,
 }
 
 macro_rules! response_head_from_py {
@@ -210,19 +214,86 @@ impl PyResponseBody {
 }
 
 impl PyResponseFile {
-    pub fn new(status: u16, headers: Vec<(String, String)>, file_path: String) -> Self {
+    pub fn new(
+        status: u16,
+        headers: Vec<(String, String)>,
+        file_path: String,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> Self {
         Self {
             status,
             headers,
             file_path,
+            start,
+            end,
         }
     }
 
     pub async fn to_response(&self) -> hyper::Response<Body> {
-        let file = File::open(&self.file_path).await.unwrap();
-        let stream = FramedRead::new(file, BytesCodec::new());
-        let mut res = hyper::Response::<Body>::new(Body::wrap_stream(stream));
-        response_head_from_py!(self.status, &self.headers, res);
-        res
+        match File::open(&self.file_path).await {
+            Ok(mut file) => {
+                let metadata = match file.metadata().await {
+                    Ok(metadata) => metadata,
+                    Err(_) => {
+                        return Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Body::from("Internal Server Error"))
+                            .unwrap()
+                    }
+                };
+
+                match self.start {
+                    Some(start_offset) => {
+                        println!("start_offset: {}", start_offset);
+                        let total_size = metadata.len();
+                        file.seek(std::io::SeekFrom::Start(start_offset)).await.unwrap();
+                        match self.end {
+                            Some(end_offset) => {
+                                println!("end_offset: {}", end_offset);
+                                if end_offset > total_size {
+                                    return Response::builder()
+                                        .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                                        .body(Body::from("Range Not Satisfiable"))
+                                        .unwrap();
+                                }
+                                let file_part = file.take(end_offset - start_offset + 1);
+                                let stream = FramedRead::new(file_part, BytesCodec::new());
+                                let body = Body::wrap_stream(stream);
+                                let content_range = format!("bytes {start_offset}-{end_offset}/{total_size}");
+
+                                Response::builder()
+                                    .status(StatusCode::PARTIAL_CONTENT)
+                                    .header(header::CONTENT_RANGE, content_range)
+                                    .body(body)
+                                    .unwrap()
+                            }
+                            None => {
+                                let stream = FramedRead::new(file, BytesCodec::new());
+                                let body = Body::wrap_stream(stream);
+                                let content_range = format!("bytes {start_offset}-{total_size}/{total_size}");
+
+                                let mut builder = Response::builder()
+                                    .status(StatusCode::PARTIAL_CONTENT)
+                                    .header(header::CONTENT_RANGE, content_range);
+                                for (key, value) in &self.headers {
+                                    builder = builder.header(key, value);
+                                }
+                                builder.body(body).unwrap()
+                            }
+                        }
+                    }
+                    None => {
+                        let stream = FramedRead::new(file, BytesCodec::new());
+                        let body = Body::wrap_stream(stream);
+                        Response::builder().status(self.status).body(body).unwrap()
+                    }
+                }
+            }
+            Err(_) => Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("File Not Found"))
+                .unwrap(),
+        }
     }
 }

@@ -143,10 +143,17 @@ impl RSGIHTTPProtocol {
         }
     }
 
-    #[pyo3(signature = (status, headers, file))]
-    fn response_file(&mut self, status: u16, headers: Vec<(String, String)>, file: String) {
+    #[pyo3(signature = (status, headers, file, start=None, end=None))]
+    fn response_file(
+        &mut self,
+        status: u16,
+        headers: Vec<(String, String)>,
+        file: String,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) {
         if let Some(tx) = self.tx.take() {
-            let _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
+            let _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file, start, end)));
         }
     }
 
@@ -294,6 +301,12 @@ impl WebsocketInboundCloseMessage {
         Self {
             kind: WebsocketMessageType::Close as usize,
         }
+    }
+}
+
+impl Default for WebsocketInboundCloseMessage {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
