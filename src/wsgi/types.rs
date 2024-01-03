@@ -4,6 +4,7 @@ use hyper::{
     header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE},
     Body, Method, Request, Uri, Version,
 };
+use percent_encoding::percent_decode_str;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use pyo3::{prelude::*, types::IntoPyDict};
 use std::{
@@ -166,7 +167,7 @@ impl WSGIScope {
             }
 
             (
-                path,
+                percent_decode_str(path).decode_utf8().unwrap(),
                 query_string,
                 self.py_http_version(),
                 (self.server_ip.to_string(), self.server_port),
