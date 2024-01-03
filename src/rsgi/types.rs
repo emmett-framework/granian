@@ -3,6 +3,7 @@ use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
     Body, Uri, Version,
 };
+use percent_encoding::percent_decode_str;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 use std::{borrow::Cow, net::SocketAddr};
@@ -128,8 +129,8 @@ impl RSGIScope {
     }
 
     #[getter(path)]
-    fn get_path(&self) -> &str {
-        self.uri.path()
+    fn get_path(&self) -> Cow<str> {
+        percent_decode_str(self.uri.path()).decode_utf8().unwrap()
     }
 
     #[getter(query_string)]

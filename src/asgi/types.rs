@@ -1,5 +1,6 @@
 use hyper::{header::HeaderMap, Uri, Version};
 use once_cell::sync::OnceCell;
+use percent_encoding::percent_decode_str;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 use std::net::{IpAddr, SocketAddr};
@@ -114,7 +115,7 @@ impl ASGIScope {
                 .path_and_query()
                 .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
             (
-                path,
+                percent_decode_str(path).decode_utf8().unwrap(),
                 query_string,
                 self.py_proto(),
                 self.py_http_version(),
@@ -152,10 +153,10 @@ impl ASGIScope {
         dict.set_item(pyo3::intern!(py, "scheme"), scheme)?;
         dict.set_item(pyo3::intern!(py, "method"), method)?;
         dict.set_item(pyo3::intern!(py, "root_path"), url_path_prefix)?;
-        dict.set_item(pyo3::intern!(py, "path"), path)?;
+        dict.set_item(pyo3::intern!(py, "path"), &path)?;
         dict.set_item(
             pyo3::intern!(py, "raw_path"),
-            PyString::new(py, path).call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "ascii"),))?,
+            PyString::new(py, &path).call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "ascii"),))?,
         )?;
         dict.set_item(
             pyo3::intern!(py, "query_string"),
