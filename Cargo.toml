@@ -36,7 +36,7 @@ futures = "0.3"
 hyper = { version = "=0.14", features = ["http1", "http2", "server", "stream", "runtime", "tcp"] }
 log = "0.4"
 mimalloc = { version = "0.1.34", default-features = false, features = ["local_dynamic_tls"] }
-once_cell = "1.5"
+once_cell = "1.19"
 percent-encoding = "=2.3"
 pin-project = "1.0"
 pyo3 = { version = "=0.20", features = ["extension-module", "generate-import-lib"] }
