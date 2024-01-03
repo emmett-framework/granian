@@ -9,11 +9,14 @@ import pytest
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode, tls=False):
+async def _server(interface, port, threading_mode, tls=False, tmp_path=None):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     tls_opts = (
         (f"--ssl-certificate {certs_path / 'cert.pem'} " f"--ssl-keyfile {certs_path / 'key.pem'} ") if tls else ''
     )
+    env = os.environ.copy()
+    if tmp_path:
+        env['ROOT_PATH'] = str(tmp_path)
     proc = await asyncio.create_subprocess_shell(
         ''.join(
             [
@@ -24,7 +27,7 @@ async def _server(interface, port, threading_mode, tls=False):
                 f'tests.apps.{interface}:app',
             ]
         ),
-        env=dict(os.environ),
+        env=env,
     )
     await asyncio.sleep(1)
     try:
@@ -48,8 +51,8 @@ def asgi_server(server_port):
 
 
 @pytest.fixture(scope='function')
-def rsgi_server(server_port):
-    return partial(_server, 'rsgi', server_port)
+def rsgi_server(server_port, tmp_path):
+    return partial(_server, 'rsgi', server_port, tmp_path=tmp_path)
 
 
 @pytest.fixture(scope='function')

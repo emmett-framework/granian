@@ -36,6 +36,21 @@ async def test_body(rsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
+async def test_serve_partial_file(rsgi_server, threading_mode, tmp_path):
+    test_body = 'test123'
+    tmp_path.joinpath('test.txt').write_text(test_body)
+    async with rsgi_server(threading_mode) as port:
+        with httpx.Client() as client:
+            headers = {'Range': 'bytes=1-3'}
+            res = client.get(f'http://localhost:{port}/file', headers=headers)
+            part_of_file = res.content  # This contains the requested part of the file
+
+            assert res.status_code == 216
+            assert res.text == part_of_file[0:2]
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(not bool(os.getenv('PGO_RUN')), reason='not PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_body_large(rsgi_server, threading_mode):

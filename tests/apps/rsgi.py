@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 
 from granian.rsgi import HTTPProtocol, Scope, WebsocketMessageType, WebsocketProtocol
 
@@ -99,11 +101,17 @@ async def err_app(scope: Scope, protocol: HTTPProtocol):
     1 / 0
 
 
+async def serve_file(scope: Scope, protocol: HTTPProtocol):
+    file_path = Path(os.environ['ROOT_PATH'], scope.query_string)
+    protocol.response_file(200, [('content-type', 'text/plain; charset=utf-8')], str(file_path))
+
+
 def app(scope, protocol):
     return {
         '/info': info,
         '/echo': echo,
         '/echos': echo_stream,
+        '/file': serve_file,
         '/stream': stream,
         '/ws_reject': ws_reject,
         '/ws_info': ws_info,
