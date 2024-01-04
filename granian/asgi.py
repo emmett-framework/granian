@@ -24,12 +24,12 @@ class LifespanProtocol:
             await self.callable(
                 {'type': 'lifespan', 'asgi': {'version': '3.0', 'spec_version': '2.3'}}, self.receive, self.send
             )
-        except Exception as exc:
+        except Exception:
             self.errored = True
             if self.failure_startup or self.failure_shutdown:
                 return
             self.unsupported = True
-            logger.warn('Exception in lifespan protocol', exc_info=exc)
+            logger.warn('ASGI Lifespan errored, continuing without Lifespan support')
         finally:
             self.event_startup.set()
             self.event_shutdown.set()
