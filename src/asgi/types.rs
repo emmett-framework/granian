@@ -108,7 +108,7 @@ impl ASGIScope {
 
 #[pymethods]
 impl ASGIScope {
-    fn as_dict<'p>(&self, py: Python<'p>, url_path_prefix: &'p str) -> PyResult<&'p PyAny> {
+    fn as_dict<'p>(&self, py: Python<'p>, url_path_prefix: &'p str, state: &'p PyAny) -> PyResult<&'p PyAny> {
         let (path, query_string, proto, http_version, server, client, scheme, method) = py.allow_threads(|| {
             let (path, query_string) = self
                 .uri
@@ -164,6 +164,7 @@ impl ASGIScope {
                 .call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "latin-1"),))?,
         )?;
         dict.set_item(pyo3::intern!(py, "headers"), self.py_headers(py)?)?;
+        dict.set_item(pyo3::intern!(py, "state"), state)?;
         Ok(dict)
     }
 }

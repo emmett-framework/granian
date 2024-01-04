@@ -160,12 +160,12 @@ class Granian:
 
         loop.run_until_complete(lifespan_handler.startup())
         if lifespan_handler.interrupt:
-            logger.error('ASGI lifespan startup failed')
+            logger.error('ASGI lifespan startup failed', exc_info=lifespan_handler.exc)
             sys.exit(1)
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        wcallback = _asgi_call_wrap(callback, scope_opts)
+        wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state)
         if not loop_opt:
             wcallback = future_watcher_wrapper(wcallback)
 
