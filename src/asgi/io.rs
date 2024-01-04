@@ -1,17 +1,18 @@
-use bytes::Bytes;
 use futures::{
     sink::SinkExt,
-    stream::{SplitSink, SplitStream, StreamExt},
+    stream::{SplitSink, SplitStream},
+    StreamExt, TryStreamExt,
 };
+use http_body_util::BodyExt;
 use hyper::{
-    body::{Body, HttpBody, Sender as BodySender},
+    body,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Request, Response,
+    Response,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use std::{borrow::Cow, sync::Arc};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
 
@@ -20,7 +21,8 @@ use super::{
     types::ASGIMessageType,
 };
 use crate::{
-    http::HV_SERVER,
+    conversion::BytesToPy,
+    http::{HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -31,21 +33,21 @@ const EMPTY_STRING: String = String::new();
 #[pyclass(module = "granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<Response<Body>>>,
-    request_body: Arc<Mutex<Body>>,
+    tx: Option<oneshot::Sender<HTTPResponse>>,
+    request_body: Arc<Mutex<http_body_util::BodyStream<body::Incoming>>>,
     response_started: bool,
     response_chunked: bool,
     response_status: Option<i16>,
     response_headers: Option<HeaderMap>,
-    body_tx: Option<Arc<Mutex<BodySender>>>,
+    body_tx: Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>,
 }
 
 impl ASGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, request: Request<Body>, tx: oneshot::Sender<Response<Body>>) -> Self {
+    pub fn new(rt: RuntimeRef, request: HTTPRequest, tx: oneshot::Sender<HTTPResponse>) -> Self {
         Self {
             rt,
             tx: Some(tx),
-            request_body: Arc::new(Mutex::new(request.into_body())),
+            request_body: Arc::new(Mutex::new(http_body_util::BodyStream::new(request.into_body()))),
             response_started: false,
             response_chunked: false,
             response_status: None,
@@ -55,7 +57,7 @@ impl ASGIHTTPProtocol {
     }
 
     #[inline(always)]
-    fn send_response(&mut self, status: i16, headers: HeaderMap<HeaderValue>, body: Body) {
+    fn send_response(&mut self, status: i16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody) {
         if let Some(tx) = self.tx.take() {
             let mut res = Response::new(body);
             *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
@@ -65,10 +67,14 @@ impl ASGIHTTPProtocol {
     }
 
     #[inline(always)]
-    fn send_body<'p>(&self, py: Python<'p>, tx: Arc<Mutex<BodySender>>, body: Box<[u8]>) -> PyResult<&'p PyAny> {
+    fn send_body<'p>(
+        &self,
+        py: Python<'p>,
+        tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
+        body: Box<[u8]>,
+    ) -> PyResult<&'p PyAny> {
         future_into_py_futlike(self.rt.clone(), py, async move {
-            let mut tx = tx.lock().await;
-            match (*tx).send_data(body.into()).await {
+            match tx.send(Ok(body.into())).await {
                 Ok(()) => Ok(()),
                 Err(err) => {
                     log::warn!("ASGI transport tx error: {:?}", err);
@@ -78,7 +84,7 @@ impl ASGIHTTPProtocol {
         })
     }
 
-    pub fn tx(&mut self) -> Option<oneshot::Sender<Response<Body>>> {
+    pub fn tx(&mut self) -> Option<oneshot::Sender<HTTPResponse>> {
         self.tx.take()
     }
 }
@@ -91,19 +97,19 @@ impl ASGIHTTPProtocol {
             let mut bodym = body_ref.lock().await;
             let body = &mut *bodym;
             let mut more_body = false;
-            let chunk = body.data().await.map_or_else(Bytes::new, |buf| {
-                buf.map_or_else(
-                    |_| Bytes::new(),
-                    |buf| {
-                        more_body = !body.is_end_stream();
-                        buf
-                    },
-                )
-            });
+            let chunk = match body.next().await {
+                Some(chunk) => {
+                    more_body = true;
+                    chunk
+                        .map(|buf| buf.into_data().unwrap_or_default())
+                        .unwrap_or(body::Bytes::new())
+                }
+                _ => body::Bytes::new(),
+            };
             Python::with_gil(|py| {
                 let dict = PyDict::new(py);
                 dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.request"))?;
-                dict.set_item(pyo3::intern!(py, "body"), PyBytes::new(py, &chunk[..]))?;
+                dict.set_item(pyo3::intern!(py, "body"), BytesToPy(chunk))?;
                 dict.set_item(pyo3::intern!(py, "more_body"), more_body)?;
                 Ok(dict.to_object(py))
             })
@@ -126,17 +132,25 @@ impl ASGIHTTPProtocol {
                 match (self.response_started, more, self.response_chunked) {
                     (true, false, false) => {
                         let headers = self.response_headers.take().unwrap();
-                        self.send_response(self.response_status.unwrap(), headers, Bytes::from(body).into());
+                        self.send_response(
+                            self.response_status.unwrap(),
+                            headers,
+                            http_body_util::Full::new(body::Bytes::from(body))
+                                .map_err(|e| match e {})
+                                .boxed(),
+                        );
                         empty_future_into_py(py)
                     }
                     (true, true, false) => {
                         self.response_chunked = true;
                         let headers = self.response_headers.take().unwrap();
-                        let (body_tx, body_stream) = Body::channel();
-                        let tx = Arc::new(Mutex::new(body_tx));
-                        self.body_tx = Some(tx.clone());
-                        self.send_response(self.response_status.unwrap(), headers, body_stream);
-                        self.send_body(py, tx, body)
+                        let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
+                        let body_stream = http_body_util::StreamBody::new(
+                            tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(hyper::body::Frame::data),
+                        );
+                        self.body_tx = Some(body_tx.clone());
+                        self.send_response(self.response_status.unwrap(), headers, BodyExt::boxed(body_stream));
+                        self.send_body(py, body_tx, body)
                     }
                     (true, true, true) => match self.body_tx.as_mut() {
                         Some(tx) => {
@@ -167,8 +181,8 @@ pub(crate) struct ASGIWebsocketProtocol {
     tx: Option<oneshot::Sender<bool>>,
     websocket: Option<HyperWebsocket>,
     upgrade: Option<UpgradeData>,
-    ws_tx: Arc<Mutex<Option<SplitSink<WebSocketStream<hyper::upgrade::Upgraded>, Message>>>>,
-    ws_rx: Arc<Mutex<Option<SplitStream<WebSocketStream<hyper::upgrade::Upgraded>>>>>,
+    ws_tx: Arc<Mutex<Option<SplitSink<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>, Message>>>>,
+    ws_rx: Arc<Mutex<Option<SplitStream<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>>>>,
     accepted: Arc<Mutex<bool>>,
     closed: bool,
 }

@@ -7,6 +7,7 @@ mod asgi;
 mod callbacks;
 mod conversion;
 mod http;
+mod io;
 mod rsgi;
 mod runtime;
 mod tcp;

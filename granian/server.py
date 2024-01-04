@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 import multiprocessing
+import os
 import signal
 import socket
 import ssl
@@ -123,7 +124,6 @@ class Granian:
             return
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key, None)
-        self.ssl_enabled = True
         # with cert.open("rb") as f:
         #     cert_contents = f.read()
         # with key.open("rb") as f:
@@ -173,7 +173,7 @@ class Granian:
             worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, websockets, loop_opt, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(wcallback, loop, contextvars.copy_context(), shutdown_event.wait())
+        serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
@@ -218,7 +218,7 @@ class Granian:
             future_watcher_wrapper(callback) if not loop_opt else callback,
             loop,
             contextvars.copy_context(),
-            shutdown_event.wait(),
+            shutdown_event,
         )
 
     @staticmethod
@@ -252,7 +252,7 @@ class Granian:
 
         worker = WSGIWorker(worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, *ssl_ctx)
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(_wsgi_call_wrap(callback, scope_opts), loop, contextvars.copy_context(), shutdown_event.wait())
+        serve(_wsgi_call_wrap(callback, scope_opts), loop, contextvars.copy_context(), shutdown_event)
 
     def _init_shared_socket(self):
         self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
@@ -306,7 +306,7 @@ class Granian:
         self.procs.clear()
 
     def startup(self, spawn_target, target_loader):
-        logger.info('Starting granian')
+        logger.info(f'Starting granian (main PID: {os.getpid()})')
 
         for sig in self.SIGNALS:
             signal.signal(sig, self.signal_handler)
@@ -380,6 +380,12 @@ class Granian:
                     "granian can't support multiple workers on this platform. "
                     "Number of workers will now fallback to 1."
                 )
+
+        if self.websockets:
+            if self.interface == Interfaces.WSGI:
+                logger.info('Websockets are not supported on WSGI')
+            if self.http == HTTPModes.http2:
+                logger.info('Websockets are not supported on HTTP/2 only')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)

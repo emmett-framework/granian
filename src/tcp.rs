@@ -33,12 +33,21 @@ impl ListenerHolder {
     #[classmethod]
     pub fn from_address(_cls: &PyType, address: &str, port: u16, backlog: i32) -> PyResult<Self> {
         let address: SocketAddr = (address.parse::<IpAddr>()?, port).into();
-        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+        let domain = match address {
+            SocketAddr::V4(_) => Domain::IPV4,
+            SocketAddr::V6(_) => Domain::IPV6,
+        };
+        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+        #[cfg(not(windows))]
+        {
+            socket.set_reuse_port(true)?;
+        }
         socket.set_reuse_address(true)?;
+        socket.set_nodelay(true)?;
         socket.bind(&address.into())?;
         socket.listen(backlog)?;
-        let listener: TcpListener = socket.into();
-        Ok(Self { socket: listener })
+        Ok(Self { socket: socket.into() })
     }
 
     #[cfg(unix)]

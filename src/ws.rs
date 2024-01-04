@@ -1,7 +1,8 @@
+use http_body_util::BodyExt;
 use hyper::{
     header::{CONNECTION, UPGRADE},
     http::response::Builder,
-    Body, Request, Response, StatusCode,
+    Request, Response, StatusCode,
 };
 use pin_project::pin_project;
 use std::{
@@ -28,7 +29,7 @@ pub struct HyperWebsocket {
 }
 
 impl Future for HyperWebsocket {
-    type Output = Result<WebSocketStream<hyper::upgrade::Upgraded>, tungstenite::Error>;
+    type Output = Result<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>, tungstenite::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = self.project();
@@ -39,7 +40,8 @@ impl Future for HyperWebsocket {
 
         let upgraded = upgraded.map_err(|_| tungstenite::Error::Protocol(ProtocolError::HandshakeIncomplete))?;
 
-        let stream = WebSocketStream::from_raw_socket(upgraded, Role::Server, this.config.take());
+        let io = hyper_util::rt::TokioIo::new(upgraded);
+        let stream = WebSocketStream::from_raw_socket(io, Role::Server, this.config.take());
         tokio::pin!(stream);
 
         match stream.as_mut().poll(cx) {
@@ -51,12 +53,16 @@ impl Future for HyperWebsocket {
 
 pub(crate) struct UpgradeData {
     response_builder: Option<Builder>,
-    response_tx: Option<mpsc::Sender<Response<Body>>>,
+    response_tx:
+        Option<mpsc::Sender<Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, anyhow::Error>>>>,
     pub consumed: bool,
 }
 
 impl UpgradeData {
-    pub fn new(response_builder: Builder, response_tx: mpsc::Sender<Response<Body>>) -> Self {
+    pub fn new(
+        response_builder: Builder,
+        response_tx: mpsc::Sender<Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, anyhow::Error>>>,
+    ) -> Self {
         Self {
             response_builder: Some(response_builder),
             response_tx: Some(response_tx),
@@ -64,8 +70,18 @@ impl UpgradeData {
         }
     }
 
-    pub async fn send(&mut self) -> Result<(), mpsc::error::SendError<Response<Body>>> {
-        let res = self.response_builder.take().unwrap().body(Body::from("")).unwrap();
+    pub async fn send(
+        &mut self,
+    ) -> Result<
+        (),
+        mpsc::error::SendError<Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, anyhow::Error>>>,
+    > {
+        let res = self
+            .response_builder
+            .take()
+            .unwrap()
+            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
+            .unwrap();
         match self.response_tx.take().unwrap().send(res).await {
             Ok(()) => {
                 self.consumed = true;
