@@ -24,6 +24,7 @@ async def info(scope, receive, send):
                     'path': scope['path'],
                     'query_string': scope['query_string'].decode('latin-1'),
                     'headers': {k.decode('utf8'): v.decode('utf8') for k, v in scope['headers']},
+                    'state': scope['state'],
                 }
             ).encode('utf8'),
             'more_body': False,
@@ -102,7 +103,16 @@ async def err_proto(scope, receive, send):
     await send({'type': 'wrong.msg'})
 
 
+async def lifespan(scope, receive, send):
+    msg = await receive()
+    if msg['type'] == 'lifespan.startup':
+        scope['state']['global'] = 'test'
+        await send({'type': 'lifespan.startup.complete'})
+
+
 def app(scope, receive, send):
+    if scope['type'] == 'lifespan':
+        return lifespan(scope, receive, send)
     return {
         '/info': info,
         '/echo': echo,
