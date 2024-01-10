@@ -23,6 +23,7 @@ async def test_scope(asgi_server, threading_mode):
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
+    assert data['state']['global'] == 'test'
 
 
 @pytest.mark.asyncio

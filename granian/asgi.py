@@ -18,14 +18,19 @@ class LifespanProtocol:
         self.failure_startup = False
         self.failure_shutdown = False
         self.interrupt = False
+        self.exc = None
+        self.state = {}
 
     async def handle(self):
         try:
             await self.callable(
-                {'type': 'lifespan', 'asgi': {'version': '3.0', 'spec_version': '2.3'}}, self.receive, self.send
+                {'type': 'lifespan', 'asgi': {'version': '3.0', 'spec_version': '2.3'}, 'state': self.state},
+                self.receive,
+                self.send,
             )
-        except Exception:
+        except Exception as exc:
             self.errored = True
+            self.exc = exc
             if self.failure_startup or self.failure_shutdown:
                 return
             self.unsupported = True
@@ -45,6 +50,8 @@ class LifespanProtocol:
             self.interrupt = True
 
     async def shutdown(self):
+        self.state.clear()
+
         if self.errored:
             return
 
@@ -95,11 +102,11 @@ class LifespanProtocol:
         handler(self, message)
 
 
-def _callback_wrapper(callback, scope_opts):
+def _callback_wrapper(callback, scope_opts, state):
     root_url_path = scope_opts.get('url_path_prefix') or ''
 
     @wraps(callback)
     def wrapper(scope: Scope, proto):
-        return callback(scope.as_dict(root_url_path), proto.receive, proto.send)
+        return callback(scope.as_dict(root_url_path, state.copy()), proto.receive, proto.send)
 
     return wrapper
