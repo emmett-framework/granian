@@ -7,7 +7,7 @@ use http_body_util::BodyExt;
 use hyper::{
     body,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Response,
+    Response, StatusCode,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
@@ -181,11 +181,10 @@ impl ASGIHTTPProtocol {
                         let res = match File::open(file_path).await {
                             Ok(file) => {
                                 let stream = ReaderStream::new(file);
-                                let stream_body =
-                                    http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+                                let stream_body = http_body_util::StreamBody::new(stream.map_ok(body::Frame::data));
                                 let mut res =
                                     Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
-                                *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
+                                *res.status_mut() = StatusCode::from_u16(status as u16).unwrap();
                                 *res.headers_mut() = headers;
                                 res
                             }
