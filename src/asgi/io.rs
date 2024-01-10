@@ -7,13 +7,17 @@ use http_body_util::BodyExt;
 use hyper::{
     body,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Response,
+    Response, StatusCode,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use std::{borrow::Cow, sync::Arc};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::{
+    fs::File,
+    sync::{mpsc, oneshot, Mutex},
+};
 use tokio_tungstenite::WebSocketStream;
+use tokio_util::io::ReaderStream;
 use tungstenite::Message;
 
 use super::{
@@ -22,7 +26,7 @@ use super::{
 };
 use crate::{
     conversion::BytesToPy,
-    http::{HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
+    http::{response_404, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -169,6 +173,29 @@ impl ASGIHTTPProtocol {
                     _ => error_flow!(),
                 }
             }
+            Ok(ASGIMessageType::HTTPFile) => match (self.response_started, adapt_file(py, data), self.tx.take()) {
+                (true, Ok(file_path), Some(tx)) => {
+                    let status = self.response_status.unwrap();
+                    let headers = self.response_headers.take().unwrap();
+                    future_into_py_iter(self.rt.clone(), py, async move {
+                        let res = match File::open(file_path).await {
+                            Ok(file) => {
+                                let stream = ReaderStream::new(file);
+                                let stream_body = http_body_util::StreamBody::new(stream.map_ok(body::Frame::data));
+                                let mut res =
+                                    Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                                *res.status_mut() = StatusCode::from_u16(status as u16).unwrap();
+                                *res.headers_mut() = headers;
+                                res
+                            }
+                            Err(_) => response_404(),
+                        };
+                        let _ = tx.send(res);
+                        Ok(())
+                    })
+                }
+                _ => error_flow!(),
+            },
             Err(err) => Err(err.into()),
             _ => error_message!(),
         }
@@ -315,6 +342,7 @@ fn adapt_message_type(message: &PyDict) -> Result<ASGIMessageType, UnsupportedAS
             match message_type {
                 "http.response.start" => Ok(ASGIMessageType::HTTPStart),
                 "http.response.body" => Ok(ASGIMessageType::HTTPBody),
+                "http.response.pathsend" => Ok(ASGIMessageType::HTTPFile),
                 "websocket.accept" => Ok(ASGIMessageType::WSAccept),
                 "websocket.close" => Ok(ASGIMessageType::WSClose),
                 "websocket.send" => Ok(ASGIMessageType::WSMessage),
@@ -362,6 +390,14 @@ fn adapt_body(py: Python, message: &PyDict) -> (Box<[u8]>, bool) {
         _ => false,
     };
     (body.into(), more)
+}
+
+#[inline(always)]
+fn adapt_file(py: Python, message: &PyDict) -> PyResult<String> {
+    match message.get_item(pyo3::intern!(py, "path"))? {
+        Some(item) => item.extract(),
+        _ => error_flow!(),
+    }
 }
 
 #[inline(always)]

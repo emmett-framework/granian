@@ -23,6 +23,7 @@ async def test_scope(asgi_server, threading_mode):
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
+    assert 'http.response.pathsend' in data['extensions']
     assert data['state']['global'] == 'test'
 
 
@@ -65,3 +66,14 @@ async def test_protocol_error(asgi_server, threading_mode):
         res = httpx.get(f'http://localhost:{port}/err_proto')
 
     assert res.status_code == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
+async def test_file(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f'http://localhost:{port}/file')
+
+    assert res.status_code == 200
+    assert res.headers['content-type'] == 'image/png'
+    assert res.headers['content-length'] == '95'

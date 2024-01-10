@@ -15,6 +15,7 @@ static ASGI_EXTENSIONS: OnceCell<PyObject> = OnceCell::new();
 pub(crate) enum ASGIMessageType {
     HTTPStart,
     HTTPBody,
+    HTTPFile,
     WSAccept,
     WSClose,
     WSMessage,
@@ -142,6 +143,7 @@ impl ASGIScope {
             ASGI_EXTENSIONS
                 .get_or_try_init(|| {
                     let rv = PyDict::new(py);
+                    rv.set_item("http.response.pathsend", PyDict::new(py))?;
                     Ok::<PyObject, PyErr>(rv.into())
                 })?
                 .as_ref(py),

@@ -1,4 +1,5 @@
 import json
+import pathlib
 
 
 PLAINTEXT_RESPONSE = {
@@ -7,6 +8,11 @@ PLAINTEXT_RESPONSE = {
     'headers': [[b'content-type', b'text/plain; charset=utf-8']],
 }
 JSON_RESPONSE = {'type': 'http.response.start', 'status': 200, 'headers': [[b'content-type', b'application/json']]}
+MEDIA_RESPONSE = {
+    'type': 'http.response.start',
+    'status': 200,
+    'headers': [[b'content-type', b'image/png'], [b'content-length', b'95']],
+}
 
 
 async def info(scope, receive, send):
@@ -24,6 +30,7 @@ async def info(scope, receive, send):
                     'path': scope['path'],
                     'query_string': scope['query_string'].decode('latin-1'),
                     'headers': {k.decode('utf8'): v.decode('utf8') for k, v in scope['headers']},
+                    'extensions': scope['extensions'],
                     'state': scope['state'],
                 }
             ).encode('utf8'),
@@ -41,6 +48,12 @@ async def echo(scope, receive, send):
         more_body = msg['more_body']
         body += msg['body']
     await send({'type': 'http.response.body', 'body': body, 'more_body': False})
+
+
+async def pathsend(scope, receive, send):
+    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'media.png'
+    await send(MEDIA_RESPONSE)
+    await send({'type': 'http.response.pathsend', 'path': str(path)})
 
 
 async def ws_reject(scope, receive, send):
@@ -116,6 +129,7 @@ def app(scope, receive, send):
     return {
         '/info': info,
         '/echo': echo,
+        '/file': pathsend,
         '/ws_reject': ws_reject,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
