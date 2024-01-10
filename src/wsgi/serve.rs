@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 
 use super::http::{handle_rtb, handle_rtt};
+
+use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
 
 #[pyclass(module = "granian._granian")]
@@ -25,19 +27,22 @@ impl WSGIWorker {
             threads=1,
             pthreads=1,
             http_mode="1",
-            http1_buffer_max=65535,
+            http1_opts=None,
+            http2_opts=None,
             ssl_enabled=false,
             ssl_cert=None,
             ssl_key=None
         )
     )]
     fn new(
+        py: Python,
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
         pthreads: usize,
         http_mode: &str,
-        http1_buffer_max: usize,
+        http1_opts: Option<PyObject>,
+        http2_opts: Option<PyObject>,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>,
@@ -49,7 +54,8 @@ impl WSGIWorker {
                 threads,
                 pthreads,
                 http_mode,
-                http1_buffer_max,
+                worker_http1_config_from_py(py, http1_opts)?,
+                worker_http2_config_from_py(py, http2_opts)?,
                 false,
                 true,
                 ssl_enabled,
