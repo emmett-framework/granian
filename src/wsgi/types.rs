@@ -170,7 +170,7 @@ impl WSGIScope {
                 percent_decode_str(path).decode_utf8().unwrap(),
                 query_string,
                 self.py_http_version(),
-                (self.server_ip.to_string(), self.server_port),
+                (self.server_ip.to_string(), self.server_port.to_string()),
                 &self.client[..],
                 &self.scheme[..],
                 &self.method[..],
