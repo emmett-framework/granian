@@ -4,6 +4,8 @@ use super::http::{
     handle_rtb, handle_rtb_pyw, handle_rtb_ws, handle_rtb_ws_pyw, handle_rtt, handle_rtt_pyw, handle_rtt_ws,
     handle_rtt_ws_pyw,
 };
+
+use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
 
 #[pyclass(module = "granian._granian")]
@@ -40,7 +42,8 @@ impl ASGIWorker {
             threads=1,
             pthreads=1,
             http_mode="1",
-            http1_buffer_max=65535,
+            http1_opts=None,
+            http2_opts=None,
             websockets_enabled=false,
             opt_enabled=true,
             ssl_enabled=false,
@@ -49,12 +52,14 @@ impl ASGIWorker {
         )
     )]
     fn new(
+        py: Python,
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
         pthreads: usize,
         http_mode: &str,
-        http1_buffer_max: usize,
+        http1_opts: Option<PyObject>,
+        http2_opts: Option<PyObject>,
         websockets_enabled: bool,
         opt_enabled: bool,
         ssl_enabled: bool,
@@ -68,7 +73,8 @@ impl ASGIWorker {
                 threads,
                 pthreads,
                 http_mode,
-                http1_buffer_max,
+                worker_http1_config_from_py(py, http1_opts)?,
+                worker_http2_config_from_py(py, http2_opts)?,
                 websockets_enabled,
                 opt_enabled,
                 ssl_enabled,

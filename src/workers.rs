@@ -30,13 +30,34 @@ impl WorkerSignal {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct HTTP1Config {
+    pub keep_alive: bool,
+    pub max_buffer_size: usize,
+    pub pipeline_flush: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct HTTP2Config {
+    pub adaptive_window: bool,
+    pub initial_connection_window_size: u32,
+    pub initial_stream_window_size: u32,
+    pub keep_alive_interval: Option<core::time::Duration>,
+    pub keep_alive_timeout: core::time::Duration,
+    pub max_concurrent_streams: u32,
+    pub max_frame_size: u32,
+    pub max_headers_size: u32,
+    pub max_send_buffer_size: usize,
+}
+
 pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
     pub pthreads: usize,
     pub http_mode: String,
-    pub http1_buffer_max: usize,
+    pub http1_opts: HTTP1Config,
+    pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
     pub opt_enabled: bool,
     pub ssl_enabled: bool,
@@ -51,7 +72,8 @@ impl WorkerConfig {
         threads: usize,
         pthreads: usize,
         http_mode: &str,
-        http1_buffer_max: usize,
+        http1_opts: HTTP1Config,
+        http2_opts: HTTP2Config,
         websockets_enabled: bool,
         opt_enabled: bool,
         ssl_enabled: bool,
@@ -64,7 +86,8 @@ impl WorkerConfig {
             threads,
             pthreads,
             http_mode: http_mode.into(),
-            http1_buffer_max,
+            http1_opts,
+            http2_opts,
             websockets_enabled,
             opt_enabled,
             ssl_enabled,
@@ -187,7 +210,7 @@ macro_rules! handle_tls_loop {
 }
 
 macro_rules! handle_connection_http1 {
-    ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_buffer:expr, $target:expr) => {
+    ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
         |local_addr, remote_addr, stream| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
@@ -195,7 +218,9 @@ macro_rules! handle_connection_http1 {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
                 let mut conn = hyper::server::conn::http1::Builder::new();
-                conn.max_buf_size($http_buffer);
+                conn.keep_alive($http_opts.keep_alive);
+                conn.max_buf_size($http_opts.max_buffer_size);
+                conn.pipeline_flush($http_opts.pipeline_flush);
                 let _ = conn.serve_connection($stream_wrapper(stream), svc).await;
             });
         }
@@ -203,7 +228,7 @@ macro_rules! handle_connection_http1 {
 }
 
 macro_rules! handle_connection_http1_upgrades {
-    ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_buffer:expr, $target:expr) => {
+    ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
         |local_addr, remote_addr, stream| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
@@ -211,7 +236,9 @@ macro_rules! handle_connection_http1_upgrades {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
                 let mut conn = hyper::server::conn::http1::Builder::new();
-                conn.max_buf_size($http_buffer);
+                conn.keep_alive($http_opts.keep_alive);
+                conn.max_buf_size($http_opts.max_buffer_size);
+                conn.pipeline_flush($http_opts.pipeline_flush);
                 let _ = conn
                     .serve_connection($stream_wrapper(stream), svc)
                     .with_upgrades()
@@ -222,14 +249,23 @@ macro_rules! handle_connection_http1_upgrades {
 }
 
 macro_rules! handle_connection_http2 {
-    ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $stream_wrapper:expr, $proto:expr, $target:expr) => {
+    ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
         |local_addr, remote_addr, stream| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let conn = hyper::server::conn::http2::Builder::new($executor_builder());
+                let mut conn = hyper::server::conn::http2::Builder::new($executor_builder());
+                conn.adaptive_window($http_opts.adaptive_window);
+                conn.initial_connection_window_size($http_opts.initial_connection_window_size);
+                conn.initial_stream_window_size($http_opts.initial_stream_window_size);
+                conn.keep_alive_interval($http_opts.keep_alive_interval);
+                conn.keep_alive_timeout($http_opts.keep_alive_timeout);
+                conn.max_concurrent_streams($http_opts.max_concurrent_streams);
+                conn.max_frame_size($http_opts.max_frame_size);
+                conn.max_header_list_size($http_opts.max_headers_size);
+                conn.max_send_buf_size($http_opts.max_send_buffer_size);
                 let _ = conn.serve_connection($stream_wrapper(stream), svc).await;
             });
         }
@@ -237,7 +273,7 @@ macro_rules! handle_connection_http2 {
 }
 
 macro_rules! handle_connection_httpa {
-    ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $conn_method:ident, $stream_wrapper:expr, $proto:expr, $http_buffer:expr, $target:expr) => {
+    ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $conn_method:ident, $stream_wrapper:expr, $proto:expr, $http1_opts:expr, $http2_opts:expr, $target:expr) => {
         |local_addr, remote_addr, stream| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
@@ -245,7 +281,20 @@ macro_rules! handle_connection_httpa {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
                 let mut conn = hyper_util::server::conn::auto::Builder::new($executor_builder());
-                conn.http1().max_buf_size($http_buffer);
+                conn.http1().keep_alive($http1_opts.keep_alive);
+                conn.http1().max_buf_size($http1_opts.max_buffer_size);
+                conn.http1().pipeline_flush($http1_opts.pipeline_flush);
+                conn.http2().adaptive_window($http2_opts.adaptive_window);
+                conn.http2()
+                    .initial_connection_window_size($http2_opts.initial_connection_window_size);
+                conn.http2()
+                    .initial_stream_window_size($http2_opts.initial_stream_window_size);
+                conn.http2().keep_alive_interval($http2_opts.keep_alive_interval);
+                conn.http2().keep_alive_timeout($http2_opts.keep_alive_timeout);
+                conn.http2().max_concurrent_streams($http2_opts.max_concurrent_streams);
+                conn.http2().max_frame_size($http2_opts.max_frame_size);
+                conn.http2().max_header_list_size($http2_opts.max_headers_size);
+                conn.http2().max_send_buf_size($http2_opts.max_send_buffer_size);
                 let _ = conn.$conn_method($stream_wrapper(stream), svc).await;
             });
         }
@@ -268,7 +317,8 @@ macro_rules! serve_rth {
 
             let http_mode = self.config.http_mode.clone();
             let http_upgrades = self.config.websockets_enabled;
-            let http1_buffer_max = self.config.http1_buffer_max.clone();
+            let http1_opts = self.config.http1_opts.clone();
+            let http2_opts = self.config.http2_opts.clone();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
             let mut pyrx = Python::with_gil(|py| signal.borrow_mut(py).rx.take().unwrap());
 
@@ -289,7 +339,8 @@ macro_rules! serve_rth {
                                 serve_connection_with_upgrades,
                                 hyper_util::rt::TokioIo::new,
                                 "http",
-                                http1_buffer_max,
+                                http1_opts,
+                                http2_opts,
                                 $target
                             )
                         );
@@ -306,7 +357,8 @@ macro_rules! serve_rth {
                                 serve_connection,
                                 hyper_util::rt::TokioIo::new,
                                 "http",
-                                http1_buffer_max,
+                                http1_opts,
+                                http2_opts,
                                 $target
                             )
                         );
@@ -321,7 +373,7 @@ macro_rules! serve_rth {
                                 tokio::spawn,
                                 hyper_util::rt::TokioIo::new,
                                 "http",
-                                http1_buffer_max,
+                                http1_opts,
                                 $target
                             )
                         );
@@ -336,7 +388,7 @@ macro_rules! serve_rth {
                                 tokio::spawn,
                                 hyper_util::rt::TokioIo::new,
                                 "http",
-                                http1_buffer_max,
+                                http1_opts,
                                 $target
                             )
                         );
@@ -352,6 +404,7 @@ macro_rules! serve_rth {
                                 hyper_util::rt::TokioExecutor::new,
                                 hyper_util::rt::TokioIo::new,
                                 "http",
+                                http2_opts,
                                 $target
                             )
                         );
@@ -390,7 +443,8 @@ macro_rules! serve_rth_ssl {
 
             let http_mode = self.config.http_mode.clone();
             let http_upgrades = self.config.websockets_enabled;
-            let http1_buffer_max = self.config.http1_buffer_max.clone();
+            let http1_opts = self.config.http1_opts.clone();
+            let http2_opts = self.config.http2_opts.clone();
             let tls_cfg = self.config.tls_cfg();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
             let mut pyrx = Python::with_gil(|py| signal.borrow_mut(py).rx.take().unwrap());
@@ -413,7 +467,8 @@ macro_rules! serve_rth_ssl {
                                 serve_connection_with_upgrades,
                                 hyper_util::rt::TokioIo::new,
                                 "https",
-                                http1_buffer_max,
+                                http1_opts,
+                                http2_opts,
                                 $target
                             )
                         );
@@ -431,7 +486,8 @@ macro_rules! serve_rth_ssl {
                                 serve_connection,
                                 hyper_util::rt::TokioIo::new,
                                 "https",
-                                http1_buffer_max,
+                                http1_opts,
+                                http2_opts,
                                 $target
                             )
                         );
@@ -447,7 +503,7 @@ macro_rules! serve_rth_ssl {
                                 tokio::spawn,
                                 hyper_util::rt::TokioIo::new,
                                 "https",
-                                http1_buffer_max,
+                                http1_opts,
                                 $target
                             )
                         );
@@ -463,7 +519,7 @@ macro_rules! serve_rth_ssl {
                                 tokio::spawn,
                                 hyper_util::rt::TokioIo::new,
                                 "https",
-                                http1_buffer_max,
+                                http1_opts,
                                 $target
                             )
                         );
@@ -480,6 +536,7 @@ macro_rules! serve_rth_ssl {
                                 hyper_util::rt::TokioExecutor::new,
                                 hyper_util::rt::TokioIo::new,
                                 "https",
+                                http2_opts,
                                 $target
                             )
                         );
@@ -528,7 +585,8 @@ macro_rules! serve_wth {
                 let tcp_listener = self.config.tcp_listener();
                 let http_mode = self.config.http_mode.clone();
                 let http_upgrades = self.config.websockets_enabled;
-                let http1_buffer_max = self.config.http1_buffer_max.clone();
+                let http1_opts = self.config.http1_opts.clone();
+                let http2_opts = self.config.http2_opts.clone();
                 let pthreads = self.config.pthreads.clone();
                 let callback_wrapper = callback_wrapper.clone();
                 let mut srx = srx.clone();
@@ -552,7 +610,8 @@ macro_rules! serve_wth {
                                         serve_connection_with_upgrades,
                                         hyper_util::rt::TokioIo::new,
                                         "http",
-                                        http1_buffer_max,
+                                        http1_opts,
+                                        http2_opts,
                                         $target
                                     )
                                 );
@@ -569,7 +628,8 @@ macro_rules! serve_wth {
                                         serve_connection,
                                         hyper_util::rt::TokioIo::new,
                                         "http",
-                                        http1_buffer_max,
+                                        http1_opts,
+                                        http2_opts,
                                         $target
                                     )
                                 );
@@ -584,7 +644,7 @@ macro_rules! serve_wth {
                                         tokio::task::spawn_local,
                                         hyper_util::rt::TokioIo::new,
                                         "http",
-                                        http1_buffer_max,
+                                        http1_opts,
                                         $target
                                     )
                                 );
@@ -599,7 +659,7 @@ macro_rules! serve_wth {
                                         tokio::task::spawn_local,
                                         hyper_util::rt::TokioIo::new,
                                         "http",
-                                        http1_buffer_max,
+                                        http1_opts,
                                         $target
                                     )
                                 );
@@ -617,6 +677,7 @@ macro_rules! serve_wth {
                                             crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream))
                                         },
                                         "http",
+                                        http2_opts,
                                         $target
                                     )
                                 );
@@ -676,7 +737,8 @@ macro_rules! serve_wth_ssl {
                 let tcp_listener = self.config.tcp_listener();
                 let http_mode = self.config.http_mode.clone();
                 let http_upgrades = self.config.websockets_enabled;
-                let http1_buffer_max = self.config.http1_buffer_max.clone();
+                let http1_opts = self.config.http1_opts.clone();
+                let http2_opts = self.config.http2_opts.clone();
                 let tls_cfg = self.config.tls_cfg();
                 let pthreads = self.config.pthreads.clone();
                 let callback_wrapper = callback_wrapper.clone();
@@ -702,7 +764,8 @@ macro_rules! serve_wth_ssl {
                                         serve_connection_with_upgrades,
                                         hyper_util::rt::TokioIo::new,
                                         "https",
-                                        http1_buffer_max,
+                                        http1_opts,
+                                        http2_opts,
                                         $target
                                     )
                                 );
@@ -720,7 +783,8 @@ macro_rules! serve_wth_ssl {
                                         serve_connection,
                                         hyper_util::rt::TokioIo::new,
                                         "https",
-                                        http1_buffer_max,
+                                        http1_opts,
+                                        http2_opts,
                                         $target
                                     )
                                 );
@@ -736,7 +800,7 @@ macro_rules! serve_wth_ssl {
                                         tokio::task::spawn_local,
                                         hyper_util::rt::TokioIo::new,
                                         "https",
-                                        http1_buffer_max,
+                                        http1_opts,
                                         $target
                                     )
                                 );
@@ -752,7 +816,7 @@ macro_rules! serve_wth_ssl {
                                         tokio::task::spawn_local,
                                         hyper_util::rt::TokioIo::new,
                                         "https",
-                                        http1_buffer_max,
+                                        http1_opts,
                                         $target
                                     )
                                 );
@@ -771,6 +835,7 @@ macro_rules! serve_wth_ssl {
                                             crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream))
                                         },
                                         "https",
+                                        http2_opts,
                                         $target
                                     )
                                 );

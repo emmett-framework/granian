@@ -19,6 +19,7 @@ from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
+from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
 from .wsgi import _callback_wrapper as _wsgi_call_wrap
@@ -79,7 +80,8 @@ class Granian:
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
-        http1_buffer_size: int = 65535,
+        http1_settings: Optional[HTTP1Settings] = None,
+        http2_settings: Optional[HTTP2Settings] = None,
         log_enabled: bool = True,
         log_level: LogLevels = LogLevels.info,
         log_dictconfig: Optional[Dict[str, Any]] = None,
@@ -101,7 +103,8 @@ class Granian:
         self.http = http
         self.websockets = websockets
         self.backlog = max(128, backlog)
-        self.http1_buffer_size = http1_buffer_size
+        self.http1_settings = http1_settings
+        self.http2_settings = http2_settings
         self.log_enabled = log_enabled
         self.log_level = log_level
         self.log_config = log_dictconfig
@@ -140,7 +143,8 @@ class Granian:
         pthreads,
         threading_mode,
         http_mode,
-        http1_buffer_size,
+        http1_settings,
+        http2_settings,
         websockets,
         loop_opt,
         log_enabled,
@@ -170,7 +174,7 @@ class Granian:
             wcallback = future_watcher_wrapper(wcallback)
 
         worker = ASGIWorker(
-            worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, websockets, loop_opt, *ssl_ctx
+            worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, websockets, loop_opt, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
@@ -186,7 +190,8 @@ class Granian:
         pthreads,
         threading_mode,
         http_mode,
-        http1_buffer_size,
+        http1_settings,
+        http2_settings,
         websockets,
         loop_opt,
         log_enabled,
@@ -211,7 +216,7 @@ class Granian:
         callback_init(loop)
 
         worker = RSGIWorker(
-            worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, websockets, loop_opt, *ssl_ctx
+            worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, websockets, loop_opt, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(
@@ -231,7 +236,8 @@ class Granian:
         pthreads,
         threading_mode,
         http_mode,
-        http1_buffer_size,
+        http1_settings,
+        http2_settings,
         websockets,
         loop_opt,
         log_enabled,
@@ -250,7 +256,7 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = WSGIWorker(worker_id, sfd, threads, pthreads, http_mode, http1_buffer_size, *ssl_ctx)
+        worker = WSGIWorker(worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, *ssl_ctx)
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(_wsgi_call_wrap(callback, scope_opts), loop, contextvars.copy_context(), shutdown_event)
 
@@ -276,7 +282,8 @@ class Granian:
                 self.pthreads,
                 self.threading_mode,
                 self.http,
-                self.http1_buffer_size,
+                self.http1_settings,
+                self.http2_settings,
                 self.websockets,
                 self.loop_opt,
                 self.log_enabled,
