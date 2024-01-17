@@ -281,7 +281,6 @@ dependencies = [
  "hyper-util",
  "log",
  "mimalloc",
- "once_cell",
  "percent-encoding",
  "pin-project",
  "pyo3",

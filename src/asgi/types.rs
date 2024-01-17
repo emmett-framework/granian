@@ -1,16 +1,18 @@
 use hyper::{header::HeaderMap, Uri, Version};
-use once_cell::sync::OnceCell;
 use percent_encoding::percent_decode_str;
-use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyString};
+use pyo3::{
+    prelude::*,
+    sync::GILOnceCell,
+    types::{PyBytes, PyDict, PyList, PyString},
+};
 use std::net::{IpAddr, SocketAddr};
 
 const SCHEME_HTTPS: &str = "https";
 const SCHEME_WS: &str = "ws";
 const SCHEME_WSS: &str = "wss";
 
-static ASGI_VERSION: OnceCell<PyObject> = OnceCell::new();
-static ASGI_EXTENSIONS: OnceCell<PyObject> = OnceCell::new();
+static ASGI_VERSION: GILOnceCell<PyObject> = GILOnceCell::new();
+static ASGI_EXTENSIONS: GILOnceCell<PyObject> = GILOnceCell::new();
 
 pub(crate) enum ASGIMessageType {
     HTTPStart,
@@ -130,7 +132,7 @@ impl ASGIScope {
         dict.set_item(
             pyo3::intern!(py, "asgi"),
             ASGI_VERSION
-                .get_or_try_init(|| {
+                .get_or_try_init(py, || {
                     let rv = PyDict::new(py);
                     rv.set_item("version", "3.0")?;
                     rv.set_item("spec_version", "2.3")?;
@@ -141,7 +143,7 @@ impl ASGIScope {
         dict.set_item(
             pyo3::intern!(py, "extensions"),
             ASGI_EXTENSIONS
-                .get_or_try_init(|| {
+                .get_or_try_init(py, || {
                     let rv = PyDict::new(py);
                     rv.set_item("http.response.pathsend", PyDict::new(py))?;
                     Ok::<PyObject, PyErr>(rv.into())

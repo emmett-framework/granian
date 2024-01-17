@@ -1,7 +1,7 @@
-use once_cell::unsync::OnceCell as UnsyncOnceCell;
 use pyo3::prelude::*;
 use pyo3_asyncio::TaskLocals;
 use std::{
+    cell::OnceCell,
     future::Future,
     io,
     pin::Pin,
@@ -15,7 +15,7 @@ use tokio::{
 use super::callbacks::{PyEmptyAwaitable, PyFutureAwaitable, PyIterAwaitable};
 
 tokio::task_local! {
-    static TASK_LOCALS: UnsyncOnceCell<TaskLocals>;
+    static TASK_LOCALS: OnceCell<TaskLocals>;
 }
 
 pub trait JoinError {
@@ -111,7 +111,7 @@ impl ContextExt for RuntimeRef {
     where
         F: Future<Output = R> + Send + 'static,
     {
-        let cell = UnsyncOnceCell::new();
+        let cell = OnceCell::new();
         cell.set(locals).unwrap();
 
         Box::pin(TASK_LOCALS.scope(cell, fut))
@@ -139,7 +139,7 @@ impl LocalContextExt for RuntimeRef {
     where
         F: Future<Output = R> + 'static,
     {
-        let cell = UnsyncOnceCell::new();
+        let cell = OnceCell::new();
         cell.set(locals).unwrap();
 
         Box::pin(TASK_LOCALS.scope(cell, fut))

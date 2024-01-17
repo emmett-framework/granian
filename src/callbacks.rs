@@ -1,9 +1,7 @@
-use once_cell::sync::OnceCell;
-use pyo3::prelude::*;
-use pyo3::pyclass::IterNextOutput;
+use pyo3::{prelude::*, pyclass::IterNextOutput, sync::GILOnceCell};
 
-static CONTEXTVARS: OnceCell<PyObject> = OnceCell::new();
-static CONTEXT: OnceCell<PyObject> = OnceCell::new();
+static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
+static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
 
 #[derive(Clone)]
 pub(crate) struct CallbackWrapper {
@@ -153,13 +151,13 @@ impl PyFutureAwaitable {
 
 fn contextvars(py: Python) -> PyResult<&PyAny> {
     Ok(CONTEXTVARS
-        .get_or_try_init(|| py.import("contextvars").map(std::convert::Into::into))?
+        .get_or_try_init(py, || py.import("contextvars").map(std::convert::Into::into))?
         .as_ref(py))
 }
 
 pub fn empty_pycontext(py: Python) -> PyResult<&PyAny> {
     Ok(CONTEXT
-        .get_or_try_init(|| {
+        .get_or_try_init(py, || {
             contextvars(py)?
                 .getattr("Context")?
                 .call0()
