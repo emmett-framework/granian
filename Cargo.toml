@@ -38,7 +38,6 @@ hyper = { version = "=1.1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 log = "0.4"
 mimalloc = { version = "0.1.34", default-features = false, features = ["local_dynamic_tls"] }
-once_cell = "1.19"
 percent-encoding = "=2.3"
 pin-project = "1.0"
 pyo3 = { version = "=0.20", features = ["anyhow", "extension-module", "generate-import-lib"] }
