@@ -9,6 +9,7 @@ use std::{
 };
 use tokio::{
     runtime::Builder,
+    sync::Notify,
     task::{JoinHandle, LocalSet},
 };
 
@@ -223,15 +224,24 @@ where
     let task_locals = get_current_locals::<R>(py)?;
     let event_loop = task_locals.event_loop(py).to_object(py);
     let event_loop_aw = event_loop.clone();
-    let fut_spawner = move |cb: PyObject, context: PyObject, aw: Py<PyFutureAwaitable>| {
+    let fut_spawner = move |context: Option<PyObject>, cancel_tx: Arc<Notify>, aw: Py<PyFutureAwaitable>| {
         rt.spawn(async move {
-            let result = fut.await;
+            let result = tokio::select! {
+                result = fut => {
+                    result
+                },
+                () = cancel_tx.notified() => {
+                    Err(pyo3::exceptions::asyncio::CancelledError::new_err("Task cancelled"))
+                }
+            };
 
             Python::with_gil(|py| {
-                PyFutureAwaitable::set_result(aw.borrow_mut(py), result.map(|v| v.into_py(py)));
-                let kwctx = pyo3::types::PyDict::new(py);
-                kwctx.set_item(pyo3::intern!(py, "context"), context).unwrap();
-                let _ = event_loop.call_method(py, pyo3::intern!(py, "call_soon_threadsafe"), (cb, aw), Some(kwctx));
+                if let Some(cb) = PyFutureAwaitable::set_result(aw.borrow_mut(py), result.map(|v| v.into_py(py))) {
+                    let kwctx = pyo3::types::PyDict::new(py);
+                    kwctx.set_item(pyo3::intern!(py, "context"), context).unwrap();
+                    let _ =
+                        event_loop.call_method(py, pyo3::intern!(py, "call_soon_threadsafe"), (cb, aw), Some(kwctx));
+                }
             });
         });
     };

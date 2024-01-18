@@ -1,4 +1,6 @@
 use pyo3::{prelude::*, pyclass::IterNextOutput, sync::GILOnceCell};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
 static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
@@ -74,27 +76,34 @@ impl PyIterAwaitable {
 
 #[pyclass]
 pub(crate) struct PyFutureAwaitable {
-    fut_spawner: Option<Box<dyn FnOnce(PyObject, PyObject, Py<PyFutureAwaitable>) + Send>>,
+    fut_spawner: Option<Box<dyn FnOnce(Option<PyObject>, Arc<Notify>, Py<PyFutureAwaitable>) + Send>>,
     result: Option<PyResult<PyObject>>,
     event_loop: PyObject,
+    callback: Option<PyObject>,
+    cancel_tx: Arc<Notify>,
     py_block: bool,
+    py_cancelled: bool,
 }
 
 impl PyFutureAwaitable {
     pub(crate) fn new(
-        fut_spawner: Box<dyn FnOnce(PyObject, PyObject, Py<PyFutureAwaitable>) + Send>,
+        fut_spawner: Box<dyn FnOnce(Option<PyObject>, Arc<Notify>, Py<PyFutureAwaitable>) + Send>,
         event_loop: PyObject,
     ) -> Self {
         Self {
             fut_spawner: Some(fut_spawner),
             result: None,
             event_loop,
+            callback: None,
+            cancel_tx: Arc::new(Notify::new()),
             py_block: true,
+            py_cancelled: false,
         }
     }
 
-    pub(crate) fn set_result(mut pyself: PyRefMut<'_, Self>, result: PyResult<PyObject>) {
+    pub(crate) fn set_result(mut pyself: PyRefMut<'_, Self>, result: PyResult<PyObject>) -> Option<PyObject> {
         pyself.result = Some(result);
+        pyself.callback.take()
     }
 }
 
@@ -118,18 +127,46 @@ impl PyFutureAwaitable {
         self.event_loop.clone_ref(py)
     }
 
-    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: PyObject) -> PyResult<()> {
+    #[pyo3(signature = (cb, context=None))]
+    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: Option<PyObject>) -> PyResult<()> {
+        pyself.callback = Some(cb);
         if let Some(spawner) = pyself.fut_spawner.take() {
-            (spawner)(cb, context, pyself.into());
+            (spawner)(context, pyself.cancel_tx.clone(), pyself.into());
         }
         Ok(())
     }
 
-    fn cancel(&self) -> bool {
-        false
+    #[allow(unused)]
+    fn remove_done_callback(&mut self, cb: PyObject) -> i32 {
+        self.callback = None;
+        1
     }
 
-    fn result(&self) {}
+    #[allow(unused)]
+    #[pyo3(signature = (msg=None))]
+    fn cancel(&mut self, msg: Option<PyObject>) -> bool {
+        if self.done() {
+            return false;
+        }
+        self.py_cancelled = true;
+        self.cancel_tx.notify_one();
+        true
+    }
+
+    fn done(&self) -> bool {
+        self.result.is_some() || self.py_cancelled
+    }
+
+    fn result(pyself: PyRef<'_, Self>) -> PyResult<PyObject> {
+        match &pyself.result {
+            Some(res) => {
+                let py = pyself.py();
+                res.as_ref().map(|v| v.clone_ref(py)).map_err(|err| err.clone_ref(py))
+            }
+            _ => Ok(pyself.py().None()),
+        }
+    }
+
     fn exception(&self) {}
 
     fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
