@@ -8,6 +8,7 @@ import socket
 import ssl
 import sys
 import threading
+import time
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -42,7 +43,7 @@ class Worker:
         self.proc.join()
         if not self.interrupt_by_parent:
             logger.error(f'Unexpected exit from worker-{self.idx + 1}')
-            self.parent.interrupt_child = self.idx
+            self.parent.interrupt_children.append(self.idx)
             self.parent.main_loop_interrupt.set()
 
     def _watch(self):
@@ -86,6 +87,7 @@ class Granian:
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         url_path_prefix: Optional[str] = None,
+        respawn_failed_workers: bool = False,
         reload: bool = False,
     ):
         self.target = target
@@ -107,6 +109,7 @@ class Granian:
         self.log_level = log_level
         self.log_config = log_dictconfig
         self.url_path_prefix = url_path_prefix
+        self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
@@ -117,7 +120,8 @@ class Granian:
         self.procs: List[Worker] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
-        self.interrupt_child = None
+        self.interrupt_children = []
+        self.respawned_procs = {}
 
     def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
         if not (cert and key):
@@ -303,6 +307,21 @@ class Granian:
             proc.start()
             self.procs.append(proc)
 
+    def _respawn_workers(self, workers, sock, spawn_target, target_loader):
+        def socket_loader():
+            return sock
+
+        for idx in workers:
+            self.respawned_procs[idx] = time.time()
+            proc = self.procs.pop(idx)
+            proc.terminate()
+            proc.join()
+            proc = self._spawn_proc(
+                idx=idx, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
+            )
+            proc.start()
+            self.procs.insert(idx, proc)
+
     def _stop_workers(self):
         for proc in self.procs:
             proc.terminate()
@@ -333,22 +352,33 @@ class Granian:
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
         self._stop_workers()
-        if not exit_code and self.interrupt_child is not None:
+        if not exit_code and self.interrupt_children:
             exit_code = 1
         if exit_code:
             sys.exit(exit_code)
 
-    def _serve_loop(self):
+    def _serve_loop(self, sock, spawn_target, target_loader):
         while True:
             self.main_loop_interrupt.wait()
             if self.interrupt_signal:
                 break
-            if self.interrupt_child is not None:
-                break
+            if self.interrupt_children:
+                if not self.respawn_failed_workers:
+                    break
+
+                cycle = time.time()
+                if any(cycle - self.respawned_procs.get(idx, 0) <= 5.5 for idx in self.interrupt_children):
+                    logger.error('Worker crash loop detected, exiting')
+                    break
+
+                workers = list(self.interrupt_children)
+                self.interrupt_children.clear()
+                self.respawned_procs.clear()
+                self._respawn_workers(workers, sock, spawn_target, target_loader)
 
     def _serve(self, spawn_target, target_loader):
-        self.startup(spawn_target, target_loader)
-        self._serve_loop()
+        sock = self.startup(spawn_target, target_loader)
+        self._serve_loop(sock, spawn_target, target_loader)
         self.shutdown()
 
     def _serve_with_reloader(self, spawn_target, target_loader):

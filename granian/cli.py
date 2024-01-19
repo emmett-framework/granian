@@ -96,6 +96,12 @@ def main(
         None, help='SSL certificate file', exists=True, file_okay=True, dir_okay=False, readable=True
     ),
     url_path_prefix: Optional[str] = typer.Option(None, help='URL path prefix the app is mounted on'),
+    respawn_failed_workers: bool = typer.Option(
+        False,
+        '--respawn-failed-workers/--no-respawn-failed-workers',
+        help='Enable workers respawn on unexpected exit',
+        show_default='disabled',
+    ),
     reload: bool = typer.Option(
         False, '--reload/--no-reload', help="Enable auto reload on application's files changes", show_default='disabled'
     ),
@@ -151,5 +157,6 @@ def main(
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
         url_path_prefix=url_path_prefix,
+        respawn_failed_workers=respawn_failed_workers,
         reload=reload,
     ).serve()
