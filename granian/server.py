@@ -122,6 +122,7 @@ class Granian:
         self.interrupt_signal = False
         self.interrupt_children = []
         self.respawned_procs = {}
+        self.reload_signal = False
 
     def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
         if not (cert and key):
@@ -266,8 +267,12 @@ class Granian:
         self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
         self._sfd = self._shd.get_fd()
 
-    def signal_handler(self, *args, **kwargs):
+    def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True
+        self.main_loop_interrupt.set()
+
+    def signal_handler_reload(self, *args, **kwargs):
+        self.reload_signal = True
         self.main_loop_interrupt.set()
 
     def _spawn_proc(self, idx, target, callback_loader, socket_loader) -> Worker:
@@ -307,7 +312,7 @@ class Granian:
             proc.start()
             self.procs.append(proc)
 
-    def _respawn_workers(self, workers, sock, spawn_target, target_loader):
+    def _respawn_workers(self, workers, sock, spawn_target, target_loader, delay=0):
         def socket_loader():
             return sock
 
@@ -321,6 +326,7 @@ class Granian:
             )
             proc.start()
             self.procs.insert(idx, proc)
+            time.sleep(delay)
 
     def _stop_workers(self):
         for proc in self.procs:
@@ -335,7 +341,10 @@ class Granian:
             signals.append(signal.SIGBREAK)
 
         for sig in signals:
-            signal.signal(sig, self.signal_handler)
+            signal.signal(sig, self.signal_handler_interrupt)
+
+        if sys.platform != 'win32':
+            signal.signal(signal.SIGHUP, self.signal_handler_reload)
 
     def startup(self, spawn_target, target_loader):
         logger.info(f'Starting granian (main PID: {os.getpid()})')
@@ -362,6 +371,7 @@ class Granian:
             self.main_loop_interrupt.wait()
             if self.interrupt_signal:
                 break
+
             if self.interrupt_children:
                 if not self.respawn_failed_workers:
                     break
@@ -374,7 +384,16 @@ class Granian:
                 workers = list(self.interrupt_children)
                 self.interrupt_children.clear()
                 self.respawned_procs.clear()
+                self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, sock, spawn_target, target_loader)
+
+            if self.reload_signal:
+                logger.info('HUP signal received, gracefully respawning workers..')
+                workers = list(range(self.workers))
+                self.reload_signal = False
+                self.respawned_procs.clear()
+                self.main_loop_interrupt.clear()
+                self._respawn_workers(workers, sock, spawn_target, target_loader, delay=3.5)
 
     def _serve(self, spawn_target, target_loader):
         sock = self.startup(spawn_target, target_loader)
