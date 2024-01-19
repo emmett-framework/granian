@@ -197,9 +197,16 @@ macro_rules! handle_tls_loop {
 
         while accept_loop {
             tokio::select! {
-                Some(Ok((stream, remote_addr))) = tls_listener.accept() => {
-                    #[allow(clippy::redundant_closure_call)]
-                    $inner(local_addr, remote_addr, stream)
+                Some(accept) = tls_listener.accept() => {
+                    match accept {
+                        Ok((stream, remote_addr)) => {
+                            #[allow(clippy::redundant_closure_call)]
+                            $inner(local_addr, remote_addr, stream)
+                        },
+                        Err(err) => {
+                            log::info!("TLS handshake failed with {:?}", err);
+                        }
+                    }
                 },
                 _ = $quit_signal => {
                     accept_loop = false;
