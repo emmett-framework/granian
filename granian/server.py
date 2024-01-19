@@ -63,8 +63,6 @@ class Worker:
 
 
 class Granian:
-    SIGNALS = {signal.SIGINT, signal.SIGTERM}
-
     def __init__(
         self,
         target: str,
@@ -312,12 +310,18 @@ class Granian:
             proc.join()
         self.procs.clear()
 
+    def setup_signals(self):
+        signals = [signal.SIGINT, signal.SIGTERM]
+        if sys.platform == 'win32':
+            signals.append(signal.SIGBREAK)
+
+        for sig in signals:
+            signal.signal(sig, self.signal_handler)
+
     def startup(self, spawn_target, target_loader):
         logger.info(f'Starting granian (main PID: {os.getpid()})')
 
-        for sig in self.SIGNALS:
-            signal.signal(sig, self.signal_handler)
-
+        self.setup_signals()
         self._init_shared_socket()
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)
