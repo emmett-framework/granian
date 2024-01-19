@@ -14,19 +14,39 @@ async def _server(interface, port, threading_mode, tls=False):
     tls_opts = (
         (f"--ssl-certificate {certs_path / 'cert.pem'} " f"--ssl-keyfile {certs_path / 'key.pem'} ") if tls else ''
     )
-    proc = await asyncio.create_subprocess_shell(
-        ''.join(
-            [
-                f'granian --interface {interface} --port {port} ',
-                f'--threads 1 --threading-mode {threading_mode} ',
-                tls_opts,
-                '--opt ' if os.getenv('LOOP_OPT') else '',
-                f'tests.apps.{interface}:app',
-            ]
-        ),
-        env=dict(os.environ),
+    cmd = ''.join(
+        [
+            f'granian --interface {interface} --port {port} ',
+            f'--threads 1 --threading-mode {threading_mode} ',
+            tls_opts,
+            '--opt ' if os.getenv('LOOP_OPT') else '',
+            f'tests.apps.{interface}:app',
+        ]
     )
-    await asyncio.sleep(1)
+
+    succeeded, spawn_failures = False, 0
+    while spawn_failures < 3:
+        proc = await asyncio.create_subprocess_shell(cmd, env=dict(os.environ))
+        conn_failures = 0
+        while conn_failures < 3:
+            try:
+                await asyncio.sleep(1.5)
+                sock = socket.create_connection(('127.0.0.1', port), timeout=1)
+                sock.close()
+                succeeded = True
+                break
+            except Exception:
+                conn_failures += 1
+        if succeeded:
+            break
+
+        proc.terminate()
+        await proc.wait()
+        spawn_failures += 1
+
+    if not succeeded:
+        raise RuntimeError('Cannot bind server')
+
     try:
         yield port
     finally:
