@@ -416,7 +416,7 @@ macro_rules! serve_rth {
                             )
                         );
                     }
-                    _ => unreachable!(), // FIXME: handle errors
+                    _ => unreachable!(),
                 }
 
                 log::info!("Stopping worker-{}", worker_id);
@@ -548,7 +548,7 @@ macro_rules! serve_rth_ssl {
                             )
                         );
                     }
-                    _ => unreachable!(), // FIXME: handle errors
+                    _ => unreachable!(),
                 }
 
                 log::info!("Stopping worker-{}", worker_id);
@@ -689,7 +689,7 @@ macro_rules! serve_wth {
                                     )
                                 );
                             }
-                            _ => unreachable!(), // FIXME: handle errors
+                            _ => unreachable!(),
                         }
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
@@ -847,7 +847,7 @@ macro_rules! serve_wth_ssl {
                                     )
                                 );
                             }
-                            _ => unreachable!(), // FIXME: handle errors
+                            _ => unreachable!(),
                         }
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);

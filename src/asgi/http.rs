@@ -111,6 +111,7 @@ macro_rules! handle_request_with_ws {
                         }
                     }
                     Err(err) => {
+                        log::info!("Websocket handshake failed with {:?}", err);
                         return ResponseBuilder::new()
                             .status(StatusCode::BAD_REQUEST)
                             .header(HK_SERVER, HV_SERVER)

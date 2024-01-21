@@ -204,7 +204,7 @@ impl ASGIHTTPProtocol {
                     let status = self.response_status.unwrap();
                     let headers = self.response_headers.take().unwrap();
                     future_into_py_iter(self.rt.clone(), py, async move {
-                        let res = match File::open(file_path).await {
+                        let res = match File::open(&file_path).await {
                             Ok(file) => {
                                 let stream = ReaderStream::new(file);
                                 let stream_body = http_body_util::StreamBody::new(stream.map_ok(body::Frame::data));
@@ -214,7 +214,10 @@ impl ASGIHTTPProtocol {
                                 *res.headers_mut() = headers;
                                 res
                             }
-                            Err(_) => response_404(),
+                            Err(_) => {
+                                log::info!("Cannot open file {}", &file_path);
+                                response_404()
+                            },
                         };
                         let _ = tx.send(res);
                         Ok(())

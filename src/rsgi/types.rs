@@ -234,7 +234,10 @@ impl PyResponseFile {
                 response_head_from_py!(self.status, &self.headers, res);
                 res
             }
-            Err(_) => response_404(),
+            Err(_) => {
+                log::info!("Cannot open file {}", &self.file_path);
+                response_404()
+            },
         }
     }
 }
