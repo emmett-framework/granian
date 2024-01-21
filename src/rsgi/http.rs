@@ -125,7 +125,7 @@ macro_rules! handle_request_with_ws {
                                     .map_err(|e| match e {})
                                     .boxed(),
                             )
-                            .unwrap()
+                            .unwrap();
                     }
                 }
             }

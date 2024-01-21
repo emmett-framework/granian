@@ -237,7 +237,7 @@ impl PyResponseFile {
             Err(_) => {
                 log::info!("Cannot open file {}", &self.file_path);
                 response_404()
-            },
+            }
         }
     }
 }

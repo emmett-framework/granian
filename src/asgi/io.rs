@@ -217,7 +217,7 @@ impl ASGIHTTPProtocol {
                             Err(_) => {
                                 log::info!("Cannot open file {}", &file_path);
                                 response_404()
-                            },
+                            }
                         };
                         let _ = tx.send(res);
                         Ok(())
