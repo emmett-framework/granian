@@ -92,6 +92,9 @@ Options:
                                   GRANIAN_WORKERS; default: 1; x>=1]
   --threads INTEGER RANGE         Number of threads  [env var:
                                   GRANIAN_THREADS; default: 1; x>=1]
+  --blocking-threads INTEGER RANGE
+                                  Number of blocking threads  [env var:
+                                  GRANIAN_BLOCKING_THREADS; default: 1; x>=1]
   --threading-mode [runtime|workers]
                                   Threading mode to use  [env var:
                                   GRANIAN_THREADING_MODE; default: workers]
