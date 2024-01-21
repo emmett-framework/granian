@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 
 CPU = multiprocessing.cpu_count()
-WRK_CONCURRENCIES = [CPU * 2 ** i for i in range(3, 7)]
+WRK_CONCURRENCIES = [CPU * 2**i for i in range(3, 7)]
 
 
 @contextmanager
@@ -50,9 +50,7 @@ def app(name, procs=None, threads=None, thmode=None):
             "hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 "
             f"--workers {procs} asgi:app.asgi:app"
         ),
-        "gunicorn": (
-            f"gunicorn --workers {procs} app.wsgi:app"
-        )
+        "gunicorn": f"gunicorn --workers {procs} -k gthread app.wsgi:app",
     }
     proc = subprocess.Popen(proc[name], shell=True, preexec_fn=os.setsid)
     time.sleep(2)
@@ -68,12 +66,12 @@ def wrk(duration, concurrency, endpoint, post=False):
         f"-s {script} http://localhost:8000/{endpoint}",
         shell=True,
         check=True,
-        capture_output=True
+        capture_output=True,
     )
     data = proc.stderr.decode("utf8").split(",")
     return {
         "requests": {"total": data[1], "rps": data[2]},
-        "latency": {"avg": data[11], "max": data[10], "stdev": data[12]}
+        "latency": {"avg": data[11], "max": data[10], "stdev": data[12]},
     }
 
 
@@ -111,12 +109,7 @@ def concurrencies():
 
 def rsgi_body_type():
     results = {}
-    benches = {
-        "bytes small": "b",
-        "str small": "s",
-        "bytes big": "bb",
-        "str big": "ss"
-    }
+    benches = {"bytes small": "b", "str small": "s", "bytes big": "bb", "str big": "ss"}
     for title, route in benches.items():
         with app("rsgi"):
             results[title] = benchmark(route)
@@ -125,11 +118,7 @@ def rsgi_body_type():
 
 def interfaces():
     results = {}
-    benches = {
-        "bytes": ("b", {}),
-        "str": ("s", {}),
-        "echo": ("echo", {"post": True})
-    }
+    benches = {"bytes": ("b", {}), "str": ("s", {}), "echo": ("echo", {"post": True})}
     for interface in ["rsgi", "asgi", "wsgi"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
@@ -140,17 +129,8 @@ def interfaces():
 
 def vs_3rd_async():
     results = {}
-    benches = {
-        "[GET]": ("b", {}),
-        "[POST]": ("echo", {"post": True})
-    }
-    for fw in [
-        "granian_asgi",
-        "granian_rsgi",
-        "uvicorn_h11",
-        "uvicorn_httptools",
-        "hypercorn"
-    ]:
+    benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
+    for fw in ["granian_asgi", "granian_rsgi", "uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
@@ -162,14 +142,8 @@ def vs_3rd_async():
 
 def vs_3rd_sync():
     results = {}
-    benches = {
-        "[GET]": ("b", {}),
-        "[POST]": ("echo", {"post": True})
-    }
-    for fw in [
-        "granian_wsgi",
-        "gunicorn",
-    ]:
+    benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
+    for fw in ["granian_wsgi", "gunicorn (gthread)"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
@@ -198,7 +172,7 @@ def vs_3rd_maxc():
     with app("hypercorn", procs["other"]):
         results["Hypercorn"] = benchmark("b")
     with app("gunicorn", procs["other"]):
-        results["Gunicorn meinheld"] = benchmark("b")
+        results["Gunicorn (gthread)"] = benchmark("b")
     return results
 
 
@@ -217,11 +191,7 @@ def run():
     if os.environ.get("BENCHMARK_VSC") == "true":
         results["vs_maxc"] = vs_3rd_maxc()
     with open("results/data.json", "w") as f:
-        f.write(json.dumps({
-            "cpu": CPU,
-            "run_at": now.isoformat(),
-            "results": results
-        }))
+        f.write(json.dumps({"cpu": CPU, "run_at": now.isoformat(), "results": results}))
 
 
 if __name__ == "__main__":
