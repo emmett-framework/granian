@@ -59,7 +59,7 @@ Source = 'https://github.com/emmett-framework/granian'
 granian = 'granian:cli.cli'
 
 [build-system]
-requires = ['maturin>=1.1.0,<1.4.0']
+requires = ['maturin>=1.1.0,<1.5.0']
 build-backend = 'maturin'
 
 [tool.maturin]

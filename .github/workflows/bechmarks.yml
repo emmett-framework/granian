@@ -3,7 +3,7 @@ name: benchmarks
 on: workflow_dispatch
 
 env:
-  MATURIN_VERSION: 1.2.3
+  MATURIN_VERSION: 1.3.2
 
 jobs:
   benchmark-base:
