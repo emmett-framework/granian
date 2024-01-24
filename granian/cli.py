@@ -4,7 +4,7 @@ from typing import Optional
 
 import typer
 
-from .__version__ import __version__
+from . import __version__
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
