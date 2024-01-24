@@ -1,22 +1,21 @@
 .DEFAULT_GOAL := all
-black = black granian tests
-ruff = ruff granian tests
+pysources = granian tests
 
 .PHONY: build-dev
 build-dev:
 	@rm -f granian/*.so
-	maturin develop --extras test
+	maturin develop --extras lint,test
 
 .PHONY: format
 format:
-	$(black)
-	$(ruff) --fix --exit-zero
+	ruff --fix $(pysources)
+	ruff format $(pysources)
 	cargo fmt
 
 .PHONY: lint-python
 lint-python:
-	$(ruff)
-	$(black) --check --diff
+	ruff $(pysources)
+	ruff format --check $(pysources)
 
 .PHONY: lint-rust
 lint-rust:

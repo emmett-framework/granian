@@ -436,9 +436,9 @@ class Granian:
             if sys.platform == 'win32' and self.workers > 1:
                 self.workers = 1
                 logger.warn(
-                    "Due to a bug in Windows unblocking socket implementation "
+                    'Due to a bug in Windows unblocking socket implementation '
                     "granian can't support multiple workers on this platform. "
-                    "Number of workers will now fallback to 1."
+                    'Number of workers will now fallback to 1.'
                 )
 
         if self.websockets:

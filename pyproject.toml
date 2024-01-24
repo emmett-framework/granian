@@ -40,8 +40,7 @@ dependencies = [
 
 [project.optional-dependencies]
 lint = [
-    'black~=23.9.0',
-    'ruff~=0.0.292',
+    'ruff~=0.1.0',
 ]
 test = [
     'httpx~=0.25.0',
@@ -92,6 +91,9 @@ extend-ignore = [
 flake8-quotes = { inline-quotes = 'single', multiline-quotes = 'double' }
 mccabe = { max-complexity = 13 }
 
+[tool.ruff.format]
+quote-style = 'single'
+
 [tool.ruff.isort]
 combine-as-imports = true
 lines-after-imports = 2
@@ -100,13 +102,6 @@ known-first-party = ['granian', 'tests']
 [tool.ruff.per-file-ignores]
 'granian/_granian.pyi' = ['I001']
 'tests/**' = ['B018', 'S110', 'S501']
-
-[tool.black]
-color = true
-line-length = 120
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-skip-string-normalization = true # leave this to ruff
-skip-magic-trailing-comma = true # leave this to ruff
 
 [tool.pytest.ini_options]
 asyncio_mode = 'auto'
