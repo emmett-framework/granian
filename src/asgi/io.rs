@@ -466,9 +466,14 @@ fn ws_message_into_py(message: Message) -> PyResult<PyObject> {
             dict.set_item(pyo3::intern!(py, "text"), message)?;
             Ok(dict.to_object(py))
         }),
-        Message::Close(_) => Python::with_gil(|py| {
+        Message::Close(frame) => Python::with_gil(|py| {
+            let close_code: u16 = match frame {
+                Some(frame) => frame.code.into(),
+                _ => 1005,
+            };
             let dict = PyDict::new(py);
             dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.disconnect"))?;
+            dict.set_item(pyo3::intern!(py, "code"), close_code)?;
             Ok(dict.to_object(py))
         }),
         v => {
