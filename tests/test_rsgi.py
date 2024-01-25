@@ -17,12 +17,13 @@ async def test_scope(rsgi_server, threading_mode):
     data = res.json()
     assert data['proto'] == 'http'
     assert data['http_version'] == '1.1'
-    assert data['rsgi_version'] == '1.2'
+    assert data['rsgi_version'] == '1.3'
     assert data['scheme'] == 'http'
     assert data['method'] == 'GET'
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
+    assert not data['authority']
 
 
 @pytest.mark.asyncio
