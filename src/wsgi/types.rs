@@ -3,6 +3,7 @@ use http_body_util::BodyExt;
 use hyper::{
     body::Bytes,
     header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE, HOST},
+    http::uri::Authority,
     Method, Uri, Version,
 };
 use percent_encoding::percent_decode_str;
@@ -174,7 +175,7 @@ impl WSGIScope {
                 ));
             }
             if !self.headers.contains_key(HOST) {
-                let host = self.uri.authority().map(|v| v.as_str()).unwrap_or("");
+                let host = self.uri.authority().map_or("", Authority::as_str);
                 headers.push(("HTTP_HOST".to_string(), host));
             }
 

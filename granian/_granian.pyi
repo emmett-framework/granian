@@ -24,6 +24,7 @@ class RSGIScope:
     method: str
     path: str
     query_string: str
+    authority: Optional[str]
 
     @property
     def headers(self) -> RSGIHeaders: ...

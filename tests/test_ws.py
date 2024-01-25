@@ -63,9 +63,10 @@ async def test_rsgi_scope(rsgi_server, threading_mode):
     data = json.loads(res)
     assert data['proto'] == 'ws'
     assert data['http_version'] == '1.1'
-    assert data['rsgi_version'] == '1.2'
+    assert data['rsgi_version'] == '1.3'
     assert data['scheme'] == 'http'
     assert data['method'] == 'GET'
     assert data['path'] == '/ws_info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
+    assert not data['authority']

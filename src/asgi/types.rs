@@ -1,5 +1,6 @@
 use hyper::{
     header::{self, HeaderMap},
+    http::uri::Authority,
     Uri, Version,
 };
 use percent_encoding::percent_decode_str;
@@ -109,7 +110,7 @@ impl ASGIScope {
             ))?;
         }
         if !self.headers.contains_key(header::HOST) {
-            let host = self.uri.authority().map(|v| v.as_str()).unwrap_or("");
+            let host = self.uri.authority().map_or("", Authority::as_str);
             rv.insert(0, (PyBytes::new(py, b"host"), PyBytes::new(py, host.as_bytes())))?;
         }
         Ok(rv)
