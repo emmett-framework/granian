@@ -1,4 +1,7 @@
-use hyper::{header::HeaderMap, Uri, Version};
+use hyper::{
+    header::{self, HeaderMap},
+    Uri, Version,
+};
 use percent_encoding::percent_decode_str;
 use pyo3::{
     prelude::*,
@@ -104,6 +107,10 @@ impl ASGIScope {
                 PyBytes::new(py, key.as_str().as_bytes()),
                 PyBytes::new(py, value.as_bytes()),
             ))?;
+        }
+        if !self.headers.contains_key(header::HOST) {
+            let host = self.uri.authority().map(|v| v.as_str()).unwrap_or("");
+            rv.insert(0, (PyBytes::new(py, b"host"), PyBytes::new(py, host.as_bytes())))?;
         }
         Ok(rv)
     }
