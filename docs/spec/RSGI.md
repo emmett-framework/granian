@@ -1,6 +1,6 @@
 # RSGI Specification
 
-**Version:** 1.2
+**Version:** 1.3
 
 ## Abstract
 
@@ -79,6 +79,7 @@ class Scope:
     path: str
     query_string: str
     headers: Mapping[str, str]
+    authority: Optional[str]
 ```
 
 And here are descriptions for the upper attributes:
@@ -92,6 +93,7 @@ And here are descriptions for the upper attributes:
 - `path`: HTTP request target excluding any query string
 - `query_string`: URL portion after the `?`
 - `headers`: a mapping-like object, where keys is the header name, and value is the header value
+- `authority`: an optional string containing the relevant pseudo-header (empty on HTTP versions prior to 2)
 
 #### HTTP protocol interface
 
@@ -149,6 +151,7 @@ class Scope:
     path: str
     query_string: str
     headers: Mapping[str, str]
+    authority: Optional[str]
 ```
 
 And here are descriptions for the upper attributes:
@@ -162,6 +165,7 @@ And here are descriptions for the upper attributes:
 - `path`: HTTP request target excluding any query string
 - `query_string`: URL portion after the `?`
 - `headers`: a mapping-like object, where keys is the header name, and value is the header value
+- `authority`: an optional string containing the relevant pseudo-header (empty on HTTP versions prior to 2)
 
 #### Websocket protocol interface
 

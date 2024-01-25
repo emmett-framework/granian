@@ -1,8 +1,10 @@
+use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
 use hyper::{
     body::Bytes,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
+    http::uri::Authority,
     Uri, Version,
 };
 use percent_encoding::percent_decode_str;
@@ -36,18 +38,18 @@ impl RSGIHeaders {
         ret
     }
 
-    fn values(&self) -> PyResult<Vec<&str>> {
+    fn values(&self) -> Result<Vec<&str>> {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
         for val in self.inner.values() {
-            ret.push(val.to_str().unwrap());
+            ret.push(val.to_str()?);
         }
         Ok(ret)
     }
 
-    fn items(&self) -> PyResult<Vec<(&str, &str)>> {
+    fn items(&self) -> Result<Vec<(&str, &str)>> {
         let mut ret = Vec::with_capacity(self.inner.keys_len());
         for (key, val) in &self.inner {
-            ret.push((key.as_str(), val.to_str().unwrap()));
+            ret.push((key.as_str(), val.to_str()?));
         }
         Ok(ret)
     }
@@ -102,7 +104,7 @@ impl RSGIScope {
         Self {
             proto: proto.to_string(),
             http_version,
-            rsgi_version: "1.2".to_string(),
+            rsgi_version: "1.3".to_string(),
             scheme: scheme.to_string(),
             method: method.to_string(),
             uri,
@@ -130,9 +132,14 @@ impl RSGIScope {
         }
     }
 
+    #[getter(authority)]
+    fn get_authority(&self) -> Option<String> {
+        self.uri.authority().map(Authority::to_string)
+    }
+
     #[getter(path)]
-    fn get_path(&self) -> Cow<str> {
-        percent_decode_str(self.uri.path()).decode_utf8().unwrap()
+    fn get_path(&self) -> Result<Cow<str>> {
+        Ok(percent_decode_str(self.uri.path()).decode_utf8()?)
     }
 
     #[getter(query_string)]
