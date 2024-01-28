@@ -3,7 +3,7 @@ use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use super::{
-    io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol},
+    io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
     types::{PyResponse, PyResponseBody, RSGIScope as Scope},
 };
 use crate::{
@@ -176,9 +176,7 @@ impl CallbackRunnerWebsocket {
 macro_rules! callback_impl_done_ws {
     ($self:expr, $py:expr) => {
         if let Ok(mut proto) = $self.proto.as_ref($py).try_borrow_mut() {
-            if let (Some(tx), res) = proto.tx() {
-                let _ = tx.send(res);
-            }
+            let _ = proto.close($py, None);
         }
     };
 }
@@ -313,7 +311,7 @@ macro_rules! call_impl_rtb_ws {
             ws: HyperWebsocket,
             upgrade: UpgradeData,
             scope: Scope,
-        ) -> oneshot::Receiver<(i32, bool)> {
+        ) -> oneshot::Receiver<WebsocketDetachedTransport> {
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 
@@ -334,7 +332,7 @@ macro_rules! call_impl_rtt_ws {
             ws: HyperWebsocket,
             upgrade: UpgradeData,
             scope: Scope,
-        ) -> oneshot::Receiver<(i32, bool)> {
+        ) -> oneshot::Receiver<WebsocketDetachedTransport> {
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 

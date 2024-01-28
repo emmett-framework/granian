@@ -1,15 +1,10 @@
-use futures::{
-    sink::SinkExt,
-    stream::{SplitSink, SplitStream},
-    StreamExt, TryStreamExt,
-};
+use futures::{sink::SinkExt, StreamExt, TryStreamExt};
 use http_body_util::BodyExt;
 use hyper::body;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::{borrow::Cow, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
 
 use super::{
@@ -20,8 +15,10 @@ use crate::{
     conversion::BytesToPy,
     http::HTTPRequest,
     runtime::{future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
-    ws::{HyperWebsocket, UpgradeData},
+    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSStream, WSTxStream},
 };
+
+pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<tokio::task::JoinHandle<()>>);
 
 #[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
@@ -180,27 +177,37 @@ impl RSGIHTTPProtocol {
 #[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
-    tx: Arc<Mutex<SplitSink<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>, Message>>>,
-    rx: Arc<Mutex<SplitStream<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>>>,
+    tx: Arc<Mutex<WSTxStream>>,
+    rx: Arc<Mutex<WSRxStream>>,
+    closed: bool,
 }
 
 impl RSGIWebsocketTransport {
-    pub fn new(rt: RuntimeRef, transport: WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>) -> Self {
+    pub fn new(rt: RuntimeRef, transport: WSStream) -> Self {
         let (tx, rx) = transport.split();
         Self {
             rt,
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
+            closed: false,
         }
     }
 
-    pub fn close(&self) {
-        let stream = self.tx.clone();
-        self.rt.spawn(async move {
-            if let Ok(mut stream) = stream.try_lock() {
-                let _ = stream.close().await;
+    pub fn close(&mut self) -> Option<tokio::task::JoinHandle<()>> {
+        if self.closed {
+            return None;
+        }
+        self.closed = true;
+
+        let tx = self.tx.clone();
+        let handle = self.rt.spawn(async move {
+            if let Ok(mut tx) = tx.try_lock() {
+                if let Err(err) = tx.close().await {
+                    log::info!("Failed to close websocket with error {:?}", err);
+                }
             }
         });
+        Some(handle)
     }
 }
 
@@ -254,7 +261,7 @@ impl RSGIWebsocketTransport {
 #[pyclass(module = "granian._granian")]
 pub(crate) struct RSGIWebsocketProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<(i32, bool)>>,
+    tx: Option<oneshot::Sender<WebsocketDetachedTransport>>,
     websocket: Arc<Mutex<HyperWebsocket>>,
     upgrade: Option<UpgradeData>,
     transport: Arc<Mutex<Option<Py<RSGIWebsocketTransport>>>>,
@@ -264,7 +271,7 @@ pub(crate) struct RSGIWebsocketProtocol {
 impl RSGIWebsocketProtocol {
     pub fn new(
         rt: RuntimeRef,
-        tx: oneshot::Sender<(i32, bool)>,
+        tx: oneshot::Sender<WebsocketDetachedTransport>,
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
     ) -> Self {
@@ -280,10 +287,6 @@ impl RSGIWebsocketProtocol {
 
     fn consumed(&self) -> bool {
         self.upgrade.is_none()
-    }
-
-    pub fn tx(&mut self) -> (Option<oneshot::Sender<(i32, bool)>>, (i32, bool)) {
-        (self.tx.take(), (self.status, self.consumed()))
     }
 }
 
@@ -344,18 +347,19 @@ impl WebsocketInboundTextMessage {
 #[pymethods]
 impl RSGIWebsocketProtocol {
     #[pyo3(signature = (status=None))]
-    fn close(&mut self, py: Python, status: Option<i32>) -> PyResult<()> {
+    pub fn close(&mut self, py: Python, status: Option<i32>) -> PyResult<()> {
         self.status = status.unwrap_or(0);
         if let Some(tx) = self.tx.take() {
+            let mut handle = None;
             if let Ok(mut transport) = self.transport.try_lock() {
                 if let Some(transport) = transport.take() {
-                    if let Ok(trx) = transport.try_borrow_mut(py) {
-                        trx.close();
+                    if let Ok(mut trx) = transport.try_borrow_mut(py) {
+                        handle = trx.close();
                     }
                 }
             }
 
-            let _ = tx.send((self.status, self.consumed()));
+            let _ = tx.send((self.status, self.consumed(), handle));
         }
         Ok(())
     }

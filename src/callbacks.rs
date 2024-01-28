@@ -158,12 +158,18 @@ impl PyFutureAwaitable {
     }
 
     fn result(pyself: PyRef<'_, Self>) -> PyResult<PyObject> {
+        if pyself.py_cancelled {
+            return Err(pyo3::exceptions::asyncio::CancelledError::new_err("Future cancelled."));
+        }
+
         match &pyself.result {
             Some(res) => {
                 let py = pyself.py();
                 res.as_ref().map(|v| v.clone_ref(py)).map_err(|err| err.clone_ref(py))
             }
-            _ => Ok(pyself.py().None()),
+            _ => Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
+                "Result is not ready.",
+            )),
         }
     }
 

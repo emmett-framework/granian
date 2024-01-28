@@ -1,8 +1,5 @@
-use futures::{
-    sink::SinkExt,
-    stream::{SplitSink, SplitStream},
-    StreamExt, TryStreamExt,
-};
+use anyhow::Result;
+use futures::{sink::SinkExt, StreamExt, TryStreamExt};
 use http_body_util::BodyExt;
 use hyper::{
     body,
@@ -14,9 +11,8 @@ use pyo3::types::{PyBytes, PyDict};
 use std::{borrow::Cow, sync::Arc};
 use tokio::{
     fs::File,
-    sync::{mpsc, oneshot, Mutex},
+    sync::{mpsc, oneshot, Mutex, RwLock},
 };
-use tokio_tungstenite::WebSocketStream;
 use tokio_util::io::ReaderStream;
 use tungstenite::Message;
 
@@ -28,7 +24,7 @@ use crate::{
     conversion::BytesToPy,
     http::{response_404, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, RuntimeRef},
-    ws::{HyperWebsocket, UpgradeData},
+    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
 const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
@@ -231,50 +227,81 @@ impl ASGIHTTPProtocol {
     }
 }
 
+pub(crate) struct WebsocketDetachedTransport {
+    pub consumed: bool,
+    rx: Option<WSRxStream>,
+    tx: Option<WSTxStream>,
+}
+
+impl WebsocketDetachedTransport {
+    pub fn new(consumed: bool, rx: Option<WSRxStream>, tx: Option<WSTxStream>) -> Self {
+        Self { consumed, rx, tx }
+    }
+
+    pub async fn close(&mut self) {
+        if let Some(mut tx) = self.tx.take() {
+            if let Err(err) = tx.close().await {
+                log::info!("Failed to close websocket with error {:?}", err);
+            }
+        }
+        drop(self.rx.take());
+    }
+}
+
 #[pyclass(module = "granian._granian")]
 pub(crate) struct ASGIWebsocketProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<bool>>,
+    tx: Option<oneshot::Sender<WebsocketDetachedTransport>>,
     websocket: Option<HyperWebsocket>,
     upgrade: Option<UpgradeData>,
-    ws_tx: Arc<Mutex<Option<SplitSink<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>, Message>>>>,
-    ws_rx: Arc<Mutex<Option<SplitStream<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>>>>,
-    accepted: Arc<Mutex<bool>>,
-    closed: bool,
+    ws_rx: Arc<Mutex<Option<WSRxStream>>>,
+    ws_tx: Arc<Mutex<Option<WSTxStream>>>,
+    accepted: Arc<tokio::sync::RwLock<bool>>,
+    closed: Arc<tokio::sync::RwLock<bool>>,
 }
 
 impl ASGIWebsocketProtocol {
-    pub fn new(rt: RuntimeRef, tx: oneshot::Sender<bool>, websocket: HyperWebsocket, upgrade: UpgradeData) -> Self {
+    pub fn new(
+        rt: RuntimeRef,
+        tx: oneshot::Sender<WebsocketDetachedTransport>,
+        websocket: HyperWebsocket,
+        upgrade: UpgradeData,
+    ) -> Self {
         Self {
             rt,
             tx: Some(tx),
             websocket: Some(websocket),
             upgrade: Some(upgrade),
-            ws_tx: Arc::new(Mutex::new(None)),
             ws_rx: Arc::new(Mutex::new(None)),
-            accepted: Arc::new(Mutex::new(false)),
-            closed: false,
+            ws_tx: Arc::new(Mutex::new(None)),
+            accepted: Arc::new(RwLock::new(false)),
+            closed: Arc::new(RwLock::new(false)),
         }
     }
 
     #[inline(always)]
     fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let mut upgrade = self.upgrade.take().unwrap();
-        let websocket = self.websocket.take().unwrap();
+        let upgrade = self.upgrade.take();
+        let websocket = self.websocket.take();
         let accepted = self.accepted.clone();
-        let tx = self.ws_tx.clone();
         let rx = self.ws_rx.clone();
+        let tx = self.ws_tx.clone();
+
         future_into_py_iter(self.rt.clone(), py, async move {
-            if (upgrade.send().await).is_ok() {
-                if let Ok(stream) = websocket.await {
-                    let mut wtx = tx.lock().await;
-                    let mut wrx = rx.lock().await;
-                    let mut accepted = accepted.lock().await;
-                    let (tx, rx) = stream.split();
-                    *wtx = Some(tx);
-                    *wrx = Some(rx);
-                    *accepted = true;
-                    return Ok(());
+            if let Some(mut upgrade) = upgrade {
+                if (upgrade.send().await).is_ok() {
+                    if let Some(websocket) = websocket {
+                        if let Ok(stream) = websocket.await {
+                            let mut wtx = tx.lock().await;
+                            let mut wrx = rx.lock().await;
+                            let mut accepted = accepted.write().await;
+                            let (tx, rx) = stream.split();
+                            *wtx = Some(tx);
+                            *wrx = Some(rx);
+                            *accepted = true;
+                            return Ok(());
+                        }
+                    }
                 }
             }
             error_flow!()
@@ -285,29 +312,48 @@ impl ASGIWebsocketProtocol {
     fn send_message<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         let transport = self.ws_tx.clone();
         let message = ws_message_into_rs(py, data);
-        future_into_py_iter(self.rt.clone(), py, async move {
-            if let Ok(message) = message {
-                if let Some(ws) = &mut *(transport.lock().await) {
-                    if (ws.send(message).await).is_ok() {
-                        return Ok(());
-                    }
-                };
-            };
-            error_flow!()
+        let closed = self.closed.clone();
+
+        future_into_py_futlike(self.rt.clone(), py, async move {
+            match message {
+                Ok(message) => {
+                    if let Some(ws) = &mut *(transport.lock().await) {
+                        match ws.send(message).await {
+                            Ok(()) => return Ok(()),
+                            _ => {
+                                let closed = closed.read().await;
+                                if *closed {
+                                    log::info!("Attempted to write to a closed websocket");
+                                    return Ok(());
+                                }
+                            }
+                        };
+                    };
+                    error_flow!()
+                }
+                Err(err) => Err(err),
+            }
         })
     }
 
     #[inline(always)]
     fn close<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        self.closed = true;
-        let transport = self.ws_tx.clone();
+        let closed = self.closed.clone();
+        let ws_rx = self.ws_rx.clone();
+        let ws_tx = self.ws_tx.clone();
+
         future_into_py_iter(self.rt.clone(), py, async move {
-            if let Some(ws) = &mut *(transport.lock().await) {
-                if (ws.close().await).is_ok() {
-                    return Ok(());
+            match ws_tx.lock().await.take() {
+                Some(tx) => {
+                    let mut closed = closed.write().await;
+                    *closed = true;
+                    WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
+                        .close()
+                        .await;
+                    Ok(())
                 }
-            };
-            error_flow!()
+                _ => error_flow!(),
+            }
         })
     }
 
@@ -315,34 +361,47 @@ impl ASGIWebsocketProtocol {
         self.upgrade.is_none()
     }
 
-    pub fn tx(&mut self) -> (Option<oneshot::Sender<bool>>, bool) {
-        (self.tx.take(), self.consumed())
+    pub fn tx(
+        &mut self,
+    ) -> (
+        Option<oneshot::Sender<WebsocketDetachedTransport>>,
+        WebsocketDetachedTransport,
+    ) {
+        let mut ws_rx = self.ws_rx.blocking_lock();
+        let mut ws_tx = self.ws_tx.blocking_lock();
+        (
+            self.tx.take(),
+            WebsocketDetachedTransport::new(self.consumed(), ws_rx.take(), ws_tx.take()),
+        )
     }
 }
 
 #[pymethods]
 impl ASGIWebsocketProtocol {
     fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let transport = self.ws_rx.clone();
         let accepted = self.accepted.clone();
-        let closed = self.closed;
+        let closed = self.closed.clone();
+        let transport = self.ws_rx.clone();
+
         future_into_py_futlike(self.rt.clone(), py, async move {
-            let accepted = accepted.lock().await;
-            match (*accepted, closed) {
-                (false, false) => {
-                    return Python::with_gil(|py| {
-                        let dict = PyDict::new(py);
-                        dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.connect"))?;
-                        Ok(dict.to_object(py))
-                    })
-                }
-                (true, false) => {}
-                _ => return error_flow!(),
+            let accepted = accepted.read().await;
+            if !*accepted {
+                return Python::with_gil(|py| {
+                    let dict = PyDict::new(py);
+                    dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.connect"))?;
+                    Ok(dict.to_object(py))
+                });
             }
+
             if let Some(ws) = &mut *(transport.lock().await) {
                 while let Some(recv) = ws.next().await {
                     match recv {
                         Ok(Message::Ping(_)) => continue,
+                        Ok(message @ Message::Close(_)) => {
+                            let mut closed = closed.write().await;
+                            *closed = true;
+                            return ws_message_into_py(message);
+                        }
                         Ok(message) => return ws_message_into_py(message),
                         _ => break,
                     }
@@ -353,12 +412,11 @@ impl ASGIWebsocketProtocol {
     }
 
     fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        match (adapt_message_type(data), self.closed) {
-            (Ok(ASGIMessageType::WSAccept), _) => self.accept(py),
-            (Ok(ASGIMessageType::WSClose), false) => self.close(py),
-            (Ok(ASGIMessageType::WSMessage), false) => self.send_message(py, data),
-            (Err(err), _) => Err(err.into()),
-            _ => error_message!(),
+        match adapt_message_type(data) {
+            Ok(ASGIMessageType::WSAccept) => self.accept(py),
+            Ok(ASGIMessageType::WSClose) => self.close(py),
+            Ok(ASGIMessageType::WSMessage) => self.send_message(py, data),
+            _ => future_into_py_iter::<_, _, PyErr>(self.rt.clone(), py, async { error_message!() }),
         }
     }
 }
