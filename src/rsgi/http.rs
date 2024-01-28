@@ -84,22 +84,23 @@ macro_rules! handle_request_with_ws {
                             let tx_ref = restx.clone();
 
                             match $handler_ws(callback, rt, ws, UpgradeData::new(res, restx), scope).await {
-                                Ok((status, consumed)) => {
-                                    if !consumed {
+                                Ok((status, consumed, handle)) => match (consumed, handle) {
+                                    (false, _) => {
                                         let _ = tx_ref
                                             .send(
                                                 ResponseBuilder::new()
-                                                    .status(
-                                                        StatusCode::from_u16(status as u16)
-                                                            .unwrap_or(StatusCode::FORBIDDEN),
-                                                    )
+                                                    .status(status as u16)
                                                     .header(HK_SERVER, HV_SERVER)
                                                     .body(empty_body())
                                                     .unwrap(),
                                             )
                                             .await;
                                     }
-                                }
+                                    (true, Some(handle)) => {
+                                        let _ = handle.await;
+                                    }
+                                    _ => {}
+                                },
                                 _ => {
                                     log::error!("RSGI protocol failure");
                                     let _ = tx_ref.send(response_500()).await;
