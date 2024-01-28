@@ -3,7 +3,7 @@ use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use super::{
-    io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol},
+    io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
     types::ASGIScope as Scope,
 };
 use crate::{
@@ -336,7 +336,7 @@ macro_rules! call_impl_rtb_ws {
             ws: HyperWebsocket,
             upgrade: UpgradeData,
             scope: Scope,
-        ) -> oneshot::Receiver<bool> {
+        ) -> oneshot::Receiver<WebsocketDetachedTransport> {
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 
@@ -357,7 +357,7 @@ macro_rules! call_impl_rtt_ws {
             ws: HyperWebsocket,
             upgrade: UpgradeData,
             scope: Scope,
-        ) -> oneshot::Receiver<bool> {
+        ) -> oneshot::Receiver<WebsocketDetachedTransport> {
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 

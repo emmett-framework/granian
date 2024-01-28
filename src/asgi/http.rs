@@ -82,17 +82,22 @@ macro_rules! handle_request_with_ws {
                             let tx_ref = restx.clone();
 
                             match $handler_ws(callback, rt, ws, UpgradeData::new(res, restx), scope).await {
-                                Ok(consumed) => {
-                                    if !consumed {
-                                        let _ = tx_ref
-                                            .send(
-                                                ResponseBuilder::new()
-                                                    .status(StatusCode::FORBIDDEN)
-                                                    .header(HK_SERVER, HV_SERVER)
-                                                    .body(empty_body())
-                                                    .unwrap(),
-                                            )
-                                            .await;
+                                Ok(mut detached) => {
+                                    match detached.consumed {
+                                        false => {
+                                            let _ = tx_ref
+                                                .send(
+                                                    ResponseBuilder::new()
+                                                        .status(StatusCode::FORBIDDEN)
+                                                        .header(HK_SERVER, HV_SERVER)
+                                                        .body(empty_body())
+                                                        .unwrap(),
+                                                )
+                                                .await;
+                                        }
+                                        true => {
+                                            detached.close().await;
+                                        }
                                     };
                                 }
                                 _ => {

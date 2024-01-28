@@ -18,7 +18,12 @@ use tungstenite::{
     protocol::{Role, WebSocketConfig},
 };
 
+use super::http::HTTPResponse;
 use super::utils::header_contains_value;
+
+pub(crate) type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
+pub(crate) type WSRxStream = futures::stream::SplitStream<WSStream>;
+pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, tungstenite::Message>;
 
 #[pin_project]
 #[derive(Debug)]
@@ -29,7 +34,7 @@ pub struct HyperWebsocket {
 }
 
 impl Future for HyperWebsocket {
-    type Output = Result<WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>, tungstenite::Error>;
+    type Output = Result<WSStream, tungstenite::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = self.project();
@@ -53,16 +58,12 @@ impl Future for HyperWebsocket {
 
 pub(crate) struct UpgradeData {
     response_builder: Option<Builder>,
-    response_tx:
-        Option<mpsc::Sender<Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, anyhow::Error>>>>,
+    response_tx: Option<mpsc::Sender<HTTPResponse>>,
     pub consumed: bool,
 }
 
 impl UpgradeData {
-    pub fn new(
-        response_builder: Builder,
-        response_tx: mpsc::Sender<Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, anyhow::Error>>>,
-    ) -> Self {
+    pub fn new(response_builder: Builder, response_tx: mpsc::Sender<HTTPResponse>) -> Self {
         Self {
             response_builder: Some(response_builder),
             response_tx: Some(response_tx),
@@ -70,12 +71,7 @@ impl UpgradeData {
         }
     }
 
-    pub async fn send(
-        &mut self,
-    ) -> Result<
-        (),
-        mpsc::error::SendError<Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, anyhow::Error>>>,
-    > {
+    pub async fn send(&mut self) -> Result<(), mpsc::error::SendError<HTTPResponse>> {
         let res = self
             .response_builder
             .take()
