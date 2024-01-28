@@ -319,7 +319,7 @@ impl ASGIWebsocketProtocol {
                 Ok(message) => {
                     if let Some(ws) = &mut *(transport.lock().await) {
                         match ws.send(message).await {
-                            Ok(_) => return Ok(()),
+                            Ok(()) => return Ok(()),
                             _ => {
                                 let closed = closed.read().await;
                                 if *closed {
