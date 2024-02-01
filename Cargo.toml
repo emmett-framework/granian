@@ -45,7 +45,7 @@ pyo3-asyncio = { version = "=0.20", features = ["tokio-runtime"], git = "https:/
 pyo3-log = "=0.8"
 rustls-pemfile = "1.0"
 socket2 = { version = "0.5", features = ["all"] }
-tls-listener = { version = "=0.8", features = ["rustls"] }
+tls-listener = { version = "=0.9", features = ["rustls"] }
 tokio = { version = "1.24", features = ["full"] }
 tokio-stream = "0.1"
 tokio-rustls = "0.24"
