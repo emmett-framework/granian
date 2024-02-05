@@ -13,8 +13,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-import watchfiles
-
 from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._internal import load_target
@@ -401,6 +399,12 @@ class Granian:
         self.shutdown()
 
     def _serve_with_reloader(self, spawn_target, target_loader):
+        try:
+            import watchfiles
+        except ModuleNotFoundError:
+            logger.error('Using --reload requires the granian[reload] extra')
+            sys.exit(1)
+
         reload_path = Path.cwd()
         sock = self.startup(spawn_target, target_loader)
 

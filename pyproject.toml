@@ -33,12 +33,14 @@ dynamic = [
 
 requires-python = '>=3.8'
 dependencies = [
-    'watchfiles~=0.21',
     'typer>=0.4.2',
     'uvloop~=0.18.0; sys_platform != "win32" and platform_python_implementation == "CPython"',
 ]
 
 [project.optional-dependencies]
+reload = [
+    'watchfiles~=0.21',
+]
 lint = [
     'ruff~=0.1.0',
 ]
