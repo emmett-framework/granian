@@ -2,6 +2,7 @@ use hyper::{
     header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
     Response,
 };
+use pyo3::prelude::*;
 use std::net::SocketAddr;
 
 use super::{
@@ -29,6 +30,17 @@ fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPRespo
     res
 }
 
+fn log_application_callable_exception(err: &PyErr) {
+    let tb = pyo3::Python::with_gil(|py| {
+        let tb = match err.traceback(py).map(pyo3::types::PyTraceback::format) {
+            Some(Ok(tb)) => tb,
+            _ => String::new(),
+        };
+        format!("{tb}{err}")
+    });
+    log::warn!("Application callable raised an exception\n{tb}");
+}
+
 pub(crate) async fn handle_rtt(
     _rt: RuntimeRef,
     callback: CallbackWrapper,
@@ -38,10 +50,14 @@ pub(crate) async fn handle_rtt(
     scheme: &str,
 ) -> HTTPResponse {
     if let Ok(res) = call_rtt_http(callback, Scope::new(scheme, server_addr, client_addr, req).await).await {
-        if let Ok((status, headers, body)) = res {
-            return build_response(status, headers, body);
+        match res {
+            Ok((status, headers, body)) => {
+                return build_response(status, headers, body);
+            }
+            Err(ref err) => {
+                log_application_callable_exception(err);
+            }
         }
-        log::warn!("Application callable raised an exception");
     } else {
         log::error!("WSGI protocol failure");
     }
@@ -58,8 +74,8 @@ pub(crate) async fn handle_rtb(
 ) -> HTTPResponse {
     match call_rtb_http(callback, Scope::new(scheme, server_addr, client_addr, req).await) {
         Ok((status, headers, body)) => build_response(status, headers, body),
-        _ => {
-            log::warn!("Application callable raised an exception");
+        Err(ref err) => {
+            log_application_callable_exception(err);
             response_500()
         }
     }
