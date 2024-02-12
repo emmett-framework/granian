@@ -13,6 +13,7 @@ use crate::{
     },
     http::{response_500, HTTPRequest, HTTPResponse},
     runtime::RuntimeRef,
+    utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
 };
 
@@ -60,9 +61,9 @@ macro_rules! callback_impl_done_http {
 }
 
 macro_rules! callback_impl_done_err {
-    ($self:expr, $py:expr) => {
-        log::warn!("Application callable raised an exception");
-        $self.done($py)
+    ($self:expr, $py:expr, $err:expr) => {
+        $self.done($py);
+        log_application_callable_exception($err);
     };
 }
 
@@ -89,8 +90,8 @@ impl CallbackTaskHTTP {
         callback_impl_done_http!(self, py);
     }
 
-    fn err(&self, py: Python) {
-        callback_impl_done_err!(self, py);
+    fn err(&self, py: Python, err: &PyErr) {
+        callback_impl_done_err!(self, py, err);
     }
 
     callback_impl_loop_run!();
@@ -141,8 +142,8 @@ impl CallbackWrappedRunnerHTTP {
         callback_impl_done_http!(self, py);
     }
 
-    fn err(&self, py: Python) {
-        callback_impl_done_err!(self, py);
+    fn err(&self, py: Python, err: &PyAny) {
+        callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 }
 
@@ -206,8 +207,8 @@ impl CallbackTaskWebsocket {
         callback_impl_done_ws!(self, py);
     }
 
-    fn err(&self, py: Python) {
-        callback_impl_done_err!(self, py);
+    fn err(&self, py: Python, err: &PyErr) {
+        callback_impl_done_err!(self, py, err);
     }
 
     callback_impl_loop_run!();
@@ -258,8 +259,8 @@ impl CallbackWrappedRunnerWebsocket {
         callback_impl_done_ws!(self, py);
     }
 
-    fn err(&self, py: Python) {
-        callback_impl_done_err!(self, py);
+    fn err(&self, py: Python, err: &PyAny) {
+        callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 }
 

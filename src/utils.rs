@@ -37,3 +37,15 @@ fn trim_end(data: &[u8]) -> &[u8] {
         b""
     }
 }
+
+#[inline]
+pub(crate) fn log_application_callable_exception(err: &pyo3::PyErr) {
+    let tb = pyo3::Python::with_gil(|py| {
+        let tb = match err.traceback(py).map(pyo3::types::PyTraceback::format) {
+            Some(Ok(tb)) => tb,
+            _ => String::new(),
+        };
+        format!("{tb}{err}")
+    });
+    log::error!("Application callable raised an exception\n{tb}");
+}

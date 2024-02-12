@@ -298,11 +298,10 @@ macro_rules! callback_impl_loop_step {
                     || err.is_instance_of::<pyo3::exceptions::asyncio::CancelledError>($py))
                 {
                     $pyself.done($py);
-                    Ok(())
                 } else {
-                    $pyself.err($py);
-                    Err(err)
+                    $pyself.err($py, &err);
                 }
+                Ok(())
             }
         }
     };
@@ -320,8 +319,8 @@ macro_rules! callback_impl_loop_wake {
 macro_rules! callback_impl_loop_err {
     () => {
         pub fn _loop_err(&self, py: Python, err: PyErr) -> PyResult<PyObject> {
+            self.err(py, &err);
             let cberr = self.cb.call_method1(py, pyo3::intern!(py, "throw"), (err,));
-            self.err(py);
             cberr
         }
     };
