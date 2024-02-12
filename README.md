@@ -178,7 +178,8 @@ Options:
                                   [env var: GRANIAN_RESPAWN_FAILED_WORKERS;
                                   default: (disabled)]
   --reload / --no-reload          Enable auto reload on application's files
-                                  changes  [env var: GRANIAN_RELOAD; default:
+                                  changes (requires granian[reload] extra)
+                                  [env var: GRANIAN_RELOAD; default:
                                   (disabled)]
   --version                       Shows the version and exit
   --install-completion [bash|zsh|fish|powershell|pwsh]

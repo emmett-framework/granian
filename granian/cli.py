@@ -104,7 +104,10 @@ def main(
         show_default='disabled',
     ),
     reload: bool = typer.Option(
-        False, '--reload/--no-reload', help="Enable auto reload on application's files changes", show_default='disabled'
+        False,
+        '--reload/--no-reload',
+        help="Enable auto reload on application's files changes (requires granian[reload] extra)",
+        show_default='disabled',
     ),
     _: Optional[bool] = typer.Option(
         None,
