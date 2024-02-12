@@ -2,7 +2,7 @@ use hyper::{
     header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
     Response,
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyTraceback};
 use std::net::SocketAddr;
 
 use super::{
@@ -30,9 +30,10 @@ fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPRespo
     res
 }
 
+#[inline]
 fn log_application_callable_exception(err: &PyErr) {
-    let tb = pyo3::Python::with_gil(|py| {
-        let tb = match err.traceback(py).map(pyo3::types::PyTraceback::format) {
+    let tb = Python::with_gil(|py| {
+        let tb = match err.traceback(py).map(PyTraceback::format) {
             Some(Ok(tb)) => tb,
             _ => String::new(),
         };
