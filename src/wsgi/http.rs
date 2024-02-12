@@ -2,7 +2,6 @@ use hyper::{
     header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
     Response,
 };
-use pyo3::{prelude::*, types::PyTraceback};
 use std::net::SocketAddr;
 
 use super::{
@@ -13,6 +12,7 @@ use crate::{
     callbacks::CallbackWrapper,
     http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::RuntimeRef,
+    utils::log_application_callable_exception,
 };
 
 #[inline(always)]
@@ -28,18 +28,6 @@ fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPRespo
         );
     }
     res
-}
-
-#[inline]
-fn log_application_callable_exception(err: &PyErr) {
-    let tb = Python::with_gil(|py| {
-        let tb = match err.traceback(py).map(PyTraceback::format) {
-            Some(Ok(tb)) => tb,
-            _ => String::new(),
-        };
-        format!("{tb}{err}")
-    });
-    log::warn!("Application callable raised an exception\n{tb}");
 }
 
 pub(crate) async fn handle_rtt(
