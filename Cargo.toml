@@ -43,12 +43,11 @@ pin-project = "1.0"
 pyo3 = { version = "=0.20", features = ["anyhow", "extension-module", "generate-import-lib"] }
 pyo3-asyncio = { version = "=0.20", features = ["tokio-runtime"], git = "https://github.com/gi0baro/pyo3-asyncio.git", rev = "6e3a309" }
 pyo3-log = "=0.8"
-rustls-pemfile = "1.0"
+rustls-pemfile = "2.0"
 socket2 = { version = "0.5", features = ["all"] }
-tls-listener = { version = "=0.8", features = ["rustls"] }
+tls-listener = { version = "=0.9", features = ["rustls"] }
 tokio = { version = "1.24", features = ["full"] }
 tokio-stream = "0.1"
-tokio-rustls = "0.24"
 tokio-tungstenite = "0.20"
 tokio-util = { version = "0.7", features = ["codec"] }
 tungstenite = "0.20"

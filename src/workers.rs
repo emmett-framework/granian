@@ -110,13 +110,12 @@ impl WorkerConfig {
         listener
     }
 
-    pub fn tls_cfg(&self) -> tokio_rustls::rustls::ServerConfig {
-        let mut cfg = tokio_rustls::rustls::ServerConfig::builder()
-            .with_safe_defaults()
+    pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
+        let mut cfg = tls_listener::rustls::rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(
-                tls_load_certs(&self.ssl_cert.clone().unwrap()[..]).unwrap(),
-                tls_load_pkey(&self.ssl_key.clone().unwrap()[..]).unwrap(),
+                tls_load_certs(self.ssl_cert.clone().unwrap()).unwrap(),
+                tls_load_pkey(self.ssl_key.clone().unwrap()).unwrap(),
             )
             .unwrap();
         cfg.alpn_protocols = match &self.http_mode[..] {
@@ -197,7 +196,7 @@ macro_rules! handle_tls_loop {
 
         while accept_loop {
             tokio::select! {
-                Some(accept) = tls_listener.accept() => {
+                accept = tls_listener.accept() => {
                     match accept {
                         Ok((stream, remote_addr)) => {
                             #[allow(clippy::redundant_closure_call)]
