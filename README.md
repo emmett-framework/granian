@@ -203,7 +203,7 @@ Benchmarks suggests **workers** mode to be more efficient with a small amount of
 
 With the `--opt` option Granian will use custom task handlers for Python coroutines and awaitables to improve Python code execution. Due to the nature of such handlers some libraries and specific application code relying on `asyncio` internals might not work.
 
-You might test the effect such optimizations cause over your application and decide wether to enable 'em or leave 'em disabled (as per default).
+You might test the effect such optimizations cause over your application and decide whether to enable 'em or leave 'em disabled (as per default).
 
 ## Project status
 
