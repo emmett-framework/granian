@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::{borrow::Cow, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tungstenite::Message;
+use tokio_tungstenite::tungstenite::Message;
 
 use super::{
     errors::{error_proto, error_stream},

@@ -13,8 +13,8 @@ use tokio::{
     fs::File,
     sync::{mpsc, oneshot, Mutex, RwLock},
 };
+use tokio_tungstenite::tungstenite::Message;
 use tokio_util::io::ReaderStream;
-use tungstenite::Message;
 
 use super::{
     errors::{error_flow, error_message, error_transport, UnsupportedASGIMessage},

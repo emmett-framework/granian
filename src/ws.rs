@@ -11,11 +11,14 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::mpsc;
-use tokio_tungstenite::WebSocketStream;
-use tungstenite::{
-    error::ProtocolError,
-    handshake::derive_accept_key,
-    protocol::{Role, WebSocketConfig},
+use tokio_tungstenite::{
+    tungstenite::{
+        error::ProtocolError,
+        handshake::derive_accept_key,
+        protocol::{Role, WebSocketConfig},
+        Error as TungsteniteError, Message,
+    },
+    WebSocketStream,
 };
 
 use super::http::HTTPResponse;
@@ -23,7 +26,7 @@ use super::utils::header_contains_value;
 
 pub(crate) type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
 pub(crate) type WSRxStream = futures::stream::SplitStream<WSStream>;
-pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, tungstenite::Message>;
+pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, Message>;
 
 #[pin_project]
 #[derive(Debug)]
@@ -34,7 +37,7 @@ pub struct HyperWebsocket {
 }
 
 impl Future for HyperWebsocket {
-    type Output = Result<WSStream, tungstenite::Error>;
+    type Output = Result<WSStream, TungsteniteError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = self.project();
@@ -43,7 +46,7 @@ impl Future for HyperWebsocket {
             Poll::Ready(x) => x,
         };
 
-        let upgraded = upgraded.map_err(|_| tungstenite::Error::Protocol(ProtocolError::HandshakeIncomplete))?;
+        let upgraded = upgraded.map_err(|_| TungsteniteError::Protocol(ProtocolError::HandshakeIncomplete))?;
 
         let io = hyper_util::rt::TokioIo::new(upgraded);
         let stream = WebSocketStream::from_raw_socket(io, Role::Server, this.config.take());
