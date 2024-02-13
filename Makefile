@@ -44,6 +44,7 @@ lint-rust:
 		-A clippy::module-name-repetitions \
 		-A clippy::must-use-candidate \
 		-A clippy::needless-pass-by-value \
+		-A clippy::no-effect-underscore-binding \
 		-A clippy::similar-names \
 		-A clippy::single-match-else \
 		-A clippy::struct-excessive-bools \

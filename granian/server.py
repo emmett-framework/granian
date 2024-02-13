@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
+from ._imports import setproctitle, watchfiles
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
@@ -87,6 +88,7 @@ class Granian:
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
         reload: bool = False,
+        process_name: Optional[str] = None,
     ):
         self.target = target
         self.bind_addr = address
@@ -109,6 +111,7 @@ class Granian:
         self.url_path_prefix = url_path_prefix
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
+        self.process_name = process_name
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
@@ -137,6 +140,7 @@ class Granian:
     @staticmethod
     def _spawn_asgi_worker(
         worker_id,
+        process_name,
         callback_loader,
         socket,
         loop_impl,
@@ -156,6 +160,8 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
+        if process_name:
+            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
@@ -184,6 +190,7 @@ class Granian:
     @staticmethod
     def _spawn_rsgi_worker(
         worker_id,
+        process_name,
         callback_loader,
         socket,
         loop_impl,
@@ -203,6 +210,8 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
+        if process_name:
+            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
@@ -230,6 +239,7 @@ class Granian:
     @staticmethod
     def _spawn_wsgi_worker(
         worker_id,
+        process_name,
         callback_loader,
         socket,
         loop_impl,
@@ -249,6 +259,8 @@ class Granian:
     ):
         from granian._loops import loops, set_loop_signals
 
+        if process_name:
+            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
@@ -280,6 +292,7 @@ class Granian:
             target=target,
             args=(
                 idx + 1,
+                self.process_name,
                 callback_loader,
                 socket_loader(),
                 self.loop,
@@ -399,9 +412,7 @@ class Granian:
         self.shutdown()
 
     def _serve_with_reloader(self, spawn_target, target_loader):
-        try:
-            import watchfiles
-        except ModuleNotFoundError:
+        if watchfiles is None:
             logger.error('Using --reload requires the granian[reload] extra')
             sys.exit(1)
 
@@ -450,6 +461,15 @@ class Granian:
                 logger.info('Websockets are not supported on WSGI')
             if self.http == HTTPModes.http2:
                 logger.info('Websockets are not supported on HTTP/2 only')
+
+        if setproctitle is not None:
+            self.process_name = self.process_name or (
+                f'granian {self.interface.value} {self.bind_addr}:{self.bind_port} {self.target}'
+            )
+            setproctitle.setproctitle(self.process_name)
+        elif self.process_name is not None:
+            logger.error('Setting process name requires the granian[pname] extra')
+            sys.exit(1)
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)
