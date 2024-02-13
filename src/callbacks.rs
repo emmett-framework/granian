@@ -128,12 +128,11 @@ impl PyFutureAwaitable {
     }
 
     #[pyo3(signature = (cb, context=None))]
-    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: Option<PyObject>) -> PyResult<()> {
+    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: Option<PyObject>) {
         pyself.callback = Some(cb);
         if let Some(spawner) = pyself.fut_spawner.take() {
             (spawner)(context, pyself.cancel_tx.clone(), pyself.into());
         }
-        Ok(())
     }
 
     #[allow(unused)]

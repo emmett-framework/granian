@@ -347,7 +347,7 @@ impl WebsocketInboundTextMessage {
 #[pymethods]
 impl RSGIWebsocketProtocol {
     #[pyo3(signature = (status=None))]
-    pub fn close(&mut self, py: Python, status: Option<i32>) -> PyResult<()> {
+    pub fn close(&mut self, py: Python, status: Option<i32>) {
         self.status = status.unwrap_or(0);
         if let Some(tx) = self.tx.take() {
             let mut handle = None;
@@ -361,7 +361,6 @@ impl RSGIWebsocketProtocol {
 
             let _ = tx.send((self.status, self.consumed(), handle));
         }
-        Ok(())
     }
 
     fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {

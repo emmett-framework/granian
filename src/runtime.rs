@@ -252,6 +252,7 @@ where
     Ok(aw.into_py(py).into_ref(py))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 #[inline(always)]
 pub(crate) fn empty_future_into_py(py: Python) -> PyResult<&PyAny> {
     Ok(PyEmptyAwaitable {}.into_py(py).into_ref(py))

@@ -18,16 +18,16 @@ pub struct ListenerHolder {
 impl ListenerHolder {
     #[cfg(unix)]
     #[new]
-    pub fn new(fd: i32) -> PyResult<Self> {
+    pub fn new(fd: i32) -> Self {
         let socket = unsafe { TcpListener::from_raw_fd(fd) };
-        Ok(Self { socket })
+        Self { socket }
     }
 
     #[cfg(windows)]
     #[new]
-    pub fn new(fd: u64) -> PyResult<Self> {
+    pub fn new(fd: u64) -> Self {
         let socket = unsafe { TcpListener::from_raw_socket(fd) };
-        Ok(Self { socket })
+        Self { socket }
     }
 
     #[classmethod]

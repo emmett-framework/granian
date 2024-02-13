@@ -20,9 +20,9 @@ pub(crate) struct WorkerSignal {
 #[pymethods]
 impl WorkerSignal {
     #[new]
-    fn new() -> PyResult<Self> {
+    fn new() -> Self {
         let (tx, rx) = tokio::sync::watch::channel(false);
-        Ok(Self { rx: Some(rx), tx })
+        Self { rx: Some(rx), tx }
     }
 
     fn set(&self) {
