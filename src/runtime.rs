@@ -190,6 +190,7 @@ where
 //  This is generally ~55% faster than `pyo3_asyncio.future_into_py` implementation.
 //  It consumes more cpu-cycles than `future_into_py_futlike`,
 //  but for "quick" operations it's something like 12% faster.
+#[allow(unused_must_use)]
 pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
 where
     R: Runtime + ContextExt + Clone,
@@ -215,6 +216,7 @@ where
 //  This is generally ~38% faster than `pyo3_asyncio.future_into_py` implementation.
 //  It won't consume more cpu-cycles than standard asyncio implementation,
 //  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
+#[allow(unused_must_use)]
 pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
 where
     R: Runtime + ContextExt + Clone,
@@ -255,6 +257,7 @@ pub(crate) fn empty_future_into_py(py: Python) -> PyResult<&PyAny> {
     Ok(PyEmptyAwaitable {}.into_py(py).into_ref(py))
 }
 
+#[allow(unused_must_use)]
 pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>
 where
     R: Runtime + ContextExt + Clone,
