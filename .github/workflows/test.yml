@@ -38,7 +38,7 @@ jobs:
         py.test -v tests
 
   macos:
-    runs-on: macos-latest
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
