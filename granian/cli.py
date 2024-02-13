@@ -109,6 +109,10 @@ def main(
         help="Enable auto reload on application's files changes (requires granian[reload] extra)",
         show_default='disabled',
     ),
+    process_name: Optional[str] = typer.Option(
+        None,
+        help='Set a custom name for processes (requires granian[pname] extra)',
+    ),
     _: Optional[bool] = typer.Option(
         None,
         '--version',
@@ -163,4 +167,5 @@ def main(
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         reload=reload,
+        process_name=process_name,
     ).serve()

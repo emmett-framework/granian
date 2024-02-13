@@ -181,6 +181,9 @@ Options:
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
                                   (disabled)]
+  --process-name TEXT             Set a custom name for processes (requires
+                                  granian[pname] extra)  [env var:
+                                  GRANIAN_PROCESS_NAME]
   --version                       Shows the version and exit
   --install-completion [bash|zsh|fish|powershell|pwsh]
                                   Install completion for the specified shell.
