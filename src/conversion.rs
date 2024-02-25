@@ -8,12 +8,14 @@ pub(crate) struct BytesToPy(pub hyper::body::Bytes);
 impl Deref for BytesToPy {
     type Target = hyper::body::Bytes;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl DerefMut for BytesToPy {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }

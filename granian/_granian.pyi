@@ -4,30 +4,12 @@ from ._types import WebsocketMessage
 
 __version__: str
 
-class ASGIScope:
-    def as_dict(self, root_path: str) -> Dict[str, Any]: ...
-
 class RSGIHeaders:
     def __contains__(self, key: str) -> bool: ...
     def keys(self) -> List[str]: ...
     def values(self) -> List[str]: ...
     def items(self) -> List[Tuple[str]]: ...
     def get(self, key: str, default: Any = None) -> Any: ...
-
-class RSGIScope:
-    proto: str
-    http_version: str
-    rsgi_version: str
-    server: str
-    client: str
-    scheme: str
-    method: str
-    path: str
-    query_string: str
-    authority: Optional[str]
-
-    @property
-    def headers(self) -> RSGIHeaders: ...
 
 class RSGIHTTPStreamTransport:
     async def send_bytes(self, data: bytes): ...

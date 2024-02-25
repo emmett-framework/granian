@@ -16,7 +16,9 @@ use tokio_util::io::ReaderStream;
 
 use crate::http::{empty_body, response_404, HTTPResponseBody, HV_SERVER};
 
-#[pyclass(module = "granian._granian")]
+const RSGI_PROTO_VERSION: &str = "1.3";
+
+#[pyclass(frozen, module = "granian._granian")]
 #[derive(Clone)]
 pub(crate) struct RSGIHeaders {
     inner: HeaderMap,
@@ -85,83 +87,89 @@ impl RSGIHeaders {
     }
 }
 
-#[pyclass(module = "granian._granian")]
-pub(crate) struct RSGIScope {
-    #[pyo3(get)]
-    proto: String,
-    http_version: Version,
-    #[pyo3(get)]
-    rsgi_version: String,
-    #[pyo3(get)]
-    scheme: String,
-    #[pyo3(get)]
-    method: String,
-    uri: Uri,
-    #[pyo3(get)]
-    server: String,
-    #[pyo3(get)]
-    client: String,
-    #[pyo3(get)]
-    headers: RSGIHeaders,
-}
-
-impl RSGIScope {
-    pub fn new(
-        proto: &str,
-        http_version: Version,
-        scheme: &str,
-        uri: Uri,
-        method: &str,
-        server: SocketAddr,
-        client: SocketAddr,
-        headers: &HeaderMap,
-    ) -> Self {
-        Self {
-            proto: proto.to_string(),
-            http_version,
-            rsgi_version: "1.3".to_string(),
-            scheme: scheme.to_string(),
-            method: method.to_string(),
-            uri,
-            server: server.to_string(),
-            client: client.to_string(),
-            headers: RSGIHeaders::new(headers),
+macro_rules! rsgi_scope_cls {
+    ($name:ident, $proto:expr) => {
+        #[pyclass(frozen, module = "granian._granian")]
+        pub(crate) struct $name {
+            http_version: Version,
+            #[pyo3(get)]
+            scheme: String,
+            #[pyo3(get)]
+            method: String,
+            uri: Uri,
+            #[pyo3(get)]
+            server: String,
+            #[pyo3(get)]
+            client: String,
+            #[pyo3(get)]
+            headers: RSGIHeaders,
         }
-    }
 
-    pub fn set_proto(&mut self, value: &str) {
-        self.proto = value.to_string();
-    }
-}
-
-#[pymethods]
-impl RSGIScope {
-    #[getter(http_version)]
-    fn get_http_version(&self) -> &str {
-        match self.http_version {
-            Version::HTTP_10 => "1",
-            Version::HTTP_11 => "1.1",
-            Version::HTTP_2 => "2",
-            Version::HTTP_3 => "3",
-            _ => "1",
+        impl $name {
+            pub fn new(
+                http_version: Version,
+                scheme: &str,
+                uri: Uri,
+                method: &str,
+                server: SocketAddr,
+                client: SocketAddr,
+                headers: &HeaderMap,
+            ) -> Self {
+                Self {
+                    http_version,
+                    scheme: scheme.to_string(),
+                    method: method.to_string(),
+                    uri,
+                    server: server.to_string(),
+                    client: client.to_string(),
+                    headers: RSGIHeaders::new(headers),
+                }
+            }
         }
-    }
 
-    #[getter(authority)]
-    fn get_authority(&self) -> Option<String> {
-        self.uri.authority().map(Authority::to_string)
-    }
+        #[pymethods]
+        impl $name {
+            #[getter(proto)]
+            fn get_proto(&self) -> &str {
+                $proto
+            }
 
-    #[getter(path)]
-    fn get_path(&self) -> Result<Cow<str>> {
-        Ok(percent_decode_str(self.uri.path()).decode_utf8()?)
-    }
+            #[getter(rsgi_version)]
+            fn get_rsgi_version(&self) -> &str {
+                RSGI_PROTO_VERSION
+            }
 
-    #[getter(query_string)]
-    fn get_query_string(&self) -> &str {
-        self.uri.query().unwrap_or("")
-    }
+            #[getter(http_version)]
+            fn get_http_version(&self) -> &str {
+                match self.http_version {
+                    Version::HTTP_10 => "1",
+                    Version::HTTP_11 => "1.1",
+                    Version::HTTP_2 => "2",
+                    Version::HTTP_3 => "3",
+                    _ => "1",
+                }
+            }
+
+            #[getter(authority)]
+            fn get_authority(&self) -> Option<String> {
+                self.uri.authority().map(Authority::to_string)
+            }
+
+            #[getter(path)]
+            fn get_path(&self) -> Result<Cow<str>> {
+                Ok(percent_decode_str(self.uri.path()).decode_utf8()?)
+            }
+
+            #[getter(query_string)]
+            fn get_query_string(&self) -> &str {
+                self.uri.query().unwrap_or("")
+            }
+        }
+    };
 }
+
+rsgi_scope_cls!(RSGIHTTPScope, "http");
+rsgi_scope_cls!(RSGIWebsocketScope, "ws");
 
 pub(crate) enum PyResponse {
     Body(PyResponseBody),

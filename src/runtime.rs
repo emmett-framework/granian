@@ -9,11 +9,12 @@ use std::{
 };
 use tokio::{
     runtime::Builder,
-    sync::Notify,
     task::{JoinHandle, LocalSet},
 };
 
 use super::callbacks::{PyEmptyAwaitable, PyFutureAwaitable, PyIterAwaitable};
+#[cfg(windows)]
+use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
 tokio::task_local! {
     static TASK_LOCALS: OnceCell<TaskLocals>;
@@ -197,15 +198,12 @@ where
     F: Future<Output = PyResult<T>> + Send + 'static,
     T: IntoPy<PyObject>,
 {
-    let aw = PyIterAwaitable::new();
-    let py_aw = Py::new(py, aw)?;
-    let py_fut = py_aw.clone();
+    let aw = Py::new(py, PyIterAwaitable::new())?;
+    let py_fut = aw.clone_ref(py);
 
     rt.spawn(async move {
         let result = fut.await;
-        Python::with_gil(move |py| {
-            py_aw.borrow_mut(py).set_result(result.map(|v| v.into_py(py)));
-        });
+        aw.get().set_result(result);
     });
 
     Ok(py_fut.into_ref(py))
@@ -217,6 +215,7 @@ where
 //  It won't consume more cpu-cycles than standard asyncio implementation,
 //  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
 #[allow(unused_must_use)]
+#[cfg(unix)]
 pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
 where
     R: Runtime + ContextExt + Clone,
@@ -225,37 +224,64 @@ where
 {
     let task_locals = get_current_locals::<R>(py)?;
     let event_loop = task_locals.event_loop(py).to_object(py);
-    let event_loop_aw = event_loop.clone();
-    let fut_spawner = move |context: Option<PyObject>, cancel_tx: Arc<Notify>, aw: Py<PyFutureAwaitable>| {
-        rt.spawn(async move {
-            let result = tokio::select! {
-                result = fut => {
-                    result
-                },
-                () = cancel_tx.notified() => {
-                    Err(pyo3::exceptions::asyncio::CancelledError::new_err("Task cancelled"))
-                }
-            };
+    let (aw, cancel_tx) = PyFutureAwaitable::new(event_loop).to_spawn(py)?;
+    let aw_ref = aw.clone_ref(py);
+    let py_fut = aw.clone_ref(py);
 
-            Python::with_gil(|py| {
-                if let Some(cb) = PyFutureAwaitable::set_result(aw.borrow_mut(py), result.map(|v| v.into_py(py))) {
-                    let kwctx = pyo3::types::PyDict::new(py);
-                    kwctx.set_item(pyo3::intern!(py, "context"), context).unwrap();
-                    let _ =
-                        event_loop.call_method(py, pyo3::intern!(py, "call_soon_threadsafe"), (cb, aw), Some(kwctx));
-                }
-            });
-        });
-    };
+    rt.spawn(async move {
+        tokio::select! {
+            result = fut => aw.get().set_result(result, aw_ref),
+            () = cancel_tx.notified() => {}
+        }
+    });
 
-    let aw = PyFutureAwaitable::new(Box::new(fut_spawner), event_loop_aw);
-    Ok(aw.into_py(py).into_ref(py))
+    Ok(py_fut.into_ref(py))
+}
+
+#[allow(unused_must_use)]
+#[cfg(windows)]
+pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+where
+    R: Runtime + ContextExt + Clone,
+    F: Future<Output = PyResult<T>> + Send + 'static,
+    T: IntoPy<PyObject>,
+{
+    let task_locals = get_current_locals::<R>(py)?;
+    let event_loop = task_locals.event_loop(py);
+    let event_loop_ref = event_loop.to_object(py);
+    let cancel_tx = Arc::new(tokio::sync::Notify::new());
+
+    let py_fut = event_loop.call_method0(pyo3::intern!(py, "create_future"))?;
+    py_fut.call_method1(
+        pyo3::intern!(py, "add_done_callback"),
+        (PyFutureDoneCallback {
+            cancel_tx: cancel_tx.clone(),
+        },),
+    )?;
+    let fut_ref = PyObject::from(py_fut);
+
+    rt.spawn(async move {
+        tokio::select! {
+            result = fut => {
+                Python::with_gil(|py| {
+                    let (cb, value) = match result {
+                        Ok(val) => (fut_ref.getattr(py, pyo3::intern!(py, "set_result")).unwrap(), val.into_py(py)),
+                        Err(err) => (fut_ref.getattr(py, pyo3::intern!(py, "set_exception")).unwrap(), err.into_py(py))
+                    };
+                    let _ = event_loop_ref.call_method1(py, pyo3::intern!(py, "call_soon_threadsafe"), (PyFutureResultSetter, cb, value));
+                });
+            },
+            () = cancel_tx.notified() => {}
+        }
+    });
+
+    Ok(py_fut)
 }
 
 #[allow(clippy::unnecessary_wraps)]
 #[inline(always)]
 pub(crate) fn empty_future_into_py(py: Python) -> PyResult<&PyAny> {
-    Ok(PyEmptyAwaitable {}.into_py(py).into_ref(py))
+    Ok(PyEmptyAwaitable.into_py(py).into_ref(py))
 }
 
 #[allow(unused_must_use)]

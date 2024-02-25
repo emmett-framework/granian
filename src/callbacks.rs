@@ -1,5 +1,6 @@
 use pyo3::{prelude::*, pyclass::IterNextOutput, sync::GILOnceCell};
-use std::sync::Arc;
+
+use std::sync::{atomic, Arc, RwLock};
 use tokio::sync::Notify;
 
 static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
@@ -20,8 +21,8 @@ impl CallbackWrapper {
     }
 }
 
-#[pyclass]
-pub(crate) struct PyEmptyAwaitable {}
+#[pyclass(frozen)]
+pub(crate) struct PyEmptyAwaitable;
 
 #[pymethods]
 impl PyEmptyAwaitable {
@@ -38,18 +39,21 @@ impl PyEmptyAwaitable {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub(crate) struct PyIterAwaitable {
-    result: Option<PyResult<PyObject>>,
+    result: RwLock<Option<PyResult<PyObject>>>,
 }
 
 impl PyIterAwaitable {
     pub(crate) fn new() -> Self {
-        Self { result: None }
+        Self {
+            result: RwLock::new(None),
+        }
     }
 
-    pub(crate) fn set_result(&mut self, result: PyResult<PyObject>) {
-        self.result = Some(result);
+    pub(crate) fn set_result(&self, result: PyResult<impl IntoPy<PyObject>>) {
+        let mut res = self.result.write().unwrap();
+        *res = Some(Python::with_gil(|py| result.map(|v| v.into_py(py))));
     }
 }
 
@@ -64,46 +68,64 @@ impl PyIterAwaitable {
     }
 
     fn __next__(&self, py: Python) -> PyResult<IterNextOutput<PyObject, PyObject>> {
-        match &self.result {
-            Some(res) => match res {
-                Ok(v) => Ok(IterNextOutput::Return(v.clone_ref(py))),
-                Err(err) => Err(err.clone_ref(py)),
-            },
-            _ => Ok(IterNextOutput::Yield(py.None())),
-        }
+        if let Ok(res) = self.result.try_read() {
+            if let Some(ref res) = *res {
+                return res
+                    .as_ref()
+                    .map(|v| IterNextOutput::Return(v.clone_ref(py)))
+                    .map_err(|err| err.clone_ref(py));
+            }
+        };
+        Ok(IterNextOutput::Yield(py.None()))
     }
 }
 
-#[pyclass]
+enum PyFutureAwaitableState {
+    Pending,
+    Completed(PyResult<PyObject>),
+    Cancelled,
+}
+
+#[pyclass(frozen)]
 pub(crate) struct PyFutureAwaitable {
-    fut_spawner: Option<Box<dyn FnOnce(Option<PyObject>, Arc<Notify>, Py<PyFutureAwaitable>) + Send>>,
-    result: Option<PyResult<PyObject>>,
+    state: RwLock<PyFutureAwaitableState>,
     event_loop: PyObject,
-    callback: Option<PyObject>,
     cancel_tx: Arc<Notify>,
-    py_block: bool,
-    py_cancelled: bool,
+    py_block: atomic::AtomicBool,
+    ack: RwLock<Option<(PyObject, Py<pyo3::types::PyDict>)>>,
 }
 
 impl PyFutureAwaitable {
-    pub(crate) fn new(
-        fut_spawner: Box<dyn FnOnce(Option<PyObject>, Arc<Notify>, Py<PyFutureAwaitable>) + Send>,
-        event_loop: PyObject,
-    ) -> Self {
+    pub(crate) fn new(event_loop: PyObject) -> Self {
         Self {
-            fut_spawner: Some(fut_spawner),
-            result: None,
+            state: RwLock::new(PyFutureAwaitableState::Pending),
             event_loop,
-            callback: None,
             cancel_tx: Arc::new(Notify::new()),
-            py_block: true,
-            py_cancelled: false,
+            py_block: true.into(),
+            ack: RwLock::new(None),
         }
     }
 
-    pub(crate) fn set_result(mut pyself: PyRefMut<'_, Self>, result: PyResult<PyObject>) -> Option<PyObject> {
-        pyself.result = Some(result);
-        pyself.callback.take()
+    pub fn to_spawn(self, py: Python) -> PyResult<(Py<PyFutureAwaitable>, Arc<Notify>)> {
+        let cancel_tx = self.cancel_tx.clone();
+        Ok((Py::new(py, self)?, cancel_tx))
+    }
+
+    pub(crate) fn set_result(&self, result: PyResult<impl IntoPy<PyObject>>, aw: Py<PyFutureAwaitable>) {
+        Python::with_gil(|py| {
+            let mut state = self.state.write().unwrap();
+            *state = PyFutureAwaitableState::Completed(result.map(|v| v.into_py(py)));
+
+            let ack = self.ack.read().unwrap();
+            if let Some((cb, ctx)) = &*ack {
+                let _ = self.event_loop.clone_ref(py).call_method(
+                    py,
+                    pyo3::intern!(py, "call_soon_threadsafe"),
+                    (cb, aw),
+                    Some(ctx.as_ref(py)),
+                );
+            }
+        });
     }
 }
 
@@ -112,15 +134,31 @@ impl PyFutureAwaitable {
     fn __await__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
         pyself
     }
+    fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __next__(pyself: PyRef<'_, Self>) -> PyResult<IterNextOutput<PyRef<'_, Self>, PyObject>> {
+        let state = pyself.state.read().unwrap();
+        if let PyFutureAwaitableState::Completed(res) = &*state {
+            let py = pyself.py();
+            return res
+                .as_ref()
+                .map(|v| IterNextOutput::Return(v.clone_ref(py)))
+                .map_err(|err| err.clone_ref(py));
+        };
+        drop(state);
+        Ok(IterNextOutput::Yield(pyself))
+    }
 
     #[getter(_asyncio_future_blocking)]
     fn get_block(&self) -> bool {
-        self.py_block
+        self.py_block.load(atomic::Ordering::Relaxed)
     }
 
     #[setter(_asyncio_future_blocking)]
-    fn set_block(&mut self, val: bool) {
-        self.py_block = val;
+    fn set_block(&self, val: bool) {
+        self.py_block.store(val, atomic::Ordering::Relaxed);
     }
 
     fn get_loop(&self, py: Python) -> PyObject {
@@ -128,66 +166,107 @@ impl PyFutureAwaitable {
     }
 
     #[pyo3(signature = (cb, context=None))]
-    fn add_done_callback(mut pyself: PyRefMut<'_, Self>, cb: PyObject, context: Option<PyObject>) {
-        pyself.callback = Some(cb);
-        if let Some(spawner) = pyself.fut_spawner.take() {
-            (spawner)(context, pyself.cancel_tx.clone(), pyself.into());
+    fn add_done_callback(pyself: PyRef<'_, Self>, cb: PyObject, context: Option<PyObject>) -> PyResult<()> {
+        let py = pyself.py();
+        let kwctx = pyo3::types::PyDict::new(py);
+        kwctx.set_item(pyo3::intern!(py, "context"), context)?;
+
+        let state = pyself.state.read().unwrap();
+        match &*state {
+            PyFutureAwaitableState::Pending => {
+                let mut ack = pyself.ack.write().unwrap();
+                *ack = Some((cb, kwctx.into_py(py)));
+                Ok(())
+            }
+            _ => {
+                drop(state);
+                let event_loop = pyself.event_loop.clone_ref(py);
+                event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(kwctx))?;
+                Ok(())
+            }
         }
     }
 
     #[allow(unused)]
-    fn remove_done_callback(&mut self, cb: PyObject) -> i32 {
-        self.callback = None;
+    fn remove_done_callback(&self, cb: PyObject) -> i32 {
+        let mut ack = self.ack.write().unwrap();
+        *ack = None;
         1
     }
 
     #[allow(unused)]
     #[pyo3(signature = (msg=None))]
-    fn cancel(&mut self, msg: Option<PyObject>) -> bool {
-        if self.done() {
+    fn cancel(&self, msg: Option<PyObject>) -> bool {
+        let mut state = self.state.write().unwrap();
+        if !matches!(&mut *state, PyFutureAwaitableState::Pending) {
             return false;
         }
-        self.py_cancelled = true;
+
+        *state = PyFutureAwaitableState::Cancelled;
         self.cancel_tx.notify_one();
         true
     }
 
     fn done(&self) -> bool {
-        self.result.is_some() || self.py_cancelled
+        let state = self.state.read().unwrap();
+        !matches!(&*state, PyFutureAwaitableState::Pending)
     }
 
-    fn result(pyself: PyRef<'_, Self>) -> PyResult<PyObject> {
-        if pyself.py_cancelled {
-            return Err(pyo3::exceptions::asyncio::CancelledError::new_err("Future cancelled."));
-        }
-
-        match &pyself.result {
-            Some(res) => {
-                let py = pyself.py();
+    fn result(&self, py: Python) -> PyResult<PyObject> {
+        let state = self.state.read().unwrap();
+        match &*state {
+            PyFutureAwaitableState::Completed(res) => {
                 res.as_ref().map(|v| v.clone_ref(py)).map_err(|err| err.clone_ref(py))
             }
-            _ => Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
+            PyFutureAwaitableState::Cancelled => {
+                Err(pyo3::exceptions::asyncio::CancelledError::new_err("Future cancelled."))
+            }
+            PyFutureAwaitableState::Pending => Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
                 "Result is not ready.",
             )),
         }
     }
 
-    fn exception(&self) {}
-
-    fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        pyself
-    }
-
-    fn __next__(pyself: PyRef<'_, Self>) -> PyResult<IterNextOutput<PyRef<'_, Self>, PyObject>> {
-        match &pyself.result {
-            Some(res) => {
-                let py = pyself.py();
-                res.as_ref()
-                    .map(|v| IterNextOutput::Return(v.clone_ref(py)))
-                    .map_err(|err| err.clone_ref(py))
+    fn exception(&self, py: Python) -> PyResult<PyObject> {
+        let state = self.state.read().unwrap();
+        match &*state {
+            PyFutureAwaitableState::Completed(res) => res.as_ref().map(|_| py.None()).map_err(|err| err.clone_ref(py)),
+            PyFutureAwaitableState::Cancelled => {
+                Err(pyo3::exceptions::asyncio::CancelledError::new_err("Future cancelled."))
             }
-            _ => Ok(IterNextOutput::Yield(pyself)),
+            PyFutureAwaitableState::Pending => Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
+                "Exception is not set.",
+            )),
         }
+    }
+}
+
+#[pyclass(frozen)]
+pub(crate) struct PyFutureDoneCallback {
+    pub cancel_tx: Arc<Notify>,
+}
+
+#[pymethods]
+impl PyFutureDoneCallback {
+    pub fn __call__(&self, fut: &PyAny) -> PyResult<()> {
+        let py = fut.py();
+
+        if { fut.getattr(pyo3::intern!(py, "cancelled"))?.call0()?.is_true() }.unwrap_or(false) {
+            self.cancel_tx.notify_one();
+        }
+
+        Ok(())
+    }
+}
+
+#[pyclass(frozen)]
+pub(crate) struct PyFutureResultSetter;
+
+#[pymethods]
+impl PyFutureResultSetter {
+    pub fn __call__(&self, target: &PyAny, value: &PyAny) -> PyResult<()> {
+        target.call1((value,))?;
+        Ok(())
     }
 }
 
@@ -296,9 +375,9 @@ macro_rules! callback_impl_loop_step {
                 if (err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py)
                     || err.is_instance_of::<pyo3::exceptions::asyncio::CancelledError>($py))
                 {
-                    $pyself.done($py);
+                    $pyself.done();
                 } else {
-                    $pyself.err($py, &err);
+                    $pyself.err(&err);
                 }
                 Ok(())
             }
@@ -318,7 +397,7 @@ macro_rules! callback_impl_loop_wake {
 macro_rules! callback_impl_loop_err {
     () => {
         pub fn _loop_err(&self, py: Python, err: PyErr) -> PyResult<PyObject> {
-            self.err(py, &err);
+            self.err(&err);
             let cberr = self.cb.call_method1(py, pyo3::intern!(py, "throw"), (err,));
             cberr
         }

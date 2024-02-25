@@ -8,7 +8,7 @@ use super::http::{
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
     config: WorkerConfig,
 }

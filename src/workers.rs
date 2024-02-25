@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use std::net::TcpListener;
+use std::sync::Mutex;
 
 #[cfg(unix)]
 use std::os::unix::io::FromRawFd;
@@ -11,9 +12,9 @@ use super::rsgi::serve::RSGIWorker;
 use super::tls::{load_certs as tls_load_certs, load_private_key as tls_load_pkey};
 use super::wsgi::serve::WSGIWorker;
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WorkerSignal {
-    pub rx: Option<tokio::sync::watch::Receiver<bool>>,
+    pub rx: Mutex<Option<tokio::sync::watch::Receiver<bool>>>,
     tx: tokio::sync::watch::Sender<bool>,
 }
 
@@ -22,7 +23,10 @@ impl WorkerSignal {
     #[new]
     fn new() -> Self {
         let (tx, rx) = tokio::sync::watch::channel(false);
-        Self { rx: Some(rx), tx }
+        Self {
+            rx: Mutex::new(Some(rx)),
+            tx,
+        }
     }
 
     fn set(&self) {
@@ -326,7 +330,7 @@ macro_rules! serve_rth {
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
-            let mut pyrx = Python::with_gil(|py| signal.borrow_mut(py).rx.take().unwrap());
+            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
@@ -453,7 +457,7 @@ macro_rules! serve_rth_ssl {
             let http2_opts = self.config.http2_opts.clone();
             let tls_cfg = self.config.tls_cfg();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
-            let mut pyrx = Python::with_gil(|py| signal.borrow_mut(py).rx.take().unwrap());
+            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
@@ -581,7 +585,7 @@ macro_rules! serve_wth {
             log::info!("Started worker-{}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
-            let mut pyrx = Python::with_gil(|py| signal.borrow_mut(py).rx.take().unwrap());
+            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 
@@ -733,7 +737,7 @@ macro_rules! serve_wth_ssl {
             log::info!("Started worker-{}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
-            let mut pyrx = Python::with_gil(|py| signal.borrow_mut(py).rx.take().unwrap());
+            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 

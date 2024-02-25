@@ -3,8 +3,11 @@ use http_body_util::BodyExt;
 use hyper::body;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
-use std::{borrow::Cow, sync::Arc};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use std::{
+    borrow::Cow,
+    sync::{atomic, Arc, Mutex, RwLock},
+};
+use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
@@ -20,7 +23,7 @@ use crate::{
 
 pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<tokio::task::JoinHandle<()>>);
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
     rt: RuntimeRef,
     tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
@@ -56,33 +59,33 @@ impl RSGIHTTPStreamTransport {
     }
 }
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<PyResponse>>,
-    body: Option<body::Incoming>,
-    body_stream: Option<Arc<Mutex<http_body_util::BodyStream<body::Incoming>>>>,
+    tx: Mutex<Option<oneshot::Sender<PyResponse>>>,
+    body: Mutex<Option<body::Incoming>>,
+    body_stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
 }
 
 impl RSGIHTTPProtocol {
     pub fn new(rt: RuntimeRef, tx: oneshot::Sender<PyResponse>, request: HTTPRequest) -> Self {
         Self {
             rt,
-            tx: Some(tx),
-            body: Some(request.into_body()),
-            body_stream: None,
+            tx: Mutex::new(Some(tx)),
+            body: Mutex::new(Some(request.into_body())),
+            body_stream: Arc::new(AsyncMutex::new(None)),
         }
     }
 
-    pub fn tx(&mut self) -> Option<oneshot::Sender<PyResponse>> {
-        self.tx.take()
+    pub fn tx(&self) -> Option<oneshot::Sender<PyResponse>> {
+        self.tx.lock().unwrap().take()
     }
 }
 
 #[pymethods]
 impl RSGIHTTPProtocol {
-    fn __call__<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        if let Some(body) = self.body.take() {
+    fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        if let Some(body) = self.body.lock().unwrap().take() {
             return future_into_py_iter(self.rt.clone(), py, async move {
                 let body = body
                     .collect()
@@ -94,70 +97,62 @@ impl RSGIHTTPProtocol {
         error_proto!()
     }
 
-    fn __aiter__(mut pyself: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
-        if let Some(body) = pyself.body.take() {
-            pyself.body_stream = Some(Arc::new(Mutex::new(http_body_util::BodyStream::new(body))));
+    fn __aiter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        if let Some(body) = pyself.body.lock().unwrap().take() {
+            let mut stream = pyself.body_stream.blocking_lock();
+            *stream = Some(http_body_util::BodyStream::new(body));
         }
         pyself
     }
 
-    fn __anext__<'p>(&mut self, py: Python<'p>) -> PyResult<Option<&'p PyAny>> {
-        if let Some(body_ref) = &self.body_stream {
-            let body_ref = body_ref.clone();
-            let fut = future_into_py_iter(self.rt.clone(), py, async move {
-                let mut bodym = body_ref.lock().await;
-                let body = &mut *bodym;
-                match body.next().await {
-                    Some(chunk) => {
-                        let chunk = chunk
-                            .map(|buf| buf.into_data().unwrap_or_default())
-                            .unwrap_or(body::Bytes::new());
-                        Ok(BytesToPy(chunk))
-                    }
-                    _ => Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted")),
-                }
-            })?;
-            return Ok(Some(fut));
-        }
-        error_proto!()
+    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Option<&'p PyAny>> {
+        let body_stream = self.body_stream.clone();
+        let pyfut = future_into_py_iter(self.rt.clone(), py, async move {
+            if let Some(stream) = &mut *body_stream.lock().await {
+                if let Some(chunk) = stream.next().await {
+                    let chunk = chunk
+                        .map(|buf| buf.into_data().unwrap_or_default())
+                        .unwrap_or(body::Bytes::new());
+                    return Ok(BytesToPy(chunk));
+                };
+                return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
+            }
+            error_proto!()
+        })?;
+        Ok(Some(pyfut))
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_empty(&mut self, status: u16, headers: Vec<(String, String)>) {
-        if let Some(tx) = self.tx.take() {
+    fn response_empty(&self, status: u16, headers: Vec<(String, String)>) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
-    fn response_bytes(&mut self, status: u16, headers: Vec<(String, String)>, body: Cow<[u8]>) {
-        if let Some(tx) = self.tx.take() {
+    fn response_bytes(&self, status: u16, headers: Vec<(String, String)>, body: Cow<[u8]>) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
-    fn response_str(&mut self, status: u16, headers: Vec<(String, String)>, body: String) {
-        if let Some(tx) = self.tx.take() {
+    fn response_str(&self, status: u16, headers: Vec<(String, String)>, body: String) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status, headers, file))]
-    fn response_file(&mut self, status: u16, headers: Vec<(String, String)>, file: String) {
-        if let Some(tx) = self.tx.take() {
+    fn response_file(&self, status: u16, headers: Vec<(String, String)>, file: String) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_stream<'p>(
-        &mut self,
-        py: Python<'p>,
-        status: u16,
-        headers: Vec<(String, String)>,
-    ) -> PyResult<&'p PyAny> {
-        if let Some(tx) = self.tx.take() {
+    fn response_stream<'p>(&self, py: Python<'p>, status: u16, headers: Vec<(String, String)>) -> PyResult<&'p PyAny> {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
             let body_stream = http_body_util::StreamBody::new(
                 tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(hyper::body::Frame::data),
@@ -174,12 +169,12 @@ impl RSGIHTTPProtocol {
     }
 }
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
-    tx: Arc<Mutex<WSTxStream>>,
-    rx: Arc<Mutex<WSRxStream>>,
-    closed: bool,
+    tx: Arc<AsyncMutex<WSTxStream>>,
+    rx: Arc<AsyncMutex<WSRxStream>>,
+    closed: atomic::AtomicBool,
 }
 
 impl RSGIWebsocketTransport {
@@ -187,17 +182,17 @@ impl RSGIWebsocketTransport {
         let (tx, rx) = transport.split();
         Self {
             rt,
-            tx: Arc::new(Mutex::new(tx)),
-            rx: Arc::new(Mutex::new(rx)),
-            closed: false,
+            tx: Arc::new(AsyncMutex::new(tx)),
+            rx: Arc::new(AsyncMutex::new(rx)),
+            closed: false.into(),
         }
     }
 
-    pub fn close(&mut self) -> Option<tokio::task::JoinHandle<()>> {
-        if self.closed {
+    pub fn close(&self) -> Option<tokio::task::JoinHandle<()>> {
+        if self.closed.load(atomic::Ordering::Relaxed) {
             return None;
         }
-        self.closed = true;
+        self.closed.store(true, atomic::Ordering::Relaxed);
 
         let tx = self.tx.clone();
         let handle = self.rt.spawn(async move {
@@ -258,14 +253,13 @@ impl RSGIWebsocketTransport {
     }
 }
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIWebsocketProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<WebsocketDetachedTransport>>,
-    websocket: Arc<Mutex<HyperWebsocket>>,
-    upgrade: Option<UpgradeData>,
+    tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
+    websocket: Arc<AsyncMutex<HyperWebsocket>>,
+    upgrade: RwLock<Option<UpgradeData>>,
     transport: Arc<Mutex<Option<Py<RSGIWebsocketTransport>>>>,
-    status: i32,
 }
 
 impl RSGIWebsocketProtocol {
@@ -277,16 +271,15 @@ impl RSGIWebsocketProtocol {
     ) -> Self {
         Self {
             rt,
-            tx: Some(tx),
-            websocket: Arc::new(Mutex::new(websocket)),
-            upgrade: Some(upgrade),
+            tx: Mutex::new(Some(tx)),
+            websocket: Arc::new(AsyncMutex::new(websocket)),
+            upgrade: RwLock::new(Some(upgrade)),
             transport: Arc::new(Mutex::new(None)),
-            status: 0,
         }
     }
 
     fn consumed(&self) -> bool {
-        self.upgrade.is_none()
+        self.upgrade.read().unwrap().is_none()
     }
 }
 
@@ -296,7 +289,7 @@ enum WebsocketMessageType {
     Text = 2,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct WebsocketInboundCloseMessage {
     #[pyo3(get)]
     kind: usize,
@@ -310,7 +303,7 @@ impl WebsocketInboundCloseMessage {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct WebsocketInboundBytesMessage {
     #[pyo3(get)]
     kind: usize,
@@ -327,7 +320,7 @@ impl WebsocketInboundBytesMessage {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct WebsocketInboundTextMessage {
     #[pyo3(get)]
     kind: usize,
@@ -347,25 +340,22 @@ impl WebsocketInboundTextMessage {
 #[pymethods]
 impl RSGIWebsocketProtocol {
     #[pyo3(signature = (status=None))]
-    pub fn close(&mut self, py: Python, status: Option<i32>) {
-        self.status = status.unwrap_or(0);
-        if let Some(tx) = self.tx.take() {
+    pub fn close(&self, status: Option<i32>) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let mut handle = None;
             if let Ok(mut transport) = self.transport.try_lock() {
                 if let Some(transport) = transport.take() {
-                    if let Ok(mut trx) = transport.try_borrow_mut(py) {
-                        handle = trx.close();
-                    }
+                    handle = transport.get().close();
                 }
             }
 
-            let _ = tx.send((self.status, self.consumed(), handle));
+            let _ = tx.send((status.unwrap_or(0), self.consumed(), handle));
         }
     }
 
-    fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn accept<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let rth = self.rt.clone();
-        let mut upgrade = self.upgrade.take().unwrap();
+        let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
         let transport = self.websocket.clone();
         let itransport = self.transport.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
@@ -373,7 +363,7 @@ impl RSGIWebsocketProtocol {
             match upgrade.send().await {
                 Ok(()) => match (&mut *ws).await {
                     Ok(stream) => {
-                        let mut trx = itransport.lock().await;
+                        let mut trx = itransport.lock().unwrap();
                         Ok(Python::with_gil(|py| {
                             let pytransport = Py::new(py, RSGIWebsocketTransport::new(rth, stream)).unwrap();
                             *trx = Some(pytransport.clone());

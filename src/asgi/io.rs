@@ -8,10 +8,13 @@ use hyper::{
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::Cow,
+    sync::{atomic, Arc, Mutex, RwLock},
+};
 use tokio::{
     fs::File,
-    sync::{mpsc, oneshot, Mutex, RwLock},
+    sync::{mpsc, oneshot, Mutex as AsyncMutex},
 };
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::io::ReaderStream;
@@ -30,17 +33,16 @@ use crate::{
 const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
 const EMPTY_STRING: String = String::new();
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<HTTPResponse>>,
-    request_body: Arc<Mutex<http_body_util::BodyStream<body::Incoming>>>,
-    response_started: bool,
-    response_chunked: bool,
-    response_status: Option<i16>,
-    response_headers: Option<HeaderMap>,
-    body_tx: Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>,
-    flow_rx_exhausted: Arc<std::sync::RwLock<bool>>,
+    tx: Mutex<Option<oneshot::Sender<HTTPResponse>>>,
+    request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
+    response_started: atomic::AtomicBool,
+    response_chunked: atomic::AtomicBool,
+    response_intent: Mutex<Option<(i16, HeaderMap)>>,
+    body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>>,
+    flow_rx_exhausted: Arc<RwLock<bool>>,
     flow_tx_waiter: Arc<tokio::sync::Notify>,
 }
 
@@ -48,21 +50,20 @@ impl ASGIHTTPProtocol {
     pub fn new(rt: RuntimeRef, request: HTTPRequest, tx: oneshot::Sender<HTTPResponse>) -> Self {
         Self {
             rt,
-            tx: Some(tx),
-            request_body: Arc::new(Mutex::new(http_body_util::BodyStream::new(request.into_body()))),
-            response_started: false,
-            response_chunked: false,
-            response_status: None,
-            response_headers: None,
-            body_tx: None,
-            flow_rx_exhausted: Arc::new(std::sync::RwLock::new(false)),
+            tx: Mutex::new(Some(tx)),
+            request_body: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(request.into_body()))),
+            response_started: false.into(),
+            response_chunked: false.into(),
+            response_intent: Mutex::new(None),
+            body_tx: Mutex::new(None),
+            flow_rx_exhausted: Arc::new(RwLock::new(false)),
             flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
     #[inline(always)]
-    fn send_response(&mut self, status: i16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody) {
-        if let Some(tx) = self.tx.take() {
+    fn send_response(&self, status: i16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let mut res = Response::new(body);
             *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
             *res.headers_mut() = headers;
@@ -88,14 +89,14 @@ impl ASGIHTTPProtocol {
         })
     }
 
-    pub fn tx(&mut self) -> Option<oneshot::Sender<HTTPResponse>> {
-        self.tx.take()
+    pub fn tx(&self) -> Option<oneshot::Sender<HTTPResponse>> {
+        self.tx.lock().unwrap().take()
     }
 }
 
 #[pymethods]
 impl ASGIHTTPProtocol {
-    fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         if *self.flow_rx_exhausted.read().unwrap() {
             let holder = self.flow_tx_waiter.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
@@ -138,24 +139,28 @@ impl ASGIHTTPProtocol {
         })
     }
 
-    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
-            Ok(ASGIMessageType::HTTPStart) => match self.response_started {
+            Ok(ASGIMessageType::HTTPStart) => match self.response_started.load(atomic::Ordering::Relaxed) {
                 false => {
-                    self.response_status = Some(adapt_status_code(py, data)?);
-                    self.response_headers = Some(adapt_headers(py, data));
-                    self.response_started = true;
+                    let mut response_intent = self.response_intent.lock().unwrap();
+                    *response_intent = Some((adapt_status_code(py, data)?, adapt_headers(py, data)));
+                    self.response_started.store(true, atomic::Ordering::Relaxed);
                     empty_future_into_py(py)
                 }
                 true => error_flow!(),
             },
             Ok(ASGIMessageType::HTTPBody) => {
                 let (body, more) = adapt_body(py, data);
-                match (self.response_started, more, self.response_chunked) {
+                match (
+                    self.response_started.load(atomic::Ordering::Relaxed),
+                    more,
+                    self.response_chunked.load(atomic::Ordering::Relaxed),
+                ) {
                     (true, false, false) => {
-                        let headers = self.response_headers.take().unwrap();
+                        let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                         self.send_response(
-                            self.response_status.unwrap(),
+                            status,
                             headers,
                             http_body_util::Full::new(body::Bytes::from(body))
                                 .map_err(|e| match e {})
@@ -165,24 +170,24 @@ impl ASGIHTTPProtocol {
                         empty_future_into_py(py)
                     }
                     (true, true, false) => {
-                        self.response_chunked = true;
-                        let headers = self.response_headers.take().unwrap();
+                        self.response_chunked.store(true, atomic::Ordering::Relaxed);
+                        let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                         let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
                         let body_stream = http_body_util::StreamBody::new(
                             tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(hyper::body::Frame::data),
                         );
-                        self.body_tx = Some(body_tx.clone());
-                        self.send_response(self.response_status.unwrap(), headers, BodyExt::boxed(body_stream));
+                        *self.body_tx.lock().unwrap() = Some(body_tx.clone());
+                        self.send_response(status, headers, BodyExt::boxed(body_stream));
                         self.send_body(py, body_tx, body)
                     }
-                    (true, true, true) => match self.body_tx.as_mut() {
+                    (true, true, true) => match &*self.body_tx.lock().unwrap() {
                         Some(tx) => {
                             let tx = tx.clone();
                             self.send_body(py, tx, body)
                         }
                         _ => error_flow!(),
                     },
-                    (true, false, true) => match self.body_tx.take() {
+                    (true, false, true) => match self.body_tx.lock().unwrap().take() {
                         Some(tx) => {
                             self.flow_tx_waiter.notify_one();
                             match body.is_empty() {
@@ -195,10 +200,13 @@ impl ASGIHTTPProtocol {
                     _ => error_flow!(),
                 }
             }
-            Ok(ASGIMessageType::HTTPFile) => match (self.response_started, adapt_file(py, data), self.tx.take()) {
+            Ok(ASGIMessageType::HTTPFile) => match (
+                self.response_started.load(atomic::Ordering::Relaxed),
+                adapt_file(py, data),
+                self.tx.lock().unwrap().take(),
+            ) {
                 (true, Ok(file_path), Some(tx)) => {
-                    let status = self.response_status.unwrap();
-                    let headers = self.response_headers.take().unwrap();
+                    let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                     future_into_py_iter(self.rt.clone(), py, async move {
                         let res = match File::open(&file_path).await {
                             Ok(file) => {
@@ -248,16 +256,16 @@ impl WebsocketDetachedTransport {
     }
 }
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIWebsocketProtocol {
     rt: RuntimeRef,
-    tx: Option<oneshot::Sender<WebsocketDetachedTransport>>,
-    websocket: Option<HyperWebsocket>,
-    upgrade: Option<UpgradeData>,
-    ws_rx: Arc<Mutex<Option<WSRxStream>>>,
-    ws_tx: Arc<Mutex<Option<WSTxStream>>>,
-    accepted: Arc<tokio::sync::RwLock<bool>>,
-    closed: Arc<tokio::sync::RwLock<bool>>,
+    tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
+    websocket: Mutex<Option<HyperWebsocket>>,
+    upgrade: Mutex<Option<UpgradeData>>,
+    ws_rx: Arc<AsyncMutex<Option<WSRxStream>>>,
+    ws_tx: Arc<AsyncMutex<Option<WSTxStream>>>,
+    accepted: Arc<atomic::AtomicBool>,
+    closed: Arc<atomic::AtomicBool>,
 }
 
 impl ASGIWebsocketProtocol {
@@ -269,20 +277,20 @@ impl ASGIWebsocketProtocol {
     ) -> Self {
         Self {
             rt,
-            tx: Some(tx),
-            websocket: Some(websocket),
-            upgrade: Some(upgrade),
-            ws_rx: Arc::new(Mutex::new(None)),
-            ws_tx: Arc::new(Mutex::new(None)),
-            accepted: Arc::new(RwLock::new(false)),
-            closed: Arc::new(RwLock::new(false)),
+            tx: Mutex::new(Some(tx)),
+            websocket: Mutex::new(Some(websocket)),
+            upgrade: Mutex::new(Some(upgrade)),
+            ws_rx: Arc::new(AsyncMutex::new(None)),
+            ws_tx: Arc::new(AsyncMutex::new(None)),
+            accepted: Arc::new(false.into()),
+            closed: Arc::new(false.into()),
         }
     }
 
     #[inline(always)]
-    fn accept<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let upgrade = self.upgrade.take();
-        let websocket = self.websocket.take();
+    fn accept<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+        let upgrade = self.upgrade.lock().unwrap().take();
+        let websocket = self.websocket.lock().unwrap().take();
         let accepted = self.accepted.clone();
         let rx = self.ws_rx.clone();
         let tx = self.ws_tx.clone();
@@ -294,11 +302,10 @@ impl ASGIWebsocketProtocol {
                         if let Ok(stream) = websocket.await {
                             let mut wtx = tx.lock().await;
                             let mut wrx = rx.lock().await;
-                            let mut accepted = accepted.write().await;
                             let (tx, rx) = stream.split();
                             *wtx = Some(tx);
                             *wrx = Some(rx);
-                            *accepted = true;
+                            accepted.store(true, atomic::Ordering::Relaxed);
                             return Ok(());
                         }
                     }
@@ -321,8 +328,7 @@ impl ASGIWebsocketProtocol {
                         match ws.send(message).await {
                             Ok(()) => return Ok(()),
                             _ => {
-                                let closed = closed.read().await;
-                                if *closed {
+                                if closed.load(atomic::Ordering::Relaxed) {
                                     log::info!("Attempted to write to a closed websocket");
                                     return Ok(());
                                 }
@@ -337,7 +343,7 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn close<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn close<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let closed = self.closed.clone();
         let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
@@ -345,8 +351,7 @@ impl ASGIWebsocketProtocol {
         future_into_py_iter(self.rt.clone(), py, async move {
             match ws_tx.lock().await.take() {
                 Some(tx) => {
-                    let mut closed = closed.write().await;
-                    *closed = true;
+                    closed.store(true, atomic::Ordering::Relaxed);
                     WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
                         .close()
                         .await;
@@ -358,11 +363,11 @@ impl ASGIWebsocketProtocol {
     }
 
     fn consumed(&self) -> bool {
-        self.upgrade.is_none()
+        self.upgrade.lock().unwrap().is_none()
     }
 
     pub fn tx(
-        &mut self,
+        &self,
     ) -> (
         Option<oneshot::Sender<WebsocketDetachedTransport>>,
         WebsocketDetachedTransport,
@@ -370,7 +375,7 @@ impl ASGIWebsocketProtocol {
         let mut ws_rx = self.ws_rx.blocking_lock();
         let mut ws_tx = self.ws_tx.blocking_lock();
         (
-            self.tx.take(),
+            self.tx.lock().unwrap().take(),
             WebsocketDetachedTransport::new(self.consumed(), ws_rx.take(), ws_tx.take()),
         )
     }
@@ -378,14 +383,14 @@ impl ASGIWebsocketProtocol {
 
 #[pymethods]
 impl ASGIWebsocketProtocol {
-    fn receive<'p>(&mut self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let accepted = self.accepted.clone();
         let closed = self.closed.clone();
         let transport = self.ws_rx.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            let accepted = accepted.read().await;
-            if !*accepted {
+            let accepted = accepted.load(atomic::Ordering::Relaxed);
+            if !accepted {
                 return Python::with_gil(|py| {
                     let dict = PyDict::new(py);
                     dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.connect"))?;
@@ -398,8 +403,7 @@ impl ASGIWebsocketProtocol {
                     match recv {
                         Ok(Message::Ping(_)) => continue,
                         Ok(message @ Message::Close(_)) => {
-                            let mut closed = closed.write().await;
-                            *closed = true;
+                            closed.store(true, atomic::Ordering::Relaxed);
                             return ws_message_into_py(message);
                         }
                         Ok(message) => return ws_message_into_py(message),
@@ -411,7 +415,7 @@ impl ASGIWebsocketProtocol {
         })
     }
 
-    fn send<'p>(&mut self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
         match adapt_message_type(data) {
             Ok(ASGIMessageType::WSAccept) => self.accept(py),
             Ok(ASGIMessageType::WSClose) => self.close(py),
