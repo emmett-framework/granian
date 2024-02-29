@@ -51,6 +51,7 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
 
 
 def load_target(target: str) -> Callable[..., None]:
+    sys.path.insert(0, "")
     path, name = get_import_components(target)
     path = prepare_import(path) if path else None
     name = name or 'app'
