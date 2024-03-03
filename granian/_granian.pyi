@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Protocol
 
 from ._types import WebsocketMessage
+from .http import HTTP1Settings, HTTP2Settings
 
 __version__: str
 
@@ -58,3 +59,35 @@ class WSGIScope:
 
 class WorkerSignal:
     def __init__(self): ...
+
+class __WorkerConfig(Protocol):
+    def __init__(
+        self,
+        id: int,
+        socket_fd: int,
+        threads: int,
+        pthreads: int,
+        http_mode: str,
+        http1_opts: HTTP1Settings,
+        http2_opts: HTTP2Settings,
+        websockets_enabled: bool,
+        opt_enabled: bool,
+        ssl_enabled: bool,
+        ssl_cert: Optional[str],
+        ssl_key: Optional[str],
+    ):
+        ...
+
+class ASGIWorker(__WorkerConfig):
+    ...
+
+class RSGIWorker(__WorkerConfig):
+    ...
+
+class WSGIWorker(__WorkerConfig):
+    ...
+
+
+class ListenerHolder:
+    @classmethod
+    def from_address(cls, bind_addr: str, port: int, backlog: int) -> "ListenerHolder": ...
