@@ -7,7 +7,7 @@ A Rust HTTP server for Python applications.
 The main reasons behind Granian design are:
 
 - Have a single, correct HTTP implementation, supporting versions 1, 2 (and eventually 3)
-- Provide a single package for several platforms 
+- Provide a single package for several platforms
 - Avoid the usual Gunicorn + uvicorn + http-tools dependency composition on unix systems
 - Provide stable [performance](https://github.com/emmett-framework/granian/blob/master/benchmarks/README.md) when compared to existing alternatives
 
@@ -214,6 +214,28 @@ You might test the effect such optimizations cause over your application and dec
 Granian is currently under active development.
 
 Granian is compatible with Python 3.8 and above versions.
+
+### Contributing
+
+Create a virtual environment and install:
+
+```shell
+pip install .[hacking]
+```
+
+On zsh, you may need to do: `.\[hacking\]` instead of `.[hacking]`
+
+To finalize setup, run:
+
+```shell
+pre-commit install
+```
+
+To edit rust files, first install Rust if you haven't. Then compile the project:
+
+```shell
+maturin develop
+```
 
 ## License
 

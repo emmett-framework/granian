@@ -5,6 +5,7 @@ __pycache__
 *.sublime-*
 .venv
 .vscode
+.idea
 
 granian/*.so
 target/*

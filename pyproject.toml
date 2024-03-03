@@ -55,6 +55,7 @@ test = [
 ]
 all = ['granian[pname,reload]']
 dev = ['granian[all,lint,test]']
+hacking = ['granian[dev]', 'maturin', 'pre-commit']
 
 [project.urls]
 Homepage = 'https://github.com/emmett-framework/granian'
