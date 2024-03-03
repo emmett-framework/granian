@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 
@@ -109,6 +109,33 @@ def main(
         help="Enable auto reload on application's files changes (requires granian[reload] extra)",
         show_default='disabled',
     ),
+    reload_paths: List[str] = typer.Option(
+        [Path.cwd()],
+        '--reload-paths',
+        help='WatchFile paths to watch for changes (requires granian[reload] extra)',
+    ),
+    reload_ignore_paths: List[str] = typer.Option(
+        [],
+        '--reload-ignore-paths',
+        help='WatchFile paths to ignore changes for (requires granian[reload] extra)',
+    ),
+    reload_ignore_dirs: List[str] = typer.Option(
+        [],
+        '--reload-ignore-dirs',
+        help=(
+            'WatchFile directories to ignore changes for (requires granian[reload] extra). '
+            'Replaces  the default list of directories to ignore in '
+            'watchfiles.filters.DefaultFilter.'
+        ),
+    ),
+    reload_ignore_entity_patterns: List[str] = typer.Option(
+        [],
+        '--reload-ignore-entity-patterns',
+        help=(
+            'WatchFile entity patterns to ignore changes for (requires granian[reload] extra). '
+            'Replaces the default list of patterns to ignore in watchfiles.filters.DefaultFilter.'
+        ),
+    ),
     process_name: Optional[str] = typer.Option(
         None,
         help='Set a custom name for processes (requires granian[pname] extra)',
@@ -167,5 +194,9 @@ def main(
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         reload=reload,
+        reload_paths=reload_paths,
+        reload_ignore_paths=reload_ignore_paths,
+        reload_ignore_dirs=reload_ignore_dirs,
+        reload_ignore_entity_patterns=reload_ignore_entity_patterns,
         process_name=process_name,
     ).serve()
