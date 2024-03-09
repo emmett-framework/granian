@@ -9,7 +9,7 @@ use hyper::{
 };
 use percent_encoding::percent_decode_str;
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyIterator, PyList, PyString};
 use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
@@ -56,6 +56,21 @@ impl RSGIHeaders {
 
     fn __contains__(&self, key: &str) -> bool {
         self.inner.contains_key(key)
+    }
+
+    fn __getitem__(&self, key: &str) -> Result<&str> {
+        match self.inner.get(key) {
+            Some(value) => Ok(value.to_str()?),
+            _ => Err(pyo3::exceptions::PyKeyError::new_err(key.to_owned()).into()),
+        }
+    }
+
+    fn __iter__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyIterator> {
+        PyIterator::from_object(PyList::new(py, self.keys()))
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.keys_len()
     }
 
     #[pyo3(signature = (key, default=None))]
