@@ -7,7 +7,7 @@ use percent_encoding::percent_decode_str;
 use pyo3::{
     prelude::*,
     sync::GILOnceCell,
-    types::{PyBytes, PyDict, PyList, PyString},
+    types::{PyBytes, PyDict, PyList},
 };
 use std::net::{IpAddr, SocketAddr};
 
@@ -166,14 +166,10 @@ impl ASGIScope {
         dict.set_item(pyo3::intern!(py, "method"), method)?;
         dict.set_item(pyo3::intern!(py, "root_path"), url_path_prefix)?;
         dict.set_item(pyo3::intern!(py, "path"), &path)?;
-        dict.set_item(
-            pyo3::intern!(py, "raw_path"),
-            PyString::new(py, &path).call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "ascii"),))?,
-        )?;
+        dict.set_item(pyo3::intern!(py, "raw_path"), PyBytes::new(py, path.as_bytes()))?;
         dict.set_item(
             pyo3::intern!(py, "query_string"),
-            PyString::new(py, query_string)
-                .call_method1(pyo3::intern!(py, "encode"), (pyo3::intern!(py, "latin-1"),))?,
+            PyBytes::new(py, query_string.as_bytes()),
         )?;
         dict.set_item(pyo3::intern!(py, "headers"), self.py_headers(py)?)?;
         dict.set_item(pyo3::intern!(py, "state"), state)?;
