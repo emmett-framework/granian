@@ -3,13 +3,9 @@ use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuil
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
-use super::{
-    callbacks::{
-        call_rtb_http, call_rtb_http_pyw, call_rtb_ws, call_rtb_ws_pyw, call_rtt_http, call_rtt_http_pyw, call_rtt_ws,
-        call_rtt_ws_pyw,
-    },
-    types::ASGIHTTPScope as HTTPScope,
-    types::ASGIWebsocketScope as WebsocketScope,
+use super::callbacks::{
+    call_rtb_http, call_rtb_http_pyw, call_rtb_ws, call_rtb_ws_pyw, call_rtt_http, call_rtt_http_pyw, call_rtt_ws,
+    call_rtt_ws_pyw,
 };
 use crate::{
     callbacks::CallbackWrapper,
@@ -18,23 +14,13 @@ use crate::{
     ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
 };
 
-macro_rules! build_scope {
-    ($cls:ty, $server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
-        <$cls>::new(
-            $req.version(),
-            $scheme,
-            $req.uri().clone(),
-            $req.method().as_ref(),
-            $server_addr,
-            $client_addr,
-            $req.headers(),
-        )
-    };
-}
+const SCHEME_HTTPS: &str = "https";
+const SCHEME_WS: &str = "ws";
+const SCHEME_WSS: &str = "wss";
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $callback:expr, $req:expr, $scope:expr) => {
-        match $handler($callback, $rt, $req, $scope).await {
+    ($handler:expr, $rt:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr) => {
+        match $handler($callback, $rt, $server_addr, $client_addr, $req, $scheme, $body).await {
             Ok(res) => res,
             _ => {
                 log::error!("ASGI protocol failure");
@@ -46,6 +32,7 @@ macro_rules! handle_http_response {
 
 macro_rules! handle_request {
     ($func_name:ident, $handler:expr) => {
+        #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
             callback: CallbackWrapper,
@@ -54,33 +41,58 @@ macro_rules! handle_request {
             req: HTTPRequest,
             scheme: &str,
         ) -> HTTPResponse {
-            let scope = build_scope!(HTTPScope, server_addr, client_addr, &req, scheme);
-            handle_http_response!($handler, rt, callback, req, scope)
+            let (parts, body) = req.into_parts();
+            handle_http_response!(
+                $handler,
+                rt,
+                callback,
+                server_addr,
+                client_addr,
+                parts,
+                scheme,
+                body
+            )
         }
     };
 }
 
 macro_rules! handle_request_with_ws {
     ($func_name:ident, $handler_req:expr, $handler_ws:expr) => {
+        #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
             callback: CallbackWrapper,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
-            req: HTTPRequest,
+            mut req: HTTPRequest,
             scheme: &str,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
-                let scope = build_scope!(WebsocketScope, server_addr, client_addr, &req, scheme);
-
-                return match ws_upgrade(req, None) {
+                return match ws_upgrade(&mut req, None) {
                     Ok((res, ws)) => {
                         let (restx, mut resrx) = mpsc::channel(1);
+                        let (parts, _) = req.into_parts();
+                        let scheme: std::sync::Arc<str> = match scheme {
+                            SCHEME_HTTPS => SCHEME_WSS,
+                            _ => SCHEME_WS,
+                        }
+                        .into();
 
                         tokio::task::spawn(async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(callback, rt, ws, UpgradeData::new(res, restx), scope).await {
+                            match $handler_ws(
+                                callback,
+                                rt,
+                                server_addr,
+                                client_addr,
+                                &scheme,
+                                ws,
+                                parts,
+                                UpgradeData::new(res, restx),
+                            )
+                            .await
+                            {
                                 Ok(mut detached) => {
                                     match detached.consumed {
                                         false => {
@@ -129,8 +141,17 @@ macro_rules! handle_request_with_ws {
                 };
             }
 
-            let scope = build_scope!(HTTPScope, server_addr, client_addr, &req, scheme);
-            handle_http_response!($handler_req, rt, callback, req, scope)
+            let (parts, body) = req.into_parts();
+            handle_http_response!(
+                $handler_req,
+                rt,
+                callback,
+                server_addr,
+                client_addr,
+                parts,
+                scheme,
+                body
+            )
         }
     };
 }

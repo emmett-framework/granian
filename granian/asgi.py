@@ -1,13 +1,7 @@
 import asyncio
 from functools import wraps
-from typing import Any, Dict
 
 from .log import logger
-
-
-class Scope:
-    def as_dict(self, root_path: str) -> Dict[str, Any]:
-        ...
 
 
 class LifespanProtocol:
@@ -111,7 +105,8 @@ def _callback_wrapper(callback, scope_opts, state):
     root_url_path = scope_opts.get('url_path_prefix') or ''
 
     @wraps(callback)
-    def wrapper(scope: Scope, proto):
-        return callback(scope.as_dict(root_url_path, state.copy()), proto.receive, proto.send)
+    def wrapper(scope, proto):
+        scope.update(root_path=root_url_path, state=state.copy())
+        return callback(scope, proto.receive, proto.send)
 
     return wrapper

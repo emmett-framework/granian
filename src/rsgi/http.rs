@@ -20,20 +20,20 @@ use crate::{
 macro_rules! build_scope {
     ($cls:ty, $server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
         <$cls>::new(
-            $req.version(),
+            $req.version,
             $scheme,
-            $req.uri().clone(),
-            $req.method().as_ref(),
+            $req.uri,
+            $req.method,
             $server_addr,
             $client_addr,
-            $req.headers(),
+            $req.headers,
         )
     };
 }
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $callback:expr, $req:expr, $scope:expr) => {
-        match $handler($callback, $rt, $req, $scope).await {
+    ($handler:expr, $rt:expr, $callback:expr, $body:expr, $scope:expr) => {
+        match $handler($callback, $rt, $body, $scope).await {
             Ok(PyResponse::Body(pyres)) => pyres.to_response(),
             Ok(PyResponse::File(pyres)) => pyres.to_response().await,
             _ => {
@@ -46,6 +46,7 @@ macro_rules! handle_http_response {
 
 macro_rules! handle_request {
     ($func_name:ident, $handler:expr) => {
+        #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
             callback: CallbackWrapper,
@@ -54,27 +55,29 @@ macro_rules! handle_request {
             req: HTTPRequest,
             scheme: &str,
         ) -> HTTPResponse {
-            let scope = build_scope!(HTTPScope, server_addr, client_addr, &req, scheme);
-            handle_http_response!($handler, rt, callback, req, scope)
+            let (parts, body) = req.into_parts();
+            let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
+            handle_http_response!($handler, rt, callback, body, scope)
         }
     };
 }
 
 macro_rules! handle_request_with_ws {
     ($func_name:ident, $handler_req:expr, $handler_ws:expr) => {
+        #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
             callback: CallbackWrapper,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
-            req: HTTPRequest,
+            mut req: HTTPRequest,
             scheme: &str,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
-                let scope = build_scope!(WebsocketScope, server_addr, client_addr, &req, scheme);
-
-                match ws_upgrade(req, None) {
+                match ws_upgrade(&mut req, None) {
                     Ok((res, ws)) => {
+                        let (parts, _) = req.into_parts();
+                        let scope = build_scope!(WebsocketScope, server_addr, client_addr, parts, scheme);
                         let (restx, mut resrx) = mpsc::channel(1);
 
                         tokio::task::spawn(async move {
@@ -128,8 +131,9 @@ macro_rules! handle_request_with_ws {
                 }
             }
 
-            let scope = build_scope!(HTTPScope, server_addr, client_addr, &req, scheme);
-            handle_http_response!($handler_req, rt, callback, req, scope)
+            let (parts, body) = req.into_parts();
+            let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
+            handle_http_response!($handler_req, rt, callback, body, scope)
         }
     };
 }

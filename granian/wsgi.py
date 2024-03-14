@@ -3,8 +3,6 @@ import sys
 from functools import wraps
 from typing import Any, List, Tuple
 
-from ._granian import WSGIScope as Scope
-
 
 class Response:
     __slots__ = ['status', 'headers']
@@ -36,9 +34,10 @@ def _callback_wrapper(callback, scope_opts):
     )
 
     @wraps(callback)
-    def wrapper(scope: Scope) -> Tuple[int, List[Tuple[str, str]], bytes]:
+    def wrapper(scope) -> Tuple[int, List[Tuple[str, str]], bytes]:
         resp = Response()
-        rv = callback(scope.to_environ(dict(basic_env)), resp)
+        scope.update(basic_env)
+        rv = callback(scope, resp)
 
         if isinstance(rv, list):
             resp_type = 0

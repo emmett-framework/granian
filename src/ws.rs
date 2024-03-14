@@ -98,11 +98,9 @@ pub(crate) fn is_upgrade_request<B>(request: &Request<B>) -> bool {
 }
 
 pub(crate) fn upgrade_intent<B>(
-    mut request: impl std::borrow::BorrowMut<Request<B>>,
+    request: &mut Request<B>,
     config: Option<WebSocketConfig>,
 ) -> Result<(Builder, HyperWebsocket), ProtocolError> {
-    let request = request.borrow_mut();
-
     let key = request
         .headers()
         .get("Sec-WebSocket-Key")
