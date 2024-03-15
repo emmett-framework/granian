@@ -1,6 +1,6 @@
 use futures::{Stream, StreamExt};
 use http_body_util::BodyExt;
-use hyper::body::Bytes;
+use hyper::body::{self, Bytes};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use std::sync::{Arc, Mutex};
@@ -25,12 +25,12 @@ enum WSGIBodyBuffering {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WSGIBody {
     rt: RuntimeRef,
-    inner: Arc<AsyncMutex<http_body_util::BodyStream<hyper::body::Incoming>>>,
+    inner: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
     buffer: Arc<Mutex<BytesMut>>,
 }
 
 impl WSGIBody {
-    pub fn new(rt: RuntimeRef, body: hyper::body::Incoming) -> Self {
+    pub fn new(rt: RuntimeRef, body: body::Incoming) -> Self {
         Self {
             rt,
             inner: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
@@ -39,7 +39,7 @@ impl WSGIBody {
     }
 
     async fn fill_buffer(
-        stream: Arc<AsyncMutex<http_body_util::BodyStream<hyper::body::Incoming>>>,
+        stream: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
         buffer: Arc<Mutex<BytesMut>>,
         buffering: WSGIBodyBuffering,
     ) {
