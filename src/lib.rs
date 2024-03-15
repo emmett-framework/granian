@@ -34,6 +34,5 @@ fn _granian(py: Python, module: &PyModule) -> PyResult<()> {
     rsgi::init_pymodule(py, module)?;
     tcp::init_pymodule(module)?;
     workers::init_pymodule(module)?;
-    wsgi::init_pymodule(py, module)?;
     Ok(())
 }

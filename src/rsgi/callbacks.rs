@@ -11,7 +11,6 @@ use crate::{
         callback_impl_loop_err, callback_impl_loop_pytask, callback_impl_loop_run, callback_impl_loop_step,
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
-    http::HTTPRequest,
     runtime::RuntimeRef,
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
@@ -260,14 +259,15 @@ impl CallbackWrappedRunnerWebsocket {
 
 macro_rules! call_impl_rtb_http {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: HTTPRequest,
+            body: hyper::body::Incoming,
             scope: HTTPScope,
         ) -> oneshot::Receiver<PyResponse> {
             let (tx, rx) = oneshot::channel();
-            let protocol = HTTPProtocol::new(rt, tx, req);
+            let protocol = HTTPProtocol::new(rt, tx, body);
 
             Python::with_gil(|py| {
                 let _ = $runner::new(py, cb, protocol, scope).run(py);
@@ -280,14 +280,15 @@ macro_rules! call_impl_rtb_http {
 
 macro_rules! call_impl_rtt_http {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: HTTPRequest,
+            body: hyper::body::Incoming,
             scope: HTTPScope,
         ) -> oneshot::Receiver<PyResponse> {
             let (tx, rx) = oneshot::channel();
-            let protocol = HTTPProtocol::new(rt, tx, req);
+            let protocol = HTTPProtocol::new(rt, tx, body);
 
             tokio::task::spawn_blocking(move || {
                 Python::with_gil(|py| {
@@ -302,6 +303,7 @@ macro_rules! call_impl_rtt_http {
 
 macro_rules! call_impl_rtb_ws {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
@@ -323,6 +325,7 @@ macro_rules! call_impl_rtb_ws {
 
 macro_rules! call_impl_rtt_ws {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,

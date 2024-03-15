@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use super::{
     callbacks::{call_rtb_http, call_rtt_http},
-    types::WSGIScope as Scope,
+    utils::request_parts,
 };
 use crate::{
     callbacks::CallbackWrapper,
@@ -30,6 +30,7 @@ fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPRespo
     res
 }
 
+#[inline]
 pub(crate) async fn handle_rtt(
     _rt: RuntimeRef,
     callback: CallbackWrapper,
@@ -38,7 +39,8 @@ pub(crate) async fn handle_rtt(
     req: HTTPRequest,
     scheme: &str,
 ) -> HTTPResponse {
-    if let Ok(res) = call_rtt_http(callback, Scope::new(scheme, server_addr, client_addr, req).await).await {
+    let (parts, body) = request_parts(req).await;
+    if let Ok(res) = call_rtt_http(callback, server_addr, client_addr, scheme, parts, body).await {
         match res {
             Ok((status, headers, body)) => {
                 return build_response(status, headers, body);
@@ -53,6 +55,7 @@ pub(crate) async fn handle_rtt(
     response_500()
 }
 
+#[inline]
 pub(crate) async fn handle_rtb(
     _rt: RuntimeRef,
     callback: CallbackWrapper,
@@ -61,7 +64,8 @@ pub(crate) async fn handle_rtb(
     req: HTTPRequest,
     scheme: &str,
 ) -> HTTPResponse {
-    match call_rtb_http(callback, Scope::new(scheme, server_addr, client_addr, req).await) {
+    let (parts, body) = request_parts(req).await;
+    match call_rtb_http(callback, server_addr, client_addr, scheme, parts, body) {
         Ok((status, headers, body)) => build_response(status, headers, body),
         Err(ref err) => {
             log_application_callable_exception(err);

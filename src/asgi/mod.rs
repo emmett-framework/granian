@@ -6,12 +6,11 @@ mod http;
 mod io;
 pub(crate) mod serve;
 mod types;
+mod utils;
 
 pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
     module.add_class::<io::ASGIHTTPProtocol>()?;
     module.add_class::<io::ASGIWebsocketProtocol>()?;
-    module.add_class::<types::ASGIHTTPScope>()?;
-    module.add_class::<types::ASGIWebsocketScope>()?;
 
     Ok(())
 }

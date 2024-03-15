@@ -5,12 +5,12 @@ use hyper::{
     body::Bytes,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
     http::uri::Authority,
-    Uri, Version,
+    Method, Uri, Version,
 };
 use percent_encoding::percent_decode_str;
 use pyo3::prelude::*;
 use pyo3::types::{PyIterator, PyList, PyString};
-use std::{borrow::Cow, net::SocketAddr};
+use std::{borrow::Cow, net::SocketAddr, sync::Arc};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
@@ -25,8 +25,8 @@ pub(crate) struct RSGIHeaders {
 }
 
 impl RSGIHeaders {
-    pub fn new(map: &HeaderMap) -> Self {
-        Self { inner: map.clone() }
+    pub fn new(map: HeaderMap) -> Self {
+        Self { inner: map }
     }
 }
 
@@ -92,10 +92,8 @@ macro_rules! rsgi_scope_cls {
         #[pyclass(frozen, module = "granian._granian")]
         pub(crate) struct $name {
             http_version: Version,
-            #[pyo3(get)]
-            scheme: String,
-            #[pyo3(get)]
-            method: String,
+            scheme: Arc<str>,
+            method: Method,
             uri: Uri,
             #[pyo3(get)]
             server: String,
@@ -110,15 +108,15 @@ macro_rules! rsgi_scope_cls {
                 http_version: Version,
                 scheme: &str,
                 uri: Uri,
-                method: &str,
+                method: Method,
                 server: SocketAddr,
                 client: SocketAddr,
-                headers: &HeaderMap,
+                headers: HeaderMap,
             ) -> Self {
                 Self {
                     http_version,
-                    scheme: scheme.to_string(),
-                    method: method.to_string(),
+                    scheme: scheme.into(),
+                    method,
                     uri,
                     server: server.to_string(),
                     client: client.to_string(),
@@ -148,6 +146,16 @@ macro_rules! rsgi_scope_cls {
                     Version::HTTP_3 => "3",
                     _ => "1",
                 }
+            }
+
+            #[getter(scheme)]
+            fn get_scheme(&self) -> &str {
+                &self.scheme
+            }
+
+            #[getter(method)]
+            fn get_method(&self) -> &str {
+                self.method.as_str()
             }
 
             #[getter(authority)]
@@ -239,6 +247,7 @@ impl PyResponseBody {
         }
     }
 
+    #[inline]
     pub fn to_response(self) -> hyper::Response<HTTPResponseBody> {
         let mut res = hyper::Response::new(self.body);
         response_head_from_py!(self.status, &self.headers, res);

@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     conversion::BytesToPy,
-    http::{response_404, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
+    http::{response_404, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
@@ -47,11 +47,11 @@ pub(crate) struct ASGIHTTPProtocol {
 }
 
 impl ASGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, request: HTTPRequest, tx: oneshot::Sender<HTTPResponse>) -> Self {
+    pub fn new(rt: RuntimeRef, body: hyper::body::Incoming, tx: oneshot::Sender<HTTPResponse>) -> Self {
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
-            request_body: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(request.into_body()))),
+            request_body: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
             response_started: false.into(),
             response_chunked: false.into(),
             response_intent: Mutex::new(None),
@@ -71,7 +71,7 @@ impl ASGIHTTPProtocol {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_body<'p>(
         &self,
         py: Python<'p>,

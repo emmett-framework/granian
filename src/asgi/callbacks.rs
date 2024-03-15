@@ -1,18 +1,20 @@
+use std::{net::SocketAddr, sync::Arc};
+
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use super::{
     io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
-    types::ASGIHTTPScope as HTTPScope,
-    types::ASGIWebsocketScope as WebsocketScope,
+    utils::{build_scope, scope_native_parts},
 };
 use crate::{
     callbacks::{
         callback_impl_loop_err, callback_impl_loop_pytask, callback_impl_loop_run, callback_impl_loop_step,
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
-    http::{response_500, HTTPRequest, HTTPResponse},
+    http::{response_500, HTTPResponse},
     runtime::RuntimeRef,
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
@@ -26,7 +28,7 @@ pub(crate) struct CallbackRunnerHTTP {
 }
 
 impl CallbackRunnerHTTP {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: HTTPScope) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: &PyDict) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
             proto: pyproto.clone_ref(py),
@@ -119,7 +121,7 @@ pub(crate) struct CallbackWrappedRunnerHTTP {
 }
 
 impl CallbackWrappedRunnerHTTP {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: HTTPScope) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: &PyDict) -> Self {
         Self {
             proto: Py::new(py, proto).unwrap(),
             context: cb.context,
@@ -154,7 +156,7 @@ pub(crate) struct CallbackRunnerWebsocket {
 }
 
 impl CallbackRunnerWebsocket {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: WebsocketScope) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: &PyDict) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
             proto: pyproto.clone(),
@@ -234,7 +236,7 @@ pub(crate) struct CallbackWrappedRunnerWebsocket {
 }
 
 impl CallbackWrappedRunnerWebsocket {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: WebsocketScope) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: &PyDict) -> Self {
         Self {
             proto: Py::new(py, proto).unwrap(),
             context: cb.context,
@@ -286,16 +288,42 @@ impl CallbackWrappedRunnerWebsocket {
 
 macro_rules! call_impl_rtb_http {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: HTTPRequest,
-            scope: HTTPScope,
+            server_addr: SocketAddr,
+            client_addr: SocketAddr,
+            scheme: &str,
+            req: hyper::http::request::Parts,
+            body: hyper::body::Incoming,
         ) -> oneshot::Receiver<HTTPResponse> {
             let (tx, rx) = oneshot::channel();
-            let protocol = HTTPProtocol::new(rt, req, tx);
+            let protocol = HTTPProtocol::new(rt, body, tx);
 
+            scope_native_parts!(
+                req,
+                server_addr,
+                client_addr,
+                path,
+                query_string,
+                version,
+                server,
+                client
+            );
             Python::with_gil(|py| {
+                let scope = build_scope(
+                    py,
+                    &req,
+                    "http",
+                    version,
+                    server,
+                    client,
+                    scheme,
+                    &path,
+                    query_string,
+                )
+                .unwrap();
                 let _ = $runner::new(py, cb, protocol, scope).run(py);
             });
 
@@ -306,17 +334,44 @@ macro_rules! call_impl_rtb_http {
 
 macro_rules! call_impl_rtt_http {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
-            req: HTTPRequest,
-            scope: HTTPScope,
+            server_addr: SocketAddr,
+            client_addr: SocketAddr,
+            scheme: &str,
+            req: hyper::http::request::Parts,
+            body: hyper::body::Incoming,
         ) -> oneshot::Receiver<HTTPResponse> {
             let (tx, rx) = oneshot::channel();
-            let protocol = HTTPProtocol::new(rt, req, tx);
+            let protocol = HTTPProtocol::new(rt, body, tx);
+            let scheme: Arc<str> = scheme.into();
 
             tokio::task::spawn_blocking(move || {
+                scope_native_parts!(
+                    req,
+                    server_addr,
+                    client_addr,
+                    path,
+                    query_string,
+                    version,
+                    server,
+                    client
+                );
                 Python::with_gil(|py| {
+                    let scope = build_scope(
+                        py,
+                        &req,
+                        "http",
+                        version,
+                        server,
+                        client,
+                        &scheme,
+                        &path,
+                        query_string,
+                    )
+                    .unwrap();
                     let _ = $runner::new(py, cb, protocol, scope).run(py);
                 });
             });
@@ -328,17 +383,43 @@ macro_rules! call_impl_rtt_http {
 
 macro_rules! call_impl_rtb_ws {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
+            server_addr: SocketAddr,
+            client_addr: SocketAddr,
+            scheme: &str,
             ws: HyperWebsocket,
+            req: hyper::http::request::Parts,
             upgrade: UpgradeData,
-            scope: WebsocketScope,
         ) -> oneshot::Receiver<WebsocketDetachedTransport> {
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 
+            scope_native_parts!(
+                req,
+                server_addr,
+                client_addr,
+                path,
+                query_string,
+                version,
+                server,
+                client
+            );
             Python::with_gil(|py| {
+                let scope = build_scope(
+                    py,
+                    &req,
+                    "websocket",
+                    version,
+                    server,
+                    client,
+                    scheme,
+                    &path,
+                    query_string,
+                )
+                .unwrap();
                 let _ = $runner::new(py, cb, protocol, scope).run(py);
             });
 
@@ -349,18 +430,45 @@ macro_rules! call_impl_rtb_ws {
 
 macro_rules! call_impl_rtt_ws {
     ($func_name:ident, $runner:ident) => {
+        #[inline]
         pub(crate) fn $func_name(
             cb: CallbackWrapper,
             rt: RuntimeRef,
+            server_addr: SocketAddr,
+            client_addr: SocketAddr,
+            scheme: &str,
             ws: HyperWebsocket,
+            req: hyper::http::request::Parts,
             upgrade: UpgradeData,
-            scope: WebsocketScope,
         ) -> oneshot::Receiver<WebsocketDetachedTransport> {
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+            let scheme: Arc<str> = scheme.into();
 
             tokio::task::spawn_blocking(move || {
+                scope_native_parts!(
+                    req,
+                    server_addr,
+                    client_addr,
+                    path,
+                    query_string,
+                    version,
+                    server,
+                    client
+                );
                 Python::with_gil(|py| {
+                    let scope = build_scope(
+                        py,
+                        &req,
+                        "websocket",
+                        version,
+                        server,
+                        client,
+                        &scheme,
+                        &path,
+                        query_string,
+                    )
+                    .unwrap();
                     let _ = $runner::new(py, cb, protocol, scope).run(py);
                 });
             });

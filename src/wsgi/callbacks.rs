@@ -4,24 +4,30 @@ use http_body_util::BodyExt;
 use hyper::body::Bytes;
 use pyo3::prelude::*;
 use std::borrow::Cow;
+use std::net::SocketAddr;
 use tokio::task::JoinHandle;
 
-use super::types::{WSGIResponseBodyIter, WSGIScope as Scope};
+use super::{types::WSGIResponseBodyIter, utils::build_environ};
 use crate::callbacks::CallbackWrapper;
 use crate::http::empty_body;
 
 const WSGI_BYTES_RESPONSE_BODY: i32 = 0;
 const WSGI_ITER_RESPONSE_BODY: i32 = 1;
 
-#[inline(always)]
+#[inline]
 fn run_callback(
     callback: PyObject,
-    scope: Scope,
+    parts: hyper::http::request::Parts,
+    server_addr: SocketAddr,
+    client_addr: SocketAddr,
+    scheme: &str,
+    body: Bytes,
 ) -> PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)> {
     Python::with_gil(|py| {
+        let environ = build_environ(py, parts, body, server_addr, client_addr, scheme)?;
         let (status, headers, body_type, pybody) =
             callback
-                .call1(py, (scope,))?
+                .call1(py, (environ,))?
                 .extract::<(i32, Vec<(String, String)>, i32, PyObject)>(py)?;
         let body = match body_type {
             WSGI_BYTES_RESPONSE_BODY => {
@@ -29,7 +35,6 @@ fn run_callback(
                 http_body_util::Full::new(Bytes::from(data))
                     .map_err(|e| match e {})
                     .boxed()
-                // Body::from(Bytes::from(data))
             }
             WSGI_ITER_RESPONSE_BODY => {
                 let body = http_body_util::StreamBody::new(
@@ -46,15 +51,24 @@ fn run_callback(
 #[inline(always)]
 pub(crate) fn call_rtb_http(
     cb: CallbackWrapper,
-    scope: Scope,
+    server_addr: SocketAddr,
+    client_addr: SocketAddr,
+    scheme: &str,
+    req: hyper::http::request::Parts,
+    body: Bytes,
 ) -> PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)> {
-    run_callback(cb.callback, scope)
+    run_callback(cb.callback, req, server_addr, client_addr, scheme, body)
 }
 
 #[inline(always)]
 pub(crate) fn call_rtt_http(
     cb: CallbackWrapper,
-    scope: Scope,
+    server_addr: SocketAddr,
+    client_addr: SocketAddr,
+    scheme: &str,
+    req: hyper::http::request::Parts,
+    body: Bytes,
 ) -> JoinHandle<PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)>> {
-    tokio::task::spawn_blocking(move || run_callback(cb.callback, scope))
+    let scheme: std::sync::Arc<str> = scheme.into();
+    tokio::task::spawn_blocking(move || run_callback(cb.callback, req, server_addr, client_addr, &scheme, body))
 }

@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     conversion::BytesToPy,
-    http::HTTPRequest,
+    // http::HTTPRequest,
     runtime::{future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSStream, WSTxStream},
 };
@@ -68,11 +68,11 @@ pub(crate) struct RSGIHTTPProtocol {
 }
 
 impl RSGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, tx: oneshot::Sender<PyResponse>, request: HTTPRequest) -> Self {
+    pub fn new(rt: RuntimeRef, tx: oneshot::Sender<PyResponse>, body: body::Incoming) -> Self {
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
-            body: Mutex::new(Some(request.into_body())),
+            body: Mutex::new(Some(body)),
             body_stream: Arc::new(AsyncMutex::new(None)),
         }
     }
