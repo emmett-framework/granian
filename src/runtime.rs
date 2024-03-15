@@ -12,7 +12,9 @@ use tokio::{
     task::{JoinHandle, LocalSet},
 };
 
-use super::callbacks::{PyEmptyAwaitable, PyFutureAwaitable, PyIterAwaitable};
+#[cfg(unix)]
+use super::callbacks::PyFutureAwaitable;
+use super::callbacks::{PyEmptyAwaitable, PyIterAwaitable};
 #[cfg(windows)]
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
