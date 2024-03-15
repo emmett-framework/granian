@@ -24,10 +24,8 @@ def _callback_wrapper(callback, scope_opts):
             'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
             'SERVER_SOFTWARE': 'Granian',
             'wsgi.errors': sys.stderr,
-            'wsgi.input_terminated': True,
-            'wsgi.input': None,
             'wsgi.multiprocess': False,
-            'wsgi.multithread': False,
+            'wsgi.multithread': True,
             'wsgi.run_once': False,
             'wsgi.version': (1, 0),
         }
