@@ -1,8 +1,13 @@
 import asyncio
 from functools import wraps
+from typing import Any, Dict
 
-from ._granian import ASGIScope as Scope
 from .log import logger
+
+
+class Scope:
+    def as_dict(self, root_path: str) -> Dict[str, Any]:
+        ...
 
 
 class LifespanProtocol:

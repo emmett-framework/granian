@@ -8,7 +8,8 @@ use super::{
         call_rtb_http, call_rtb_http_pyw, call_rtb_ws, call_rtb_ws_pyw, call_rtt_http, call_rtt_http_pyw, call_rtt_ws,
         call_rtt_ws_pyw,
     },
-    types::ASGIScope as Scope,
+    types::ASGIHTTPScope as HTTPScope,
+    types::ASGIWebsocketScope as WebsocketScope,
 };
 use crate::{
     callbacks::CallbackWrapper,
@@ -17,9 +18,9 @@ use crate::{
     ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
 };
 
-macro_rules! default_scope {
-    ($server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
-        Scope::new(
+macro_rules! build_scope {
+    ($cls:ty, $server_addr:expr, $client_addr:expr, $req:expr, $scheme:expr) => {
+        <$cls>::new(
             $req.version(),
             $scheme,
             $req.uri().clone(),
@@ -53,7 +54,7 @@ macro_rules! handle_request {
             req: HTTPRequest,
             scheme: &str,
         ) -> HTTPResponse {
-            let scope = default_scope!(server_addr, client_addr, &req, scheme);
+            let scope = build_scope!(HTTPScope, server_addr, client_addr, &req, scheme);
             handle_http_response!($handler, rt, callback, req, scope)
         }
     };
@@ -69,10 +70,8 @@ macro_rules! handle_request_with_ws {
             req: HTTPRequest,
             scheme: &str,
         ) -> HTTPResponse {
-            let mut scope = default_scope!(server_addr, client_addr, &req, scheme);
-
             if is_ws_upgrade(&req) {
-                scope.set_websocket();
+                let scope = build_scope!(WebsocketScope, server_addr, client_addr, &req, scheme);
 
                 return match ws_upgrade(req, None) {
                     Ok((res, ws)) => {
@@ -130,6 +129,7 @@ macro_rules! handle_request_with_ws {
                 };
             }
 
+            let scope = build_scope!(HTTPScope, server_addr, client_addr, &req, scheme);
             handle_http_response!($handler_req, rt, callback, req, scope)
         }
     };

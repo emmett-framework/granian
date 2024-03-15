@@ -10,7 +10,8 @@ mod types;
 pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
     module.add_class::<io::ASGIHTTPProtocol>()?;
     module.add_class::<io::ASGIWebsocketProtocol>()?;
-    module.add_class::<types::ASGIScope>()?;
+    module.add_class::<types::ASGIHTTPScope>()?;
+    module.add_class::<types::ASGIWebsocketScope>()?;
 
     Ok(())
 }

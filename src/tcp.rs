@@ -9,7 +9,7 @@ use std::os::windows::io::{AsRawSocket, FromRawSocket};
 
 use socket2::{Domain, Protocol, Socket, Type};
 
-#[pyclass(module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub struct ListenerHolder {
     socket: TcpListener,
 }

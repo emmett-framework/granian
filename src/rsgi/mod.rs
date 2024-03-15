@@ -15,7 +15,8 @@ pub(crate) fn init_pymodule(py: Python, module: &PyModule) -> PyResult<()> {
     module.add_class::<io::RSGIWebsocketProtocol>()?;
     module.add_class::<io::RSGIWebsocketTransport>()?;
     module.add_class::<types::RSGIHeaders>()?;
-    module.add_class::<types::RSGIScope>()?;
+    module.add_class::<types::RSGIHTTPScope>()?;
+    module.add_class::<types::RSGIWebsocketScope>()?;
 
     Ok(())
 }

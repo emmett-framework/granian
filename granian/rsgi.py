@@ -1,14 +1,30 @@
 from enum import Enum
-from typing import Union
+from typing import Optional, Union
 
 from ._granian import (
-    RSGIHeaders as Headers,  # noqa
+    RSGIHeaders as Headers,
     RSGIHTTPProtocol as HTTPProtocol,  # noqa
     RSGIProtocolClosed as ProtocolClosed,  # noqa
     RSGIProtocolError as ProtocolError,  # noqa
-    RSGIScope as Scope,  # noqa
     RSGIWebsocketProtocol as WebsocketProtocol,  # noqa
 )
+
+
+class Scope:
+    proto: str
+    http_version: str
+    rsgi_version: str
+    server: str
+    client: str
+    scheme: str
+    method: str
+    path: str
+    query_string: str
+    authority: Optional[str]
+
+    @property
+    def headers(self) -> Headers:
+        ...
 
 
 class WebsocketMessageType(int, Enum):
