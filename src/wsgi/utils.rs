@@ -1,9 +1,7 @@
-use http_body_util::BodyExt;
 use hyper::{
-    body::Bytes,
     header::{CONTENT_LENGTH, CONTENT_TYPE, HOST},
     http::uri::Authority,
-    Method, Version,
+    Version,
 };
 use percent_encoding::percent_decode_str;
 use pyo3::types::PyDict;
@@ -11,26 +9,14 @@ use pyo3::{prelude::*, types::IntoPyDict};
 use std::net::SocketAddr;
 
 use super::types::WSGIBody;
-use crate::http::HTTPRequest;
-
-#[inline]
-pub(crate) async fn request_parts(request: HTTPRequest) -> (hyper::http::request::Parts, Bytes) {
-    let (parts, body) = request.into_parts();
-    let body = match parts.method {
-        Method::HEAD | Method::GET | Method::OPTIONS => Bytes::new(),
-        _ => body
-            .collect()
-            .await
-            .map_or(Bytes::new(), http_body_util::Collected::to_bytes),
-    };
-    (parts, body)
-}
+use crate::runtime::RuntimeRef;
 
 #[inline]
 pub(crate) fn build_environ<'p>(
     py: Python<'p>,
+    rt: RuntimeRef,
     mut req: hyper::http::request::Parts,
-    body: Bytes,
+    body: hyper::body::Incoming,
     server: SocketAddr,
     client: SocketAddr,
     scheme: &str,
@@ -71,7 +57,7 @@ pub(crate) fn build_environ<'p>(
                 content_type,
                 content_len,
                 headers,
-                WSGIBody::new(body),
+                WSGIBody::new(rt, body),
             )
         });
 

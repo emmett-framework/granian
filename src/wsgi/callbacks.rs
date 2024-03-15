@@ -10,21 +10,23 @@ use tokio::task::JoinHandle;
 use super::{types::WSGIResponseBodyIter, utils::build_environ};
 use crate::callbacks::CallbackWrapper;
 use crate::http::empty_body;
+use crate::runtime::RuntimeRef;
 
 const WSGI_BYTES_RESPONSE_BODY: i32 = 0;
 const WSGI_ITER_RESPONSE_BODY: i32 = 1;
 
 #[inline]
 fn run_callback(
+    rt: RuntimeRef,
     callback: PyObject,
     parts: hyper::http::request::Parts,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     scheme: &str,
-    body: Bytes,
+    body: hyper::body::Incoming,
 ) -> PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)> {
     Python::with_gil(|py| {
-        let environ = build_environ(py, parts, body, server_addr, client_addr, scheme)?;
+        let environ = build_environ(py, rt, parts, body, server_addr, client_addr, scheme)?;
         let (status, headers, body_type, pybody) =
             callback
                 .call1(py, (environ,))?
@@ -49,26 +51,15 @@ fn run_callback(
 }
 
 #[inline(always)]
-pub(crate) fn call_rtb_http(
+pub(crate) fn call_http(
+    rt: RuntimeRef,
     cb: CallbackWrapper,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     scheme: &str,
     req: hyper::http::request::Parts,
-    body: Bytes,
-) -> PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)> {
-    run_callback(cb.callback, req, server_addr, client_addr, scheme, body)
-}
-
-#[inline(always)]
-pub(crate) fn call_rtt_http(
-    cb: CallbackWrapper,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
-    scheme: &str,
-    req: hyper::http::request::Parts,
-    body: Bytes,
+    body: hyper::body::Incoming,
 ) -> JoinHandle<PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)>> {
     let scheme: std::sync::Arc<str> = scheme.into();
-    tokio::task::spawn_blocking(move || run_callback(cb.callback, req, server_addr, client_addr, &scheme, body))
+    tokio::task::spawn_blocking(move || run_callback(rt, cb.callback, req, server_addr, client_addr, &scheme, body))
 }

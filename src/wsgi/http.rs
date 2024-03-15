@@ -4,10 +4,7 @@ use hyper::{
 };
 use std::net::SocketAddr;
 
-use super::{
-    callbacks::{call_rtb_http, call_rtt_http},
-    utils::request_parts,
-};
+use super::callbacks::call_http;
 use crate::{
     callbacks::CallbackWrapper,
     http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
@@ -31,16 +28,16 @@ fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPRespo
 }
 
 #[inline]
-pub(crate) async fn handle_rtt(
-    _rt: RuntimeRef,
+pub(crate) async fn handle(
+    rt: RuntimeRef,
     callback: CallbackWrapper,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: HTTPRequest,
     scheme: &str,
 ) -> HTTPResponse {
-    let (parts, body) = request_parts(req).await;
-    if let Ok(res) = call_rtt_http(callback, server_addr, client_addr, scheme, parts, body).await {
+    let (parts, body) = req.into_parts();
+    if let Ok(res) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
         match res {
             Ok((status, headers, body)) => {
                 return build_response(status, headers, body);
@@ -53,23 +50,4 @@ pub(crate) async fn handle_rtt(
         log::error!("WSGI protocol failure");
     }
     response_500()
-}
-
-#[inline]
-pub(crate) async fn handle_rtb(
-    _rt: RuntimeRef,
-    callback: CallbackWrapper,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
-    req: HTTPRequest,
-    scheme: &str,
-) -> HTTPResponse {
-    let (parts, body) = request_parts(req).await;
-    match call_rtb_http(callback, server_addr, client_addr, scheme, parts, body) {
-        Ok((status, headers, body)) => build_response(status, headers, body),
-        Err(ref err) => {
-            log_application_callable_exception(err);
-            response_500()
-        }
-    }
 }

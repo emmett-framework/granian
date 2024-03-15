@@ -1,28 +1,92 @@
-use futures::Stream;
+use futures::{Stream, StreamExt};
+use http_body_util::BodyExt;
 use hyper::body::Bytes;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
+use std::sync::{Arc, Mutex};
 use std::{
     borrow::Cow,
-    cell::RefCell,
     convert::Infallible,
     task::{Context, Poll},
 };
+use tokio::sync::Mutex as AsyncMutex;
+use tokio_util::bytes::BytesMut;
 
 use crate::conversion::BytesToPy;
+use crate::runtime::RuntimeRef;
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
+enum WSGIBodyBuffering {
+    Line,
+    Size(usize),
+}
+
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WSGIBody {
-    inner: RefCell<Bytes>,
+    rt: RuntimeRef,
+    inner: Arc<AsyncMutex<http_body_util::BodyStream<hyper::body::Incoming>>>,
+    buffer: Arc<Mutex<BytesMut>>,
 }
 
 impl WSGIBody {
-    pub fn new(body: Bytes) -> Self {
+    pub fn new(rt: RuntimeRef, body: hyper::body::Incoming) -> Self {
         Self {
-            inner: RefCell::new(body),
+            rt,
+            inner: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
+            buffer: Arc::new(Mutex::new(BytesMut::new())),
         }
+    }
+
+    async fn fill_buffer(
+        stream: Arc<AsyncMutex<http_body_util::BodyStream<hyper::body::Incoming>>>,
+        buffer: Arc<Mutex<BytesMut>>,
+        buffering: WSGIBodyBuffering,
+    ) {
+        let mut stream = stream.lock().await;
+        loop {
+            if let Some(chunk) = stream.next().await {
+                let data = chunk
+                    .map(|buf| buf.into_data().unwrap_or_default())
+                    .unwrap_or(Bytes::new());
+                let mut buffer = buffer.lock().unwrap();
+                buffer.extend_from_slice(data.as_ref());
+                match buffering {
+                    WSGIBodyBuffering::Line => {
+                        if !buffer.contains(&LINE_SPLIT) {
+                            continue;
+                        }
+                    }
+                    WSGIBodyBuffering::Size(size) => {
+                        if buffer.len() < size {
+                            continue;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    #[allow(clippy::map_unwrap_or)]
+    fn _readline(&self, py: Python) -> Bytes {
+        let inner = self.inner.clone();
+        let buffer = self.buffer.clone();
+        py.allow_threads(|| {
+            self.rt.inner.block_on(async move {
+                WSGIBody::fill_buffer(inner, buffer, WSGIBodyBuffering::Line).await;
+            });
+        });
+
+        let mut buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .position(|&c| c == LINE_SPLIT)
+            .map(|next_split| buffer.split_to(next_split).into())
+            .unwrap_or_else(|| {
+                let len = buffer.len();
+                buffer.split_to(len).into()
+            })
     }
 }
 
@@ -32,54 +96,67 @@ impl WSGIBody {
         pyself
     }
 
-    fn __next__(&self) -> Option<BytesToPy> {
-        let mut inner = self.inner.borrow_mut();
-        inner
-            .iter()
-            .position(|&c| c == LINE_SPLIT)
-            .map(|next_split| BytesToPy(inner.split_to(next_split)))
+    fn __next__(&self, py: Python) -> Option<BytesToPy> {
+        let line = self._readline(py);
+        match line.len() {
+            0 => None,
+            _ => Some(BytesToPy(line)),
+        }
     }
 
     #[pyo3(signature = (size=None))]
-    fn read(&self, size: Option<usize>) -> BytesToPy {
+    fn read(&self, py: Python, size: Option<usize>) -> BytesToPy {
         match size {
             None => {
-                let mut inner = self.inner.borrow_mut();
-                let len = inner.len();
-                BytesToPy(inner.split_to(len))
+                let inner = self.inner.clone();
+                let data = py.allow_threads(|| {
+                    self.rt.inner.block_on(async move {
+                        let mut inner = inner.lock().await;
+                        BodyExt::collect(&mut *inner)
+                            .await
+                            .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
+                    })
+                });
+                BytesToPy(data)
             }
             Some(size) => match size {
                 0 => BytesToPy(Bytes::new()),
                 size => {
-                    let mut inner = self.inner.borrow_mut();
-                    let limit = inner.len();
+                    let inner = self.inner.clone();
+                    let buffer = self.buffer.clone();
+                    py.allow_threads(|| {
+                        self.rt.inner.block_on(async move {
+                            WSGIBody::fill_buffer(inner, buffer, WSGIBodyBuffering::Size(size)).await;
+                        });
+                    });
+                    let mut buffer = self.buffer.lock().unwrap();
+                    let limit = buffer.len();
                     let rsize = if size > limit { limit } else { size };
-                    BytesToPy(inner.split_to(rsize))
+                    BytesToPy(buffer.split_to(rsize).into())
                 }
             },
         }
     }
 
-    fn readline(&self) -> BytesToPy {
-        let mut inner = self.inner.borrow_mut();
-        match inner.iter().position(|&c| c == LINE_SPLIT) {
-            Some(next_split) => {
-                let bytes = inner.split_to(next_split);
-                *inner = inner.slice(1..);
-                BytesToPy(bytes)
-            }
-            _ => BytesToPy(Bytes::new()),
-        }
+    fn readline(&self, py: Python) -> BytesToPy {
+        BytesToPy(self._readline(py))
     }
 
     #[pyo3(signature = (_hint=None))]
     fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> &'p PyList {
-        let mut inner = self.inner.borrow_mut();
-        let lines: Vec<&PyBytes> = inner
+        let inner = self.inner.clone();
+        let data = py.allow_threads(|| {
+            self.rt.inner.block_on(async move {
+                let mut inner = inner.lock().await;
+                BodyExt::collect(&mut *inner)
+                    .await
+                    .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
+            })
+        });
+        let lines: Vec<&PyBytes> = data
             .split(|&c| c == LINE_SPLIT)
             .map(|item| PyBytes::new(py, item))
             .collect();
-        inner.clear();
         PyList::new(py, lines)
     }
 }
