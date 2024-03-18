@@ -16,7 +16,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::http::{empty_body, response_404, HTTPResponseBody, HV_SERVER};
 
-const RSGI_PROTO_VERSION: &str = "1.3";
+const RSGI_PROTO_VERSION: &str = "1.4";
 
 #[pyclass(frozen, module = "granian._granian")]
 #[derive(Clone)]
@@ -84,6 +84,18 @@ impl RSGIHeaders {
             },
             _ => default,
         }
+    }
+
+    #[pyo3(signature = (key))]
+    fn get_all<'p>(&self, py: Python<'p>, key: &'p str) -> &'p PyList {
+        PyList::new(
+            py,
+            self.inner
+                .get_all(key)
+                .iter()
+                .map(|v| PyString::new(py, v.to_str().unwrap()))
+                .collect::<Vec<&PyString>>(),
+        )
     }
 }
 
