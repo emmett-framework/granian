@@ -5,7 +5,7 @@ use hyper::{
 use pyo3::{
     prelude::*,
     sync::GILOnceCell,
-    types::{PyBytes, PyDict, PyList},
+    types::{PyBytes, PyDict, PyList, PyString},
 };
 
 static ASGI_VERSION: GILOnceCell<PyObject> = GILOnceCell::new();
@@ -91,6 +91,56 @@ pub(super) fn build_scope<'p>(
     }
     scope.set_item(pyo3::intern!(py, "headers"), headers)?;
 
+    Ok(scope)
+}
+
+#[inline]
+pub(super) fn build_scope_http<'p>(
+    py: Python<'p>,
+    req: &'p request::Parts,
+    version: &'p str,
+    server: (String, String),
+    client: (String, String),
+    scheme: &'p str,
+    path: &'p str,
+    query_string: &'p str,
+) -> PyResult<&'p PyDict> {
+    build_scope(py, req, "http", version, server, client, scheme, path, query_string)
+}
+
+#[inline]
+pub(super) fn build_scope_ws<'p>(
+    py: Python<'p>,
+    req: &'p request::Parts,
+    version: &'p str,
+    server: (String, String),
+    client: (String, String),
+    scheme: &'p str,
+    path: &'p str,
+    query_string: &'p str,
+) -> PyResult<&'p PyDict> {
+    let scope = build_scope(
+        py,
+        req,
+        "websocket",
+        version,
+        server,
+        client,
+        scheme,
+        path,
+        query_string,
+    )?;
+    scope.set_item(
+        pyo3::intern!(py, "subprotocols"),
+        PyList::new(
+            py,
+            req.headers
+                .get_all("Sec-WebSocket-Protocol")
+                .iter()
+                .map(|v| PyString::new(py, v.to_str().unwrap()))
+                .collect::<Vec<&PyString>>(),
+        ),
+    )?;
     Ok(scope)
 }
 

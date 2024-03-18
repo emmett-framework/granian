@@ -1,6 +1,6 @@
 use http_body_util::BodyExt;
 use hyper::{
-    header::{CONNECTION, UPGRADE},
+    header::{HeaderName, HeaderValue, CONNECTION, UPGRADE},
     http::response::Builder,
     Request, Response, StatusCode,
 };
@@ -60,34 +60,33 @@ impl Future for HyperWebsocket {
 }
 
 pub(crate) struct UpgradeData {
-    response_builder: Option<Builder>,
-    response_tx: Option<mpsc::Sender<HTTPResponse>>,
-    pub consumed: bool,
+    response: Option<(Builder, mpsc::Sender<HTTPResponse>)>,
 }
 
 impl UpgradeData {
     pub fn new(response_builder: Builder, response_tx: mpsc::Sender<HTTPResponse>) -> Self {
         Self {
-            response_builder: Some(response_builder),
-            response_tx: Some(response_tx),
-            consumed: false,
+            response: Some((response_builder, response_tx)),
         }
     }
 
-    pub async fn send(&mut self) -> Result<(), mpsc::error::SendError<HTTPResponse>> {
-        let res = self
-            .response_builder
-            .take()
-            .unwrap()
-            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
-            .unwrap();
-        match self.response_tx.take().unwrap().send(res).await {
-            Ok(()) => {
-                self.consumed = true;
-                Ok(())
+    pub async fn send(&mut self, headers: Option<Vec<(String, String)>>) -> anyhow::Result<()> {
+        if let Some((mut builder, tx)) = self.response.take() {
+            if let Some(headers) = headers {
+                let rheaders = builder.headers_mut().unwrap();
+                for (key, val) in &headers {
+                    rheaders.append(
+                        HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                        HeaderValue::from_str(val).unwrap(),
+                    );
+                }
             }
-            err => err,
+            let res = builder
+                .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
+                .unwrap();
+            return Ok(tx.send(res).await?);
         }
+        Err(anyhow::Error::msg("Already consumed"))
     }
 }
 

@@ -32,6 +32,7 @@ use crate::{
 
 const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
 const EMPTY_STRING: String = String::new();
+static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
@@ -140,18 +141,17 @@ impl ASGIHTTPProtocol {
     }
 
     fn send<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        match adapt_message_type(data) {
-            Ok(ASGIMessageType::HTTPStart) => match self.response_started.load(atomic::Ordering::Relaxed) {
+        match adapt_message_type(py, data) {
+            Ok(ASGIMessageType::HTTPStart(intent)) => match self.response_started.load(atomic::Ordering::Relaxed) {
                 false => {
                     let mut response_intent = self.response_intent.lock().unwrap();
-                    *response_intent = Some((adapt_status_code(py, data)?, adapt_headers(py, data)));
+                    *response_intent = Some(intent);
                     self.response_started.store(true, atomic::Ordering::Relaxed);
                     empty_future_into_py(py)
                 }
                 true => error_flow!(),
             },
-            Ok(ASGIMessageType::HTTPBody) => {
-                let (body, more) = adapt_body(py, data);
+            Ok(ASGIMessageType::HTTPBody((body, more))) => {
                 match (
                     self.response_started.load(atomic::Ordering::Relaxed),
                     more,
@@ -200,12 +200,11 @@ impl ASGIHTTPProtocol {
                     _ => error_flow!(),
                 }
             }
-            Ok(ASGIMessageType::HTTPFile) => match (
+            Ok(ASGIMessageType::HTTPFile(file_path)) => match (
                 self.response_started.load(atomic::Ordering::Relaxed),
-                adapt_file(py, data),
                 self.tx.lock().unwrap().take(),
             ) {
-                (true, Ok(file_path), Some(tx)) => {
+                (true, Some(tx)) => {
                     let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                     future_into_py_iter(self.rt.clone(), py, async move {
                         let res = match File::open(&file_path).await {
@@ -288,7 +287,7 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn accept<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn accept<'p>(&self, py: Python<'p>, subproto: Option<String>) -> PyResult<&'p PyAny> {
         let upgrade = self.upgrade.lock().unwrap().take();
         let websocket = self.websocket.lock().unwrap().take();
         let accepted = self.accepted.clone();
@@ -297,7 +296,11 @@ impl ASGIWebsocketProtocol {
 
         future_into_py_iter(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
-                if (upgrade.send().await).is_ok() {
+                let upgrade_headers = match subproto {
+                    Some(v) => vec![(WS_SUBPROTO_HNAME.to_string(), v)],
+                    _ => vec![],
+                };
+                if (upgrade.send(Some(upgrade_headers)).await).is_ok() {
                     if let Some(websocket) = websocket {
                         if let Ok(stream) = websocket.await {
                             let mut wtx = tx.lock().await;
@@ -316,29 +319,23 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn send_message<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send_message<'p>(&self, py: Python<'p>, data: Message) -> PyResult<&'p PyAny> {
         let transport = self.ws_tx.clone();
-        let message = ws_message_into_rs(py, data);
         let closed = self.closed.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            match message {
-                Ok(message) => {
-                    if let Some(ws) = &mut *(transport.lock().await) {
-                        match ws.send(message).await {
-                            Ok(()) => return Ok(()),
-                            _ => {
-                                if closed.load(atomic::Ordering::Relaxed) {
-                                    log::info!("Attempted to write to a closed websocket");
-                                    return Ok(());
-                                }
-                            }
-                        };
-                    };
-                    error_flow!()
-                }
-                Err(err) => Err(err),
-            }
+            if let Some(ws) = &mut *(transport.lock().await) {
+                match ws.send(data).await {
+                    Ok(()) => return Ok(()),
+                    _ => {
+                        if closed.load(atomic::Ordering::Relaxed) {
+                            log::info!("Attempted to write to a closed websocket");
+                            return Ok(());
+                        }
+                    }
+                };
+            };
+            error_flow!()
         })
     }
 
@@ -416,27 +413,36 @@ impl ASGIWebsocketProtocol {
     }
 
     fn send<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
-        match adapt_message_type(data) {
-            Ok(ASGIMessageType::WSAccept) => self.accept(py),
+        match adapt_message_type(py, data) {
+            Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
             Ok(ASGIMessageType::WSClose) => self.close(py),
-            Ok(ASGIMessageType::WSMessage) => self.send_message(py, data),
+            Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
             _ => future_into_py_iter::<_, _, PyErr>(self.rt.clone(), py, async { error_message!() }),
         }
     }
 }
 
 #[inline(never)]
-fn adapt_message_type(message: &PyDict) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
-    match message.get_item("type") {
+fn adapt_message_type(py: Python, message: &PyDict) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
+    match message.get_item(pyo3::intern!(py, "type")) {
         Ok(Some(item)) => {
             let message_type: &str = item.extract()?;
             match message_type {
-                "http.response.start" => Ok(ASGIMessageType::HTTPStart),
-                "http.response.body" => Ok(ASGIMessageType::HTTPBody),
-                "http.response.pathsend" => Ok(ASGIMessageType::HTTPFile),
-                "websocket.accept" => Ok(ASGIMessageType::WSAccept),
+                "http.response.start" => Ok(ASGIMessageType::HTTPStart((
+                    adapt_status_code(py, message)?,
+                    adapt_headers(py, message),
+                ))),
+                "http.response.body" => Ok(ASGIMessageType::HTTPBody(adapt_body(py, message))),
+                "http.response.pathsend" => Ok(ASGIMessageType::HTTPFile(adapt_file(py, message)?)),
+                "websocket.accept" => {
+                    let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {
+                        Ok(Some(item)) => item.extract::<String>().map(Some)?,
+                        _ => None,
+                    };
+                    Ok(ASGIMessageType::WSAccept(subproto))
+                }
                 "websocket.close" => Ok(ASGIMessageType::WSClose),
-                "websocket.send" => Ok(ASGIMessageType::WSMessage),
+                "websocket.send" => Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?)),
                 _ => error_message!(),
             }
         }
@@ -505,10 +511,10 @@ fn ws_message_into_rs(py: Python, message: &PyDict) -> PyResult<Message> {
         (Some(itemb), Some(itemt)) => match (itemb.extract().unwrap_or(None), itemt.extract().unwrap_or(None)) {
             (Some(msgb), None) => Ok(Message::Binary(msgb)),
             (None, Some(msgt)) => Ok(Message::Text(msgt)),
-            _ => error_flow!(),
+            _ => error_message!(),
         },
         _ => {
-            error_flow!()
+            error_message!()
         }
     }
 }

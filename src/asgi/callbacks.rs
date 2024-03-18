@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 
 use super::{
     io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
-    utils::{build_scope, scope_native_parts},
+    utils::{build_scope_http, build_scope_ws, scope_native_parts},
 };
 use crate::{
     callbacks::{
@@ -312,18 +312,7 @@ macro_rules! call_impl_rtb_http {
                 client
             );
             Python::with_gil(|py| {
-                let scope = build_scope(
-                    py,
-                    &req,
-                    "http",
-                    version,
-                    server,
-                    client,
-                    scheme,
-                    &path,
-                    query_string,
-                )
-                .unwrap();
+                let scope = build_scope_http(py, &req, version, server, client, scheme, &path, query_string).unwrap();
                 let _ = $runner::new(py, cb, protocol, scope).run(py);
             });
 
@@ -360,18 +349,8 @@ macro_rules! call_impl_rtt_http {
                     client
                 );
                 Python::with_gil(|py| {
-                    let scope = build_scope(
-                        py,
-                        &req,
-                        "http",
-                        version,
-                        server,
-                        client,
-                        &scheme,
-                        &path,
-                        query_string,
-                    )
-                    .unwrap();
+                    let scope =
+                        build_scope_http(py, &req, version, server, client, &scheme, &path, query_string).unwrap();
                     let _ = $runner::new(py, cb, protocol, scope).run(py);
                 });
             });
@@ -408,18 +387,7 @@ macro_rules! call_impl_rtb_ws {
                 client
             );
             Python::with_gil(|py| {
-                let scope = build_scope(
-                    py,
-                    &req,
-                    "websocket",
-                    version,
-                    server,
-                    client,
-                    scheme,
-                    &path,
-                    query_string,
-                )
-                .unwrap();
+                let scope = build_scope_ws(py, &req, version, server, client, scheme, &path, query_string).unwrap();
                 let _ = $runner::new(py, cb, protocol, scope).run(py);
             });
 
@@ -457,18 +425,8 @@ macro_rules! call_impl_rtt_ws {
                     client
                 );
                 Python::with_gil(|py| {
-                    let scope = build_scope(
-                        py,
-                        &req,
-                        "websocket",
-                        version,
-                        server,
-                        client,
-                        &scheme,
-                        &path,
-                        query_string,
-                    )
-                    .unwrap();
+                    let scope =
+                        build_scope_ws(py, &req, version, server, client, &scheme, &path, query_string).unwrap();
                     let _ = $runner::new(py, cb, protocol, scope).run(py);
                 });
             });
