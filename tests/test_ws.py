@@ -1,13 +1,11 @@
 import json
 import os
-import sys
 
 import pytest
 import websockets
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(sys.platform == 'win32', reason='skip on windows')
 @pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_messages(server, threading_mode):
@@ -50,6 +48,7 @@ async def test_asgi_scope(asgi_server, threading_mode):
     assert data['path'] == '/ws_info'
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
+    assert not data['subprotocols']
 
 
 @pytest.mark.asyncio
