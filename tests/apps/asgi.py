@@ -74,6 +74,7 @@ async def ws_info(scope, receive, send):
                     'path': scope['path'],
                     'query_string': scope['query_string'].decode('latin-1'),
                     'headers': {k.decode('utf8'): v.decode('utf8') for k, v in scope['headers']},
+                    'subprotocols': scope['subprotocols'],
                 }
             ),
         }

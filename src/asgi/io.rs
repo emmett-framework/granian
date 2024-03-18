@@ -513,9 +513,7 @@ fn ws_message_into_rs(py: Python, message: &PyDict) -> PyResult<Message> {
             (None, Some(msgt)) => Ok(Message::Text(msgt)),
             _ => error_message!(),
         },
-        _ => {
-            error_message!()
-        }
+        _ => error_message!(),
     }
 }
 
