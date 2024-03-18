@@ -17,7 +17,7 @@ async def test_scope(rsgi_server, threading_mode):
     data = res.json()
     assert data['proto'] == 'http'
     assert data['http_version'] == '1.1'
-    assert data['rsgi_version'] == '1.3'
+    assert data['rsgi_version'] == '1.4'
     assert data['scheme'] == 'http'
     assert data['method'] == 'GET'
     assert data['path'] == '/info'

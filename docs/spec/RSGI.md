@@ -1,6 +1,6 @@
 # RSGI Specification
 
-**Version:** 1.3
+**Version:** 1.4
 
 ## Abstract
 
@@ -92,7 +92,7 @@ And here are descriptions for the upper attributes:
 - `method`: the HTTP method name, uppercased
 - `path`: HTTP request target excluding any query string
 - `query_string`: URL portion after the `?`
-- `headers`: a mapping-like object, where keys is the header name, and value is the header value; header names are always lower-case
+- `headers`: a mapping-like object, where key is the header name, and value is the header value; header names are always lower-case; a `get_all` method returns a list of all the header values for the given key
 - `authority`: an optional string containing the relevant pseudo-header (empty on HTTP versions prior to 2)
 
 #### HTTP protocol interface
@@ -164,7 +164,7 @@ And here are descriptions for the upper attributes:
 - `method`: the HTTP method name, uppercased
 - `path`: HTTP request target excluding any query string
 - `query_string`: URL portion after the `?`
-- `headers`: a mapping-like object, where keys is the header name, and value is the header value; header names are always lower-case
+- `headers`: a mapping-like object, where key is the header name, and value is the header value; header names are always lower-case; a `get_all` method returns a list of all the header values for the given key
 - `authority`: an optional string containing the relevant pseudo-header (empty on HTTP versions prior to 2)
 
 #### Websocket protocol interface
