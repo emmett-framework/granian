@@ -82,7 +82,8 @@ Options:
                                   GRANIAN_HOST; default: 127.0.0.1]
   --port INTEGER                  Port to bind to.  [env var: GRANIAN_PORT;
                                   default: 8000]
-  --interface [asgi|rsgi|wsgi]    Application interface type  [env var:
+  --interface [asgi|asginl|rsgi|wsgi]
+                                  Application interface type  [env var:
                                   GRANIAN_INTERFACE; default: rsgi]
   --http [auto|1|2]               HTTP version  [env var: GRANIAN_HTTP;
                                   default: auto]

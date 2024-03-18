@@ -167,6 +167,49 @@ class Granian:
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
+
+        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+
+        wcallback = _asgi_call_wrap(callback, scope_opts, {})
+        if not loop_opt:
+            wcallback = future_watcher_wrapper(wcallback)
+
+        worker = ASGIWorker(
+            worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, websockets, loop_opt, *ssl_ctx
+        )
+        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
+
+    @staticmethod
+    def _spawn_asgi_lifespan_worker(
+        worker_id,
+        process_name,
+        callback_loader,
+        socket,
+        loop_impl,
+        threads,
+        pthreads,
+        threading_mode,
+        http_mode,
+        http1_settings,
+        http2_settings,
+        websockets,
+        loop_opt,
+        log_enabled,
+        log_level,
+        log_config,
+        ssl_ctx,
+        scope_opts,
+    ):
+        from granian._loops import loops, set_loop_signals
+
+        if process_name:
+            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
+        configure_logging(log_level, log_config, log_enabled)
+
+        loop = loops.get(loop_impl)
+        sfd = socket.fileno()
+        callback = callback_loader()
         lifespan_handler = LifespanProtocol(callback)
 
         loop.run_until_complete(lifespan_handler.startup())
@@ -436,7 +479,8 @@ class Granian:
         wrap_loader: bool = True,
     ):
         default_spawners = {
-            Interfaces.ASGI: self._spawn_asgi_worker,
+            Interfaces.ASGI: self._spawn_asgi_lifespan_worker,
+            Interfaces.ASGINL: self._spawn_asgi_worker,
             Interfaces.RSGI: self._spawn_rsgi_worker,
             Interfaces.WSGI: self._spawn_wsgi_worker,
         }

@@ -3,6 +3,7 @@ from enum import Enum
 
 class Interfaces(str, Enum):
     ASGI = 'asgi'
+    ASGINL = 'asginl'
     RSGI = 'rsgi'
     WSGI = 'wsgi'
 
