@@ -82,14 +82,22 @@ Python version: {{ =data.pyver }}
 
 {{ for interface in ["asgi", "rsgi", "wsgi"]: }}
 ### {{ =interface.upper() }}
+{{ max_rps = {"runtime": 0, "workers": 0} }}
+{{ for runs in data.results["concurrencies"][interface].values(): }}
+{{ for crun in runs["res"].values(): }}
+{{ max_rps[runs["m"]] = max(crun["requests"]["rps"], max_rps[runs["m"]]) }}
+{{ pass }}
+{{ pass }}
+{{ pass }}
 
-| Concurrency | Total requests | RPS | avg latency | max latency |
-| --- | --- | --- | --- | --- |
-{{ for key, runs in data.results["concurrencies"][interface].items(): }}
-{{ concurrency_values = {runs[ckey]["requests"]["rps"]: ckey for ckey in runs.keys()} }}
+| Mode | Processes | Threads | Blocking Threads | Total requests | RPS | avg latency | max latency |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+{{ for runs in data.results["concurrencies"][interface].values(): }}
+{{ concurrency_values = {runs["res"][ckey]["requests"]["rps"]: ckey for ckey in runs["res"].keys()} }}
 {{ max_res = concurrency_values[max(concurrency_values.keys())] }}
-{{ run = runs[max_res] }}
-| {{ =key }} (c{{ =max_res }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
+{{ run = runs["res"][max_res] }}
+{{ rps = "**" + run["requests"]["rps"] + "**" if run["requests"]["rps"] == max_rps[runs["m"]] else run["requests"]["rps"] }}
+| {{ =runs["m"] }} (c{{ =max_res }}) | {{ =runs["p"] }} | {{ =runs["t"] }} | {{ =runs["b"] }} | {{ =run["requests"]["total"] }} | {{ =rps }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
 {{ pass }}
 
 {{ pass }}

@@ -94,8 +94,8 @@ def benchmark(endpoint, post=False):
 
 def concurrencies():
     nperm = sorted(set([1, 2, round(CPU / 2.5), round(CPU / 2), CPU]))
-    results = {}
-    for interface in ["asgi", "rsgi", "wsgi"]:
+    results = {"wsgi": {}}
+    for interface in ["asgi", "rsgi"]:
         results[interface] = {}
         for np in nperm:
             for nt in [1, 2, 4]:
@@ -103,7 +103,27 @@ def concurrencies():
                     key = f"P{np} T{nt} {threading_mode[0]}th"
                     with app(interface, np, nt, threading_mode):
                         print(f"Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}")
-                        results[interface][key] = benchmark("b")
+                        results[interface][key] = {
+                            "m": threading_mode,
+                            "p": np,
+                            "t": nt,
+                            "b": 1,
+                            "res": benchmark("b")
+                        }
+    for np in nperm:
+        for nt in [1, 2, 4]:
+            for nbt in [1, 2, 4]:
+                for threading_mode in ["workers", "runtime"]:
+                    key = f"P{np} T{nt} B{nbt} {threading_mode[0]}th"
+                    with app("wsgi", np, nt, threading_mode):
+                        print(f"Bench concurrencies - [wsgi] {threading_mode} {np}:{nt}:{nbt}")
+                        results["wsgi"][key] = {
+                            "m": threading_mode,
+                            "p": np,
+                            "t": nt,
+                            "b": nbt,
+                            "res": benchmark("b")
+                        }
     return results
 
 
