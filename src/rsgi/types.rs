@@ -107,10 +107,8 @@ macro_rules! rsgi_scope_cls {
             scheme: Arc<str>,
             method: Method,
             uri: Uri,
-            #[pyo3(get)]
-            server: String,
-            #[pyo3(get)]
-            client: String,
+            server: SocketAddr,
+            client: SocketAddr,
             #[pyo3(get)]
             headers: RSGIHeaders,
         }
@@ -130,8 +128,8 @@ macro_rules! rsgi_scope_cls {
                     scheme: scheme.into(),
                     method,
                     uri,
-                    server: server.to_string(),
-                    client: client.to_string(),
+                    server,
+                    client,
                     headers: RSGIHeaders::new(headers),
                 }
             }
@@ -158,6 +156,16 @@ macro_rules! rsgi_scope_cls {
                     Version::HTTP_3 => "3",
                     _ => "1",
                 }
+            }
+
+            #[getter(server)]
+            fn get_server(&self) -> String {
+                self.server.to_string()
+            }
+
+            #[getter(client)]
+            fn get_client(&self) -> String {
+                self.client.to_string()
             }
 
             #[getter(scheme)]
@@ -197,62 +205,63 @@ pub(crate) enum PyResponse {
 }
 
 pub(crate) struct PyResponseBody {
-    status: u16,
-    headers: Vec<(String, String)>,
+    status: hyper::StatusCode,
+    headers: HeaderMap,
     body: HTTPResponseBody,
 }
 
 pub(crate) struct PyResponseFile {
-    status: u16,
-    headers: Vec<(String, String)>,
+    status: hyper::StatusCode,
+    headers: HeaderMap,
     file_path: String,
 }
 
-macro_rules! response_head_from_py {
-    ($status:expr, $headers:expr, $res:expr) => {{
-        let mut rh = hyper::http::HeaderMap::new();
-
-        rh.insert(HK_SERVER, HV_SERVER);
+macro_rules! headers_from_py {
+    ($headers:expr) => {{
+        let mut headers = HeaderMap::with_capacity($headers.len() + 3);
+        headers.insert(HK_SERVER, HV_SERVER);
         for (key, value) in $headers {
-            rh.append(
-                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                HeaderValue::from_str(&value).unwrap(),
+            headers.append(
+                HeaderName::try_from(key).unwrap(),
+                HeaderValue::from_str(value).unwrap(),
             );
         }
-
-        *$res.status_mut() = $status.try_into().unwrap();
-        *$res.headers_mut() = rh;
+        headers
     }};
 }
 
 impl PyResponseBody {
-    pub fn new(status: u16, headers: Vec<(String, String)>, body: HTTPResponseBody) -> Self {
-        Self { status, headers, body }
+    pub fn new(status: u16, headers: Vec<(&str, &str)>, body: HTTPResponseBody) -> Self {
+        Self {
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
+            body,
+        }
     }
 
-    pub fn empty(status: u16, headers: Vec<(String, String)>) -> Self {
+    pub fn empty(status: u16, headers: Vec<(&str, &str)>) -> Self {
         Self {
-            status,
-            headers,
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
             body: empty_body(),
         }
     }
 
-    pub fn from_bytes(status: u16, headers: Vec<(String, String)>, body: Cow<[u8]>) -> Self {
+    pub fn from_bytes(status: u16, headers: Vec<(&str, &str)>, body: Cow<[u8]>) -> Self {
         let rbody: Box<[u8]> = body.into();
         Self {
-            status,
-            headers,
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
             body: http_body_util::Full::new(Bytes::from(rbody))
                 .map_err(|e| match e {})
                 .boxed(),
         }
     }
 
-    pub fn from_string(status: u16, headers: Vec<(String, String)>, body: String) -> Self {
+    pub fn from_string(status: u16, headers: Vec<(&str, &str)>, body: String) -> Self {
         Self {
-            status,
-            headers,
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
             body: http_body_util::Full::new(Bytes::from(body))
                 .map_err(|e| match e {})
                 .boxed(),
@@ -262,27 +271,30 @@ impl PyResponseBody {
     #[inline]
     pub fn to_response(self) -> hyper::Response<HTTPResponseBody> {
         let mut res = hyper::Response::new(self.body);
-        response_head_from_py!(self.status, &self.headers, res);
+        *res.status_mut() = self.status;
+        *res.headers_mut() = self.headers;
         res
     }
 }
 
 impl PyResponseFile {
-    pub fn new(status: u16, headers: Vec<(String, String)>, file_path: String) -> Self {
+    pub fn new(status: u16, headers: Vec<(&str, &str)>, file_path: String) -> Self {
         Self {
-            status,
-            headers,
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
             file_path,
         }
     }
 
-    pub async fn to_response(&self) -> hyper::Response<HTTPResponseBody> {
+    #[inline]
+    pub async fn to_response(self) -> hyper::Response<HTTPResponseBody> {
         match File::open(&self.file_path).await {
             Ok(file) => {
                 let stream = ReaderStream::new(file);
                 let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
                 let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
-                response_head_from_py!(self.status, &self.headers, res);
+                *res.status_mut() = self.status;
+                *res.headers_mut() = self.headers;
                 res
             }
             Err(_) => {
