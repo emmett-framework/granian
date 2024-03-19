@@ -85,8 +85,7 @@ Python version: {{ =data.pyver }}
 {{ max_rps = {"runtime": 0, "workers": 0} }}
 {{ for runs in data.results["concurrencies"][interface].values(): }}
 {{ for crun in runs["res"].values(): }}
-{{ max_rps[runs["m"]] = max(crun["requests"]["rps"], max_rps[runs["m"]]) }}
-{{ pass }}
+{{ max_rps[runs["m"]] = max(int(crun["requests"]["rps"]), max_rps[runs["m"]]) }}
 {{ pass }}
 {{ pass }}
 
@@ -96,7 +95,7 @@ Python version: {{ =data.pyver }}
 {{ concurrency_values = {runs["res"][ckey]["requests"]["rps"]: ckey for ckey in runs["res"].keys()} }}
 {{ max_res = concurrency_values[max(concurrency_values.keys())] }}
 {{ run = runs["res"][max_res] }}
-{{ rps = "**" + run["requests"]["rps"] + "**" if run["requests"]["rps"] == max_rps[runs["m"]] else run["requests"]["rps"] }}
+{{ rps = "**" + run["requests"]["rps"] + "**" if int(run["requests"]["rps"]) == max_rps[runs["m"]] else run["requests"]["rps"] }}
 | {{ =runs["m"] }} (c{{ =max_res }}) | {{ =runs["p"] }} | {{ =runs["t"] }} | {{ =runs["b"] }} | {{ =run["requests"]["total"] }} | {{ =rps }} | {{ =int(run["latency"]["avg"]) / 1000 }}ms | {{ =int(run["latency"]["max"]) / 1000 }}ms |
 {{ pass }}
 

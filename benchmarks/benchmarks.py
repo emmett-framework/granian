@@ -13,28 +13,29 @@ WRK_CONCURRENCIES = [CPU * 2**i for i in range(3, 7)]
 
 
 @contextmanager
-def app(name, procs=None, threads=None, thmode=None):
+def app(name, procs=None, threads=None, bthreads=None, thmode=None):
     procs = procs or 1
     threads = threads or 1
+    bthreads = bthreads or 1
     thmode = thmode or "workers"
     proc = {
         "asgi": (
             "granian --interface asgi --log-level warning --backlog 2048 "
             "--no-ws --http 1 "
-            f"--workers {procs} --threads {threads} --threading-mode {thmode} "
-            "app.asgi:app"
+            f"--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+            f"--threading-mode {thmode} app.asgi:app"
         ),
         "rsgi": (
             "granian --interface rsgi --log-level warning --backlog 2048 "
             "--no-ws --http 1 "
-            f"--workers {procs} --threads {threads} --threading-mode {thmode} "
-            "app.rsgi:app"
+            f"--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+            f"--threading-mode {thmode} app.rsgi:app"
         ),
         "wsgi": (
             "granian --interface wsgi --log-level warning --backlog 2048 "
             "--no-ws --http 1 "
-            f"--workers {procs} --threads {threads} --threading-mode {thmode} "
-            "app.wsgi:app"
+            f"--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+            f"--threading-mode {thmode} app.wsgi:app"
         ),
         "uvicorn_h11": (
             "uvicorn --interface asgi3 "
@@ -50,7 +51,8 @@ def app(name, procs=None, threads=None, thmode=None):
             "hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 "
             f"--workers {procs} asgi:app.asgi:app"
         ),
-        "gunicorn": f"gunicorn --workers {procs} -k gthread app.wsgi:app",
+        "gunicorn_gthread": f"gunicorn --workers {procs} -k gthread app.wsgi:app",
+        "gunicorn_gevent": f"gunicorn --workers {procs} -k gevent app.wsgi:app",
     }
     proc = subprocess.Popen(proc[name], shell=True, preexec_fn=os.setsid)
     time.sleep(2)
@@ -101,7 +103,7 @@ def concurrencies():
             for nt in [1, 2, 4]:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} {threading_mode[0]}th"
-                    with app(interface, np, nt, threading_mode):
+                    with app(interface, np, nt, 1, threading_mode):
                         print(f"Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}")
                         results[interface][key] = {
                             "m": threading_mode,
@@ -115,7 +117,7 @@ def concurrencies():
             for nbt in [1, 2, 4]:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} B{nbt} {threading_mode[0]}th"
-                    with app("wsgi", np, nt, threading_mode):
+                    with app("wsgi", np, nt, nbt, threading_mode):
                         print(f"Bench concurrencies - [wsgi] {threading_mode} {np}:{nt}:{nbt}")
                         results["wsgi"][key] = {
                             "m": threading_mode,
@@ -163,7 +165,7 @@ def vs_3rd_async():
 def vs_3rd_sync():
     results = {}
     benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
-    for fw in ["granian_wsgi", "gunicorn (gthread)"]:
+    for fw in ["granian_wsgi", "gunicorn_gthread"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
