@@ -6,8 +6,10 @@ use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
     Response, StatusCode,
 };
-use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyBytes, PyDict},
+};
 use std::{
     borrow::Cow,
     sync::{atomic, Arc, Mutex, RwLock},
@@ -78,12 +80,20 @@ impl ASGIHTTPProtocol {
         py: Python<'p>,
         tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
         body: Box<[u8]>,
+        close: bool,
     ) -> PyResult<&'p PyAny> {
+        let flow_hld = self.flow_tx_waiter.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             match tx.send(Ok(body.into())).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    if close {
+                        flow_hld.notify_one();
+                    }
+                    Ok(())
+                }
                 Err(err) => {
                     log::warn!("ASGI transport tx error: {:?}", err);
+                    flow_hld.notify_one();
                     error_transport!()
                 }
             }
@@ -99,9 +109,9 @@ impl ASGIHTTPProtocol {
 impl ASGIHTTPProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         if *self.flow_rx_exhausted.read().unwrap() {
-            let holder = self.flow_tx_waiter.clone();
+            let flow_hld = self.flow_tx_waiter.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
-                let () = holder.notified().await;
+                let () = flow_hld.notified().await;
                 Python::with_gil(|py| {
                     let dict = PyDict::new(py);
                     dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.disconnect"))?;
@@ -112,31 +122,41 @@ impl ASGIHTTPProtocol {
 
         let body_ref = self.request_body.clone();
         let flow_ref = self.flow_rx_exhausted.clone();
+        let flow_hld = self.flow_tx_waiter.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
             let mut bodym = body_ref.lock().await;
             let body = &mut *bodym;
             let mut more_body = false;
             let chunk = match body.next().await {
-                Some(chunk) => {
+                Some(Ok(buf)) => {
                     more_body = true;
-                    chunk
-                        .map(|buf| buf.into_data().unwrap_or_default())
-                        .unwrap_or(body::Bytes::new())
+                    Ok(buf.into_data().unwrap_or_default())
                 }
-                _ => body::Bytes::new(),
+                Some(Err(err)) => Err(err),
+                _ => Ok(body::Bytes::new()),
             };
             if !more_body {
                 let mut flow = flow_ref.write().unwrap();
                 *flow = true;
             }
 
-            Python::with_gil(|py| {
-                let dict = PyDict::new(py);
-                dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.request"))?;
-                dict.set_item(pyo3::intern!(py, "body"), BytesToPy(chunk))?;
-                dict.set_item(pyo3::intern!(py, "more_body"), more_body)?;
-                Ok(dict.to_object(py))
-            })
+            match chunk {
+                Ok(data) => Python::with_gil(|py| {
+                    let dict = PyDict::new(py);
+                    dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.request"))?;
+                    dict.set_item(pyo3::intern!(py, "body"), BytesToPy(data))?;
+                    dict.set_item(pyo3::intern!(py, "more_body"), more_body)?;
+                    Ok(dict.to_object(py))
+                }),
+                _ => {
+                    flow_hld.notify_one();
+                    Python::with_gil(|py| {
+                        let dict = PyDict::new(py);
+                        dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.disconnect"))?;
+                        Ok(dict.to_object(py))
+                    })
+                }
+            }
         })
     }
 
@@ -178,23 +198,23 @@ impl ASGIHTTPProtocol {
                         );
                         *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                         self.send_response(status, headers, BodyExt::boxed(body_stream));
-                        self.send_body(py, body_tx, body)
+                        self.send_body(py, body_tx, body, false)
                     }
                     (true, true, true) => match &*self.body_tx.lock().unwrap() {
                         Some(tx) => {
                             let tx = tx.clone();
-                            self.send_body(py, tx, body)
+                            self.send_body(py, tx, body, false)
                         }
                         _ => error_flow!(),
                     },
                     (true, false, true) => match self.body_tx.lock().unwrap().take() {
-                        Some(tx) => {
-                            self.flow_tx_waiter.notify_one();
-                            match body.is_empty() {
-                                false => self.send_body(py, tx, body),
-                                true => empty_future_into_py(py),
+                        Some(tx) => match body.is_empty() {
+                            false => self.send_body(py, tx, body, true),
+                            true => {
+                                self.flow_tx_waiter.notify_one();
+                                empty_future_into_py(py)
                             }
-                        }
+                        },
                         _ => error_flow!(),
                     },
                     _ => error_flow!(),
