@@ -16,7 +16,6 @@ use super::{
 };
 use crate::{
     conversion::BytesToPy,
-    // http::HTTPRequest,
     runtime::{future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSStream, WSTxStream},
 };
@@ -123,35 +122,35 @@ impl RSGIHTTPProtocol {
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_empty(&self, status: u16, headers: Vec<(String, String)>) {
+    fn response_empty(&self, status: u16, headers: Vec<(&str, &str)>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
-    fn response_bytes(&self, status: u16, headers: Vec<(String, String)>, body: Cow<[u8]>) {
+    fn response_bytes(&self, status: u16, headers: Vec<(&str, &str)>, body: Cow<[u8]>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
-    fn response_str(&self, status: u16, headers: Vec<(String, String)>, body: String) {
+    fn response_str(&self, status: u16, headers: Vec<(&str, &str)>, body: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status, headers, file))]
-    fn response_file(&self, status: u16, headers: Vec<(String, String)>, file: String) {
+    fn response_file(&self, status: u16, headers: Vec<(&str, &str)>, file: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_stream<'p>(&self, py: Python<'p>, status: u16, headers: Vec<(String, String)>) -> PyResult<&'p PyAny> {
+    fn response_stream<'p>(&self, py: Python<'p>, status: u16, headers: Vec<(&str, &str)>) -> PyResult<&'p PyAny> {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
             let body_stream = http_body_util::StreamBody::new(
