@@ -407,7 +407,8 @@ class Granian:
         self._init_shared_socket()
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)
-        logger.info(f'Listening at: {self.bind_addr}:{self.bind_port}')
+        proto = 'https' if self.ssl_ctx[0] else 'http'
+        logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
 
         self._spawn_workers(sock, spawn_target, target_loader)
         return sock
