@@ -1,4 +1,5 @@
 import asyncio
+import multiprocessing as mp
 import os
 import socket
 from contextlib import asynccontextmanager, closing
@@ -7,26 +8,32 @@ from pathlib import Path
 
 import pytest
 
+from granian import Granian
+
+
+def _serve(**kwargs):
+    server = Granian(f'tests.apps.{kwargs["interface"]}:app', **kwargs)
+    server.serve()
+
 
 @asynccontextmanager
 async def _server(interface, port, threading_mode, tls=False):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
-    tls_opts = (
-        (f"--ssl-certificate {certs_path / 'cert.pem'} " f"--ssl-keyfile {certs_path / 'key.pem'} ") if tls else ''
-    )
-    cmd = ''.join(
-        [
-            f'granian --interface {interface} --port {port} ',
-            f'--threads 1 --threading-mode {threading_mode} ',
-            tls_opts,
-            '--opt ' if os.getenv('LOOP_OPT') else '',
-            f'tests.apps.{interface}:app',
-        ]
-    )
+    kwargs = {
+        'interface': interface,
+        'port': port,
+        'threading_mode': threading_mode,
+        'loop_opt': bool(os.getenv('LOOP_OPT')),
+    }
+    if tls:
+        kwargs['ssl_cert'] = certs_path / 'cert.pem'
+        kwargs['ssl_key'] = certs_path / 'key.pem'
 
     succeeded, spawn_failures = False, 0
     while spawn_failures < 3:
-        proc = await asyncio.create_subprocess_shell(cmd, env=dict(os.environ))
+        proc = mp.get_context('spawn').Process(target=_serve, kwargs=kwargs)
+        proc.start()
+
         conn_failures = 0
         while conn_failures < 3:
             try:
@@ -41,7 +48,7 @@ async def _server(interface, port, threading_mode, tls=False):
             break
 
         proc.terminate()
-        await proc.wait()
+        proc.join()
         spawn_failures += 1
 
     if not succeeded:
@@ -51,7 +58,7 @@ async def _server(interface, port, threading_mode, tls=False):
         yield port
     finally:
         proc.terminate()
-        await proc.wait()
+        proc.join()
 
 
 @pytest.fixture(scope='function')

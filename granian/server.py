@@ -509,7 +509,7 @@ class Granian:
 
         if setproctitle is not None:
             self.process_name = self.process_name or (
-                f'granian {self.interface.value} {self.bind_addr}:{self.bind_port} {self.target}'
+                f'granian {self.interface} {self.bind_addr}:{self.bind_port} {self.target}'
             )
             setproctitle.setproctitle(self.process_name)
         elif self.process_name is not None:
