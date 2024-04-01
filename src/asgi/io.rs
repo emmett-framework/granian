@@ -456,7 +456,7 @@ fn adapt_message_type(py: Python, message: &PyDict) -> Result<ASGIMessageType, U
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPFile(adapt_file(py, message)?)),
                 "websocket.accept" => {
                     let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {
-                        Ok(Some(item)) => item.extract::<String>().map(Some)?,
+                        Ok(Some(item)) => item.extract::<String>().map(Some).unwrap_or(None),
                         _ => None,
                     };
                     Ok(ASGIMessageType::WSAccept(subproto))
