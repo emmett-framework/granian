@@ -264,9 +264,8 @@ pub(crate) struct PyFutureResultSetter;
 
 #[pymethods]
 impl PyFutureResultSetter {
-    pub fn __call__(&self, target: &PyAny, value: &PyAny) -> PyResult<()> {
-        target.call1((value,))?;
-        Ok(())
+    pub fn __call__(&self, target: &PyAny, value: &PyAny) {
+        let _ = target.call1((value,));
     }
 }
 
