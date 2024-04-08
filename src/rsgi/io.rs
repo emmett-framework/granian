@@ -2,6 +2,7 @@ use futures::{sink::SinkExt, StreamExt, TryStreamExt};
 use http_body_util::BodyExt;
 use hyper::body;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBytes, PyString};
 use std::{
     borrow::Cow,
@@ -36,7 +37,7 @@ impl RSGIHTTPStreamTransport {
 
 #[pymethods]
 impl RSGIHTTPStreamTransport {
-    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<&'p PyAny> {
+    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
         let bdata: Box<[u8]> = data.into();
         future_into_py_futlike(self.rt.clone(), py, async move {
@@ -47,7 +48,7 @@ impl RSGIHTTPStreamTransport {
         })
     }
 
-    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
+    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             match transport.send(Ok(body::Bytes::from(data))).await {
@@ -83,7 +84,7 @@ impl RSGIHTTPProtocol {
 
 #[pymethods]
 impl RSGIHTTPProtocol {
-    fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn __call__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         if let Some(body) = self.body.lock().unwrap().take() {
             return future_into_py_iter(self.rt.clone(), py, async move {
                 match body.collect().await {
@@ -103,7 +104,7 @@ impl RSGIHTTPProtocol {
         pyself
     }
 
-    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Option<&'p PyAny>> {
+    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Option<Bound<'p, PyAny>>> {
         let body_stream = self.body_stream.clone();
         let pyfut = future_into_py_iter(self.rt.clone(), py, async move {
             if let Some(stream) = &mut *body_stream.lock().await {
@@ -121,35 +122,40 @@ impl RSGIHTTPProtocol {
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_empty(&self, status: u16, headers: Vec<(&str, &str)>) {
+    fn response_empty(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
-    fn response_bytes(&self, status: u16, headers: Vec<(&str, &str)>, body: Cow<[u8]>) {
+    fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
-    fn response_str(&self, status: u16, headers: Vec<(&str, &str)>, body: String) {
+    fn response_str(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status, headers, file))]
-    fn response_file(&self, status: u16, headers: Vec<(&str, &str)>, file: String) {
+    fn response_file(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_stream<'p>(&self, py: Python<'p>, status: u16, headers: Vec<(&str, &str)>) -> PyResult<&'p PyAny> {
+    fn response_stream<'p>(
+        &self,
+        py: Python<'p>,
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+    ) -> PyResult<Bound<'p, RSGIHTTPStreamTransport>> {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
             let body_stream = http_body_util::StreamBody::new(
@@ -161,7 +167,7 @@ impl RSGIHTTPProtocol {
                 BodyExt::boxed(BodyExt::map_err(body_stream, std::convert::Into::into)),
             )));
             let trx = Py::new(py, RSGIHTTPStreamTransport::new(self.rt.clone(), body_tx))?;
-            return Ok(trx.into_ref(py));
+            return Ok(trx.into_bound(py));
         }
         error_proto!()
     }
@@ -206,7 +212,7 @@ impl RSGIWebsocketTransport {
 
 #[pymethods]
 impl RSGIWebsocketTransport {
-    fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.rx.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
@@ -223,7 +229,7 @@ impl RSGIWebsocketTransport {
         })
     }
 
-    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<&'p PyAny> {
+    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
         let bdata: Box<[u8]> = data.into();
         future_into_py_iter(self.rt.clone(), py, async move {
@@ -237,7 +243,7 @@ impl RSGIWebsocketTransport {
         })
     }
 
-    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<&'p PyAny> {
+    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
         future_into_py_iter(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
@@ -351,7 +357,7 @@ impl RSGIWebsocketProtocol {
         }
     }
 
-    fn accept<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn accept<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let rth = self.rt.clone();
         let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
         let transport = self.websocket.clone();
@@ -380,10 +386,10 @@ impl RSGIWebsocketProtocol {
 fn message_into_py(message: Message) -> PyResult<PyObject> {
     match message {
         Message::Binary(message) => Ok(Python::with_gil(|py| {
-            WebsocketInboundBytesMessage::new(PyBytes::new(py, &message).into()).into_py(py)
+            WebsocketInboundBytesMessage::new(PyBytes::new_bound(py, &message).unbind()).into_py(py)
         })),
         Message::Text(message) => Ok(Python::with_gil(|py| {
-            WebsocketInboundTextMessage::new(PyString::new(py, &message).into()).into_py(py)
+            WebsocketInboundTextMessage::new(PyString::new_bound(py, &message).unbind()).into_py(py)
         })),
         Message::Close(_) => Ok(Python::with_gil(|py| WebsocketInboundCloseMessage::new().into_py(py))),
         v => {

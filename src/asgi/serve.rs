@@ -84,7 +84,13 @@ impl ASGIWorker {
         })
     }
 
-    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal: Py<WorkerSignal>) {
+    fn serve_rth(
+        &self,
+        callback: PyObject,
+        event_loop: &Bound<PyAny>,
+        context: Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         match (
             self.config.websockets_enabled,
             self.config.ssl_enabled,
@@ -101,7 +107,13 @@ impl ASGIWorker {
         }
     }
 
-    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal: Py<WorkerSignal>) {
+    fn serve_wth(
+        &self,
+        callback: PyObject,
+        event_loop: &Bound<PyAny>,
+        context: Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         match (
             self.config.websockets_enabled,
             self.config.ssl_enabled,

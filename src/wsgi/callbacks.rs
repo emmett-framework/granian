@@ -63,7 +63,7 @@ fn run_callback(
     }
 
     Python::with_gil(|py| {
-        let environ: &PyDict = PyDict::new(py);
+        let environ = PyDict::new_bound(py);
         environ.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), version)?;
         environ.set_item(pyo3::intern!(py, "SERVER_NAME"), server.0)?;
         environ.set_item(pyo3::intern!(py, "SERVER_PORT"), server.1)?;
@@ -85,7 +85,7 @@ fn run_callback(
                 content_len.to_str().unwrap_or_default(),
             )?;
         }
-        environ.update(headers.into_py_dict(py).as_mapping())?;
+        environ.update(headers.into_py_dict_bound(py).as_mapping())?;
 
         let (status, headers, body_type, pybody) =
             callback

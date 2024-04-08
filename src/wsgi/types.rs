@@ -143,7 +143,7 @@ impl WSGIBody {
     }
 
     #[pyo3(signature = (_hint=None))]
-    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> &'p PyList {
+    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> Bound<'p, PyList> {
         let inner = self.inner.clone();
         let data = py.allow_threads(|| {
             self.rt.inner.block_on(async move {
@@ -153,11 +153,11 @@ impl WSGIBody {
                     .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
             })
         });
-        let lines: Vec<&PyBytes> = data
+        let lines: Vec<Bound<PyBytes>> = data
             .split(|&c| c == LINE_SPLIT)
-            .map(|item| PyBytes::new(py, item))
+            .map(|item| PyBytes::new_bound(py, item))
             .collect();
-        PyList::new(py, lines)
+        PyList::new_bound(py, lines)
     }
 }
 

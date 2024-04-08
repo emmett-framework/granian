@@ -31,7 +31,7 @@ impl ListenerHolder {
     }
 
     #[classmethod]
-    pub fn from_address(_cls: &PyType, address: &str, port: u16, backlog: i32) -> PyResult<Self> {
+    pub fn from_address(_cls: &Bound<PyType>, address: &str, port: u16, backlog: i32) -> PyResult<Self> {
         let address: SocketAddr = (address.parse::<IpAddr>()?, port).into();
         let domain = match address {
             SocketAddr::V4(_) => Domain::IPV4,
@@ -79,7 +79,7 @@ impl ListenerHolder {
     }
 }
 
-pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
+pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<ListenerHolder>()?;
 
     Ok(())

@@ -30,10 +30,11 @@ pub struct TaskLocals {
 }
 
 impl TaskLocals {
-    pub fn new(event_loop: &PyAny) -> Self {
+    pub fn new(event_loop: Bound<PyAny>) -> Self {
+        let pynone = event_loop.py().None();
         Self {
             event_loop: event_loop.into(),
-            context: event_loop.py().None(),
+            context: pynone,
         }
     }
 
@@ -41,7 +42,7 @@ impl TaskLocals {
         Ok(Self::new(get_running_loop(py)?))
     }
 
-    pub fn with_context(self, context: &PyAny) -> Self {
+    pub fn with_context(self, context: Bound<PyAny>) -> Self {
         Self {
             context: context.into(),
             ..self
@@ -52,12 +53,12 @@ impl TaskLocals {
         Ok(self.with_context(copy_context(py)?))
     }
 
-    pub fn event_loop<'p>(&self, py: Python<'p>) -> &'p PyAny {
-        self.event_loop.clone().into_ref(py)
+    pub fn event_loop<'p>(&self, py: Python<'p>) -> Bound<'p, PyAny> {
+        self.event_loop.clone().into_bound(py)
     }
 
-    pub fn context<'p>(&self, py: Python<'p>) -> &'p PyAny {
-        self.context.clone().into_ref(py)
+    pub fn context<'p>(&self, py: Python<'p>) -> Bound<'p, PyAny> {
+        self.context.clone().into_bound(py)
     }
 }
 
@@ -235,7 +236,7 @@ where
 //  but for "quick" operations it's something like 12% faster.
 #[allow(unused_must_use)]
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
@@ -249,7 +250,7 @@ where
         aw.get().set_result(result);
     });
 
-    Ok(py_fut.into_ref(py))
+    Ok(py_fut.into_any().into_bound(py))
 }
 
 // NOTE:
@@ -258,7 +259,7 @@ where
 //  MacOS works best with original impl, Windows still needs further analysis.
 #[cfg(target_os = "linux")]
 #[inline(always)]
-pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
@@ -274,7 +275,7 @@ where
 //  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
 #[allow(unused_must_use)]
 #[cfg(unix)]
-pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
@@ -293,12 +294,12 @@ where
         }
     });
 
-    Ok(py_fut.into_ref(py))
+    Ok(py_fut.into_any().into_bound(py))
 }
 
 #[allow(unused_must_use)]
 #[cfg(windows)]
-pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
@@ -316,7 +317,7 @@ where
             cancel_tx: cancel_tx.clone(),
         },),
     )?;
-    let fut_ref = PyObject::from(py_fut);
+    let fut_ref = PyObject::from(py_fut.clone());
 
     rt.spawn(async move {
         tokio::select! {
@@ -338,12 +339,12 @@ where
 
 #[allow(clippy::unnecessary_wraps)]
 #[inline(always)]
-pub(crate) fn empty_future_into_py(py: Python) -> PyResult<&PyAny> {
-    Ok(PyEmptyAwaitable.into_py(py).into_ref(py))
+pub(crate) fn empty_future_into_py(py: Python) -> PyResult<Bound<PyAny>> {
+    Ok(PyEmptyAwaitable.into_py(py).into_bound(py))
 }
 
 #[allow(unused_must_use)]
-pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: &PyAny, fut: F) -> PyResult<T>
+pub(crate) fn run_until_complete<R, F, T>(rt: R, event_loop: Bound<PyAny>, fut: F) -> PyResult<T>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
@@ -353,10 +354,10 @@ where
     let result_tx = Arc::new(Mutex::new(None));
     let result_rx = Arc::clone(&result_tx);
 
-    let task_locals = TaskLocals::new(event_loop).copy_context(py)?;
+    let task_locals = TaskLocals::new(event_loop.clone()).copy_context(py)?;
     let py_fut = event_loop.call_method0("create_future")?;
-    let loop_tx = event_loop.into_py(py);
-    let future_tx = py_fut.into_py(py);
+    let loop_tx = event_loop.clone().into_py(py);
+    let future_tx = py_fut.clone().into_py(py);
 
     let rth = rt.handler();
 
@@ -368,7 +369,7 @@ where
 
         Python::with_gil(move |py| {
             let res_method = future_tx.getattr(py, "set_result").unwrap();
-            let _ = loop_tx.call_method(py, "call_soon_threadsafe", (res_method, py.None()), None);
+            let _ = loop_tx.call_method_bound(py, "call_soon_threadsafe", (res_method, py.None()), None);
         });
     });
 

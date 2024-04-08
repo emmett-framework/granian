@@ -41,29 +41,29 @@ pub(super) fn build_scope<'p>(
     scheme: &'p str,
     path: &'p str,
     query_string: &'p str,
-) -> PyResult<&'p PyDict> {
-    let scope = PyDict::new(py);
+) -> PyResult<Bound<'p, PyDict>> {
+    let scope = PyDict::new_bound(py);
 
     scope.set_item(
         pyo3::intern!(py, "asgi"),
         ASGI_VERSION
             .get_or_try_init(py, || {
-                let rv = PyDict::new(py);
+                let rv = PyDict::new_bound(py);
                 rv.set_item("version", "3.0")?;
                 rv.set_item("spec_version", "2.3")?;
                 Ok::<PyObject, PyErr>(rv.into())
             })?
-            .as_ref(py),
+            .bind(py),
     )?;
     scope.set_item(
         pyo3::intern!(py, "extensions"),
         ASGI_EXTENSIONS
             .get_or_try_init(py, || {
-                let rv = PyDict::new(py);
-                rv.set_item("http.response.pathsend", PyDict::new(py))?;
+                let rv = PyDict::new_bound(py);
+                rv.set_item("http.response.pathsend", PyDict::new_bound(py))?;
                 Ok::<PyObject, PyErr>(rv.into())
             })?
-            .as_ref(py),
+            .bind(py),
     )?;
     scope.set_item(pyo3::intern!(py, "type"), proto)?;
     scope.set_item(pyo3::intern!(py, "http_version"), version)?;
@@ -72,22 +72,25 @@ pub(super) fn build_scope<'p>(
     scope.set_item(pyo3::intern!(py, "scheme"), scheme)?;
     scope.set_item(pyo3::intern!(py, "method"), req.method.as_str())?;
     scope.set_item(pyo3::intern!(py, "path"), path)?;
-    scope.set_item(pyo3::intern!(py, "raw_path"), PyBytes::new(py, path.as_bytes()))?;
+    scope.set_item(pyo3::intern!(py, "raw_path"), PyBytes::new_bound(py, path.as_bytes()))?;
     scope.set_item(
         pyo3::intern!(py, "query_string"),
-        PyBytes::new(py, query_string.as_bytes()),
+        PyBytes::new_bound(py, query_string.as_bytes()),
     )?;
 
-    let headers = PyList::empty(py);
+    let headers = PyList::empty_bound(py);
     for (key, value) in &req.headers {
         headers.append((
-            PyBytes::new(py, key.as_str().as_bytes()),
-            PyBytes::new(py, value.as_bytes()),
+            PyBytes::new_bound(py, key.as_str().as_bytes()),
+            PyBytes::new_bound(py, value.as_bytes()),
         ))?;
     }
     if !req.headers.contains_key(header::HOST) {
         let host = req.uri.authority().map_or("", Authority::as_str);
-        headers.insert(0, (PyBytes::new(py, b"host"), PyBytes::new(py, host.as_bytes())))?;
+        headers.insert(
+            0,
+            (PyBytes::new_bound(py, b"host"), PyBytes::new_bound(py, host.as_bytes())),
+        )?;
     }
     scope.set_item(pyo3::intern!(py, "headers"), headers)?;
 
@@ -104,7 +107,7 @@ pub(super) fn build_scope_http<'p>(
     scheme: &'p str,
     path: &'p str,
     query_string: &'p str,
-) -> PyResult<&'p PyDict> {
+) -> PyResult<Bound<'p, PyDict>> {
     build_scope(py, req, "http", version, server, client, scheme, path, query_string)
 }
 
@@ -118,7 +121,7 @@ pub(super) fn build_scope_ws<'p>(
     scheme: &'p str,
     path: &'p str,
     query_string: &'p str,
-) -> PyResult<&'p PyDict> {
+) -> PyResult<Bound<'p, PyDict>> {
     let scope = build_scope(
         py,
         req,
@@ -132,13 +135,13 @@ pub(super) fn build_scope_ws<'p>(
     )?;
     scope.set_item(
         pyo3::intern!(py, "subprotocols"),
-        PyList::new(
+        PyList::new_bound(
             py,
             req.headers
                 .get_all("Sec-WebSocket-Protocol")
                 .iter()
-                .map(|v| PyString::new(py, v.to_str().unwrap()))
-                .collect::<Vec<&PyString>>(),
+                .map(|v| PyString::new_bound(py, v.to_str().unwrap()))
+                .collect::<Vec<Bound<PyString>>>(),
         ),
     )?;
     Ok(scope)
