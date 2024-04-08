@@ -10,6 +10,7 @@ use pyo3::prelude::*;
 use std::sync::OnceLock;
 
 mod asgi;
+mod asyncio;
 mod callbacks;
 mod conversion;
 mod http;

@@ -1,5 +1,4 @@
 use pyo3::prelude::*;
-use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use super::{
@@ -11,7 +10,7 @@ use crate::{
         callback_impl_loop_err, callback_impl_loop_pytask, callback_impl_loop_run, callback_impl_loop_step,
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
-    runtime::RuntimeRef,
+    runtime::{RuntimeRef, TaskLocals},
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
 };

@@ -2,7 +2,6 @@ use std::{net::SocketAddr, sync::Arc};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use super::{
@@ -15,7 +14,7 @@ use crate::{
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
     http::{response_500, HTTPResponse},
-    runtime::RuntimeRef,
+    runtime::{RuntimeRef, TaskLocals},
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
 };

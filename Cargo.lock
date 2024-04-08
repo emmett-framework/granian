@@ -281,7 +281,6 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "pyo3",
- "pyo3-asyncio",
  "pyo3-log",
  "rustls-pemfile",
  "socket2",
@@ -644,18 +643,6 @@ dependencies = [
  "pyo3-ffi",
  "pyo3-macros",
  "unindent",
-]
-
-[[package]]
-name = "pyo3-asyncio"
-version = "0.20.0"
-source = "git+https://github.com/gi0baro/pyo3-asyncio.git?rev=6e3a309#6e3a30986e35e1d72a047001704ffba9a3d48752"
-dependencies = [
- "futures",
- "once_cell",
- "pin-project-lite",
- "pyo3",
- "tokio",
 ]
 
 [[package]]

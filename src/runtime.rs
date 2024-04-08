@@ -1,17 +1,16 @@
 use pyo3::prelude::*;
-use pyo3_asyncio::TaskLocals;
 use std::{
     cell::OnceCell,
     future::Future,
-    io,
     pin::Pin,
     sync::{Arc, Mutex},
 };
 use tokio::{
-    runtime::Builder,
+    runtime::Builder as RuntimeBuilder,
     task::{JoinHandle, LocalSet},
 };
 
+use super::asyncio::{copy_context, get_running_loop};
 use super::callbacks::PyEmptyAwaitable;
 #[cfg(unix)]
 use super::callbacks::PyFutureAwaitable;
@@ -22,6 +21,44 @@ use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
 tokio::task_local! {
     static TASK_LOCALS: OnceCell<TaskLocals>;
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskLocals {
+    event_loop: PyObject,
+    context: PyObject,
+}
+
+impl TaskLocals {
+    pub fn new(event_loop: &PyAny) -> Self {
+        Self {
+            event_loop: event_loop.into(),
+            context: event_loop.py().None(),
+        }
+    }
+
+    pub fn with_running_loop(py: Python) -> PyResult<Self> {
+        Ok(Self::new(get_running_loop(py)?))
+    }
+
+    pub fn with_context(self, context: &PyAny) -> Self {
+        Self {
+            context: context.into(),
+            ..self
+        }
+    }
+
+    pub fn copy_context(self, py: Python) -> PyResult<Self> {
+        Ok(self.with_context(copy_context(py)?))
+    }
+
+    pub fn event_loop<'p>(&self, py: Python<'p>) -> &'p PyAny {
+        self.event_loop.clone().into_ref(py)
+    }
+
+    pub fn context<'p>(&self, py: Python<'p>) -> &'p PyAny {
+        self.context.clone().into_ref(py)
+    }
 }
 
 pub trait JoinError {
@@ -66,7 +103,7 @@ pub(crate) struct RuntimeWrapper {
 impl RuntimeWrapper {
     pub fn new(blocking_threads: usize) -> Self {
         Self {
-            rt: default_runtime(blocking_threads).unwrap(),
+            rt: default_runtime(blocking_threads),
         }
     }
 
@@ -152,16 +189,17 @@ impl LocalContextExt for RuntimeRef {
     }
 }
 
-fn default_runtime(blocking_threads: usize) -> io::Result<tokio::runtime::Runtime> {
-    Builder::new_current_thread()
+fn default_runtime(blocking_threads: usize) -> tokio::runtime::Runtime {
+    RuntimeBuilder::new_current_thread()
         .max_blocking_threads(blocking_threads)
         .enable_all()
         .build()
+        .unwrap()
 }
 
 pub(crate) fn init_runtime_mt(threads: usize, blocking_threads: usize) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
-        Builder::new_multi_thread()
+        RuntimeBuilder::new_multi_thread()
             .worker_threads(threads)
             .max_blocking_threads(blocking_threads)
             .enable_all()

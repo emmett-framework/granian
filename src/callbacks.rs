@@ -3,20 +3,22 @@ use pyo3::{prelude::*, pyclass::IterNextOutput, sync::GILOnceCell};
 use std::sync::{atomic, Arc, RwLock};
 use tokio::sync::Notify;
 
+use super::runtime::TaskLocals;
+
 static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
 static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
 
 #[derive(Clone)]
 pub(crate) struct CallbackWrapper {
     pub callback: PyObject,
-    pub context: pyo3_asyncio::TaskLocals,
+    pub context: TaskLocals,
 }
 
 impl CallbackWrapper {
     pub(crate) fn new(callback: PyObject, event_loop: &PyAny, context: &PyAny) -> Self {
         Self {
             callback,
-            context: pyo3_asyncio::TaskLocals::new(event_loop).with_context(context),
+            context: TaskLocals::new(event_loop).with_context(context),
         }
     }
 }
