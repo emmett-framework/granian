@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import signal
 import subprocess
+import sys
 import time
 
 from contextlib import contextmanager
@@ -11,86 +12,125 @@ from contextlib import contextmanager
 CPU = multiprocessing.cpu_count()
 WRK_CONCURRENCIES = [CPU * 2**i for i in range(3, 7)]
 
+APPS = {
+    "asgi": (
+        "granian --interface asgi --log-level warning --backlog 2048 "
+        "--no-ws --http {http} "
+        "--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+        "--threading-mode {thmode} app.asgi:app"
+    ),
+    "rsgi": (
+        "granian --interface rsgi --log-level warning --backlog 2048 "
+        "--no-ws --http {http} "
+        "--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+        "--threading-mode {thmode} app.rsgi:app"
+    ),
+    "wsgi": (
+        "granian --interface wsgi --log-level warning --backlog 2048 "
+        "--no-ws --http {http} "
+        "--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+        "--threading-mode {thmode} app.wsgi:app"
+    ),
+    "uvicorn_h11": (
+        "uvicorn --interface asgi3 "
+        "--no-access-log --log-level warning "
+        "--http h11 --workers {procs} app.asgi:app"
+    ),
+    "uvicorn_httptools": (
+        "uvicorn --interface asgi3 "
+        "--no-access-log --log-level warning "
+        "--http httptools --workers {procs} app.asgi:app"
+    ),
+    "hypercorn": (
+        "hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 "
+        "--workers {procs} asgi:app.asgi:async_app"
+    ),
+    "gunicorn_gthread": "gunicorn --workers {procs} -k gthread app.wsgi:app",
+    "gunicorn_gevent": "gunicorn --workers {procs} -k gevent app.wsgi:app",
+    "uwsgi": (
+        "uwsgi --http :8000 --master --processes {procs} --enable-threads "
+        "--disable-logging --die-on-term --single-interpreter --lazy-apps "
+        "--wsgi-file app/wsgi.py --callable app"
+    )
+}
+
 
 @contextmanager
-def app(name, procs=None, threads=None, bthreads=None, thmode=None):
+def app(name, procs=None, threads=None, bthreads=None, thmode=None, http="1"):
     procs = procs or 1
     threads = threads or 1
     bthreads = bthreads or 1
     thmode = thmode or "workers"
-    proc = {
-        "asgi": (
-            "granian --interface asgi --log-level warning --backlog 2048 "
-            "--no-ws --http 1 "
-            f"--workers {procs} --threads {threads} --blocking-threads {bthreads} "
-            f"--threading-mode {thmode} app.asgi:app"
-        ),
-        "rsgi": (
-            "granian --interface rsgi --log-level warning --backlog 2048 "
-            "--no-ws --http 1 "
-            f"--workers {procs} --threads {threads} --blocking-threads {bthreads} "
-            f"--threading-mode {thmode} app.rsgi:app"
-        ),
-        "wsgi": (
-            "granian --interface wsgi --log-level warning --backlog 2048 "
-            "--no-ws --http 1 "
-            f"--workers {procs} --threads {threads} --blocking-threads {bthreads} "
-            f"--threading-mode {thmode} app.wsgi:app"
-        ),
-        "uvicorn_h11": (
-            "uvicorn --interface asgi3 "
-            "--no-access-log --log-level warning "
-            f"--http h11 --workers {procs} app.asgi:app"
-        ),
-        "uvicorn_httptools": (
-            "uvicorn --interface asgi3 "
-            "--no-access-log --log-level warning "
-            f"--http httptools --workers {procs} app.asgi:app"
-        ),
-        "hypercorn": (
-            "hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 "
-            f"--workers {procs} asgi:app.asgi:app"
-        ),
-        "gunicorn_gthread": f"gunicorn --workers {procs} -k gthread app.wsgi:app",
-        "gunicorn_gevent": f"gunicorn --workers {procs} -k gevent app.wsgi:app",
-    }
-    proc = subprocess.Popen(proc[name], shell=True, preexec_fn=os.setsid)
+    proc_cmd = APPS[name].format(
+        procs=procs,
+        threads=threads,
+        bthreads=bthreads,
+        thmode=thmode,
+        http=http,
+    )
+    proc = subprocess.Popen(proc_cmd, shell=True, preexec_fn=os.setsid)
     time.sleep(2)
     yield proc
     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
-def wrk(duration, concurrency, endpoint, post=False):
-    script = "wrk.post.lua" if post else "wrk.lua"
-    threads = max(2, CPU // 2)
-    proc = subprocess.run(
-        f"wrk -d{duration}s -H \"Connection: keep-alive\" -t{threads} -c{concurrency} "
-        f"-s {script} http://localhost:8000/{endpoint}",
-        shell=True,
-        check=True,
-        capture_output=True,
-    )
-    data = proc.stderr.decode("utf8").split(",")
-    return {
-        "requests": {"total": data[1], "rps": data[2]},
-        "latency": {"avg": data[11], "max": data[10], "stdev": data[12]},
-    }
+def wrk(duration, concurrency, endpoint, post=False, h2=False):
+    cmd_parts = [
+        "rewrk",
+        f"-c {concurrency}",
+        f"-d {duration}s",
+        "--json",
+    ]
+    if h2:
+        cmd_parts.append("--http2")
+    else:
+        cmd_parts.append("-H \"Connection: Keep-Alive\"")
+        cmd_parts.append("-H \"Keep-Alive: timeout=60'\"")
+    if post:
+        cmd_parts.append("-H \"Content-Type: text/plain; charset=utf-8\"")
+        cmd_parts.append("-H \"Content-Length: 4\"")
+        cmd_parts.append("-b \"test\"")
+    cmd_parts.append(f"-h http://127.0.0.1:8000/{endpoint}")
+    try:
+        proc = subprocess.run(
+            " ".join(cmd_parts),
+            shell=True,
+            check=True,
+            capture_output=True,
+        )
+        data = json.loads(proc.stdout.decode("utf8"))
+        return {
+            "requests": {
+                "total": data["requests_total"],
+                "rps": data["requests_avg"] or 0
+            },
+            "latency": {
+                "avg": data["latency_avg"],
+                "max": data["latency_max"],
+                "stdev": data["latency_std_deviation"]
+            },
+        }
+    except Exception:
+        return {
+            "requests": {"total": 0, "rps": 0},
+            "latency": {"avg": duration, "max": duration, "stdev": 0},
+        }
 
 
-def benchmark(endpoint, post=False):
+def benchmark(endpoint, post=False, h2=False):
     results = {}
     # primer
-    wrk(5, 8, endpoint, post=post)
+    wrk(5, 8, endpoint, post=post, h2=h2)
     time.sleep(2)
     # warm up
-    wrk(5, max(WRK_CONCURRENCIES), endpoint, post=post)
+    wrk(5, max(WRK_CONCURRENCIES), endpoint, post=post, h2=h2)
     time.sleep(3)
     # bench
     for concurrency in WRK_CONCURRENCIES:
-        res = wrk(15, concurrency, endpoint, post=post)
+        res = wrk(15, concurrency, endpoint, post=post, h2=h2)
         results[concurrency] = res
         time.sleep(3)
-    time.sleep(2)
+    time.sleep(1)
     return results
 
 
@@ -113,8 +153,8 @@ def concurrencies():
                             "res": benchmark("b")
                         }
     for np in nperm:
-        for nt in [1, 2, 4]:
-            for nbt in [1, 2, 4]:
+        for nt, nbtl in [(1, [1, 2, 4]), (2, [1]), (4, [1])]:
+            for nbt in nbtl:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} B{nbt} {threading_mode[0]}th"
                     with app("wsgi", np, nt, nbt, threading_mode):
@@ -149,10 +189,20 @@ def interfaces():
     return results
 
 
-def vs_3rd_async():
+def files():
+    results = {}
+    with app("rsgi"):
+        results["RSGI"] = benchmark("fp")
+    with app("asgi"):
+        results["ASGI"] = benchmark("fb")
+        results["ASGI pathsend"] = benchmark("fp")
+    return results
+
+
+def vs_asgi():
     results = {}
     benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
-    for fw in ["granian_asgi", "granian_rsgi", "uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
+    for fw in ["granian_asgi", "uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
@@ -162,10 +212,10 @@ def vs_3rd_async():
     return results
 
 
-def vs_3rd_sync():
+def vs_wsgi():
     results = {}
     benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
-    for fw in ["granian_wsgi", "gunicorn_gthread"]:
+    for fw in ["granian_wsgi", "gunicorn_gthread", "gunicorn_gevent", "uwsgi"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
@@ -175,27 +225,34 @@ def vs_3rd_sync():
     return results
 
 
-def vs_3rd_maxc():
+def vs_http2():
     results = {}
-    procs = {
-        "asgi": (int(os.environ.get("P_ASGI", 1)), int(os.environ.get("T_ASGI", 1))),
-        "rsgi": (int(os.environ.get("P_RSGI", 1)), int(os.environ.get("T_RSGI", 1))),
-        "wsgi": (int(os.environ.get("P_WSGI", 1)), int(os.environ.get("T_WSGI", 1))),
-        "other": int(os.environ.get("P_OTH", CPU)),
-    }
-    with app("asgi", procs["asgi"][0], procs["asgi"][1]):
-        results["Granian ASGI"] = benchmark("b")
-    with app("rsgi", procs["rsgi"][0], procs["rsgi"][1]):
-        results["Granian RSGI"] = benchmark("b")
-    with app("wsgi", procs["wsgi"][0], procs["wsgi"][1]):
-        results["Granian WSGI"] = benchmark("b")
-    with app("uvicorn_httptools", procs["other"]):
-        results["Uvicorn http-tools"] = benchmark("b")
-    with app("hypercorn", procs["other"]):
-        results["Hypercorn"] = benchmark("b")
-    with app("gunicorn", procs["other"]):
-        results["Gunicorn (gthread)"] = benchmark("b")
+    benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
+    for fw in ["granian_asgi", "hypercorn"]:
+        for key, bench_data in benches.items():
+            route, opts = bench_data
+            fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
+            title = " ".join(item.title() for item in fw.split("_"))
+            with app(fw_app, http="2"):
+                results[f"{title} {key}"] = benchmark(route, h2=True, **opts)
     return results
+
+
+def vs_files():
+    results = {}
+    with app("asgi"):
+        results["Granian"] = benchmark("fb")
+        results["Granian pathsend"] = benchmark("fp")
+    for fw in ["uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
+        title = " ".join(item.title() for item in fw.split("_"))
+        with app(fw):
+            results[title] = benchmark("fb")
+    return results
+
+
+def _granian_version():
+    import granian
+    return granian.__version__
 
 
 def run():
@@ -204,16 +261,23 @@ def run():
     if os.environ.get("BENCHMARK_BASE", "true") == "true":
         results["rsgi_body"] = rsgi_body_type()
         results["interfaces"] = interfaces()
+        results["files"] = files()
     if os.environ.get("BENCHMARK_CONCURRENCIES") == "true":
         results["concurrencies"] = concurrencies()
-    if os.environ.get("BENCHMARK_VSA") == "true":
-        results["vs_async"] = vs_3rd_async()
-    if os.environ.get("BENCHMARK_VSS") == "true":
-        results["vs_sync"] = vs_3rd_sync()
-    if os.environ.get("BENCHMARK_VSC") == "true":
-        results["vs_maxc"] = vs_3rd_maxc()
+    if os.environ.get("BENCHMARK_VS") == "true":
+        results["vs_asgi"] = vs_asgi()
+        results["vs_wsgi"] = vs_wsgi()
+        results["vs_http2"] = vs_http2()
+        results["vs_files"] = vs_files()
     with open("results/data.json", "w") as f:
-        f.write(json.dumps({"cpu": CPU, "run_at": now.isoformat(), "results": results}))
+        pyver = sys.version_info
+        f.write(json.dumps({
+            "cpu": CPU,
+            "run_at": int(now.timestamp()),
+            "pyver": f"{pyver.major}.{pyver.minor}",
+            "results": results,
+            "granian": _granian_version()
+        }))
 
 
 if __name__ == "__main__":
