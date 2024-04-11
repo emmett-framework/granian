@@ -1,11 +1,15 @@
+import pathlib
 import sys
 
 HEADERS = [('content-type', 'text/plain; charset=utf-8')]
+HEADERS_MEDIA = [('content-type', 'image/png'), ('content-length', '95')]
 
 BODY_BYTES_SHORT = b"Test"
 BODY_BYTES_LONG = b"Test" * 20_000
 BODY_STR_SHORT = "Test"
 BODY_STR_LONG = "Test" * 20_000
+
+MEDIA_PATH = str(pathlib.Path(__file__).parent.parent / 'files' / 'media.png')
 
 
 async def b_short(scope, proto):
@@ -48,6 +52,14 @@ async def echo(scope, proto):
     )
 
 
+async def file(scope, proto):
+    proto.response_file(
+        200,
+        HEADERS_MEDIA,
+        MEDIA_PATH
+    )
+
+
 async def handle_404(scope, proto):
     proto.response_str(
         404,
@@ -61,7 +73,8 @@ routes = {
     '/bb': b_long,
     '/s': s_short,
     '/ss': s_long,
-    '/echo': echo
+    '/echo': echo,
+    '/fp': file,
 }
 
 
