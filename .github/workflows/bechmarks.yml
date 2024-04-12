@@ -29,6 +29,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+    - uses: messense/maturin-action@v1
+      with:
+        command: build
+        args: --release --interpreter python3.11
+        target: x64
+        manylinux: auto
+        container: off
+    - run: |
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
     - uses: actions/download-artifact@v4
       with:
         name: rewrk
