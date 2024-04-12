@@ -87,6 +87,7 @@ def wrk(duration, concurrency, endpoint, post=False, h2=False):
         cmd_parts.append("-H \"Connection: Keep-Alive\"")
         cmd_parts.append("-H \"Keep-Alive: timeout=60'\"")
     if post:
+        cmd_parts.append("-m post")
         cmd_parts.append("-H \"Content-Type: text/plain; charset=utf-8\"")
         cmd_parts.append("-H \"Content-Length: 4\"")
         cmd_parts.append("-b \"test\"")
@@ -110,7 +111,8 @@ def wrk(duration, concurrency, endpoint, post=False, h2=False):
                 "stdev": data["latency_std_deviation"]
             },
         }
-    except Exception:
+    except Exception as e:
+        print(f"WARN: got exception {e} while loading rewrk data")
         return {
             "requests": {"total": 0, "rps": 0},
             "latency": {"avg": None, "max": None, "stdev": None},
@@ -195,7 +197,7 @@ def http2():
     for http2 in [False, True]:
         for key, bench_data in benches.items():
             route, opts = bench_data
-            h = "2" if http2 else "1.1"
+            h = "2" if http2 else "1"
             with app("rsgi", http=h):
                 results[f"HTTP/{h} {key}"] = benchmark(route, h2=http2, **opts)
     return results

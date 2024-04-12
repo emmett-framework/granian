@@ -8,16 +8,16 @@ Python version: {{ =data.pyver }}
 Granian version: {{ =data.granian }}    
 
 {{ _data = data.results["rsgi_body"] }}
-{{ include './_rsgi.tpl' }}
+{{ include './_rsgi.md' }}
 
 {{ _data = data.results["interfaces"] }}
-{{ include './_ifaces.tpl' }}
+{{ include './_ifaces.md' }}
 
 {{ _data = data.results["http2"] }}
-{{ include './_http2.tpl' }}
+{{ include './_http2.md' }}
 
 {{ _data = data.results["files"] }}
-{{ include './_files.tpl' }}
+{{ include './_files.md' }}
 
 ### Other benchmarks
 
