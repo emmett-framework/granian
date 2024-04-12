@@ -1,12 +1,11 @@
-
 # Granian benchmarks
 
 ## Concurrency
 
-Run at: Tue 19 Mar 2024, 15:08
-Environment: Apple Silicon M2 Pro (CPUs: 10)
-Python version: 3.11
-Granian version: 1.2.0
+Run at: Tue 19 Mar 2024, 15:08    
+Environment: Apple Silicon M2 Pro (CPUs: 10)    
+Python version: 3.11    
+Granian version: 1.2.0    
 
 ### ASGI
 
@@ -172,4 +171,3 @@ Granian version: 1.2.0
 | runtime (c640) | 10 | 4 | 2 | 2041386 | 135175 | 3.782ms | 68.789ms |
 | workers (c160) | 10 | 4 | 4 | 1475546 | 97821 | 1.951ms | 75.6ms |
 | runtime (c80) | 10 | 4 | 4 | 1424839 | 94454 | 4.106ms | 180.078ms |
-

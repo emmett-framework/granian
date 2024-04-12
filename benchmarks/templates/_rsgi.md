@@ -1,7 +1,7 @@
 ## RSGI response types
 
-> RSGI plain text response comparison using protocol `response_str` and `response_bytes`.
-> The "small" response is 4 bytes, the "big" one is 80kbytes.
+RSGI plain text response comparison using protocol `response_str` and `response_bytes`.    
+The "small" response is 4 bytes, the "big" one is 80kbytes.
 
 | Type | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |

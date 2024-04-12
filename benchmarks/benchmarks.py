@@ -189,6 +189,18 @@ def interfaces():
     return results
 
 
+def http2():
+    results = {}
+    benches = {"[GET]": ("b", {}), "[POST]": ("echo", {"post": True})}
+    for http2 in [False, True]:
+        for key, bench_data in benches.items():
+            route, opts = bench_data
+            h = "2" if http2 else "1.1"
+            with app("rsgi", http=h):
+                results[f"HTTP/{h} {key}"] = benchmark(route, h2=http2, **opts)
+    return results
+
+
 def files():
     results = {}
     with app("rsgi"):
@@ -241,8 +253,7 @@ def vs_http2():
 def vs_files():
     results = {}
     with app("asgi"):
-        results["Granian"] = benchmark("fb")
-        results["Granian pathsend"] = benchmark("fp")
+        results["Granian (pathsend)"] = benchmark("fp")
     for fw in ["uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
         title = " ".join(item.title() for item in fw.split("_"))
         with app(fw):
@@ -261,6 +272,7 @@ def run():
     if os.environ.get("BENCHMARK_BASE", "true") == "true":
         results["rsgi_body"] = rsgi_body_type()
         results["interfaces"] = interfaces()
+        results["http2"] = http2()
         results["files"] = files()
     if os.environ.get("BENCHMARK_CONCURRENCIES") == "true":
         results["concurrencies"] = concurrencies()

@@ -1,12 +1,13 @@
-{{ include './_helpers.tpl' }}
 # Granian benchmarks
+
+{{ include './_helpers.tpl' }}
 
 ## VS 3rd party comparison
 
-Run at: {{ =datetime.datetime.fromtimestamp(data.run_at).strftime('%a %d %b %Y, %H:%M') }}
-Environment: {{ =benv }} (CPUs: {{ =data.cpu }})
-Python version: {{ =data.pyver }}
-Granian version: {{ =data.granian }}
+Run at: {{ =datetime.datetime.fromtimestamp(data.run_at).strftime('%a %d %b %Y, %H:%M') }}    
+Environment: {{ =benv }} (CPUs: {{ =data.cpu }})    
+Python version: {{ =data.pyver }}    
+Granian version: {{ =data.granian }}    
 
 ### ASGI
 
