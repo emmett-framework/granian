@@ -1,0 +1,133 @@
+name: benchmarks
+
+on: workflow_dispatch
+
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        default: true
+        profile: minimal
+    - run: |
+        git clone https://github.com/gi0baro/rewrk.git
+        cd rewrk && cargo build --release
+    - uses: actions/upload-artifact@v4
+      with:
+        name: rewrk
+        path: rewrk/target/release/rewrk
+
+  benchmark-base:
+    runs-on: ubuntu-latest
+    needs: [toolchain]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - uses: actions/download-artifact@v4
+      with:
+        name: rewrk
+    - run: |
+        sudo mv rewrk /usr/local/bin && chmod +x /usr/local/bin/rewrk
+    - uses: pyo3/maturin-action@v1
+      with:
+        command: build
+        args: --release --interpreter python3.11
+        target: x64
+        manylinux: auto
+        container: off
+    - run: |
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
+    - name: benchmark
+      working-directory: ./benchmarks
+      run: |
+        python benchmarks.py
+    - name: upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: results-base
+        path: benchmarks/results/*
+
+  benchmark-vs:
+    runs-on: ubuntu-latest
+    needs: [toolchain]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - uses: actions/download-artifact@v4
+      with:
+        name: rewrk
+    - run: |
+        sudo mv rewrk /usr/local/bin && chmod +x /usr/local/bin/rewrk
+    - uses: pyo3/maturin-action@v1
+      with:
+        command: build
+        args: --release --interpreter python3.11
+        target: x64
+        manylinux: auto
+        container: off
+    - run: |
+        export _whl=$(ls target/wheels/granian-*.whl)
+        pip install $_whl
+    - name: deps
+      run: |
+        pip install -r benchmarks/envs/asgi.txt
+        pip install -r benchmarks/envs/wsgi.txt
+    - name: benchmark
+      env:
+        BENCHMARK_BASE: false
+        BENCHMARK_VS: true
+      working-directory: ./benchmarks
+      run: |
+        python benchmarks.py
+    - name: upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: results-vs
+        path: benchmarks/results/*
+
+  results:
+    runs-on: ubuntu-latest
+    needs: [benchmark-base, benchmark-vs]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: gi0baro/setup-noir@v1
+    - uses: actions/download-artifact@v4
+      with:
+        name: results-base
+        path: benchmarks/results
+    - run: |
+        mv benchmarks/results/data.json benchmarks/results/base.json
+    - uses: actions/download-artifact@v4
+      with:
+        name: results-vs
+        path: benchmarks/results
+    - run: |
+        mv benchmarks/results/data.json benchmarks/results/vs.json
+    - name: render
+      working-directory: ./benchmarks
+      run: |
+        noir -c data:results/base.json -v 'benv=GHA Linux x86_64' templates/main.md > README.md
+        noir -c data:results/vs.json -v 'benv=GHA Linux x86_64' templates/vs.md > vs.md
+    - name: open PR
+      uses: peter-evans/create-pull-request@v6
+      with:
+        branch: benchmarks-update
+        branch-suffix: timestamp
+        title: Update benchmark results
+        body: SSIA
+        commit-message: |
+          Update benchmark results
+        add-paths: |
+          benchmarks/README.md
+          benchmarks/vs.md
