@@ -37,7 +37,6 @@ http-body-util = { version = "=0.1" }
 hyper = { version = "=1.2", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 log = "0.4"
-mimalloc = { version = "0.1.34", default-features = false, features = ["local_dynamic_tls"] }
 percent-encoding = "=2.3"
 pin-project = "1.1"
 pyo3 = { version = "=0.20", features = ["anyhow", "extension-module", "generate-import-lib"] }
@@ -50,6 +49,12 @@ tokio = { version = "1.37", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.21"
 tokio-util = { version = "0.7", features = ["codec"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+mimalloc = { version = "0.1.39", default-features = false, features = ["local_dynamic_tls"] }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+tikv-jemallocator = { version = "0.5.4", default-features = false, features = ["disable_initial_exec_tls"] }
 
 [profile.release]
 codegen-units = 1
