@@ -1,4 +1,4 @@
-from granian.cli import cli
+from granian.cli import entrypoint
 
 
-cli()
+entrypoint()
