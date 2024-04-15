@@ -16,11 +16,11 @@ FC = TypeVar('FC', bound=Union[_AnyCallable, click.Command])
 
 
 class EnumType(click.Choice):
-    def __init__(self, enum: Enum, case_sensitive=False):
+    def __init__(self, enum: Enum, case_sensitive=False) -> None:
         self.__enum = enum
         super().__init__(choices=[item.value for item in enum], case_sensitive=case_sensitive)
 
-    def convert(self, value, param, ctx):
+    def convert(self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]) -> Enum:
         if value is None or isinstance(value, Enum):
             return value
 
