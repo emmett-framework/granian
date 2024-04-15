@@ -88,7 +88,7 @@ impl RSGIHTTPProtocol {
             return future_into_py_iter(self.rt.clone(), py, async move {
                 match body.collect().await {
                     Ok(data) => Ok(BytesToPy(data.to_bytes())),
-                    _ => error_stream!()
+                    _ => error_stream!(),
                 }
             });
         }
