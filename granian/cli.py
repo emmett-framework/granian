@@ -37,7 +37,7 @@ def pretty_print_default(value: Optional[bool]) -> Optional[str]:
     return value
 
 
-def show_env_var(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs: Any) -> Callable[[FC], FC]:
+def documented_option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs: Any) -> Callable[[FC], FC]:
     """This is the option generator from Click.
 
     It has a very simple update so that the environment variable will also get added to the help text.
@@ -58,146 +58,142 @@ def show_env_var(*param_decls: str, cls: Optional[Type[click.Option]] = None, **
     return decorator
 
 
-# monkey patch so that the behaviour is more similar to the docs.
-click.option = show_env_var
-
-
 @click.command(context_settings={'show_default': True})
 @click.argument('app', required=True)
-@click.option(
+@documented_option(
     '--host',
     default='127.0.0.1',
     help='Host address to bind to',
 )
-@click.option('--port', type=int, default=8000, help='Port to bind to.')
-@click.option(
+@documented_option('--port', type=int, default=8000, help='Port to bind to.')
+@documented_option(
     '--interface',
     type=EnumType(Interfaces),
     default=Interfaces.RSGI,
     help='Application interface type',
 )
-@click.option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
-@click.option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling.')
-@click.option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
-@click.option('--threads', type=click.IntRange(1), default=1, help='Number of threads')
-@click.option(
+@documented_option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
+@documented_option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling.')
+@documented_option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
+@documented_option('--threads', type=click.IntRange(1), default=1, help='Number of threads')
+@documented_option(
     '--blocking-threads',
     type=click.IntRange(1),
     default=1,
     help='Number of blocking threads',
 )
-@click.option(
+@documented_option(
     '--threading-mode',
     type=EnumType(ThreadModes),
     default=ThreadModes.workers,
     help='Threading mode to use',
 )
-@click.option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
-@click.option('--opt/--no-opt', 'loop_opt', default=False, help='Enable loop optimizations')
-@click.option(
+@documented_option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
+@documented_option('--opt/--no-opt', 'loop_opt', default=False, help='Enable loop optimizations')
+@documented_option(
     '--backlog',
     type=click.IntRange(128),
     default=1024,
     help='Maximum number of connections to hold in backlog',
 )
-@click.option(
+@documented_option(
     '--http1-buffer-size',
     type=click.IntRange(8192),
     default=HTTP1Settings.max_buffer_size,
     help='Set the maximum buffer size for HTTP/1 connections',
 )
-@click.option(
+@documented_option(
     '--http1-keep-alive/--no-http1-keep-alive',
     default=HTTP1Settings.keep_alive,
     help='Enables or disables HTTP/1 keep-alive',
 )
-@click.option(
+@documented_option(
     '--http1-pipeline-flush/--no-http1-pipeline-flush',
     default=HTTP1Settings.pipeline_flush,
     help='Aggregates HTTP/1 flushes to better support pipelined responses (experimental)',
 )
-@click.option(
+@documented_option(
     '--http2-adaptive-window/--no-http2-adaptive-window',
     default=HTTP2Settings.adaptive_window,
     help='Sets whether to use an adaptive flow control for HTTP2',
 )
-@click.option(
+@documented_option(
     '--http2-initial-connection-window-size',
     type=int,
     default=HTTP2Settings.initial_connection_window_size,
     help='Sets the max connection-level flow control for HTTP2',
 )
-@click.option(
+@documented_option(
     '--http2-initial-stream-window-size',
     type=int,
     default=HTTP2Settings.initial_stream_window_size,
     help='Sets the `SETTINGS_INITIAL_WINDOW_SIZE` option for HTTP2 stream-level flow control',
 )
-@click.option(
+@documented_option(
     '--http2-keep-alive-interval',
     type=int,
     default=HTTP2Settings.keep_alive_interval,
     help='Sets an interval for HTTP2 Ping frames should be sent to keep a connection alive',
 )
-@click.option(
+@documented_option(
     '--http2-keep-alive-timeout',
     type=int,
     default=HTTP2Settings.keep_alive_timeout,
     help='Sets a timeout for receiving an acknowledgement of the HTTP2 keep-alive ping',
 )
-@click.option(
+@documented_option(
     '--http2-max-concurrent-streams',
     type=int,
     default=HTTP2Settings.max_concurrent_streams,
     help='Sets the SETTINGS_MAX_CONCURRENT_STREAMS option for HTTP2 connections',
 )
-@click.option(
+@documented_option(
     '--http2-max-frame-size',
     type=int,
     default=HTTP2Settings.max_frame_size,
     help='Sets the maximum frame size to use for HTTP2',
 )
-@click.option(
+@documented_option(
     '--http2-max-headers-size',
     type=int,
     default=HTTP2Settings.max_headers_size,
     help='Sets the max size of received header frames',
 )
-@click.option(
+@documented_option(
     '--http2-max-send-buffer-size',
     type=int,
     default=HTTP2Settings.max_send_buffer_size,
     help='Set the maximum write buffer size for each HTTP/2 stream',
 )
-@click.option('--log/--no-log', 'log_enabled', default=True, help='Enable logging')
-@click.option('--log-level', type=EnumType(LogLevels), default=LogLevels.info, help='Log level.')
-@click.option(
+@documented_option('--log/--no-log', 'log_enabled', default=True, help='Enable logging')
+@documented_option('--log-level', type=EnumType(LogLevels), default=LogLevels.info, help='Log level.')
+@documented_option(
     '--log-config',
     type=click.Path(exists=True, file_okay=True, dir_okay=True, readable=True, path_type=pathlib.Path),
     help='Logging configuration file (json)',
 )
-@click.option(
+@documented_option(
     '--ssl-keyfile',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
     help='SSL key file',
 )
-@click.option(
+@documented_option(
     '--ssl-certificate',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
     help='SSL certificate file',
 )
-@click.option('--url-path-prefix', help='URL path prefix the app is mounted on')
-@click.option(
+@documented_option('--url-path-prefix', help='URL path prefix the app is mounted on')
+@documented_option(
     '--respawn-failed-workers/--no-respawn-failed-workers',
     default=False,
     help='Enable workers respawn on unexpected exit',
 )
-@click.option(
+@documented_option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
 )
-@click.option(
+@documented_option(
     '--process-name',
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
