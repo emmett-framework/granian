@@ -86,11 +86,10 @@ impl RSGIHTTPProtocol {
     fn __call__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         if let Some(body) = self.body.lock().unwrap().take() {
             return future_into_py_iter(self.rt.clone(), py, async move {
-                let body = body
-                    .collect()
-                    .await
-                    .map_err(|_err| pyo3::exceptions::PyRuntimeError::new_err("err"))?;
-                Ok(BytesToPy(body.to_bytes()))
+                match body.collect().await {
+                    Ok(data) => Ok(BytesToPy(data.to_bytes())),
+                    _ => error_stream!()
+                }
             });
         }
         error_proto!()

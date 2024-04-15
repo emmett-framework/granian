@@ -22,7 +22,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_util::io::ReaderStream;
 
 use super::{
-    errors::{error_flow, error_message, error_transport, UnsupportedASGIMessage},
+    errors::{error_flow, error_message, UnsupportedASGIMessage},
     types::ASGIMessageType,
 };
 use crate::{
@@ -89,14 +89,13 @@ impl ASGIHTTPProtocol {
                     if close {
                         flow_hld.notify_one();
                     }
-                    Ok(())
                 }
                 Err(err) => {
-                    log::warn!("ASGI transport tx error: {:?}", err);
+                    log::warn!("ASGI transport error: {:?}", err);
                     flow_hld.notify_one();
-                    error_transport!()
                 }
             }
+            Ok(())
         })
     }
 

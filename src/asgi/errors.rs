@@ -75,12 +75,6 @@ macro_rules! error_flow {
     };
 }
 
-macro_rules! error_transport {
-    () => {
-        Err(super::errors::ASGITransportError.into())
-    };
-}
-
 macro_rules! error_message {
     () => {
         Err(super::errors::UnsupportedASGIMessage.into())
@@ -89,4 +83,3 @@ macro_rules! error_message {
 
 pub(crate) use error_flow;
 pub(crate) use error_message;
-pub(crate) use error_transport;
