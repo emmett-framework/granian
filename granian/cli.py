@@ -1,6 +1,7 @@
 import json
 import pathlib
-from typing import Any, Callable, Literal, Optional, Type, TypeVar, Union
+from enum import Enum
+from typing import Any, Callable, Optional, Type, TypeVar, Union
 
 import click
 
@@ -12,6 +13,28 @@ from .server import Granian
 
 _AnyCallable = Callable[..., Any]
 FC = TypeVar('FC', bound=Union[_AnyCallable, click.Command])
+
+
+class EnumType(click.Choice):
+    def __init__(self, enum: Enum, case_sensitive=False):
+        self.__enum = enum
+        super().__init__(choices=[item.value for item in enum], case_sensitive=case_sensitive)
+
+    def convert(self, value, param, ctx):
+        if value is None or isinstance(value, Enum):
+            return value
+
+        converted_str = super().convert(value, param, ctx)
+        return self.__enum(converted_str)
+
+
+def pretty_print_default(value: Optional[bool]) -> Optional[str]:
+    """Print nicer message strings for default value."""
+    if isinstance(value, bool):
+        return 'enabled' if value else 'disabled'
+    if isinstance(value, Enum):
+        return value.value
+    return value
 
 
 def show_env_var(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs: Any) -> Callable[[FC], FC]:
@@ -26,6 +49,8 @@ def show_env_var(*param_decls: str, cls: Optional[Type[click.Option]] = None, **
         # start change
         env_name = param_decls[-1].lstrip('-').split('/')[0].replace('-', '_').upper()
         attrs['help'] += f' [env var: GRANIAN_{env_name}]'
+        if 'default' in attrs:
+            attrs['show_default'] = pretty_print_default(attrs['default'])
         # end change
         click.decorators._param_memo(f, cls(param_decls, **attrs))
         return f
@@ -38,51 +63,23 @@ click.option = show_env_var
 
 
 @click.command(context_settings={'show_default': True})
-@click.argument('app', required=True, type=str)
+@click.argument('app', required=True)
 @click.option(
     '--host',
-    type=str,
     default='127.0.0.1',
     help='Host address to bind to',
 )
-@click.option(
-    '--port',
-    type=int,
-    default=8000,
-    help='Port to bind to.',
-)
+@click.option('--port', type=int, default=8000, help='Port to bind to.')
 @click.option(
     '--interface',
-    type=click.Choice(['asgi', 'asginl', 'rsgi', 'wsgi']),
-    default='rsgi',
+    type=EnumType(Interfaces),
+    default=Interfaces.RSGI,
     help='Application interface type',
 )
-@click.option(
-    '--http',
-    type=click.Choice(['auto', '1', '2']),
-    default='auto',
-    help='HTTP version',
-)
-@click.option(
-    '--ws/--no-ws',
-    'websockets',
-    type=bool,
-    default=False,
-    help='Enable websockets handling.',
-    show_default='enabled',
-)
-@click.option(
-    '--workers',
-    type=click.IntRange(1),
-    default=1,
-    help='Number of worker processes',
-)
-@click.option(
-    '--threads',
-    type=click.IntRange(1),
-    default=1,
-    help='Number of threads',
-)
+@click.option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
+@click.option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling.')
+@click.option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
+@click.option('--threads', type=click.IntRange(1), default=1, help='Number of threads')
 @click.option(
     '--blocking-threads',
     type=click.IntRange(1),
@@ -91,23 +88,12 @@ click.option = show_env_var
 )
 @click.option(
     '--threading-mode',
-    type=click.Choice(['runtime', 'workers']),
-    default='workers',
+    type=EnumType(ThreadModes),
+    default=ThreadModes.workers,
     help='Threading mode to use',
 )
-@click.option(
-    '--loop',
-    type=click.Choice(['auto', 'asyncio', 'uvloop']),
-    default='auto',
-    help='Event loop implementation',
-)
-@click.option(
-    '--opt/--no-opt',
-    'loop_opt',
-    default=False,
-    show_default='disabled',
-    help='Enable loop optimizations',
-)
+@click.option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
+@click.option('--opt/--no-opt', 'loop_opt', default=False, help='Enable loop optimizations')
 @click.option(
     '--backlog',
     type=click.IntRange(128),
@@ -122,19 +108,16 @@ click.option = show_env_var
 )
 @click.option(
     '--http1-keep-alive/--no-http1-keep-alive',
-    show_default='enabled',
     default=HTTP1Settings.keep_alive,
     help='Enables or disables HTTP/1 keep-alive',
 )
 @click.option(
     '--http1-pipeline-flush/--no-http1-pipeline-flush',
-    show_default='disabled',
     default=HTTP1Settings.pipeline_flush,
     help='Aggregates HTTP/1 flushes to better support pipelined responses (experimental)',
 )
 @click.option(
     '--http2-adaptive-window/--no-http2-adaptive-window',
-    show_default='disabled',
     default=HTTP2Settings.adaptive_window,
     help='Sets whether to use an adaptive flow control for HTTP2',
 )
@@ -154,7 +137,6 @@ click.option = show_env_var
     '--http2-keep-alive-interval',
     type=int,
     default=HTTP2Settings.keep_alive_interval,
-    show_default='disabled',
     help='Sets an interval for HTTP2 Ping frames should be sent to keep a connection alive',
 )
 @click.option(
@@ -187,54 +169,36 @@ click.option = show_env_var
     default=HTTP2Settings.max_send_buffer_size,
     help='Set the maximum write buffer size for each HTTP/2 stream',
 )
-@click.option(
-    '--log/--no-log',
-    'log_enabled',
-    show_default='enabled',
-    default=True,
-    help='Enable logging',
-)
-@click.option(
-    '--log-level',
-    type=click.Choice(['critical', 'error', 'warning', 'warn', 'info', 'debug'], case_sensitive=False),
-    default='info',
-    help='Log level.',
-)
+@click.option('--log/--no-log', 'log_enabled', default=True, help='Enable logging')
+@click.option('--log-level', type=EnumType(LogLevels), default=LogLevels.info, help='Log level.')
 @click.option(
     '--log-config',
     type=click.Path(exists=True, file_okay=True, dir_okay=True, readable=True, path_type=pathlib.Path),
     help='Logging configuration file (json)',
-    default=None,
 )
 @click.option(
     '--ssl-keyfile',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
-    default=None,
     help='SSL key file',
 )
 @click.option(
     '--ssl-certificate',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
-    default=None,
     help='SSL certificate file',
 )
-@click.option('--url-path-prefix', type=str, default=None, help='URL path prefix the app is mounted on')
+@click.option('--url-path-prefix', help='URL path prefix the app is mounted on')
 @click.option(
     '--respawn-failed-workers/--no-respawn-failed-workers',
     default=False,
-    show_default='disabled',
     help='Enable workers respawn on unexpected exit',
 )
 @click.option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
-    show_default='disabled',
 )
 @click.option(
     '--process-name',
-    type=str,
-    default=None,
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
 @click.version_option(message='%(prog)s %(version)s')
@@ -242,14 +206,14 @@ def cli(
     app: str,
     host: str,
     port: int,
-    interface: Literal['asgi', 'asginl', 'rsgi', 'wsgi'],
-    http: Literal['auto', '1', '2'],
+    interface: Interfaces,
+    http: HTTPModes,
     websockets: bool,
     workers: int,
     threads: int,
     blocking_threads: int,
-    threading_mode: Literal['runtime', 'workers'],
-    loop: Literal['auto', 'asyncio', 'uvloop'],
+    threading_mode: ThreadModes,
+    loop: Loops,
     loop_opt: bool,
     backlog: int,
     http1_buffer_size: int,
@@ -265,7 +229,7 @@ def cli(
     http2_max_headers_size: int,
     http2_max_send_buffer_size: int,
     log_enabled: bool,
-    log_level: Literal['critical', 'error', 'warning', 'warn', 'info', 'debug'],
+    log_level: LogLevels,
     log_config: Optional[pathlib.Path],
     ssl_keyfile: Optional[pathlib.Path],
     ssl_certificate: Optional[pathlib.Path],
@@ -290,14 +254,14 @@ def cli(
         app,
         address=host,
         port=port,
-        interface=Interfaces(interface),
+        interface=interface,
         workers=workers,
         threads=threads,
         pthreads=blocking_threads,
-        threading_mode=ThreadModes(threading_mode),
-        loop=Loops(loop),
+        threading_mode=threading_mode,
+        loop=loop,
         loop_opt=loop_opt,
-        http=HTTPModes(http),
+        http=http,
         websockets=websockets,
         backlog=backlog,
         http1_settings=HTTP1Settings(
@@ -315,7 +279,7 @@ def cli(
             max_send_buffer_size=http2_max_send_buffer_size,
         ),
         log_enabled=log_enabled,
-        log_level=LogLevels(log_level),
+        log_level=log_level,
         log_dictconfig=log_dictconfig,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
