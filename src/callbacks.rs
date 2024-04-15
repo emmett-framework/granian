@@ -44,6 +44,7 @@ pub(crate) struct PyIterAwaitable {
     result: RwLock<Option<PyResult<PyObject>>>,
 }
 
+#[cfg(not(target_os = "linux"))]
 impl PyIterAwaitable {
     pub(crate) fn new() -> Self {
         Self {

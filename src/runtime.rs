@@ -12,9 +12,11 @@ use tokio::{
     task::{JoinHandle, LocalSet},
 };
 
+use super::callbacks::PyEmptyAwaitable;
 #[cfg(unix)]
 use super::callbacks::PyFutureAwaitable;
-use super::callbacks::{PyEmptyAwaitable, PyIterAwaitable};
+#[cfg(not(target_os = "linux"))]
+use super::callbacks::PyIterAwaitable;
 #[cfg(windows)]
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
@@ -194,6 +196,7 @@ where
 //  It consumes more cpu-cycles than `future_into_py_futlike`,
 //  but for "quick" operations it's something like 12% faster.
 #[allow(unused_must_use)]
+#[cfg(not(target_os = "linux"))]
 pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
 where
     R: Runtime + ContextExt + Clone,
@@ -209,6 +212,21 @@ where
     });
 
     Ok(py_fut.into_ref(py))
+}
+
+// NOTE:
+//  for some unknown reasons, it seems on Linux the real implementation
+//  has performance issues. We just fallback to `futlike` impl on such targets.
+//  MacOS works best with original impl, Windows still needs further analysis.
+#[cfg(target_os = "linux")]
+#[inline(always)]
+pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<&PyAny>
+where
+    R: Runtime + ContextExt + Clone,
+    F: Future<Output = PyResult<T>> + Send + 'static,
+    T: IntoPy<PyObject>,
+{
+    future_into_py_futlike(rt, py, fut)
 }
 
 // NOTE:
