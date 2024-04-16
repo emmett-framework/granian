@@ -1,3 +1,5 @@
+use pyo3::types::PyTracebackMethods;
+
 pub(crate) fn header_contains_value(
     headers: &hyper::HeaderMap,
     header: impl hyper::header::AsHeaderName,
@@ -41,7 +43,7 @@ fn trim_end(data: &[u8]) -> &[u8] {
 #[inline]
 pub(crate) fn log_application_callable_exception(err: &pyo3::PyErr) {
     let tb = pyo3::Python::with_gil(|py| {
-        let tb = match err.traceback(py).map(pyo3::types::PyTraceback::format) {
+        let tb = match err.traceback_bound(py).map(|t| t.format()) {
             Some(Ok(tb)) => tb,
             _ => String::new(),
         };

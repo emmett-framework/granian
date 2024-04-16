@@ -8,6 +8,7 @@ use hyper::{
 };
 use pyo3::{
     prelude::*,
+    pybacked::PyBackedBytes,
     types::{PyBytes, PyDict},
 };
 use std::{
@@ -81,7 +82,7 @@ impl ASGIHTTPProtocol {
         tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
         body: Box<[u8]>,
         close: bool,
-    ) -> PyResult<&'p PyAny> {
+    ) -> PyResult<Bound<'p, PyAny>> {
         let flow_hld = self.flow_tx_waiter.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             match tx.send(Ok(body.into())).await {
@@ -106,13 +107,13 @@ impl ASGIHTTPProtocol {
 
 #[pymethods]
 impl ASGIHTTPProtocol {
-    fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         if *self.flow_rx_exhausted.read().unwrap() {
             let flow_hld = self.flow_tx_waiter.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 let () = flow_hld.notified().await;
                 Python::with_gil(|py| {
-                    let dict = PyDict::new(py);
+                    let dict = PyDict::new_bound(py);
                     dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.disconnect"))?;
                     Ok(dict.to_object(py))
                 })
@@ -141,7 +142,7 @@ impl ASGIHTTPProtocol {
 
             match chunk {
                 Ok(data) => Python::with_gil(|py| {
-                    let dict = PyDict::new(py);
+                    let dict = PyDict::new_bound(py);
                     dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.request"))?;
                     dict.set_item(pyo3::intern!(py, "body"), BytesToPy(data))?;
                     dict.set_item(pyo3::intern!(py, "more_body"), more_body)?;
@@ -150,7 +151,7 @@ impl ASGIHTTPProtocol {
                 _ => {
                     flow_hld.notify_one();
                     Python::with_gil(|py| {
-                        let dict = PyDict::new(py);
+                        let dict = PyDict::new_bound(py);
                         dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.disconnect"))?;
                         Ok(dict.to_object(py))
                     })
@@ -159,7 +160,7 @@ impl ASGIHTTPProtocol {
         })
     }
 
-    fn send<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&self, py: Python<'p>, data: &Bound<'p, PyDict>) -> PyResult<Bound<'p, PyAny>> {
         match adapt_message_type(py, data) {
             Ok(ASGIMessageType::HTTPStart(intent)) => match self.response_started.load(atomic::Ordering::Relaxed) {
                 false => {
@@ -306,7 +307,7 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn accept<'p>(&self, py: Python<'p>, subproto: Option<String>) -> PyResult<&'p PyAny> {
+    fn accept<'p>(&self, py: Python<'p>, subproto: Option<String>) -> PyResult<Bound<'p, PyAny>> {
         let upgrade = self.upgrade.lock().unwrap().take();
         let websocket = self.websocket.lock().unwrap().take();
         let accepted = self.accepted.clone();
@@ -338,7 +339,7 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn send_message<'p>(&self, py: Python<'p>, data: Message) -> PyResult<&'p PyAny> {
+    fn send_message<'p>(&self, py: Python<'p>, data: Message) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.ws_tx.clone();
         let closed = self.closed.clone();
 
@@ -359,7 +360,7 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn close<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn close<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let closed = self.closed.clone();
         let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
@@ -399,7 +400,7 @@ impl ASGIWebsocketProtocol {
 
 #[pymethods]
 impl ASGIWebsocketProtocol {
-    fn receive<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let accepted = self.accepted.clone();
         let closed = self.closed.clone();
         let transport = self.ws_rx.clone();
@@ -408,7 +409,7 @@ impl ASGIWebsocketProtocol {
             let accepted = accepted.load(atomic::Ordering::Relaxed);
             if !accepted {
                 return Python::with_gil(|py| {
-                    let dict = PyDict::new(py);
+                    let dict = PyDict::new_bound(py);
                     dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.connect"))?;
                     Ok(dict.to_object(py))
                 });
@@ -431,7 +432,7 @@ impl ASGIWebsocketProtocol {
         })
     }
 
-    fn send<'p>(&self, py: Python<'p>, data: &'p PyDict) -> PyResult<&'p PyAny> {
+    fn send<'p>(&self, py: Python<'p>, data: &Bound<'p, PyDict>) -> PyResult<Bound<'p, PyAny>> {
         match adapt_message_type(py, data) {
             Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
             Ok(ASGIMessageType::WSClose) => self.close(py),
@@ -442,7 +443,7 @@ impl ASGIWebsocketProtocol {
 }
 
 #[inline(never)]
-fn adapt_message_type(py: Python, message: &PyDict) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
+fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
     match message.get_item(pyo3::intern!(py, "type")) {
         Ok(Some(item)) => {
             let message_type: &str = item.extract()?;
@@ -470,7 +471,7 @@ fn adapt_message_type(py: Python, message: &PyDict) -> Result<ASGIMessageType, U
 }
 
 #[inline(always)]
-fn adapt_status_code(py: Python, message: &PyDict) -> Result<i16, UnsupportedASGIMessage> {
+fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<i16, UnsupportedASGIMessage> {
     match message.get_item(pyo3::intern!(py, "status"))? {
         Some(item) => Ok(item.extract()?),
         _ => error_message!(),
@@ -478,14 +479,14 @@ fn adapt_status_code(py: Python, message: &PyDict) -> Result<i16, UnsupportedASG
 }
 
 #[inline(always)]
-fn adapt_headers(py: Python, message: &PyDict) -> HeaderMap {
+fn adapt_headers(py: Python, message: &Bound<PyDict>) -> HeaderMap {
     let mut ret = HeaderMap::new();
     ret.insert(HK_SERVER, HV_SERVER);
     match message.get_item(pyo3::intern!(py, "headers")) {
         Ok(Some(item)) => {
-            let accum: Vec<Vec<&[u8]>> = item.extract().unwrap_or(Vec::new());
+            let accum: Vec<Vec<PyBackedBytes>> = item.extract().unwrap_or(Vec::new());
             for tup in &accum {
-                if let (Ok(key), Ok(val)) = (HeaderName::from_bytes(tup[0]), HeaderValue::from_bytes(tup[1])) {
+                if let (Ok(key), Ok(val)) = (HeaderName::from_bytes(&tup[0]), HeaderValue::from_bytes(&tup[1])) {
                     ret.append(key, val);
                 }
             }
@@ -496,9 +497,10 @@ fn adapt_headers(py: Python, message: &PyDict) -> HeaderMap {
 }
 
 #[inline(always)]
-fn adapt_body(py: Python, message: &PyDict) -> (Box<[u8]>, bool) {
-    let body = match message.get_item(pyo3::intern!(py, "body")) {
-        Ok(Some(item)) => item.extract().unwrap_or(EMPTY_BYTES),
+fn adapt_body(py: Python, message: &Bound<PyDict>) -> (Box<[u8]>, bool) {
+    let body = message.get_item(pyo3::intern!(py, "body"));
+    let body = match body {
+        Ok(Some(ref item)) => item.extract().unwrap_or(EMPTY_BYTES),
         _ => EMPTY_BYTES,
     };
     let more = match message.get_item(pyo3::intern!(py, "more_body")) {
@@ -509,7 +511,7 @@ fn adapt_body(py: Python, message: &PyDict) -> (Box<[u8]>, bool) {
 }
 
 #[inline(always)]
-fn adapt_file(py: Python, message: &PyDict) -> PyResult<String> {
+fn adapt_file(py: Python, message: &Bound<PyDict>) -> PyResult<String> {
     match message.get_item(pyo3::intern!(py, "path"))? {
         Some(item) => item.extract(),
         _ => error_flow!(),
@@ -517,7 +519,7 @@ fn adapt_file(py: Python, message: &PyDict) -> PyResult<String> {
 }
 
 #[inline(always)]
-fn ws_message_into_rs(py: Python, message: &PyDict) -> PyResult<Message> {
+fn ws_message_into_rs(py: Python, message: &Bound<PyDict>) -> PyResult<Message> {
     match (
         message.get_item(pyo3::intern!(py, "bytes"))?,
         message.get_item(pyo3::intern!(py, "text"))?,
@@ -540,13 +542,13 @@ fn ws_message_into_rs(py: Python, message: &PyDict) -> PyResult<Message> {
 fn ws_message_into_py(message: Message) -> PyResult<PyObject> {
     match message {
         Message::Binary(message) => Python::with_gil(|py| {
-            let dict = PyDict::new(py);
+            let dict = PyDict::new_bound(py);
             dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.receive"))?;
-            dict.set_item(pyo3::intern!(py, "bytes"), PyBytes::new(py, &message[..]))?;
+            dict.set_item(pyo3::intern!(py, "bytes"), PyBytes::new_bound(py, &message[..]))?;
             Ok(dict.to_object(py))
         }),
         Message::Text(message) => Python::with_gil(|py| {
-            let dict = PyDict::new(py);
+            let dict = PyDict::new_bound(py);
             dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.receive"))?;
             dict.set_item(pyo3::intern!(py, "text"), message)?;
             Ok(dict.to_object(py))
@@ -556,7 +558,7 @@ fn ws_message_into_py(message: Message) -> PyResult<PyObject> {
                 Some(frame) => frame.code.into(),
                 _ => 1005,
             };
-            let dict = PyDict::new(py);
+            let dict = PyDict::new_bound(py);
             dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.disconnect"))?;
             dict.set_item(pyo3::intern!(py, "code"), close_code)?;
             Ok(dict.to_object(py))

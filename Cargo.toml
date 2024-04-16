@@ -39,9 +39,8 @@ hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 log = "0.4"
 percent-encoding = "=2.3"
 pin-project = "1.1"
-pyo3 = { version = "=0.20", features = ["anyhow", "extension-module", "generate-import-lib"] }
-pyo3-asyncio = { version = "=0.20", features = ["tokio-runtime"], git = "https://github.com/gi0baro/pyo3-asyncio.git", rev = "6e3a309" }
-pyo3-log = "=0.8"
+pyo3 = { version = "=0.21", features = ["anyhow", "extension-module", "generate-import-lib"] }
+pyo3-log = { version = "=0.9", git = "https://github.com/a1phyr/pyo3-log", rev = "76ff388163" }
 rustls-pemfile = "2.1"
 socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.9", features = ["rustls"] }

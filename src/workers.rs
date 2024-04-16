@@ -316,8 +316,8 @@ macro_rules! serve_rth {
         fn $func_name(
             &self,
             callback: PyObject,
-            event_loop: &PyAny,
-            context: &PyAny,
+            event_loop: &Bound<PyAny>,
+            context: Bound<PyAny>,
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
@@ -329,13 +329,13 @@ macro_rules! serve_rth {
             let http_upgrades = self.config.websockets_enabled;
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
+            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
-            let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop, async move {
+            let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
                 match (&http_mode[..], http_upgrades) {
                     ("auto", true) => {
                         crate::workers::handle_connection_loop!(
@@ -442,8 +442,8 @@ macro_rules! serve_rth_ssl {
         fn $func_name(
             &self,
             callback: PyObject,
-            event_loop: &PyAny,
-            context: &PyAny,
+            event_loop: &Bound<PyAny>,
+            context: Bound<PyAny>,
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
@@ -456,13 +456,13 @@ macro_rules! serve_rth_ssl {
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
             let tls_cfg = self.config.tls_cfg();
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
+            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
-            let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop, async move {
+            let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
                 match (&http_mode[..], http_upgrades) {
                     ("auto", true) => {
                         crate::workers::handle_tls_loop!(
@@ -574,8 +574,8 @@ macro_rules! serve_wth {
         fn $func_name(
             &self,
             callback: PyObject,
-            event_loop: &PyAny,
-            context: &PyAny,
+            event_loop: &Bound<PyAny>,
+            context: Bound<PyAny>,
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
@@ -584,7 +584,7 @@ macro_rules! serve_wth {
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
+            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
@@ -700,7 +700,7 @@ macro_rules! serve_wth {
                 }));
             }
 
-            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop, async move {
+            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
                 log::info!("Stopping worker-{}", worker_id);
@@ -726,8 +726,8 @@ macro_rules! serve_wth_ssl {
         fn $func_name(
             &self,
             callback: PyObject,
-            event_loop: &PyAny,
-            context: &PyAny,
+            event_loop: &Bound<PyAny>,
+            context: Bound<PyAny>,
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
@@ -736,7 +736,7 @@ macro_rules! serve_wth_ssl {
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop, context);
+            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
@@ -858,7 +858,7 @@ macro_rules! serve_wth_ssl {
                 }));
             }
 
-            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop, async move {
+            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
                 log::info!("Stopping worker-{}", worker_id);
@@ -891,7 +891,7 @@ pub(crate) use serve_rth_ssl;
 pub(crate) use serve_wth;
 pub(crate) use serve_wth_ssl;
 
-pub(crate) fn init_pymodule(module: &PyModule) -> PyResult<()> {
+pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<WorkerSignal>()?;
     module.add_class::<ASGIWorker>()?;
     module.add_class::<RSGIWorker>()?;

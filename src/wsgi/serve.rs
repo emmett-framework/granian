@@ -65,14 +65,26 @@ impl WSGIWorker {
         })
     }
 
-    fn serve_rth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal: Py<WorkerSignal>) {
+    fn serve_rth(
+        &self,
+        callback: PyObject,
+        event_loop: &Bound<PyAny>,
+        context: Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         match self.config.ssl_enabled {
             false => self._serve_rth(callback, event_loop, context, signal),
             true => self._serve_rth_ssl(callback, event_loop, context, signal),
         }
     }
 
-    fn serve_wth(&self, callback: PyObject, event_loop: &PyAny, context: &PyAny, signal: Py<WorkerSignal>) {
+    fn serve_wth(
+        &self,
+        callback: PyObject,
+        event_loop: &Bound<PyAny>,
+        context: Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         match self.config.ssl_enabled {
             false => self._serve_wth(callback, event_loop, context, signal),
             true => self._serve_wth_ssl(callback, event_loop, context, signal),

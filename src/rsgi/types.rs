@@ -8,8 +8,8 @@ use hyper::{
     Method, Uri, Version,
 };
 use percent_encoding::percent_decode_str;
-use pyo3::prelude::*;
 use pyo3::types::{PyIterator, PyList, PyString};
+use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{borrow::Cow, net::SocketAddr, sync::Arc};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
@@ -67,8 +67,8 @@ impl RSGIHeaders {
         }
     }
 
-    fn __iter__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyIterator> {
-        PyIterator::from_object(PyList::new(py, self.keys()))
+    fn __iter__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyIterator>> {
+        PyIterator::from_bound_object(&PyList::new_bound(py, self.keys()))
     }
 
     fn __len__(&self) -> usize {
@@ -79,7 +79,7 @@ impl RSGIHeaders {
     fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
         match self.inner.get(key) {
             Some(val) => match val.to_str() {
-                Ok(string) => Some(PyString::new(py, string).into()),
+                Ok(string) => Some(PyString::new_bound(py, string).into()),
                 _ => default,
             },
             _ => default,
@@ -87,14 +87,14 @@ impl RSGIHeaders {
     }
 
     #[pyo3(signature = (key))]
-    fn get_all<'p>(&self, py: Python<'p>, key: &'p str) -> &'p PyList {
-        PyList::new(
+    fn get_all<'p>(&self, py: Python<'p>, key: &'p str) -> Bound<'p, PyList> {
+        PyList::new_bound(
             py,
             self.inner
                 .get_all(key)
                 .iter()
-                .map(|v| PyString::new(py, v.to_str().unwrap()))
-                .collect::<Vec<&PyString>>(),
+                .map(|v| PyString::new_bound(py, v.to_str().unwrap()))
+                .collect::<Vec<Bound<PyString>>>(),
         )
     }
 }
@@ -222,8 +222,8 @@ macro_rules! headers_from_py {
         headers.insert(HK_SERVER, HV_SERVER);
         for (key, value) in $headers {
             headers.append(
-                HeaderName::try_from(key).unwrap(),
-                HeaderValue::from_str(value).unwrap(),
+                HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                HeaderValue::from_str(&value).unwrap(),
             );
         }
         headers
@@ -231,7 +231,7 @@ macro_rules! headers_from_py {
 }
 
 impl PyResponseBody {
-    pub fn new(status: u16, headers: Vec<(&str, &str)>, body: HTTPResponseBody) -> Self {
+    pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: HTTPResponseBody) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -239,7 +239,7 @@ impl PyResponseBody {
         }
     }
 
-    pub fn empty(status: u16, headers: Vec<(&str, &str)>) -> Self {
+    pub fn empty(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -247,7 +247,7 @@ impl PyResponseBody {
         }
     }
 
-    pub fn from_bytes(status: u16, headers: Vec<(&str, &str)>, body: Cow<[u8]>) -> Self {
+    pub fn from_bytes(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) -> Self {
         let rbody: Box<[u8]> = body.into();
         Self {
             status: status.try_into().unwrap(),
@@ -258,7 +258,7 @@ impl PyResponseBody {
         }
     }
 
-    pub fn from_string(status: u16, headers: Vec<(&str, &str)>, body: String) -> Self {
+    pub fn from_string(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -278,7 +278,7 @@ impl PyResponseBody {
 }
 
 impl PyResponseFile {
-    pub fn new(status: u16, headers: Vec<(&str, &str)>, file_path: String) -> Self {
+    pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),

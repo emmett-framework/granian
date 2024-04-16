@@ -10,6 +10,7 @@ use pyo3::prelude::*;
 use std::sync::OnceLock;
 
 mod asgi;
+mod asyncio;
 mod callbacks;
 mod conversion;
 mod http;
@@ -33,7 +34,7 @@ pub fn get_granian_version() -> &'static str {
 }
 
 #[pymodule]
-fn _granian(py: Python, module: &PyModule) -> PyResult<()> {
+fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("__version__", get_granian_version())?;
     asgi::init_pymodule(module)?;
     rsgi::init_pymodule(py, module)?;

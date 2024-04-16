@@ -2,7 +2,6 @@ use std::{net::SocketAddr, sync::Arc};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use pyo3_asyncio::TaskLocals;
 use tokio::sync::oneshot;
 
 use super::{
@@ -15,7 +14,7 @@ use crate::{
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
     http::{response_500, HTTPResponse},
-    runtime::RuntimeRef,
+    runtime::{RuntimeRef, TaskLocals},
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -28,7 +27,7 @@ pub(crate) struct CallbackRunnerHTTP {
 }
 
 impl CallbackRunnerHTTP {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: &PyDict) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: Bound<PyDict>) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
             proto: pyproto.clone_ref(py),
@@ -42,7 +41,7 @@ impl CallbackRunnerHTTP {
 
 #[pymethods]
 impl CallbackRunnerHTTP {
-    fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         CallbackTaskHTTP::new(
             py,
             self.cb.clone_ref(py),
@@ -121,7 +120,7 @@ pub(crate) struct CallbackWrappedRunnerHTTP {
 }
 
 impl CallbackWrappedRunnerHTTP {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: &PyDict) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: HTTPProtocol, scope: Bound<PyDict>) -> Self {
         Self {
             proto: Py::new(py, proto).unwrap(),
             context: cb.context,
@@ -135,7 +134,7 @@ impl CallbackWrappedRunnerHTTP {
 
 #[pymethods]
 impl CallbackWrappedRunnerHTTP {
-    fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         callback_impl_loop_pytask!(pyself, py)
     }
 
@@ -143,8 +142,8 @@ impl CallbackWrappedRunnerHTTP {
         callback_impl_done_http!(self);
     }
 
-    fn err(&self, err: &PyAny) {
-        callback_impl_done_err!(self, &PyErr::from_value(err));
+    fn err(&self, err: Bound<PyAny>) {
+        callback_impl_done_err!(self, &PyErr::from_value_bound(err));
     }
 }
 
@@ -156,7 +155,7 @@ pub(crate) struct CallbackRunnerWebsocket {
 }
 
 impl CallbackRunnerWebsocket {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: &PyDict) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: Bound<PyDict>) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
             proto: pyproto.clone(),
@@ -170,7 +169,7 @@ impl CallbackRunnerWebsocket {
 
 #[pymethods]
 impl CallbackRunnerWebsocket {
-    fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         CallbackTaskWebsocket::new(py, self.cb.clone(), self.proto.clone(), self.context.clone())?.run(py)
     }
 }
@@ -236,7 +235,7 @@ pub(crate) struct CallbackWrappedRunnerWebsocket {
 }
 
 impl CallbackWrappedRunnerWebsocket {
-    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: &PyDict) -> Self {
+    pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: Bound<PyDict>) -> Self {
         Self {
             proto: Py::new(py, proto).unwrap(),
             context: cb.context,
@@ -250,7 +249,7 @@ impl CallbackWrappedRunnerWebsocket {
 
 #[pymethods]
 impl CallbackWrappedRunnerWebsocket {
-    fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<&'p PyAny> {
+    fn _loop_task<'p>(pyself: PyRef<'_, Self>, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         callback_impl_loop_pytask!(pyself, py)
     }
 
@@ -258,8 +257,8 @@ impl CallbackWrappedRunnerWebsocket {
         callback_impl_done_ws!(self);
     }
 
-    fn err(&self, err: &PyAny) {
-        callback_impl_done_err!(self, &PyErr::from_value(err));
+    fn err(&self, err: Bound<PyAny>) {
+        callback_impl_done_err!(self, &PyErr::from_value_bound(err));
     }
 }
 
