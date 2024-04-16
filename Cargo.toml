@@ -40,7 +40,7 @@ log = "0.4"
 percent-encoding = "=2.3"
 pin-project = "1.1"
 pyo3 = { version = "=0.21", features = ["anyhow", "extension-module", "generate-import-lib"] }
-pyo3-log = { version = "=0.9", git = "https://github.com/vorner/pyo3-log.git", rev = "76ff388163" }
+pyo3-log = { version = "=0.9", git = "https://github.com/a1phyr/pyo3-log", rev = "76ff388163" }
 rustls-pemfile = "2.1"
 socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.9", features = ["rustls"] }
