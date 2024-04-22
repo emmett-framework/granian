@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Tuple
 
-from ._types import WebsocketMessage
+from ._types import WebsocketMessage, HTTP1ParamType, HTTP2ParamType
 
 __version__: str
 
@@ -40,3 +40,60 @@ class WSGIScope:
 
 class WorkerSignal:
     def __init__(self): ...
+    def set(self): ...
+
+class ASGIWorker:
+    def __new__(
+        cls,
+        worker_id: int,
+        socket_fd: int,
+        threads: int,
+        pthreads: int,
+        http_mode: str,
+        http1_opts: Optional[HTTP1ParamType],
+        http2_opts: Optional[HTTP2ParamType],
+        websockets_enabled: bool,
+        opt_enabled: bool,
+        ssl_enabled: bool,
+        ssl_cert: Optional[str],
+        ssl_key: Optional[str],
+    ) -> ASGIWorker: ...
+
+class WSGIWorker:
+    def __new__(
+        cls,
+        worker_id: int,
+        socket_fd: int,
+        threads: int,
+        pthreads: int,
+        http_mode: str,
+        http1_opts: Optional[HTTP1ParamType],
+        http2_opts: Optional[HTTP2ParamType],
+        ssl_enabled: bool,
+        ssl_cert: Optional[str],
+        ssl_key: Optional[str],
+    ) -> WSGIWorker: ...
+
+class RSGIWorker:
+    def __new__(
+        cls,
+        worker_id: int,
+        socket_fd: int,
+        threads: int,
+        pthreads: int,
+        http_mode: str,
+        http1_opts: Optional[HTTP1ParamType],
+        http2_opts: Optional[HTTP2ParamType],
+        websockets_enabled: bool,
+        opt_enabled: bool,
+        ssl_enabled: bool,
+        ssl_cert: Optional[str],
+        ssl_key: Optional[str],
+    ) -> RSGIWorker: ...
+
+class ListenerHolder:
+    def __new__(cls, fd: int) -> ListenerHolder: ...
+    def __getstate__(self) -> Any: ...
+    @classmethod
+    def from_address(cls, address: str, port: int, backlog: int) -> ListenerHolder: ...
+    def get_fd(self) -> Any: ...

@@ -11,12 +11,13 @@ import threading
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._imports import setproctitle, watchfiles
 from ._internal import load_target
+from ._types import HTTP1ParamType, HTTP2ParamType
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
 from .http import HTTP1Settings, HTTP2Settings
@@ -139,24 +140,24 @@ class Granian:
 
     @staticmethod
     def _spawn_asgi_worker(
-        worker_id,
-        process_name,
-        callback_loader,
-        socket,
-        loop_impl,
-        threads,
-        pthreads,
-        threading_mode,
-        http_mode,
-        http1_settings,
-        http2_settings,
-        websockets,
-        loop_opt,
-        log_enabled,
-        log_level,
-        log_config,
-        ssl_ctx,
-        scope_opts,
+        worker_id: int,
+        process_name: Optional[str],
+        callback_loader: Callable[..., Any],
+        socket: socket.socket,
+        loop_impl: Loops,
+        threads: int,
+        pthreads: int,
+        threading_mode: ThreadModes,
+        http_mode: HTTPModes,
+        http1_settings: Optional[HTTP1ParamType],
+        http2_settings: Optional[HTTP2ParamType],
+        websockets: bool,
+        loop_opt: bool,
+        log_enabled: bool,
+        log_level: LogLevels,
+        log_config: Dict[str, Any],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -182,24 +183,24 @@ class Granian:
 
     @staticmethod
     def _spawn_asgi_lifespan_worker(
-        worker_id,
-        process_name,
-        callback_loader,
-        socket,
-        loop_impl,
-        threads,
-        pthreads,
-        threading_mode,
-        http_mode,
-        http1_settings,
-        http2_settings,
-        websockets,
-        loop_opt,
-        log_enabled,
-        log_level,
-        log_config,
-        ssl_ctx,
-        scope_opts,
+        worker_id: int,
+        process_name: Optional[str],
+        callback_loader: Callable[..., Any],
+        socket: socket.socket,
+        loop_impl: Loops,
+        threads: int,
+        pthreads: int,
+        threading_mode: ThreadModes,
+        http_mode: HTTPModes,
+        http1_settings: Optional[HTTP1ParamType],
+        http2_settings: Optional[HTTP2ParamType],
+        websockets: bool,
+        loop_opt: bool,
+        log_enabled: bool,
+        log_level: LogLevels,
+        log_config: Dict[str, Any],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -232,24 +233,24 @@ class Granian:
 
     @staticmethod
     def _spawn_rsgi_worker(
-        worker_id,
-        process_name,
-        callback_loader,
-        socket,
-        loop_impl,
-        threads,
-        pthreads,
-        threading_mode,
-        http_mode,
-        http1_settings,
-        http2_settings,
-        websockets,
-        loop_opt,
-        log_enabled,
-        log_level,
-        log_config,
-        ssl_ctx,
-        scope_opts,
+        worker_id: int,
+        process_name: Optional[str],
+        callback_loader: Callable[..., Any],
+        socket: socket.socket,
+        loop_impl: Loops,
+        threads: int,
+        pthreads: int,
+        threading_mode: ThreadModes,
+        http_mode: HTTPModes,
+        http1_settings: Optional[HTTP1ParamType],
+        http2_settings: Optional[HTTP2ParamType],
+        websockets: bool,
+        loop_opt: bool,
+        log_enabled: bool,
+        log_level: LogLevels,
+        log_config: Dict[str, Any],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -281,24 +282,24 @@ class Granian:
 
     @staticmethod
     def _spawn_wsgi_worker(
-        worker_id,
-        process_name,
-        callback_loader,
-        socket,
-        loop_impl,
-        threads,
-        pthreads,
-        threading_mode,
-        http_mode,
-        http1_settings,
-        http2_settings,
-        websockets,
-        loop_opt,
-        log_enabled,
-        log_level,
-        log_config,
-        ssl_ctx,
-        scope_opts,
+        worker_id: int,
+        process_name: Optional[str],
+        callback_loader: Callable[..., Any],
+        socket: socket.socket,
+        loop_impl: Loops,
+        threads: int,
+        pthreads: int,
+        threading_mode: ThreadModes,
+        http_mode: HTTPModes,
+        http1_settings: Optional[HTTP1ParamType],
+        http2_settings: Optional[HTTP2ParamType],
+        websockets: bool,
+        loop_opt: bool,
+        log_enabled: bool,
+        log_level: LogLevels,
+        log_config: Dict[str, Any],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
 
@@ -366,7 +367,7 @@ class Granian:
             proc.start()
             self.procs.append(proc)
 
-    def _respawn_workers(self, workers, sock, spawn_target, target_loader, delay=0):
+    def _respawn_workers(self, workers, sock, spawn_target, target_loader, delay: float = 0):
         def socket_loader():
             return sock
 

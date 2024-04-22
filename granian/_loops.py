@@ -8,9 +8,9 @@ from ._granian import WorkerSignal
 
 
 class Registry:
-    __slots__ = ['_data']
+    __slots__ = ('_data',)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._data: Dict[str, Callable[..., Any]] = {}
 
     def __contains__(self, key: str) -> bool:
@@ -19,7 +19,7 @@ class Registry:
     def keys(self) -> Iterable[str]:
         return self._data.keys()
 
-    def register(self, key: str) -> Callable[[], Callable[..., Any]]:
+    def register(self, key: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
             self._data[key] = builder
             return builder
@@ -34,12 +34,14 @@ class Registry:
 
 
 class BuilderRegistry(Registry):
-    __slots__ = []
+    __slots__ = ('_data',)
 
-    def __init__(self):
-        self._data: Dict[str, Tuple[Callable[..., Any], List[str]]] = {}
+    def __init__(self) -> None:
+        self._data: Dict[str, Tuple[Callable[..., Any], Dict[str, Any]]] = {}
 
-    def register(self, key: str, packages: Optional[List[str]] = None) -> Callable[[], Callable[..., Any]]:
+    def register(
+        self, key: str, packages: Optional[List[str]] = None
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         packages = packages or []
 
         def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:

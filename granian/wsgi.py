@@ -1,13 +1,13 @@
 import os
 import sys
 from functools import wraps
-from typing import Any, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 
 class Response:
-    __slots__ = ['status', 'headers']
+    __slots__ = ('status', 'headers')
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.status = 200
         self.headers = []
 
@@ -16,10 +16,10 @@ class Response:
         self.headers = headers
 
 
-def _callback_wrapper(callback, scope_opts):
+def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any]):
     basic_env = dict(os.environ)
     basic_env.update(
-        {
+        **{
             'GATEWAY_INTERFACE': 'CGI/1.1',
             'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
             'SERVER_SOFTWARE': 'Granian',
@@ -32,7 +32,7 @@ def _callback_wrapper(callback, scope_opts):
     )
 
     @wraps(callback)
-    def wrapper(scope) -> Tuple[int, List[Tuple[str, str]], bytes]:
+    def wrapper(scope) -> Tuple[int, List[Tuple[str, str]], int, bytes]:
         resp = Response()
         scope.update(basic_env)
         rv = callback(scope, resp)
