@@ -2,15 +2,18 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, TypeVar
 
 from ._granian import WorkerSignal
+
+
+WrappableT = TypeVar('WrappableT', bound=Callable[..., Any])
 
 
 class Registry:
     __slots__ = ('_data',)
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._data: Dict[str, Callable[..., Any]] = {}
 
     def __contains__(self, key: str) -> bool:
@@ -19,8 +22,8 @@ class Registry:
     def keys(self) -> Iterable[str]:
         return self._data.keys()
 
-    def register(self, key: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
+    def register(self, key: str) -> Callable[[WrappableT], WrappableT]:
+        def wrap(builder: WrappableT) -> WrappableT:
             self._data[key] = builder
             return builder
 
@@ -34,17 +37,15 @@ class Registry:
 
 
 class BuilderRegistry(Registry):
-    __slots__ = ('_data',)
+    __slots__ = ()
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._data: Dict[str, Tuple[Callable[..., Any], Dict[str, Any]]] = {}
 
-    def register(
-        self, key: str, packages: Optional[List[str]] = None
-    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def register(self, key: str, packages: Optional[List[str]] = None) -> Callable[[WrappableT], WrappableT]:
         packages = packages or []
 
-        def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
+        def wrap(builder: WrappableT) -> WrappableT:
             loaded_packages, implemented = {}, True
             try:
                 for package in packages:

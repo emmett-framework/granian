@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Tuple
 class Response:
     __slots__ = ('status', 'headers')
 
-    def __init__(self) -> None:
+    def __init__(self):
         self.status = 200
         self.headers = []
 
@@ -17,9 +17,9 @@ class Response:
 
 
 def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any]):
-    basic_env = dict(os.environ)
+    basic_env: Dict[str, Any] = dict(os.environ)
     basic_env.update(
-        **{
+        {
             'GATEWAY_INTERFACE': 'CGI/1.1',
             'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
             'SERVER_SOFTWARE': 'Granian',

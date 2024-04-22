@@ -17,7 +17,6 @@ from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._imports import setproctitle, watchfiles
 from ._internal import load_target
-from ._types import HTTP1ParamType, HTTP2ParamType
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
 from .http import HTTP1Settings, HTTP2Settings
@@ -149,8 +148,8 @@ class Granian:
         pthreads: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1ParamType],
-        http2_settings: Optional[HTTP2ParamType],
+        http1_settings: Optional[HTTP1Settings],
+        http2_settings: Optional[HTTP2Settings],
         websockets: bool,
         loop_opt: bool,
         log_enabled: bool,
@@ -192,8 +191,8 @@ class Granian:
         pthreads: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1ParamType],
-        http2_settings: Optional[HTTP2ParamType],
+        http1_settings: Optional[HTTP1Settings],
+        http2_settings: Optional[HTTP2Settings],
         websockets: bool,
         loop_opt: bool,
         log_enabled: bool,
@@ -242,8 +241,8 @@ class Granian:
         pthreads: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1ParamType],
-        http2_settings: Optional[HTTP2ParamType],
+        http1_settings: Optional[HTTP1Settings],
+        http2_settings: Optional[HTTP2Settings],
         websockets: bool,
         loop_opt: bool,
         log_enabled: bool,
@@ -291,8 +290,8 @@ class Granian:
         pthreads: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1ParamType],
-        http2_settings: Optional[HTTP2ParamType],
+        http1_settings: Optional[HTTP1Settings],
+        http2_settings: Optional[HTTP2Settings],
         websockets: bool,
         loop_opt: bool,
         log_enabled: bool,

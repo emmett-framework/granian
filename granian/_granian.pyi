@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 
-from ._types import WebsocketMessage, HTTP1ParamType, HTTP2ParamType
+from ._types import WebsocketMessage
+from .http import HTTP1Settings, HTTP2Settings
 
 __version__: str
 
@@ -50,8 +51,8 @@ class ASGIWorker:
         threads: int,
         pthreads: int,
         http_mode: str,
-        http1_opts: Optional[HTTP1ParamType],
-        http2_opts: Optional[HTTP2ParamType],
+        http1_opts: Optional[HTTP1Settings],
+        http2_opts: Optional[HTTP2Settings],
         websockets_enabled: bool,
         opt_enabled: bool,
         ssl_enabled: bool,
@@ -67,8 +68,8 @@ class WSGIWorker:
         threads: int,
         pthreads: int,
         http_mode: str,
-        http1_opts: Optional[HTTP1ParamType],
-        http2_opts: Optional[HTTP2ParamType],
+        http1_opts: Optional[HTTP1Settings],
+        http2_opts: Optional[HTTP2Settings],
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],
@@ -82,8 +83,8 @@ class RSGIWorker:
         threads: int,
         pthreads: int,
         http_mode: str,
-        http1_opts: Optional[HTTP1ParamType],
-        http2_opts: Optional[HTTP2ParamType],
+        http1_opts: Optional[HTTP1Settings],
+        http2_opts: Optional[HTTP2Settings],
         websockets_enabled: bool,
         opt_enabled: bool,
         ssl_enabled: bool,
@@ -93,7 +94,6 @@ class RSGIWorker:
 
 class ListenerHolder:
     def __new__(cls, fd: int) -> ListenerHolder: ...
-    def __getstate__(self) -> Any: ...
     @classmethod
     def from_address(cls, address: str, port: int, backlog: int) -> ListenerHolder: ...
     def get_fd(self) -> Any: ...
