@@ -2,12 +2,10 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from ._granian import WorkerSignal
-
-
-WrappableT = TypeVar('WrappableT', bound=Callable[..., Any])
+from ._types import WrappableT
 
 
 class Registry:
