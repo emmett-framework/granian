@@ -290,7 +290,7 @@ where
     rt.spawn(async move {
         tokio::select! {
             result = fut => aw.get().set_result(result, aw_ref),
-            () = cancel_tx.notified() => {}
+            () = cancel_tx.notified() => aw.get().set_result(Err::<T, pyo3::PyErr>(pyo3::exceptions::asyncio::CancelledError::new_err("Task cancelled")), aw_ref)
         }
     });
 
