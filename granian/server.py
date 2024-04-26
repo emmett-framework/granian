@@ -374,15 +374,17 @@ class Granian:
 
         for idx in workers:
             self.respawned_procs[idx] = time.time()
-            proc = self.procs.pop(idx)
-            proc.terminate()
-            proc.join()
+            logger.info(f'Respawning worker-{idx + 1}')
+            old_proc = self.procs.pop(idx)
             proc = self._spawn_proc(
                 idx=idx, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
             )
             proc.start()
             self.procs.insert(idx, proc)
             time.sleep(delay)
+            logger.info(f'Stopping old worker-{idx + 1}')
+            old_proc.terminate()
+            old_proc.join()
 
     def _stop_workers(self):
         for proc in self.procs:
