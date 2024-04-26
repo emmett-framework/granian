@@ -177,6 +177,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='Enable workers respawn on unexpected exit',
 )
 @option(
+    '--respawn-interval',
+    default=3.5,
+    help='The number of seconds to sleep between workers respawn',
+)
+@option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
@@ -219,6 +224,7 @@ def cli(
     ssl_certificate: Optional[pathlib.Path],
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
+    respawn_interval: float,
     reload: bool,
     process_name: Optional[str],
 ) -> None:
@@ -266,6 +272,7 @@ def cli(
         ssl_key=ssl_keyfile,
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
+        respawn_interval=respawn_interval,
         reload=reload,
         process_name=process_name,
     ).serve()

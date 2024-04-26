@@ -87,6 +87,7 @@ class Granian:
         ssl_key: Optional[Path] = None,
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
+        respawn_interval: float = 3.5,
         reload: bool = False,
         process_name: Optional[str] = None,
     ):
@@ -111,6 +112,7 @@ class Granian:
         self.url_path_prefix = url_path_prefix
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
+        self.respawn_interval = respawn_interval
         self.process_name = process_name
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
@@ -448,7 +450,7 @@ class Granian:
                 self.reload_signal = False
                 self.respawned_procs.clear()
                 self.main_loop_interrupt.clear()
-                self._respawn_workers(workers, sock, spawn_target, target_loader, delay=3.5)
+                self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
 
     def _serve(self, spawn_target, target_loader):
         sock = self.startup(spawn_target, target_loader)
