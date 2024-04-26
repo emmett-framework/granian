@@ -3,10 +3,10 @@ from typing import Optional, Union
 
 from ._granian import (
     RSGIHeaders as Headers,
-    RSGIHTTPProtocol as HTTPProtocol,  # noqa
-    RSGIProtocolClosed as ProtocolClosed,  # noqa
-    RSGIProtocolError as ProtocolError,  # noqa
-    RSGIWebsocketProtocol as WebsocketProtocol,  # noqa
+    RSGIHTTPProtocol as HTTPProtocol,  # noqa: F401
+    RSGIProtocolClosed as ProtocolClosed,  # noqa: F401
+    RSGIProtocolError as ProtocolError,  # noqa: F401
+    RSGIWebsocketProtocol as WebsocketProtocol,  # noqa: F401
 )
 
 

@@ -7,11 +7,15 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from ._granian import WorkerSignal
 
 
+WrappableT = Callable[..., Any]
+LoopBuilderT = Callable[..., asyncio.AbstractEventLoop]
+
+
 class Registry:
     __slots__ = ['_data']
 
     def __init__(self):
-        self._data: Dict[str, Callable[..., Any]] = {}
+        self._data: Dict[str, WrappableT] = {}
 
     def __contains__(self, key: str) -> bool:
         return key in self._data
@@ -19,8 +23,8 @@ class Registry:
     def keys(self) -> Iterable[str]:
         return self._data.keys()
 
-    def register(self, key: str) -> Callable[[], Callable[..., Any]]:
-        def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
+    def register(self, key: str) -> Callable[[WrappableT], WrappableT]:
+        def wrap(builder: WrappableT) -> WrappableT:
             self._data[key] = builder
             return builder
 
@@ -37,12 +41,12 @@ class BuilderRegistry(Registry):
     __slots__ = []
 
     def __init__(self):
-        self._data: Dict[str, Tuple[Callable[..., Any], List[str]]] = {}
+        self._data: Dict[str, Tuple[LoopBuilderT, Dict[str, Any]]] = {}
 
-    def register(self, key: str, packages: Optional[List[str]] = None) -> Callable[[], Callable[..., Any]]:
+    def register(self, key: str, packages: Optional[List[str]] = None) -> Callable[[LoopBuilderT], LoopBuilderT]:
         packages = packages or []
 
-        def wrap(builder: Callable[..., Any]) -> Callable[..., Any]:
+        def wrap(builder: LoopBuilderT) -> LoopBuilderT:
             loaded_packages, implemented = {}, True
             try:
                 for package in packages:
@@ -56,7 +60,7 @@ class BuilderRegistry(Registry):
 
         return wrap
 
-    def get(self, key: str) -> Callable[..., Any]:
+    def get(self, key: str) -> asyncio.AbstractEventLoop:
         try:
             builder, packages = self._data[key]
         except KeyError:

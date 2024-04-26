@@ -1,7 +1,7 @@
 import os
 import sys
 from functools import wraps
-from typing import Any, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 
 class Response:
@@ -16,8 +16,8 @@ class Response:
         self.headers = headers
 
 
-def _callback_wrapper(callback, scope_opts):
-    basic_env = dict(os.environ)
+def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any]):
+    basic_env: Dict[str, Any] = dict(os.environ)
     basic_env.update(
         {
             'GATEWAY_INTERFACE': 'CGI/1.1',
@@ -32,7 +32,7 @@ def _callback_wrapper(callback, scope_opts):
     )
 
     @wraps(callback)
-    def wrapper(scope) -> Tuple[int, List[Tuple[str, str]], bytes]:
+    def wrapper(scope) -> Tuple[int, List[Tuple[str, str]], int, bytes]:
         resp = Response()
         scope.update(basic_env)
         rv = callback(scope, resp)
