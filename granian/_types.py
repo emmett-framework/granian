@@ -1,9 +1,6 @@
-from typing import Any, Callable, TypeVar, Union
+from typing import Union
 
 
 class WebsocketMessage:
     kind: int
     data: Union[bytes, str]
-
-
-WrappableT = TypeVar('WrappableT', bound=Callable[..., Any])

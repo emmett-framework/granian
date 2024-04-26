@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 
 class Response:
-    __slots__ = ('status', 'headers')
+    __slots__ = ['status', 'headers']
 
     def __init__(self):
         self.status = 200
