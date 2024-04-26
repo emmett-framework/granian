@@ -4,6 +4,7 @@ def future_watcher_wrapper(inner):
             await inner(watcher.scope, watcher.proto)
         except BaseException as exc:
             watcher.err(exc)
+            return
         watcher.done()
 
     return future_watcher

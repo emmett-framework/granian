@@ -117,6 +117,9 @@ impl PyFutureAwaitable {
     pub(crate) fn set_result(&self, result: PyResult<impl IntoPy<PyObject>>, aw: Py<PyFutureAwaitable>) {
         Python::with_gil(|py| {
             let mut state = self.state.write().unwrap();
+            if !matches!(&mut *state, PyFutureAwaitableState::Pending) {
+                return;
+            }
             *state = PyFutureAwaitableState::Completed(result.map(|v| v.into_py(py)));
 
             let ack = self.ack.read().unwrap();
@@ -199,14 +202,27 @@ impl PyFutureAwaitable {
 
     #[allow(unused)]
     #[pyo3(signature = (msg=None))]
-    fn cancel(&self, msg: Option<PyObject>) -> bool {
-        let mut state = self.state.write().unwrap();
+    fn cancel(pyself: PyRef<'_, Self>, msg: Option<PyObject>) -> bool {
+        let mut state = pyself.state.write().unwrap();
         if !matches!(&mut *state, PyFutureAwaitableState::Pending) {
             return false;
         }
 
+        pyself.cancel_tx.notify_one();
         *state = PyFutureAwaitableState::Cancelled;
-        self.cancel_tx.notify_one();
+
+        let ack = pyself.ack.read().unwrap();
+        if let Some((cb, ctx)) = &*ack {
+            let py = pyself.py();
+            let event_loop = pyself.event_loop.clone_ref(py);
+            let cb = cb.clone_ref(py);
+            let ctx = ctx.clone_ref(py);
+            drop(ack);
+            drop(state);
+
+            let _ = event_loop.call_method_bound(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(ctx.bind(py)));
+        }
+
         true
     }
 
