@@ -74,19 +74,18 @@ You can check all the options provided by Granian with the `--help` command:
 $ granian --help
 Usage: granian [OPTIONS] APP
 
-Arguments:
   APP  Application target to serve.  [required]
 
 Options:
   --host TEXT                     Host address to bind to  [env var:
-                                  GRANIAN_HOST; default: 127.0.0.1]
+                                  GRANIAN_HOST; default: (127.0.0.1)]
   --port INTEGER                  Port to bind to.  [env var: GRANIAN_PORT;
                                   default: 8000]
   --interface [asgi|asginl|rsgi|wsgi]
                                   Application interface type  [env var:
-                                  GRANIAN_INTERFACE; default: rsgi]
+                                  GRANIAN_INTERFACE; default: (rsgi)]
   --http [auto|1|2]               HTTP version  [env var: GRANIAN_HTTP;
-                                  default: auto]
+                                  default: (auto)]
   --ws / --no-ws                  Enable websockets handling  [env var:
                                   GRANIAN_WEBSOCKETS; default: (enabled)]
   --workers INTEGER RANGE         Number of worker processes  [env var:
@@ -98,9 +97,9 @@ Options:
                                   GRANIAN_BLOCKING_THREADS; default: 1; x>=1]
   --threading-mode [runtime|workers]
                                   Threading mode to use  [env var:
-                                  GRANIAN_THREADING_MODE; default: workers]
+                                  GRANIAN_THREADING_MODE; default: (workers)]
   --loop [auto|asyncio|uvloop]    Event loop implementation  [env var:
-                                  GRANIAN_LOOP; default: auto]
+                                  GRANIAN_LOOP; default: (auto)]
   --opt / --no-opt                Enable loop optimizations  [env var:
                                   GRANIAN_LOOP_OPT; default: (disabled)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
@@ -138,8 +137,7 @@ Options:
   --http2-keep-alive-interval INTEGER
                                   Sets an interval for HTTP2 Ping frames
                                   should be sent to keep a connection alive
-                                  [env var: GRANIAN_HTTP2_KEEP_ALIVE_INTERVAL;
-                                  default: (disabled)]
+                                  [env var: GRANIAN_HTTP2_KEEP_ALIVE_INTERVAL]
   --http2-keep-alive-timeout INTEGER
                                   Sets a timeout for receiving an
                                   acknowledgement of the HTTP2 keep-alive ping
@@ -166,7 +164,7 @@ Options:
                                   GRANIAN_LOG_ENABLED; default: (enabled)]
   --log-level [critical|error|warning|warn|info|debug]
                                   Log level  [env var: GRANIAN_LOG_LEVEL;
-                                  default: info]
+                                  default: (info)]
   --log-config FILE               Logging configuration file (json)  [env var:
                                   GRANIAN_LOG_CONFIG]
   --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
@@ -178,6 +176,9 @@ Options:
                                   Enable workers respawn on unexpected exit
                                   [env var: GRANIAN_RESPAWN_FAILED_WORKERS;
                                   default: (disabled)]
+  --respawn-interval FLOAT        The number of seconds to sleep between
+                                  workers respawn  [env var:
+                                  GRANIAN_RESPAWN_INTERVAL; default: 3.5]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
@@ -185,14 +186,7 @@ Options:
   --process-name TEXT             Set a custom name for processes (requires
                                   granian[pname] extra)  [env var:
                                   GRANIAN_PROCESS_NAME]
-  --version                       Shows the version and exit
-  --install-completion [bash|zsh|fish|powershell|pwsh]
-                                  Install completion for the specified shell.
-                                  [env var: GRANIAN_INSTALL_COMPLETION]
-  --show-completion [bash|zsh|fish|powershell|pwsh]
-                                  Show completion for the specified shell, to
-                                  copy it or customize the installation.  [env
-                                  var: GRANIAN_SHOW_COMPLETION]
+  --version                       Show the version and exit.
   --help                          Show this message and exit.
 ```
 
