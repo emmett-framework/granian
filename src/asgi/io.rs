@@ -29,7 +29,7 @@ use super::{
 use crate::{
     conversion::BytesToPy,
     http::{response_404, HTTPResponse, HTTPResponseBody, HV_SERVER},
-    runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, RuntimeRef},
+    runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -226,7 +226,7 @@ impl ASGIHTTPProtocol {
             ) {
                 (true, Some(tx)) => {
                     let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
-                    future_into_py_iter(self.rt.clone(), py, async move {
+                    self.rt.spawn(async move {
                         let res = match File::open(&file_path).await {
                             Ok(file) => {
                                 let stream = ReaderStream::new(file);
@@ -243,8 +243,8 @@ impl ASGIHTTPProtocol {
                             }
                         };
                         let _ = tx.send(res);
-                        Ok(())
-                    })
+                    });
+                    empty_future_into_py(py)
                 }
                 _ => error_flow!(),
             },
