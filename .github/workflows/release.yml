@@ -8,7 +8,7 @@ on:
   #   types: [published]
 
 env:
-  MATURIN_VERSION: 1.3.2
+  MATURIN_VERSION: 1.5.1
   PY_ALL: 3.8 3.9 3.10 3.11 3.12 pypy3.8 pypy3.9 pypy3.10
 
 jobs:
@@ -126,9 +126,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
-      - run: |
-          RUST_HOST=$(rustc -Vv | grep host | cut -d ' ' -f 2) rustup run stable bash -c 'echo LLVM_PROFDATA=$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN/lib/rustlib/$RUST_HOST/bin/llvm-profdata >> "$GITHUB_ENV"'
-        shell: bash
       - name: Build initial wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -139,6 +136,9 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
         env:
           RUSTFLAGS: "-Cprofile-generate=${{ github.workspace }}/profdata"
+      - run: |
+          RUST_HOST=$(rustc -Vv | grep host | cut -d ' ' -f 2) rustup run stable bash -c 'echo LLVM_PROFDATA=$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN/lib/rustlib/$RUST_HOST/bin/llvm-profdata >> "$GITHUB_ENV"'
+        shell: bash
       - name: Generate PGO data
         shell: bash
         run: |
