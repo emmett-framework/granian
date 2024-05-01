@@ -93,6 +93,7 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
+          docker-options: -e CI
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -126,6 +127,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
+      # FIXME: remove next step once PyO3/maturin-action filters `CARGO_HOME`
+      - run: echo 'CARGO_HOME=' >> "$GITHUB_ENV"
+        shell: bash
       - name: Build initial wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -134,6 +138,7 @@ jobs:
           command: build
           args: --release --out pgo_wheel --interpreter ${{ matrix.interpreter }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
+          docker-options: -e CI
         env:
           RUSTFLAGS: "-Cprofile-generate=${{ github.workspace }}/profdata"
       - run: |
@@ -156,6 +161,7 @@ jobs:
           args: --release --out dist --interpreter ${{ matrix.interpreter }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           rust-toolchain: stable
+          docker-options: -e CI
         env:
           RUSTFLAGS: "-Cprofile-use=${{ github.workspace }}/merged.profdata"
       - name: Upload wheels
