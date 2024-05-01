@@ -34,7 +34,7 @@ crate-type = ["cdylib"]
 anyhow = "=1.0"
 futures = "0.3"
 http-body-util = { version = "=0.1" }
-hyper = { version = "=1.2", features = ["http1", "http2", "server"] }
+hyper = { version = "=1.3", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 log = "0.4"
 percent-encoding = "=2.3"
