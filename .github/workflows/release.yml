@@ -122,9 +122,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
-      # FIXME: remove next step once PyO3/maturin-action filters `CARGO_HOME`
-      - run: echo 'CARGO_HOME=' >> "$GITHUB_ENV"
-        shell: bash
       - name: Build initial wheel
         uses: PyO3/maturin-action@v1
         with:
