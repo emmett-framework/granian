@@ -63,6 +63,7 @@ impl TaskLocals {
 }
 
 pub trait JoinError {
+    #[allow(dead_code)]
     fn is_panic(&self) -> bool;
 }
 
@@ -86,12 +87,14 @@ pub trait ContextExt: Runtime {
 }
 
 pub trait SpawnLocalExt: Runtime {
+    #[allow(dead_code)]
     fn spawn_local<F>(&self, fut: F) -> Self::JoinHandle
     where
         F: Future<Output = ()> + 'static;
 }
 
 pub trait LocalContextExt: Runtime {
+    #[allow(dead_code)]
     fn scope_local<F, R>(&self, locals: TaskLocals, fut: F) -> Pin<Box<dyn Future<Output = R>>>
     where
         F: Future<Output = R> + 'static;

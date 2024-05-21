@@ -182,7 +182,6 @@ macro_rules! handle_connection_loop {
         while accept_loop {
             tokio::select! {
                 Ok((stream, remote_addr)) = tcp_listener.accept() => {
-                    #[allow(clippy::redundant_closure_call)]
                     $inner(local_addr, remote_addr, stream)
                 },
                 _ = $quit_signal => {
@@ -203,7 +202,6 @@ macro_rules! handle_tls_loop {
                 accept = tls_listener.accept() => {
                     match accept {
                         Ok((stream, remote_addr)) => {
-                            #[allow(clippy::redundant_closure_call)]
                             $inner(local_addr, remote_addr, stream)
                         },
                         Err(err) => {
