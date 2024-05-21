@@ -11,9 +11,7 @@ async def test_scope(wsgi_server, threading_mode):
     payload = 'body_payload'
     async with wsgi_server(threading_mode) as port:
         res = httpx.post(
-            f'http://localhost:{port}/info?test=true',
-            content=payload,
-            headers=[('test', 'val1'), ('test', 'val2')]
+            f'http://localhost:{port}/info?test=true', content=payload, headers=[('test', 'val1'), ('test', 'val2')]
         )
 
     assert res.status_code == 200
@@ -26,7 +24,7 @@ async def test_scope(wsgi_server, threading_mode):
     assert data['query_string'] == 'test=true'
     assert data['headers']['HTTP_HOST'] == f'localhost:{port}'
     assert data['content_length'] == str(len(payload))
-    assert data['headers']['HTTP_TEST'] == 'val1; val2'
+    assert data['headers']['HTTP_TEST'] == 'val1,val2'
 
 
 @pytest.mark.asyncio

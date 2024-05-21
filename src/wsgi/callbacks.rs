@@ -60,7 +60,7 @@ fn run_callback(
                 .get_all(key)
                 .iter()
                 .map(|v| v.to_str().unwrap_or_default())
-                .join("; "),
+                .join(","),
         ));
     }
     if !parts.headers.contains_key(header::HOST) {
