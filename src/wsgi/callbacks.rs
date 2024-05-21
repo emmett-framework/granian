@@ -7,6 +7,7 @@ use hyper::{
     http::{request, uri::Authority},
     Version,
 };
+use itertools::Itertools;
 use percent_encoding::percent_decode_str;
 use pyo3::{
     prelude::*,
@@ -51,15 +52,20 @@ fn run_callback(
     let content_type = parts.headers.remove(header::CONTENT_TYPE);
     let content_len = parts.headers.remove(header::CONTENT_LENGTH);
     let mut headers = Vec::with_capacity(parts.headers.len());
-    for (key, val) in &parts.headers {
+    for key in parts.headers.keys() {
         headers.push((
             format!("HTTP_{}", key.as_str().replace('-', "_").to_uppercase()),
-            val.to_str().unwrap_or_default(),
+            parts
+                .headers
+                .get_all(key)
+                .iter()
+                .map(|v| v.to_str().unwrap_or_default())
+                .join(","),
         ));
     }
     if !parts.headers.contains_key(header::HOST) {
         let host = parts.uri.authority().map_or("", Authority::as_str);
-        headers.push(("HTTP_HOST".to_string(), host));
+        headers.push(("HTTP_HOST".to_string(), host.to_string()));
     }
 
     Python::with_gil(|py| {
