@@ -44,10 +44,11 @@ pub(crate) struct ASGIHTTPProtocol {
     request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
-    response_intent: Mutex<Option<(i16, HeaderMap)>>,
+    response_intent: Mutex<Option<(u16, HeaderMap)>>,
     body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>>,
     flow_rx_exhausted: Arc<RwLock<bool>>,
     flow_tx_waiter: Arc<tokio::sync::Notify>,
+    sent_response_code: Arc<atomic::AtomicU16>,
 }
 
 impl ASGIHTTPProtocol {
@@ -62,16 +63,18 @@ impl ASGIHTTPProtocol {
             body_tx: Mutex::new(None),
             flow_rx_exhausted: Arc::new(RwLock::new(false)),
             flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
+            sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
         }
     }
 
     #[inline(always)]
-    fn send_response(&self, status: i16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody) {
+    fn send_response(&self, status: u16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let mut res = Response::new(body);
-            *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
+            *res.status_mut() = hyper::StatusCode::from_u16(status).unwrap();
             *res.headers_mut() = headers;
             let _ = tx.send(res);
+            self.sent_response_code.store(status, atomic::Ordering::Relaxed);
         }
     }
 
@@ -225,6 +228,7 @@ impl ASGIHTTPProtocol {
                 self.tx.lock().unwrap().take(),
             ) {
                 (true, Some(tx)) => {
+                    let sent_response = self.sent_response_code.clone();
                     let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                     self.rt.spawn(async move {
                         let res = match File::open(&file_path).await {
@@ -233,12 +237,14 @@ impl ASGIHTTPProtocol {
                                 let stream_body = http_body_util::StreamBody::new(stream.map_ok(body::Frame::data));
                                 let mut res =
                                     Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
-                                *res.status_mut() = StatusCode::from_u16(status as u16).unwrap();
+                                *res.status_mut() = StatusCode::from_u16(status).unwrap();
                                 *res.headers_mut() = headers;
+                                sent_response.store(status, atomic::Ordering::Relaxed);
                                 res
                             }
                             Err(_) => {
                                 log::info!("Cannot open file {}", &file_path);
+                                sent_response.store(404, atomic::Ordering::Relaxed);
                                 response_404()
                             }
                         };
@@ -251,6 +257,11 @@ impl ASGIHTTPProtocol {
             Err(err) => Err(err.into()),
             _ => error_message!(),
         }
+    }
+
+    #[getter(sent_response_code)]
+    fn get_sent_response_code(&self) -> u16 {
+        self.sent_response_code.load(atomic::Ordering::Relaxed)
     }
 }
 
@@ -471,7 +482,7 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
 }
 
 #[inline(always)]
-fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<i16, UnsupportedASGIMessage> {
+fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<u16, UnsupportedASGIMessage> {
     match message.get_item(pyo3::intern!(py, "status"))? {
         Some(item) => Ok(item.extract()?),
         _ => error_message!(),

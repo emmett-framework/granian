@@ -1,7 +1,8 @@
 import asyncio
+import time
 from functools import wraps
 
-from .log import logger
+from .log import log_request_builder, logger
 
 
 class LifespanProtocol:
@@ -104,12 +105,48 @@ class LifespanProtocol:
         handler(self, message)
 
 
-def _callback_wrapper(callback, scope_opts, state):
+def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
     root_url_path = scope_opts.get('url_path_prefix') or ''
 
-    @wraps(callback)
-    def wrapper(scope, proto):
+    def _runner(scope, proto):
         scope.update(root_path=root_url_path, state=state.copy())
         return callback(scope, proto.receive, proto.send)
 
+    async def _http_logger(scope, proto):
+        t = time.time()
+        try:
+            rv = await _runner(scope, proto)
+        finally:
+            access_log(t, scope, proto.sent_response_code)
+        return rv
+
+    def _logger(scope, proto):
+        if scope['type'] == 'http':
+            return _http_logger(scope, proto)
+        return _runner(scope, proto)
+
+    access_log = _build_access_logger(access_log_fmt)
+    wrapper = _logger if access_log_fmt else _runner
+    wraps(callback)(wrapper)
+
     return wrapper
+
+
+def _build_access_logger(fmt):
+    logger = log_request_builder(fmt)
+
+    def access_log(t, scope, resp_code):
+        logger(
+            t,
+            {
+                'addr_remote': scope['client'],
+                'protocol': scope['http_version'],
+                'path': scope['path'],
+                'qs': scope['query_string'],
+                'method': scope['method'],
+                'scheme': scope['scheme'],
+            },
+            resp_code,
+        )
+
+    return access_log
