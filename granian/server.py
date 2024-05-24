@@ -85,7 +85,7 @@ class Granian:
         log_level: LogLevels = LogLevels.info,
         log_dictconfig: Optional[Dict[str, Any]] = None,
         log_access: bool = False,
-        log_access_format: str = DEFAULT_ACCESSLOG_FMT,
+        log_access_format: Optional[str] = None,
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         url_path_prefix: Optional[str] = None,
@@ -113,7 +113,7 @@ class Granian:
         self.log_level = log_level
         self.log_config = log_dictconfig
         self.log_access = log_access
-        self.log_access_format = log_access_format
+        self.log_access_format = log_access_format or DEFAULT_ACCESSLOG_FMT
         self.url_path_prefix = url_path_prefix
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload

@@ -71,7 +71,7 @@ def _build_access_logger(fmt):
         logger(
             t,
             {
-                'addr_remote': scope['REMOTE_ADDR'],
+                'addr_remote': scope['REMOTE_ADDR'].split(':')[0],
                 'protocol': scope['SERVER_PROTOCOL'],
                 'path': scope['PATH_INFO'],
                 'qs': scope['QUERY_STRING'],
