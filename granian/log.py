@@ -50,7 +50,7 @@ LOGGING_CONFIG = {
     },
 }
 
-DEFAULT_ACCESSLOG_FMT = '%(time)s %(addr)s %(method)s %(path)s %(status)d %(dt_ms).3f'
+DEFAULT_ACCESSLOG_FMT = '[%(time)s] %(addr)s - "%(method)s %(path)s %(protocol)s" %(status)d %(dt_ms).3f'
 
 # NOTE: to be consistent with the Rust module logger name
 logger = logging.getLogger('_granian')
@@ -82,7 +82,7 @@ def log_request_builder(fmt):
             fmt,
             {
                 'addr': req['addr_remote'],
-                'time': rdt.strftime('[%Y-%m-%d %H:%M:%S %z]'),
+                'time': rdt.strftime('%Y-%m-%d %H:%M:%S %z'),
                 'dt_ms': dt * 1000,
                 'status': res_code,
                 'path': req['path'],
