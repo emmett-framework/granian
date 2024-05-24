@@ -1,3 +1,5 @@
+import time
+
 HEADERS = [('content-type', 'text/plain; charset=utf-8')]
 
 BODY_BYTES_SHORT = b"Test"
@@ -31,6 +33,15 @@ def echo(environ, proto):
     return [environ['wsgi.input'].read()]
 
 
+def io_builder(wait):
+    wait = wait / 1000
+    def io(environ, proto):
+        proto('200 OK', HEADERS)
+        time.sleep(wait)
+        return [BODY_BYTES_SHORT]
+    return io
+
+
 def handle_404(environ, proto):
     proto('404 NOT FOUND', HEADERS)
     return [b"not found"]
@@ -41,7 +52,9 @@ routes = {
     '/bb': b_long,
     '/s': s_short,
     '/ss': s_long,
-    '/echo': echo
+    '/echo': echo,
+    '/io10': io_builder(10),
+    '/io100': io_builder(100),
 }
 
 

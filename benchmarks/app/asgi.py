@@ -1,3 +1,4 @@
+import asyncio
 import pathlib
 import sys
 
@@ -84,6 +85,19 @@ async def file_pathsend(scope, receive, send):
     await send({'type': 'http.response.pathsend', 'path': str(MEDIA_PATH)})
 
 
+def io_builder(wait):
+    wait = wait / 1000
+    async def io(scope, receive, send):
+        await send(PLAINTEXT_RESPONSE)
+        await asyncio.sleep(wait)
+        await send({
+            'type': 'http.response.body',
+            'body': BODY_BYTES_SHORT,
+            'more_body': False
+        })
+    return io
+
+
 async def handle_404(scope, receive, send):
     content = b'Not found'
     await send(PLAINTEXT_RESPONSE)
@@ -102,6 +116,8 @@ routes = {
     '/echo': echo,
     '/fb': file_body,
     '/fp': file_pathsend,
+    '/io10': io_builder(10),
+    '/io100': io_builder(100),
 }
 
 

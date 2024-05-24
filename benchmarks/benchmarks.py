@@ -263,6 +263,27 @@ def vs_files():
     return results
 
 
+def vs_io():
+    results = {}
+    benches = {"10ms": ("io10", {}), "100ms": ("io100", {})}
+    for fw in [
+        "granian_rsgi",
+        "granian_asgi",
+        "granian_wsgi",
+        "uvicorn_httptools",
+        "hypercorn",
+        "gunicorn_gevent",
+        "uwsgi",
+    ]:
+        for key, bench_data in benches.items():
+            route, opts = bench_data
+            fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
+            title = " ".join(item.title() for item in fw.split("_"))
+            with app(fw_app):
+                results[f"{title} {key}"] = benchmark(route, **opts)
+    return results
+
+
 def _granian_version():
     import granian
     return granian.__version__
@@ -283,6 +304,7 @@ def run():
         results["vs_wsgi"] = vs_wsgi()
         results["vs_http2"] = vs_http2()
         results["vs_files"] = vs_files()
+        results["vs_io"] = vs_io()
     with open("results/data.json", "w") as f:
         pyver = sys.version_info
         f.write(json.dumps({
