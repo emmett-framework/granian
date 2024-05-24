@@ -58,7 +58,8 @@ pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
-    pub pthreads: usize,
+    pub blocking_threads: usize,
+    pub backpressure: usize,
     pub http_mode: String,
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
@@ -74,7 +75,8 @@ impl WorkerConfig {
         id: i32,
         socket_fd: i32,
         threads: usize,
-        pthreads: usize,
+        blocking_threads: usize,
+        backpressure: usize,
         http_mode: &str,
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
@@ -88,7 +90,8 @@ impl WorkerConfig {
             id,
             socket_fd,
             threads,
-            pthreads,
+            blocking_threads,
+            backpressure,
             http_mode: http_mode.into(),
             http1_opts,
             http2_opts,
@@ -174,15 +177,20 @@ macro_rules! build_service {
 }
 
 macro_rules! handle_connection_loop {
-    ($tcp_listener:expr, $quit_signal:expr, $inner:expr) => {
+    ($tcp_listener:expr, $quit_signal:expr, $backpressure:expr, $inner:expr) => {
         let tcp_listener = tokio::net::TcpListener::from_std($tcp_listener).unwrap();
         let local_addr = tcp_listener.local_addr().unwrap();
         let mut accept_loop = true;
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
 
         while accept_loop {
+            let semaphore = semaphore.clone();
             tokio::select! {
-                Ok((stream, remote_addr)) = tcp_listener.accept() => {
-                    $inner(local_addr, remote_addr, stream)
+                (permit, Ok((stream, remote_addr))) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, tcp_listener.accept().await)
+                } => {
+                    $inner(local_addr, remote_addr, stream, permit)
                 },
                 _ = $quit_signal => {
                     accept_loop = false;
@@ -193,16 +201,21 @@ macro_rules! handle_connection_loop {
 }
 
 macro_rules! handle_tls_loop {
-    ($tcp_listener:expr, $tls_config:expr, $quit_signal:expr, $inner:expr) => {
+    ($tcp_listener:expr, $tls_config:expr, $quit_signal:expr, $backpressure:expr, $inner:expr) => {
         let (mut tls_listener, local_addr) = crate::tls::tls_listener($tls_config.into(), $tcp_listener).unwrap();
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
         let mut accept_loop = true;
 
         while accept_loop {
+            let semaphore = semaphore.clone();
             tokio::select! {
-                accept = tls_listener.accept() => {
+                (permit, accept) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, tls_listener.accept().await)
+                } => {
                     match accept {
                         Ok((stream, remote_addr)) => {
-                            $inner(local_addr, remote_addr, stream)
+                            $inner(local_addr, remote_addr, stream, permit)
                         },
                         Err(err) => {
                             log::info!("TLS handshake failed with {:?}", err);
@@ -219,7 +232,7 @@ macro_rules! handle_tls_loop {
 
 macro_rules! handle_connection_http1 {
     ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream| {
+        |local_addr, remote_addr, stream, permit| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
@@ -230,6 +243,7 @@ macro_rules! handle_connection_http1 {
                 conn.max_buf_size($http_opts.max_buffer_size);
                 conn.pipeline_flush($http_opts.pipeline_flush);
                 let _ = conn.serve_connection($stream_wrapper(stream), svc).await;
+                drop(permit);
             });
         }
     };
@@ -237,7 +251,7 @@ macro_rules! handle_connection_http1 {
 
 macro_rules! handle_connection_http1_upgrades {
     ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream| {
+        |local_addr, remote_addr, stream, permit| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
@@ -251,6 +265,7 @@ macro_rules! handle_connection_http1_upgrades {
                     .serve_connection($stream_wrapper(stream), svc)
                     .with_upgrades()
                     .await;
+                drop(permit);
             });
         }
     };
@@ -258,7 +273,7 @@ macro_rules! handle_connection_http1_upgrades {
 
 macro_rules! handle_connection_http2 {
     ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream| {
+        |local_addr, remote_addr, stream, permit| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
@@ -275,6 +290,7 @@ macro_rules! handle_connection_http2 {
                 conn.max_header_list_size($http_opts.max_headers_size);
                 conn.max_send_buf_size($http_opts.max_send_buffer_size);
                 let _ = conn.serve_connection($stream_wrapper(stream), svc).await;
+                drop(permit);
             });
         }
     };
@@ -282,7 +298,7 @@ macro_rules! handle_connection_http2 {
 
 macro_rules! handle_connection_httpa {
     ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $conn_method:ident, $stream_wrapper:expr, $proto:expr, $http1_opts:expr, $http2_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream| {
+        |local_addr, remote_addr, stream, permit| {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
@@ -304,6 +320,7 @@ macro_rules! handle_connection_httpa {
                 conn.http2().max_header_list_size($http2_opts.max_headers_size);
                 conn.http2().max_send_buf_size($http2_opts.max_send_buffer_size);
                 let _ = conn.$conn_method($stream_wrapper(stream), svc).await;
+                drop(permit);
             });
         }
     };
@@ -319,7 +336,7 @@ macro_rules! serve_rth {
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.pthreads);
+            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.blocking_threads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
 
@@ -327,6 +344,7 @@ macro_rules! serve_rth {
             let http_upgrades = self.config.websockets_enabled;
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
+            let backpressure = self.config.backpressure.clone();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
@@ -339,6 +357,7 @@ macro_rules! serve_rth {
                         crate::workers::handle_connection_loop!(
                             tcp_listener,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_httpa!(
                                 rth,
                                 callback_wrapper,
@@ -357,6 +376,7 @@ macro_rules! serve_rth {
                         crate::workers::handle_connection_loop!(
                             tcp_listener,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_httpa!(
                                 rth,
                                 callback_wrapper,
@@ -375,6 +395,7 @@ macro_rules! serve_rth {
                         crate::workers::handle_connection_loop!(
                             tcp_listener,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_http1_upgrades!(
                                 rth,
                                 callback_wrapper,
@@ -390,6 +411,7 @@ macro_rules! serve_rth {
                         crate::workers::handle_connection_loop!(
                             tcp_listener,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_http1!(
                                 rth,
                                 callback_wrapper,
@@ -405,6 +427,7 @@ macro_rules! serve_rth {
                         crate::workers::handle_connection_loop!(
                             tcp_listener,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_http2!(
                                 rth,
                                 callback_wrapper,
@@ -445,7 +468,7 @@ macro_rules! serve_rth_ssl {
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.pthreads);
+            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.blocking_threads);
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
 
@@ -453,6 +476,7 @@ macro_rules! serve_rth_ssl {
             let http_upgrades = self.config.websockets_enabled;
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
+            let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -467,6 +491,7 @@ macro_rules! serve_rth_ssl {
                             tcp_listener,
                             tls_cfg,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_httpa!(
                                 rth,
                                 callback_wrapper,
@@ -486,6 +511,7 @@ macro_rules! serve_rth_ssl {
                             tcp_listener,
                             tls_cfg,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_httpa!(
                                 rth,
                                 callback_wrapper,
@@ -505,6 +531,7 @@ macro_rules! serve_rth_ssl {
                             tcp_listener,
                             tls_cfg,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_http1_upgrades!(
                                 rth,
                                 callback_wrapper,
@@ -521,6 +548,7 @@ macro_rules! serve_rth_ssl {
                             tcp_listener,
                             tls_cfg,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_http1!(
                                 rth,
                                 callback_wrapper,
@@ -537,6 +565,7 @@ macro_rules! serve_rth_ssl {
                             tcp_listener,
                             tls_cfg,
                             pyrx.changed(),
+                            backpressure,
                             crate::workers::handle_connection_http2!(
                                 rth,
                                 callback_wrapper,
@@ -595,12 +624,13 @@ macro_rules! serve_wth {
                 let http_upgrades = self.config.websockets_enabled;
                 let http1_opts = self.config.http1_opts.clone();
                 let http2_opts = self.config.http2_opts.clone();
-                let pthreads = self.config.pthreads.clone();
+                let blocking_threads = self.config.blocking_threads.clone();
+                let backpressure = self.config.backpressure.clone();
                 let callback_wrapper = callback_wrapper.clone();
                 let mut srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(pthreads);
+                    let rt = crate::runtime::init_runtime_st(blocking_threads);
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 
@@ -610,6 +640,7 @@ macro_rules! serve_wth {
                                 crate::workers::handle_connection_loop!(
                                     tcp_listener,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_httpa!(
                                         rth,
                                         callback_wrapper,
@@ -628,6 +659,7 @@ macro_rules! serve_wth {
                                 crate::workers::handle_connection_loop!(
                                     tcp_listener,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_httpa!(
                                         rth,
                                         callback_wrapper,
@@ -646,6 +678,7 @@ macro_rules! serve_wth {
                                 crate::workers::handle_connection_loop!(
                                     tcp_listener,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_http1_upgrades!(
                                         rth,
                                         callback_wrapper,
@@ -661,6 +694,7 @@ macro_rules! serve_wth {
                                 crate::workers::handle_connection_loop!(
                                     tcp_listener,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_http1!(
                                         rth,
                                         callback_wrapper,
@@ -676,6 +710,7 @@ macro_rules! serve_wth {
                                 crate::workers::handle_connection_loop!(
                                     tcp_listener,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_http2!(
                                         rth,
                                         callback_wrapper,
@@ -748,12 +783,13 @@ macro_rules! serve_wth_ssl {
                 let http1_opts = self.config.http1_opts.clone();
                 let http2_opts = self.config.http2_opts.clone();
                 let tls_cfg = self.config.tls_cfg();
-                let pthreads = self.config.pthreads.clone();
+                let blocking_threads = self.config.blocking_threads.clone();
+                let backpressure = self.config.backpressure.clone();
                 let callback_wrapper = callback_wrapper.clone();
                 let mut srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(pthreads);
+                    let rt = crate::runtime::init_runtime_st(blocking_threads);
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 
@@ -764,6 +800,7 @@ macro_rules! serve_wth_ssl {
                                     tcp_listener,
                                     tls_cfg,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_httpa!(
                                         rth,
                                         callback_wrapper,
@@ -783,6 +820,7 @@ macro_rules! serve_wth_ssl {
                                     tcp_listener,
                                     tls_cfg,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_httpa!(
                                         rth,
                                         callback_wrapper,
@@ -802,6 +840,7 @@ macro_rules! serve_wth_ssl {
                                     tcp_listener,
                                     tls_cfg,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_http1_upgrades!(
                                         rth,
                                         callback_wrapper,
@@ -818,6 +857,7 @@ macro_rules! serve_wth_ssl {
                                     tcp_listener,
                                     tls_cfg,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_http1!(
                                         rth,
                                         callback_wrapper,
@@ -834,6 +874,7 @@ macro_rules! serve_wth_ssl {
                                     tcp_listener,
                                     tls_cfg,
                                     srx.changed(),
+                                    backpressure,
                                     crate::workers::handle_connection_http2!(
                                         rth,
                                         callback_wrapper,
