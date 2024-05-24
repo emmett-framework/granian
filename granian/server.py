@@ -19,6 +19,7 @@ from ._imports import setproctitle, watchfiles
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
+from .errors import ConfigurationError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels, configure_logging, logger
 from .net import SocketHolder
@@ -71,13 +72,14 @@ class Granian:
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         threads: int = 1,
-        pthreads: int = 1,
+        blocking_threads: int = 512,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
         loop_opt: bool = False,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
+        backpressure: Optional[int] = None,
         http1_settings: Optional[HTTP1Settings] = None,
         http2_settings: Optional[HTTP2Settings] = None,
         log_enabled: bool = True,
@@ -97,13 +99,14 @@ class Granian:
         self.interface = interface
         self.workers = max(1, workers)
         self.threads = max(1, threads)
-        self.pthreads = max(1, pthreads)
+        self.blocking_threads = max(1, blocking_threads)
         self.threading_mode = threading_mode
         self.loop = loop
         self.loop_opt = loop_opt
         self.http = http
         self.websockets = websockets
         self.backlog = max(128, backlog)
+        self.backpressure = max(1, backpressure or self.backlog // self.workers)
         self.http1_settings = http1_settings
         self.http2_settings = http2_settings
         self.log_enabled = log_enabled
@@ -147,7 +150,8 @@ class Granian:
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
-        pthreads: int,
+        blocking_threads: int,
+        backpressure: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -177,7 +181,17 @@ class Granian:
             wcallback = future_watcher_wrapper(wcallback)
 
         worker = ASGIWorker(
-            worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, websockets, loop_opt, *ssl_ctx
+            worker_id,
+            sfd,
+            threads,
+            blocking_threads,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            loop_opt,
+            *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
@@ -190,7 +204,8 @@ class Granian:
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
-        pthreads: int,
+        blocking_threads: int,
+        backpressure: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -226,7 +241,17 @@ class Granian:
             wcallback = future_watcher_wrapper(wcallback)
 
         worker = ASGIWorker(
-            worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, websockets, loop_opt, *ssl_ctx
+            worker_id,
+            sfd,
+            threads,
+            blocking_threads,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            loop_opt,
+            *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
@@ -240,7 +265,8 @@ class Granian:
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
-        pthreads: int,
+        blocking_threads: int,
+        backpressure: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -271,7 +297,17 @@ class Granian:
         callback_init(loop)
 
         worker = RSGIWorker(
-            worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, websockets, loop_opt, *ssl_ctx
+            worker_id,
+            sfd,
+            threads,
+            blocking_threads,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            loop_opt,
+            *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(
@@ -289,7 +325,8 @@ class Granian:
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
-        pthreads: int,
+        blocking_threads: int,
+        backpressure: int,
         threading_mode: ThreadModes,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -314,7 +351,9 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        worker = WSGIWorker(worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, *ssl_ctx)
+        worker = WSGIWorker(
+            worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
+        )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(_wsgi_call_wrap(callback, scope_opts), loop, contextvars.copy_context(), shutdown_event)
 
@@ -342,7 +381,8 @@ class Granian:
                 socket_loader(),
                 self.loop,
                 self.threads,
-                self.pthreads,
+                self.blocking_threads,
+                self.backpressure,
                 self.threading_mode,
                 self.http,
                 self.http1_settings,
@@ -518,7 +558,7 @@ class Granian:
             setproctitle.setproctitle(self.process_name)
         elif self.process_name is not None:
             logger.error('Setting process name requires the granian[pname] extra')
-            sys.exit(1)
+            raise ConfigurationError('process_name')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)

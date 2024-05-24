@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional, Type, TypeVar, Union
 import click
 
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
+from .errors import ConfigurationError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
 from .server import Granian
@@ -67,7 +68,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--blocking-threads',
     type=click.IntRange(1),
-    default=1,
+    default=512,
     help='Number of blocking threads',
 )
 @option(
@@ -83,6 +84,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     type=click.IntRange(128),
     default=1024,
     help='Maximum number of connections to hold in backlog',
+)
+@option(
+    '--backpressure',
+    type=click.IntRange(1),
+    help='Maximum number of requests to process concurrently',
 )
 @option(
     '--http1-buffer-size',
@@ -205,6 +211,7 @@ def cli(
     loop: Loops,
     loop_opt: bool,
     backlog: int,
+    backpressure: Optional[int],
     http1_buffer_size: int,
     http1_keep_alive: bool,
     http1_pipeline_flush: bool,
@@ -237,20 +244,21 @@ def cli(
                 print('Unable to parse provided logging config.')
                 raise click.exceptions.Exit(1)
 
-    Granian(
+    server = Granian(
         app,
         address=host,
         port=port,
         interface=interface,
         workers=workers,
         threads=threads,
-        pthreads=blocking_threads,
+        blocking_threads=blocking_threads,
         threading_mode=threading_mode,
         loop=loop,
         loop_opt=loop_opt,
         http=http,
         websockets=websockets,
         backlog=backlog,
+        backpressure=backpressure,
         http1_settings=HTTP1Settings(
             keep_alive=http1_keep_alive, max_buffer_size=http1_buffer_size, pipeline_flush=http1_pipeline_flush
         ),
@@ -275,7 +283,12 @@ def cli(
         respawn_interval=respawn_interval,
         reload=reload,
         process_name=process_name,
-    ).serve()
+    )
+
+    try:
+        server.serve()
+    except ConfigurationError:
+        raise click.exceptions.Exit(1)
 
 
 def entrypoint():
