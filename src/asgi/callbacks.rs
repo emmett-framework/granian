@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::oneshot;
 
 use super::{
@@ -296,22 +296,27 @@ macro_rules! call_impl_http {
             req: hyper::http::request::Parts,
             body: hyper::body::Incoming,
         ) -> oneshot::Receiver<HTTPResponse> {
+            let brt = rt.innerb.clone();
             let (tx, rx) = oneshot::channel();
             let protocol = HTTPProtocol::new(rt, body, tx);
+            let scheme: Arc<str> = scheme.into();
 
-            scope_native_parts!(
-                req,
-                server_addr,
-                client_addr,
-                path,
-                query_string,
-                version,
-                server,
-                client
-            );
-            Python::with_gil(|py| {
-                let scope = build_scope_http(py, &req, version, server, client, scheme, &path, query_string).unwrap();
-                let _ = $runner::new(py, cb, protocol, scope).run(py);
+            let _ = brt.run(move || {
+                scope_native_parts!(
+                    req,
+                    server_addr,
+                    client_addr,
+                    path,
+                    query_string,
+                    version,
+                    server,
+                    client
+                );
+                Python::with_gil(|py| {
+                    let scope =
+                        build_scope_http(py, &req, version, server, client, &scheme, &path, query_string).unwrap();
+                    let _ = $runner::new(py, cb, protocol, scope).run(py);
+                });
             });
 
             rx
@@ -332,22 +337,27 @@ macro_rules! call_impl_ws {
             req: hyper::http::request::Parts,
             upgrade: UpgradeData,
         ) -> oneshot::Receiver<WebsocketDetachedTransport> {
+            let brt = rt.innerb.clone();
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+            let scheme: Arc<str> = scheme.into();
 
-            scope_native_parts!(
-                req,
-                server_addr,
-                client_addr,
-                path,
-                query_string,
-                version,
-                server,
-                client
-            );
-            Python::with_gil(|py| {
-                let scope = build_scope_ws(py, &req, version, server, client, scheme, &path, query_string).unwrap();
-                let _ = $runner::new(py, cb, protocol, scope).run(py);
+            let _ = brt.run(move || {
+                scope_native_parts!(
+                    req,
+                    server_addr,
+                    client_addr,
+                    path,
+                    query_string,
+                    version,
+                    server,
+                    client
+                );
+                Python::with_gil(|py| {
+                    let scope =
+                        build_scope_ws(py, &req, version, server, client, &scheme, &path, query_string).unwrap();
+                    let _ = $runner::new(py, cb, protocol, scope).run(py);
+                });
             });
 
             rx

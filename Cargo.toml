@@ -32,6 +32,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "=1.0"
+crossbeam-channel = "0.5"
 futures = "0.3"
 http-body-util = { version = "=0.1" }
 hyper = { version = "=1.3", features = ["http1", "http2", "server"] }
