@@ -11,6 +11,7 @@ use tokio::{
 };
 
 use super::asyncio::{copy_context, get_running_loop};
+use super::blocking::BlockingRunner;
 use super::callbacks::PyEmptyAwaitable;
 #[cfg(unix)]
 use super::callbacks::PyFutureAwaitable;
@@ -76,6 +77,8 @@ pub trait Runtime: Send + 'static {
         F: Future<Output = ()> + Send + 'static;
 
     fn handler(&self) -> RuntimeRef;
+
+    fn blocking(&self) -> BlockingRunner;
 }
 
 pub trait ContextExt: Runtime {
@@ -102,32 +105,38 @@ pub trait LocalContextExt: Runtime {
 
 pub(crate) struct RuntimeWrapper {
     rt: tokio::runtime::Runtime,
+    br: BlockingRunner,
 }
 
 impl RuntimeWrapper {
     pub fn new(blocking_threads: usize) -> Self {
         Self {
             rt: default_runtime(blocking_threads),
+            br: BlockingRunner::new(),
         }
     }
 
     pub fn with_runtime(rt: tokio::runtime::Runtime) -> Self {
-        Self { rt }
+        Self {
+            rt,
+            br: BlockingRunner::new(),
+        }
     }
 
     pub fn handler(&self) -> RuntimeRef {
-        RuntimeRef::new(self.rt.handle().clone())
+        RuntimeRef::new(self.rt.handle().clone(), self.br.clone())
     }
 }
 
 #[derive(Clone)]
 pub struct RuntimeRef {
     pub inner: tokio::runtime::Handle,
+    pub innerb: BlockingRunner,
 }
 
 impl RuntimeRef {
-    pub fn new(rt: tokio::runtime::Handle) -> Self {
-        Self { inner: rt }
+    pub fn new(rt: tokio::runtime::Handle, br: BlockingRunner) -> Self {
+        Self { inner: rt, innerb: br }
     }
 }
 
@@ -149,7 +158,11 @@ impl Runtime for RuntimeRef {
     }
 
     fn handler(&self) -> RuntimeRef {
-        RuntimeRef::new(self.inner.clone())
+        RuntimeRef::new(self.inner.clone(), self.innerb.clone())
+    }
+
+    fn blocking(&self) -> BlockingRunner {
+        self.innerb.clone()
     }
 }
 
@@ -243,14 +256,17 @@ pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResul
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
-    T: IntoPy<PyObject>,
+    T: IntoPy<PyObject> + Send + 'static,
 {
     let aw = Py::new(py, PyIterAwaitable::new())?;
     let py_fut = aw.clone_ref(py);
+    let rb = rt.blocking();
 
     rt.spawn(async move {
         let result = fut.await;
-        aw.get().set_result(result);
+        let _ = rb.run(move || {
+            aw.get().set_result(result);
+        });
     });
 
     Ok(py_fut.into_any().into_bound(py))
@@ -282,17 +298,22 @@ pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyRe
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
-    T: IntoPy<PyObject>,
+    T: IntoPy<PyObject> + Send + 'static,
 {
     let task_locals = get_current_locals::<R>(py)?;
     let event_loop = task_locals.event_loop(py).to_object(py);
     let (aw, cancel_tx) = PyFutureAwaitable::new(event_loop).to_spawn(py)?;
     let aw_ref = aw.clone_ref(py);
     let py_fut = aw.clone_ref(py);
+    let rb = rt.blocking();
 
     rt.spawn(async move {
         tokio::select! {
-            result = fut => aw.get().set_result(result, aw_ref),
+            result = fut => {
+                let _ = rb.run(move || {
+                    aw.get().set_result(result, aw_ref);
+                });
+            },
             () = cancel_tx.notified() => {}
         }
     });

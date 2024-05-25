@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 
 mod asgi;
 mod asyncio;
+mod blocking;
 mod callbacks;
 mod conversion;
 mod http;

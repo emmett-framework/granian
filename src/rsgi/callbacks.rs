@@ -265,11 +265,14 @@ macro_rules! call_impl_http {
             body: hyper::body::Incoming,
             scope: HTTPScope,
         ) -> oneshot::Receiver<PyResponse> {
+            let brt = rt.innerb.clone();
             let (tx, rx) = oneshot::channel();
             let protocol = HTTPProtocol::new(rt, tx, body);
 
-            Python::with_gil(|py| {
-                let _ = $runner::new(py, cb, protocol, scope).run(py);
+            let _ = brt.run(|| {
+                Python::with_gil(|py| {
+                    let _ = $runner::new(py, cb, protocol, scope).run(py);
+                });
             });
 
             rx
@@ -287,11 +290,14 @@ macro_rules! call_impl_ws {
             upgrade: UpgradeData,
             scope: WebsocketScope,
         ) -> oneshot::Receiver<WebsocketDetachedTransport> {
+            let brt = rt.innerb.clone();
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
 
-            Python::with_gil(|py| {
-                let _ = $runner::new(py, cb, protocol, scope).run(py);
+            let _ = brt.run(|| {
+                Python::with_gil(|py| {
+                    let _ = $runner::new(py, cb, protocol, scope).run(py);
+                });
             });
 
             rx
