@@ -3,10 +3,7 @@ use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuil
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
-use super::callbacks::{
-    call_rtb_http, call_rtb_http_pyw, call_rtb_ws, call_rtb_ws_pyw, call_rtt_http, call_rtt_http_pyw, call_rtt_ws,
-    call_rtt_ws_pyw,
-};
+use super::callbacks::{call_http, call_http_pyw, call_ws, call_ws_pyw};
 use crate::{
     callbacks::CallbackWrapper,
     http::{empty_body, response_500, HTTPRequest, HTTPResponse, HV_SERVER},
@@ -156,11 +153,11 @@ macro_rules! handle_request_with_ws {
     };
 }
 
-handle_request!(handle_rtt, call_rtt_http);
-handle_request!(handle_rtb, call_rtb_http);
-handle_request!(handle_rtt_pyw, call_rtt_http_pyw);
-handle_request!(handle_rtb_pyw, call_rtb_http_pyw);
-handle_request_with_ws!(handle_rtt_ws, call_rtt_http, call_rtt_ws);
-handle_request_with_ws!(handle_rtb_ws, call_rtb_http, call_rtb_ws);
-handle_request_with_ws!(handle_rtt_ws_pyw, call_rtt_http_pyw, call_rtt_ws_pyw);
-handle_request_with_ws!(handle_rtb_ws_pyw, call_rtb_http_pyw, call_rtb_ws_pyw);
+handle_request!(handle, call_http);
+// handle_request!(handle_rtb, call_rtb_http);
+handle_request!(handle_pyw, call_http_pyw);
+// handle_request!(handle_rtb_pyw, call_rtb_http_pyw);
+handle_request_with_ws!(handle_ws, call_http, call_ws);
+// handle_request_with_ws!(handle_rtb_ws, call_rtb_http, call_rtb_ws);
+handle_request_with_ws!(handle_ws_pyw, call_http_pyw, call_ws_pyw);
+// handle_request_with_ws!(handle_rtb_ws_pyw, call_rtb_http_pyw, call_rtb_ws_pyw);

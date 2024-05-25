@@ -256,7 +256,7 @@ impl CallbackWrappedRunnerWebsocket {
     }
 }
 
-macro_rules! call_impl_rtb_http {
+macro_rules! call_impl_http {
     ($func_name:ident, $runner:ident) => {
         #[inline]
         pub(crate) fn $func_name(
@@ -277,30 +277,7 @@ macro_rules! call_impl_rtb_http {
     };
 }
 
-macro_rules! call_impl_rtt_http {
-    ($func_name:ident, $runner:ident) => {
-        #[inline]
-        pub(crate) fn $func_name(
-            cb: CallbackWrapper,
-            rt: RuntimeRef,
-            body: hyper::body::Incoming,
-            scope: HTTPScope,
-        ) -> oneshot::Receiver<PyResponse> {
-            let (tx, rx) = oneshot::channel();
-            let protocol = HTTPProtocol::new(rt, tx, body);
-
-            tokio::task::spawn_blocking(move || {
-                Python::with_gil(|py| {
-                    let _ = $runner::new(py, cb, protocol, scope).run(py);
-                });
-            });
-
-            rx
-        }
-    };
-}
-
-macro_rules! call_impl_rtb_ws {
+macro_rules! call_impl_ws {
     ($func_name:ident, $runner:ident) => {
         #[inline]
         pub(crate) fn $func_name(
@@ -322,35 +299,7 @@ macro_rules! call_impl_rtb_ws {
     };
 }
 
-macro_rules! call_impl_rtt_ws {
-    ($func_name:ident, $runner:ident) => {
-        #[inline]
-        pub(crate) fn $func_name(
-            cb: CallbackWrapper,
-            rt: RuntimeRef,
-            ws: HyperWebsocket,
-            upgrade: UpgradeData,
-            scope: WebsocketScope,
-        ) -> oneshot::Receiver<WebsocketDetachedTransport> {
-            let (tx, rx) = oneshot::channel();
-            let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
-
-            tokio::task::spawn_blocking(move || {
-                Python::with_gil(|py| {
-                    let _ = $runner::new(py, cb, protocol, scope).run(py);
-                });
-            });
-
-            rx
-        }
-    };
-}
-
-call_impl_rtb_http!(call_rtb_http, CallbackRunnerHTTP);
-call_impl_rtb_http!(call_rtb_http_pyw, CallbackWrappedRunnerHTTP);
-call_impl_rtt_http!(call_rtt_http, CallbackRunnerHTTP);
-call_impl_rtt_http!(call_rtt_http_pyw, CallbackWrappedRunnerHTTP);
-call_impl_rtb_ws!(call_rtb_ws, CallbackRunnerWebsocket);
-call_impl_rtb_ws!(call_rtb_ws_pyw, CallbackWrappedRunnerWebsocket);
-call_impl_rtt_ws!(call_rtt_ws, CallbackRunnerWebsocket);
-call_impl_rtt_ws!(call_rtt_ws_pyw, CallbackWrappedRunnerWebsocket);
+call_impl_http!(call_http, CallbackRunnerHTTP);
+call_impl_http!(call_http_pyw, CallbackWrappedRunnerHTTP);
+call_impl_ws!(call_ws, CallbackRunnerWebsocket);
+call_impl_ws!(call_ws_pyw, CallbackWrappedRunnerWebsocket);
