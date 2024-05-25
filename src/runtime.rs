@@ -282,7 +282,7 @@ pub(crate) fn future_into_py_iter<R, F, T>(rt: R, py: Python, fut: F) -> PyResul
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
-    T: IntoPy<PyObject>,
+    T: IntoPy<PyObject> + Send + 'static,
 {
     future_into_py_futlike(rt, py, fut)
 }
@@ -327,12 +327,13 @@ pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyRe
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
-    T: IntoPy<PyObject>,
+    T: IntoPy<PyObject> + Send + 'static,
 {
     let task_locals = get_current_locals::<R>(py)?;
     let event_loop = task_locals.event_loop(py);
     let event_loop_ref = event_loop.to_object(py);
     let cancel_tx = Arc::new(tokio::sync::Notify::new());
+    let rb = rt.blocking();
 
     let py_fut = event_loop.call_method0(pyo3::intern!(py, "create_future"))?;
     py_fut.call_method1(
@@ -346,12 +347,14 @@ where
     rt.spawn(async move {
         tokio::select! {
             result = fut => {
-                Python::with_gil(|py| {
-                    let (cb, value) = match result {
-                        Ok(val) => (fut_ref.getattr(py, pyo3::intern!(py, "set_result")).unwrap(), val.into_py(py)),
-                        Err(err) => (fut_ref.getattr(py, pyo3::intern!(py, "set_exception")).unwrap(), err.into_py(py))
-                    };
-                    let _ = event_loop_ref.call_method1(py, pyo3::intern!(py, "call_soon_threadsafe"), (PyFutureResultSetter, cb, value));
+                let _ = rb.run(move || {
+                    Python::with_gil(|py| {
+                        let (cb, value) = match result {
+                            Ok(val) => (fut_ref.getattr(py, pyo3::intern!(py, "set_result")).unwrap(), val.into_py(py)),
+                            Err(err) => (fut_ref.getattr(py, pyo3::intern!(py, "set_exception")).unwrap(), err.into_py(py))
+                        };
+                        let _ = event_loop_ref.call_method1(py, pyo3::intern!(py, "call_soon_threadsafe"), (PyFutureResultSetter, cb, value));
+                    });
                 });
             },
             () = cancel_tx.notified() => {}
