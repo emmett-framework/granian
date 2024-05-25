@@ -1,9 +1,6 @@
 use pyo3::prelude::*;
 
-use super::http::{
-    handle_rtb, handle_rtb_pyw, handle_rtb_ws, handle_rtb_ws_pyw, handle_rtt, handle_rtt_pyw, handle_rtt_ws,
-    handle_rtt_ws_pyw,
-};
+use super::http::{handle, handle_pyw, handle_ws, handle_ws_pyw};
 
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
@@ -14,22 +11,22 @@ pub struct RSGIWorker {
 }
 
 impl RSGIWorker {
-    serve_rth!(_serve_rth, handle_rtb);
-    serve_rth!(_serve_rth_pyw, handle_rtb_pyw);
-    serve_rth!(_serve_rth_ws, handle_rtb_ws);
-    serve_rth!(_serve_rth_ws_pyw, handle_rtb_ws_pyw);
-    serve_wth!(_serve_wth, handle_rtt);
-    serve_wth!(_serve_wth_pyw, handle_rtt_pyw);
-    serve_wth!(_serve_wth_ws, handle_rtt_ws);
-    serve_wth!(_serve_wth_ws_pyw, handle_rtt_ws_pyw);
-    serve_rth_ssl!(_serve_rth_ssl, handle_rtb);
-    serve_rth_ssl!(_serve_rth_ssl_pyw, handle_rtb_pyw);
-    serve_rth_ssl!(_serve_rth_ssl_ws, handle_rtb_ws);
-    serve_rth_ssl!(_serve_rth_ssl_ws_pyw, handle_rtb_ws_pyw);
-    serve_wth_ssl!(_serve_wth_ssl, handle_rtt);
-    serve_wth_ssl!(_serve_wth_ssl_pyw, handle_rtt_pyw);
-    serve_wth_ssl!(_serve_wth_ssl_ws, handle_rtt_ws);
-    serve_wth_ssl!(_serve_wth_ssl_ws_pyw, handle_rtt_ws_pyw);
+    serve_rth!(_serve_rth, handle);
+    serve_rth!(_serve_rth_pyw, handle_pyw);
+    serve_rth!(_serve_rth_ws, handle_ws);
+    serve_rth!(_serve_rth_ws_pyw, handle_ws_pyw);
+    serve_wth!(_serve_wth, handle);
+    serve_wth!(_serve_wth_pyw, handle_pyw);
+    serve_wth!(_serve_wth_ws, handle_ws);
+    serve_wth!(_serve_wth_ws_pyw, handle_ws_pyw);
+    serve_rth_ssl!(_serve_rth_ssl, handle);
+    serve_rth_ssl!(_serve_rth_ssl_pyw, handle_pyw);
+    serve_rth_ssl!(_serve_rth_ssl_ws, handle_ws);
+    serve_rth_ssl!(_serve_rth_ssl_ws_pyw, handle_ws_pyw);
+    serve_wth_ssl!(_serve_wth_ssl, handle);
+    serve_wth_ssl!(_serve_wth_ssl_pyw, handle_pyw);
+    serve_wth_ssl!(_serve_wth_ssl_ws, handle_ws);
+    serve_wth_ssl!(_serve_wth_ssl_ws_pyw, handle_ws_pyw);
 }
 
 #[pymethods]
