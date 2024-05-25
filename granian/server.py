@@ -20,8 +20,9 @@ from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
 from .http import HTTP1Settings, HTTP2Settings
-from .log import LogLevels, configure_logging, logger
+from .log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
 from .net import SocketHolder
+from .rsgi import _callback_wrapper as _rsgi_call_wrap
 from .wsgi import _callback_wrapper as _wsgi_call_wrap
 
 
@@ -83,6 +84,8 @@ class Granian:
         log_enabled: bool = True,
         log_level: LogLevels = LogLevels.info,
         log_dictconfig: Optional[Dict[str, Any]] = None,
+        log_access: bool = False,
+        log_access_format: Optional[str] = None,
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         url_path_prefix: Optional[str] = None,
@@ -109,6 +112,8 @@ class Granian:
         self.log_enabled = log_enabled
         self.log_level = log_level
         self.log_config = log_dictconfig
+        self.log_access = log_access
+        self.log_access_format = log_access_format or DEFAULT_ACCESSLOG_FMT
         self.url_path_prefix = url_path_prefix
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
@@ -157,6 +162,7 @@ class Granian:
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
+        log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
@@ -172,7 +178,7 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        wcallback = _asgi_call_wrap(callback, scope_opts, {})
+        wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
         if not loop_opt:
             wcallback = future_watcher_wrapper(wcallback)
 
@@ -200,6 +206,7 @@ class Granian:
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
+        log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
@@ -221,7 +228,7 @@ class Granian:
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
 
-        wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state)
+        wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
         if not loop_opt:
             wcallback = future_watcher_wrapper(wcallback)
 
@@ -250,6 +257,7 @@ class Granian:
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
+        log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
@@ -266,6 +274,7 @@ class Granian:
         callback_init = (
             getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else lambda *args, **kwargs: None
         )
+        callback = _rsgi_call_wrap(callback, log_access_fmt)
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
         callback_init(loop)
@@ -299,6 +308,7 @@ class Granian:
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
+        log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
@@ -316,7 +326,7 @@ class Granian:
 
         worker = WSGIWorker(worker_id, sfd, threads, pthreads, http_mode, http1_settings, http2_settings, *ssl_ctx)
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(_wsgi_call_wrap(callback, scope_opts), loop, contextvars.copy_context(), shutdown_event)
+        serve(_wsgi_call_wrap(callback, scope_opts, log_access_fmt), loop, contextvars.copy_context(), shutdown_event)
 
     def _init_shared_socket(self):
         self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
@@ -352,6 +362,7 @@ class Granian:
                 self.log_enabled,
                 self.log_level,
                 self.log_config,
+                self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
             ),

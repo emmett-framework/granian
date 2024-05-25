@@ -160,6 +160,8 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
     help='Logging configuration file (json)',
 )
+@option('--access-log/--no-access-log', 'log_access_enabled', default=False, help='Enable access log')
+@option('--access-log-fmt', 'log_access_fmt', help='Access log format')
 @option(
     '--ssl-keyfile',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
@@ -218,6 +220,8 @@ def cli(
     http2_max_headers_size: int,
     http2_max_send_buffer_size: int,
     log_enabled: bool,
+    log_access_enabled: bool,
+    log_access_fmt: Optional[str],
     log_level: LogLevels,
     log_config: Optional[pathlib.Path],
     ssl_keyfile: Optional[pathlib.Path],
@@ -268,6 +272,8 @@ def cli(
         log_enabled=log_enabled,
         log_level=log_level,
         log_dictconfig=log_dictconfig,
+        log_access=log_access_enabled,
+        log_access_format=log_access_fmt,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
         url_path_prefix=url_path_prefix,

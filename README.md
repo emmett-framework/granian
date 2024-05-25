@@ -167,6 +167,11 @@ Options:
                                   default: (info)]
   --log-config FILE               Logging configuration file (json)  [env var:
                                   GRANIAN_LOG_CONFIG]
+  --access-log / --no-access-log  Enable access log  [env var:
+                                  GRANIAN_LOG_ACCESS_ENABLED; default:
+                                  (disabled)]
+  --access-log-fmt TEXT           Access log format  [env var:
+                                  GRANIAN_LOG_ACCESS_FMT]
   --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
   --ssl-certificate FILE          SSL certificate file  [env var:
                                   GRANIAN_SSL_CERTIFICATE]
@@ -189,6 +194,26 @@ Options:
   --version                       Show the version and exit.
   --help                          Show this message and exit.
 ```
+
+### Access log format
+
+The access log format can be configured by specifying the atoms (see below) to include in a specific format. By default Granian will use `[%(time)s] %(addr)s - "%(method)s %(path)s %(protocol)s" %(status)d %(dt_ms).3f` as the format.
+
+#### Access log atoms
+
+The following atoms are available for use:
+
+| identifier | description |
+| --- | --- |
+| addr | Client remote address |
+| time | Datetime of the request | 
+| dt_ms | Request duration in ms |
+| status | HTTP response status |
+| path | Request path (without query string) |
+| query\_string | Request query string |
+| method | Request HTTP method |
+| scheme | Request scheme |
+| protocol | HTTP protocol version |
 
 ### Threading mode
 
