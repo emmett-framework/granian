@@ -1,3 +1,4 @@
+import asyncio
 import pathlib
 import sys
 
@@ -60,6 +61,18 @@ async def file(scope, proto):
     )
 
 
+def io_builder(wait):
+    wait = wait / 1000
+    async def io(scope, proto):
+        await asyncio.sleep(wait)
+        proto.response_bytes(
+            200,
+            HEADERS,
+            BODY_BYTES_SHORT
+        )
+    return io
+
+
 async def handle_404(scope, proto):
     proto.response_str(
         404,
@@ -75,6 +88,8 @@ routes = {
     '/ss': s_long,
     '/echo': echo,
     '/fp': file,
+    '/io10': io_builder(10),
+    '/io100': io_builder(100),
 }
 
 

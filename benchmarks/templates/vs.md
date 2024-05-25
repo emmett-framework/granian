@@ -28,3 +28,10 @@ Granian version: {{ =data.granian }}
 
 {{ _data = data.results["vs_files"] }}
 {{ include './_vs_table.tpl' }}
+
+### Long I/O
+
+Plain text 4 bytes response comparison simulating *long* I/O waits (10ms and 100ms).
+
+{{ _data = data.results["vs_io"] }}
+{{ include './_vs_table.tpl' }}
