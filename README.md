@@ -94,7 +94,7 @@ Options:
                                   GRANIAN_THREADS; default: 1; x>=1]
   --blocking-threads INTEGER RANGE
                                   Number of blocking threads  [env var:
-                                  GRANIAN_BLOCKING_THREADS; default: 1; x>=1]
+                                  GRANIAN_BLOCKING_THREADS; x>=1]
   --threading-mode [runtime|workers]
                                   Threading mode to use  [env var:
                                   GRANIAN_THREADING_MODE; default: (workers)]
@@ -105,6 +105,9 @@ Options:
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog  [env var: GRANIAN_BACKLOG; default:
                                   1024; x>=128]
+  --backpressure INTEGER RANGE    Maximum number of requests to process
+                                  concurrently  [env var:
+                                  GRANIAN_BACKPRESSURE; x>=1]
   --http1-buffer-size INTEGER RANGE
                                   Set the maximum buffer size for HTTP/1
                                   connections  [env var:
@@ -214,6 +217,22 @@ The following atoms are available for use:
 | method | Request HTTP method |
 | scheme | Request scheme |
 | protocol | HTTP protocol version |
+
+### Processes and threads
+
+Granian offers different options to configure the number of processes and threads to be run, in particular:
+
+- **workers**: the total number of processes holding a dedicated Python interpreter that will run the application
+- **threads**: the number of Rust threads per worker that will perform network I/O
+- **blocking threads**: the number of Rust threads per worker involved in blocking operations. The main role of these threads is to deal with blocking I/O – like opening files – but on synchronous protocols like WSGI these threads will also be responsible of interacting with the application code.
+
+In general, Granian will try its best to automatically pick proper values for the threading configuration, leaving to you the responsibility to choose the number of workers you need.    
+There is no *golden rule* here, as these numbers will vastly depend both on your application behavior and the deployment target, but we can list some suggestions:
+- matching the amount of CPU cores for the workers is generally the best starting point; on containerized environments like docker or k8s is best to have 1 worker per container though and scale your containers using the relevant orchestrator;
+- the default number of threads is fine for the vast majority of applications out there; you might want to increase this number for applications dealing with several concurrently opened websockets; 
+- the default number of blocking threads should work properly with the majority of applications; in synchronous protocols like WSGI this will also impact the number of concurrent requests you can handle, but you should use the `backpressure` configuration parameter to control it and set a lower number of blocking threads only if your application has a very low (1ms order) average response time;
+
+Also, you should generally avoid to configure workers and threads based on numbers of other servers, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
 
 ### Threading mode
 
