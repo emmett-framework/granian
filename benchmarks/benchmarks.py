@@ -15,20 +15,20 @@ WRK_CONCURRENCIES = [64, 128, 256, 512]
 APPS = {
     "asgi": (
         "granian --interface asgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} "
-        "--workers {procs} --threads {threads} --backpressure 512 "
+        "--no-ws --http {http} --backpressure 512 "
+        "--workers {procs} --threads {threads} "
         "--threading-mode {thmode} app.asgi:app"
     ),
     "rsgi": (
         "granian --interface rsgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} "
-        "--workers {procs} --threads {threads} --backpressure 512 "
+        "--no-ws --http {http} --backpressure 512 "
+        "--workers {procs} --threads {threads} "
         "--threading-mode {thmode} app.rsgi:app"
     ),
     "wsgi": (
         "granian --interface wsgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} "
-        "--workers {procs} --threads {threads} --backpressure 512 "
+        "--no-ws --http {http} --backpressure 512 "
+        "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.wsgi:app"
     ),
     "uvicorn_h11": (
@@ -56,13 +56,15 @@ APPS = {
 
 
 @contextmanager
-def app(name, procs=None, threads=None, thmode=None, http="1"):
+def app(name, procs=None, threads=None, bthreads=None, thmode=None, http="1"):
     procs = procs or 1
     threads = threads or 1
+    bthreads = f" --blocking-threads {bthreads}" if bthreads else ""
     thmode = thmode or "workers"
     proc_cmd = APPS[name].format(
         procs=procs,
         threads=threads,
+        bthreads=bthreads,
         thmode=thmode,
         http=http,
     )
@@ -144,7 +146,7 @@ def concurrencies():
             for nt in [1, 2, 4]:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} {threading_mode[0]}th"
-                    with app(interface, np, nt, threading_mode):
+                    with app(interface, np, nt, thmode=threading_mode):
                         print(f"Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}")
                         results[interface][key] = {
                             "m": threading_mode,
@@ -170,7 +172,7 @@ def interfaces():
     for interface in ["rsgi", "asgi", "wsgi"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
-            with app(interface):
+            with app(interface, bthreads=1):
                 results[f"{interface.upper()} {key}"] = benchmark(route, **opts)
     return results
 
@@ -189,9 +191,9 @@ def http2():
 
 def files():
     results = {}
-    with app("rsgi"):
+    with app("rsgi", bthreads=1):
         results["RSGI"] = benchmark("fp")
-    with app("asgi"):
+    with app("asgi", bthreads=1):
         results["ASGI"] = benchmark("fb")
         results["ASGI pathsend"] = benchmark("fp")
     return results
@@ -218,7 +220,7 @@ def vs_wsgi():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
             title = " ".join(item.title() for item in fw.split("_"))
-            with app(fw_app):
+            with app(fw_app, bthreads=1):
                 results[f"{title} {key}"] = benchmark(route, **opts)
     return results
 
@@ -238,7 +240,7 @@ def vs_http2():
 
 def vs_files():
     results = {}
-    with app("asgi"):
+    with app("asgi", bthreads=1):
         results["Granian (pathsend)"] = benchmark("fp")
     for fw in ["uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
         title = " ".join(item.title() for item in fw.split("_"))

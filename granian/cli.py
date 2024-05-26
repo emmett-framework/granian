@@ -68,7 +68,6 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--blocking-threads',
     type=click.IntRange(1),
-    default=512,
     help='Number of blocking threads',
 )
 @option(
@@ -208,7 +207,7 @@ def cli(
     websockets: bool,
     workers: int,
     threads: int,
-    blocking_threads: int,
+    blocking_threads: Optional[int],
     threading_mode: ThreadModes,
     loop: Loops,
     loop_opt: bool,

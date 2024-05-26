@@ -73,7 +73,7 @@ class Granian:
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         threads: int = 1,
-        blocking_threads: int = 512,
+        blocking_threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
         loop_opt: bool = False,
@@ -102,7 +102,6 @@ class Granian:
         self.interface = interface
         self.workers = max(1, workers)
         self.threads = max(1, threads)
-        self.blocking_threads = max(1, blocking_threads)
         self.threading_mode = threading_mode
         self.loop = loop
         self.loop_opt = loop_opt
@@ -110,6 +109,13 @@ class Granian:
         self.websockets = websockets
         self.backlog = max(128, backlog)
         self.backpressure = max(1, backpressure or self.backlog // self.workers)
+        self.blocking_threads = (
+            blocking_threads
+            if blocking_threads is not None
+            else max(
+                1, (self.backpressure if self.interface == Interfaces.WSGI else min(2, multiprocessing.cpu_count()))
+            )
+        )
         self.http1_settings = http1_settings
         self.http2_settings = http2_settings
         self.log_enabled = log_enabled
