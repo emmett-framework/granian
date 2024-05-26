@@ -16,13 +16,13 @@ APPS = {
     "asgi": (
         "granian --interface asgi --log-level warning --backlog 2048 "
         "--no-ws --http {http} --backpressure 512 "
-        "--workers {procs} --threads {threads} "
+        "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.asgi:app"
     ),
     "rsgi": (
         "granian --interface rsgi --log-level warning --backlog 2048 "
         "--no-ws --http {http} --backpressure 512 "
-        "--workers {procs} --threads {threads} "
+        "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.rsgi:app"
     ),
     "wsgi": (
