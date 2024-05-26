@@ -2,10 +2,10 @@
 
 
 
-Run at: Wed 01 May 2024, 21:13    
+Run at: Sun 26 May 2024, 08:48    
 Environment: GHA Linux x86_64 (CPUs: 4)    
 Python version: 3.11    
-Granian version: 1.3.1    
+Granian version: 1.4.0    
 
 ## RSGI response types
 
@@ -14,10 +14,10 @@ The "small" response is 4 bytes, the "big" one is 80kbytes.
 
 | Type | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| bytes small (c64) | 626131 | 41747 | 1.53ms | 3.976ms |
-| str small (c256) | 656342 | 43853 | 5.814ms | 81.793ms |
-| bytes big (c32) | 414209 | 27614 | 1.158ms | 3.596ms |
-| str big (c64) | 406256 | 27087 | 2.358ms | 6.279ms |
+| bytes small (c128) | 645136 | 43047 | 2.964ms | 35.913ms |
+| str small (c256) | 682896 | 45605 | 5.598ms | 53.379ms |
+| bytes big (c64) | 414907 | 27665 | 2.309ms | 5.729ms |
+| str big (c64) | 428762 | 28589 | 2.233ms | 6.921ms |
 
 
 ## Interfaces
@@ -29,15 +29,15 @@ The "echo" request is a 4bytes POST request responding with the same body.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI bytes (c128) | 636768 | 42481 | 3.006ms | 27.87ms |
-| RSGI str (c64) | 654773 | 43655 | 1.463ms | 3.738ms |
-| RSGI echo (c256) | 428875 | 28644 | 8.908ms | 76.577ms |
-| ASGI bytes (c128) | 594226 | 39645 | 3.221ms | 28.739ms |
-| ASGI str (c64) | 608232 | 40553 | 1.575ms | 3.997ms |
-| ASGI echo (c128) | 389133 | 25960 | 4.919ms | 32.617ms |
-| WSGI bytes (c32) | 602109 | 40138 | 0.796ms | 2.494ms |
-| WSGI str (c128) | 638006 | 42570 | 2.998ms | 27.818ms |
-| WSGI echo (c64) | 539308 | 35960 | 1.776ms | 5.169ms |
+| RSGI bytes (c64) | 671256 | 44755 | 1.428ms | 3.987ms |
+| RSGI str (c64) | 669807 | 44659 | 1.43ms | 4.906ms |
+| RSGI echo (c64) | 612353 | 40829 | 1.564ms | 4.402ms |
+| ASGI bytes (c512) | 618058 | 41359 | 12.327ms | 135.647ms |
+| ASGI str (c512) | 605561 | 40557 | 12.585ms | 123.101ms |
+| ASGI echo (c64) | 366514 | 24436 | 2.615ms | 5.406ms |
+| WSGI bytes (c256) | 604499 | 40372 | 6.324ms | 48.487ms |
+| WSGI str (c512) | 602714 | 40347 | 12.635ms | 166.804ms |
+| WSGI echo (c128) | 534302 | 35648 | 3.581ms | 27.538ms |
 
 
 ## HTTP/2
@@ -46,10 +46,10 @@ Comparison between Granian HTTP versions on RSGI using 4bytes plain text respons
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| HTTP/1 [GET] (c64) | 661064 | 44073 | 1.45ms | 3.493ms |
-| HTTP/1 [POST] (c256) | 431154 | 28788 | 8.867ms | 60.043ms |
-| HTTP/2 [GET] (c128) | 614523 | 41004 | 3.115ms | 22.503ms |
-| HTTP/2 [POST] (c64) | 393047 | 26207 | 2.438ms | 7.256ms |
+| HTTP/1 [GET] (c256) | 631914 | 42206 | 6.048ms | 63.354ms |
+| HTTP/1 [POST] (c512) | 616195 | 41238 | 12.378ms | 116.836ms |
+| HTTP/2 [GET] (c64) | 636209 | 42419 | 1.507ms | 4.572ms |
+| HTTP/2 [POST] (c128) | 481880 | 32148 | 3.971ms | 32.601ms |
 
 
 ## File responses
@@ -59,9 +59,9 @@ WSGI is not part of the benchmark since the protocol doesn't implement anything 
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI (c128) | 513965 | 34288 | 3.725ms | 23.066ms |
-| ASGI (c64) | 248384 | 16562 | 3.855ms | 5.662ms |
-| ASGI pathsend (c128) | 433308 | 28908 | 4.418ms | 19.855ms |
+| RSGI (c64) | 470616 | 31381 | 2.034ms | 5.498ms |
+| ASGI (c512) | 239884 | 16054 | 31.745ms | 132.05ms |
+| ASGI pathsend (c64) | 401796 | 26789 | 2.384ms | 6.176ms |
 
 
 ### Other benchmarks
