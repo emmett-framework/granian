@@ -10,25 +10,25 @@ import time
 from contextlib import contextmanager
 
 CPU = multiprocessing.cpu_count()
-WRK_CONCURRENCIES = [CPU * 2**i for i in range(3, 7)]
+WRK_CONCURRENCIES = [64, 128, 256, 512]
 
 APPS = {
     "asgi": (
         "granian --interface asgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} "
-        "--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+        "--no-ws --http {http} --backpressure 512 "
+        "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.asgi:app"
     ),
     "rsgi": (
         "granian --interface rsgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} "
-        "--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+        "--no-ws --http {http} --backpressure 512 "
+        "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.rsgi:app"
     ),
     "wsgi": (
         "granian --interface wsgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} "
-        "--workers {procs} --threads {threads} --blocking-threads {bthreads} "
+        "--no-ws --http {http} --backpressure 512 "
+        "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.wsgi:app"
     ),
     "uvicorn_h11": (
@@ -59,7 +59,7 @@ APPS = {
 def app(name, procs=None, threads=None, bthreads=None, thmode=None, http="1"):
     procs = procs or 1
     threads = threads or 1
-    bthreads = bthreads or 1
+    bthreads = f" --blocking-threads {bthreads}" if bthreads else ""
     thmode = thmode or "workers"
     proc_cmd = APPS[name].format(
         procs=procs,
@@ -119,16 +119,17 @@ def wrk(duration, concurrency, endpoint, post=False, h2=False):
         }
 
 
-def benchmark(endpoint, post=False, h2=False):
+def benchmark(endpoint, post=False, h2=False, concurrencies=None):
+    concurrencies = concurrencies or WRK_CONCURRENCIES
     results = {}
     # primer
     wrk(5, 8, endpoint, post=post, h2=h2)
     time.sleep(2)
     # warm up
-    wrk(5, max(WRK_CONCURRENCIES), endpoint, post=post, h2=h2)
+    wrk(5, max(concurrencies), endpoint, post=post, h2=h2)
     time.sleep(3)
     # bench
-    for concurrency in WRK_CONCURRENCIES:
+    for concurrency in concurrencies:
         res = wrk(15, concurrency, endpoint, post=post, h2=h2)
         results[concurrency] = res
         time.sleep(3)
@@ -137,36 +138,21 @@ def benchmark(endpoint, post=False, h2=False):
 
 
 def concurrencies():
-    nperm = sorted(set([1, 2, round(CPU / 2.5), round(CPU / 2), CPU]))
+    nperm = sorted(set([1, 2, round(CPU / 5), round(CPU / 2.5), round(CPU / 2), CPU]))
     results = {"wsgi": {}}
-    for interface in ["asgi", "rsgi"]:
+    for interface in ["asgi", "rsgi", "wsgi"]:
         results[interface] = {}
         for np in nperm:
             for nt in [1, 2, 4]:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} {threading_mode[0]}th"
-                    with app(interface, np, nt, 1, threading_mode):
+                    with app(interface, np, nt, thmode=threading_mode):
                         print(f"Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}")
                         results[interface][key] = {
                             "m": threading_mode,
                             "p": np,
                             "t": nt,
-                            "b": 1,
-                            "res": benchmark("b")
-                        }
-    for np in nperm:
-        for nt, nbtl in [(1, [1, 2, 4]), (2, [1]), (4, [1])]:
-            for nbt in nbtl:
-                for threading_mode in ["workers", "runtime"]:
-                    key = f"P{np} T{nt} B{nbt} {threading_mode[0]}th"
-                    with app("wsgi", np, nt, nbt, threading_mode):
-                        print(f"Bench concurrencies - [wsgi] {threading_mode} {np}:{nt}:{nbt}")
-                        results["wsgi"][key] = {
-                            "m": threading_mode,
-                            "p": np,
-                            "t": nt,
-                            "b": nbt,
-                            "res": benchmark("b")
+                            "res": benchmark("b", concurrencies=[128, 256, 512, 1024])
                         }
     return results
 
@@ -186,7 +172,7 @@ def interfaces():
     for interface in ["rsgi", "asgi", "wsgi"]:
         for key, bench_data in benches.items():
             route, opts = bench_data
-            with app(interface):
+            with app(interface, bthreads=1):
                 results[f"{interface.upper()} {key}"] = benchmark(route, **opts)
     return results
 
@@ -205,9 +191,9 @@ def http2():
 
 def files():
     results = {}
-    with app("rsgi"):
+    with app("rsgi", bthreads=1):
         results["RSGI"] = benchmark("fp")
-    with app("asgi"):
+    with app("asgi", bthreads=1):
         results["ASGI"] = benchmark("fb")
         results["ASGI pathsend"] = benchmark("fp")
     return results
@@ -234,7 +220,7 @@ def vs_wsgi():
             route, opts = bench_data
             fw_app = fw.split("_")[1] if fw.startswith("granian") else fw
             title = " ".join(item.title() for item in fw.split("_"))
-            with app(fw_app):
+            with app(fw_app, bthreads=1):
                 results[f"{title} {key}"] = benchmark(route, **opts)
     return results
 
@@ -254,7 +240,7 @@ def vs_http2():
 
 def vs_files():
     results = {}
-    with app("asgi"):
+    with app("asgi", bthreads=1):
         results["Granian (pathsend)"] = benchmark("fp")
     for fw in ["uvicorn_h11", "uvicorn_httptools", "hypercorn"]:
         title = " ".join(item.title() for item in fw.split("_"))

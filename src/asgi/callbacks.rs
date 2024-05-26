@@ -1,7 +1,6 @@
-use std::{net::SocketAddr, sync::Arc};
-
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::oneshot;
 
 use super::{
@@ -285,7 +284,7 @@ impl CallbackWrappedRunnerWebsocket {
 //     }
 // }
 
-macro_rules! call_impl_rtb_http {
+macro_rules! call_impl_http {
     ($func_name:ident, $runner:ident) => {
         #[inline]
         pub(crate) fn $func_name(
@@ -297,46 +296,12 @@ macro_rules! call_impl_rtb_http {
             req: hyper::http::request::Parts,
             body: hyper::body::Incoming,
         ) -> oneshot::Receiver<HTTPResponse> {
-            let (tx, rx) = oneshot::channel();
-            let protocol = HTTPProtocol::new(rt, body, tx);
-
-            scope_native_parts!(
-                req,
-                server_addr,
-                client_addr,
-                path,
-                query_string,
-                version,
-                server,
-                client
-            );
-            Python::with_gil(|py| {
-                let scope = build_scope_http(py, &req, version, server, client, scheme, &path, query_string).unwrap();
-                let _ = $runner::new(py, cb, protocol, scope).run(py);
-            });
-
-            rx
-        }
-    };
-}
-
-macro_rules! call_impl_rtt_http {
-    ($func_name:ident, $runner:ident) => {
-        #[inline]
-        pub(crate) fn $func_name(
-            cb: CallbackWrapper,
-            rt: RuntimeRef,
-            server_addr: SocketAddr,
-            client_addr: SocketAddr,
-            scheme: &str,
-            req: hyper::http::request::Parts,
-            body: hyper::body::Incoming,
-        ) -> oneshot::Receiver<HTTPResponse> {
+            let brt = rt.innerb.clone();
             let (tx, rx) = oneshot::channel();
             let protocol = HTTPProtocol::new(rt, body, tx);
             let scheme: Arc<str> = scheme.into();
 
-            tokio::task::spawn_blocking(move || {
+            let _ = brt.run(move || {
                 scope_native_parts!(
                     req,
                     server_addr,
@@ -359,7 +324,7 @@ macro_rules! call_impl_rtt_http {
     };
 }
 
-macro_rules! call_impl_rtb_ws {
+macro_rules! call_impl_ws {
     ($func_name:ident, $runner:ident) => {
         #[inline]
         pub(crate) fn $func_name(
@@ -372,47 +337,12 @@ macro_rules! call_impl_rtb_ws {
             req: hyper::http::request::Parts,
             upgrade: UpgradeData,
         ) -> oneshot::Receiver<WebsocketDetachedTransport> {
-            let (tx, rx) = oneshot::channel();
-            let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
-
-            scope_native_parts!(
-                req,
-                server_addr,
-                client_addr,
-                path,
-                query_string,
-                version,
-                server,
-                client
-            );
-            Python::with_gil(|py| {
-                let scope = build_scope_ws(py, &req, version, server, client, scheme, &path, query_string).unwrap();
-                let _ = $runner::new(py, cb, protocol, scope).run(py);
-            });
-
-            rx
-        }
-    };
-}
-
-macro_rules! call_impl_rtt_ws {
-    ($func_name:ident, $runner:ident) => {
-        #[inline]
-        pub(crate) fn $func_name(
-            cb: CallbackWrapper,
-            rt: RuntimeRef,
-            server_addr: SocketAddr,
-            client_addr: SocketAddr,
-            scheme: &str,
-            ws: HyperWebsocket,
-            req: hyper::http::request::Parts,
-            upgrade: UpgradeData,
-        ) -> oneshot::Receiver<WebsocketDetachedTransport> {
+            let brt = rt.innerb.clone();
             let (tx, rx) = oneshot::channel();
             let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
             let scheme: Arc<str> = scheme.into();
 
-            tokio::task::spawn_blocking(move || {
+            let _ = brt.run(move || {
                 scope_native_parts!(
                     req,
                     server_addr,
@@ -435,11 +365,7 @@ macro_rules! call_impl_rtt_ws {
     };
 }
 
-call_impl_rtb_http!(call_rtb_http, CallbackRunnerHTTP);
-call_impl_rtb_http!(call_rtb_http_pyw, CallbackWrappedRunnerHTTP);
-call_impl_rtt_http!(call_rtt_http, CallbackRunnerHTTP);
-call_impl_rtt_http!(call_rtt_http_pyw, CallbackWrappedRunnerHTTP);
-call_impl_rtb_ws!(call_rtb_ws, CallbackRunnerWebsocket);
-call_impl_rtb_ws!(call_rtb_ws_pyw, CallbackWrappedRunnerWebsocket);
-call_impl_rtt_ws!(call_rtt_ws, CallbackRunnerWebsocket);
-call_impl_rtt_ws!(call_rtt_ws_pyw, CallbackWrappedRunnerWebsocket);
+call_impl_http!(call_http, CallbackRunnerHTTP);
+call_impl_http!(call_http_pyw, CallbackWrappedRunnerHTTP);
+call_impl_ws!(call_ws, CallbackRunnerWebsocket);
+call_impl_ws!(call_ws_pyw, CallbackWrappedRunnerWebsocket);
