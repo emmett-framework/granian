@@ -13,7 +13,7 @@ use pyo3::{
 };
 use std::{
     borrow::Cow,
-    sync::{atomic, Arc, Mutex, RwLock},
+    sync::{atomic, Arc, Mutex},
 };
 use tokio::{
     fs::File,
@@ -46,7 +46,7 @@ pub(crate) struct ASGIHTTPProtocol {
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
     body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>>,
-    flow_rx_exhausted: Arc<RwLock<bool>>,
+    flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<tokio::sync::Notify>,
     sent_response_code: Arc<atomic::AtomicU16>,
 }
@@ -61,7 +61,7 @@ impl ASGIHTTPProtocol {
             response_chunked: false.into(),
             response_intent: Mutex::new(None),
             body_tx: Mutex::new(None),
-            flow_rx_exhausted: Arc::new(RwLock::new(false)),
+            flow_rx_exhausted: Arc::new(atomic::AtomicBool::new(false)),
             flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
             sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
         }
@@ -111,7 +111,7 @@ impl ASGIHTTPProtocol {
 #[pymethods]
 impl ASGIHTTPProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        if *self.flow_rx_exhausted.read().unwrap() {
+        if self.flow_rx_exhausted.load(atomic::Ordering::Relaxed) {
             let flow_hld = self.flow_tx_waiter.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 let () = flow_hld.notified().await;
@@ -139,8 +139,7 @@ impl ASGIHTTPProtocol {
                 _ => Ok(body::Bytes::new()),
             };
             if !more_body {
-                let mut flow = flow_ref.write().unwrap();
-                *flow = true;
+                flow_ref.store(true, atomic::Ordering::Relaxed);
             }
 
             match chunk {
