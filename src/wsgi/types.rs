@@ -14,6 +14,7 @@ use tokio_util::bytes::BytesMut;
 
 use crate::conversion::BytesToPy;
 use crate::runtime::RuntimeRef;
+use crate::utils::log_application_callable_exception;
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
@@ -189,9 +190,10 @@ impl Stream for WSGIResponseBodyIter {
                 }
             },
             Err(err) => {
-                if err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
-                    self.close_inner(py);
+                if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
+                    log_application_callable_exception(&err);
                 }
+                self.close_inner(py);
                 None
             }
         });
