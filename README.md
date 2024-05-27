@@ -90,11 +90,11 @@ Options:
                                   GRANIAN_WEBSOCKETS; default: (enabled)]
   --workers INTEGER RANGE         Number of worker processes  [env var:
                                   GRANIAN_WORKERS; default: 1; x>=1]
-  --threads INTEGER RANGE         Number of threads  [env var:
+  --threads INTEGER RANGE         Number of threads (per worker)  [env var:
                                   GRANIAN_THREADS; default: 1; x>=1]
   --blocking-threads INTEGER RANGE
-                                  Number of blocking threads  [env var:
-                                  GRANIAN_BLOCKING_THREADS; x>=1]
+                                  Number of blocking threads (per worker)
+                                  [env var: GRANIAN_BLOCKING_THREADS; x>=1]
   --threading-mode [runtime|workers]
                                   Threading mode to use  [env var:
                                   GRANIAN_THREADING_MODE; default: (workers)]
@@ -103,11 +103,12 @@ Options:
   --opt / --no-opt                Enable loop optimizations  [env var:
                                   GRANIAN_LOOP_OPT; default: (disabled)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
-                                  backlog  [env var: GRANIAN_BACKLOG; default:
-                                  1024; x>=128]
+                                  backlog (globally)  [env var:
+                                  GRANIAN_BACKLOG; default: 1024; x>=128]
   --backpressure INTEGER RANGE    Maximum number of requests to process
-                                  concurrently  [env var:
-                                  GRANIAN_BACKPRESSURE; x>=1]
+                                  concurrently (per worker)  [env var:
+                                  GRANIAN_BACKPRESSURE; default:
+                                  (backlog/workers); x>=1]
   --http1-buffer-size INTEGER RANGE
                                   Set the maximum buffer size for HTTP/1
                                   connections  [env var:

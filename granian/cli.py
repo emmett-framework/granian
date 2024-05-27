@@ -64,11 +64,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
 @option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling')
 @option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
-@option('--threads', type=click.IntRange(1), default=1, help='Number of threads')
+@option('--threads', type=click.IntRange(1), default=1, help='Number of threads (per worker)')
 @option(
     '--blocking-threads',
     type=click.IntRange(1),
-    help='Number of blocking threads',
+    help='Number of blocking threads (per worker)',
 )
 @option(
     '--threading-mode',
@@ -82,12 +82,13 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--backlog',
     type=click.IntRange(128),
     default=1024,
-    help='Maximum number of connections to hold in backlog',
+    help='Maximum number of connections to hold in backlog (globally)',
 )
 @option(
     '--backpressure',
     type=click.IntRange(1),
-    help='Maximum number of requests to process concurrently',
+    show_default='backlog/workers',
+    help='Maximum number of requests to process concurrently (per worker)',
 )
 @option(
     '--http1-buffer-size',
