@@ -145,6 +145,8 @@ def _build_access_logger(fmt):
                 'qs': scope['query_string'],
                 'method': scope['method'],
                 'scheme': scope['scheme'],
+                'response_length': scope['CONTENT_LENGTH'],
+                'user_agent': scope.get('HTTP_USER_AGENT', '-'),
             },
             resp_code,
         )

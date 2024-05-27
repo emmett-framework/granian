@@ -77,6 +77,8 @@ def _build_access_logger(fmt):
                 'qs': scope['QUERY_STRING'],
                 'method': scope['REQUEST_METHOD'],
                 'scheme': scope['wsgi.url_scheme'],
+                'response_length': scope['CONTENT_LENGTH'],
+                'user_agent': scope.get('HTTP_USER_AGENT', '-'),
             },
             resp_code,
         )

@@ -90,6 +90,8 @@ def log_request_builder(fmt):
                 'method': req['method'],
                 'scheme': req['scheme'],
                 'protocol': req['protocol'],
+                'response_length': req['response_length'],
+                'user_agent': req['user_agent']
             },
         )
 

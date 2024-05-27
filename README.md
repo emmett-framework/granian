@@ -218,6 +218,8 @@ The following atoms are available for use:
 | method | Request HTTP method |
 | scheme | Request scheme |
 | protocol | HTTP protocol version |
+| response\_length | Size (in bytes) of the HTTP response |
+| user\_agent | User Agent of the HTTP request, if available |
 
 ### Processes and threads
 
