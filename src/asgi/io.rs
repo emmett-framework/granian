@@ -428,7 +428,7 @@ impl ASGIWebsocketProtocol {
             if let Some(ws) = &mut *(transport.lock().await) {
                 while let Some(recv) = ws.next().await {
                     match recv {
-                        Ok(Message::Ping(_)) => continue,
+                        Ok(Message::Ping(_) | Message::Pong(_)) => continue,
                         Ok(message @ Message::Close(_)) => {
                             closed.store(true, atomic::Ordering::Relaxed);
                             return ws_message_into_py(message);
