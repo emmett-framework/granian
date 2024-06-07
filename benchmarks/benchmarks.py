@@ -15,19 +15,19 @@ WRK_CONCURRENCIES = [64, 128, 256, 512]
 APPS = {
     "asgi": (
         "granian --interface asgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} --backpressure 512 "
+        "--no-ws --http {http} "
         "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.asgi:app"
     ),
     "rsgi": (
         "granian --interface rsgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} --backpressure 512 "
+        "--no-ws --http {http} "
         "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.rsgi:app"
     ),
     "wsgi": (
         "granian --interface wsgi --log-level warning --backlog 2048 "
-        "--no-ws --http {http} --backpressure 512 "
+        "--no-ws --http {http} "
         "--workers {procs} --threads {threads}{bthreads} "
         "--threading-mode {thmode} app.wsgi:app"
     ),
@@ -123,14 +123,14 @@ def benchmark(endpoint, post=False, h2=False, concurrencies=None):
     concurrencies = concurrencies or WRK_CONCURRENCIES
     results = {}
     # primer
-    wrk(5, 8, endpoint, post=post, h2=h2)
-    time.sleep(2)
+    wrk(4, 8, endpoint, post=post, h2=h2)
+    time.sleep(1)
     # warm up
-    wrk(5, max(concurrencies), endpoint, post=post, h2=h2)
-    time.sleep(3)
+    wrk(3, max(concurrencies), endpoint, post=post, h2=h2)
+    time.sleep(2)
     # bench
     for concurrency in concurrencies:
-        res = wrk(15, concurrency, endpoint, post=post, h2=h2)
+        res = wrk(10, concurrency, endpoint, post=post, h2=h2)
         results[concurrency] = res
         time.sleep(3)
     time.sleep(1)
@@ -138,7 +138,7 @@ def benchmark(endpoint, post=False, h2=False, concurrencies=None):
 
 
 def concurrencies():
-    nperm = sorted(set([1, 2, round(CPU / 5), round(CPU / 2.5), round(CPU / 2), CPU]))
+    nperm = sorted(set([1, 2, 4, round(CPU / 2), CPU]))
     results = {"wsgi": {}}
     for interface in ["asgi", "rsgi", "wsgi"]:
         results[interface] = {}
@@ -146,13 +146,13 @@ def concurrencies():
             for nt in [1, 2, 4]:
                 for threading_mode in ["workers", "runtime"]:
                     key = f"P{np} T{nt} {threading_mode[0]}th"
-                    with app(interface, np, nt, thmode=threading_mode):
+                    with app(interface, np, nt, bthreads=1, thmode=threading_mode):
                         print(f"Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}")
                         results[interface][key] = {
                             "m": threading_mode,
                             "p": np,
                             "t": nt,
-                            "res": benchmark("b", concurrencies=[128, 256, 512, 1024])
+                            "res": benchmark("b", concurrencies=[128, 512, 1024, 2048])
                         }
     return results
 
