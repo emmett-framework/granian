@@ -53,6 +53,50 @@ The application is called once per "connection". The definition of a connection 
 
 The protocol-specific sub-specifications cover scope and protocol specifications.
 
+### Applications' additional methods
+
+RSGI specification also includes the following additional methods for applications.
+
+#### `__rsgi__` method
+
+RSGI applications intended to support additional protocols which bind to an async callable like ASGI can expose the more specific `__rsgi__` method interface in place of the default call.    
+For instance, an application supporting both RSGI and ASGI protocols will look like the following:
+
+```python
+class App:
+    async def __call__(self, scope, receive, send):
+        # ASGI protocol handling
+    
+    async def __rsgi__(self, scope, protocol):
+        # RSGI protocol handling
+```
+
+RSGI compliant servers should prefer the `__rsgi__` method over `__call__` when present.
+
+#### `__rsgi_init__` method
+
+The init method provides a way for RSGI applications to perform initialization operations during server startup.
+
+The signature of `__rsgi_init__` is defined as follows, with the `loop` argument being the Python `asyncio` event loop:
+
+```
+function __rsgi_init__(loop)
+```
+
+> **Note:** the event loop won't be running at the time the init function gets called
+
+Thus, an application exposing the RSGI init interface might look like the following:
+
+```python
+class App:
+    def __rsgi_init__(self, loop):
+        some_sync_init_task()
+        loop.run_until_complete(some_async_init_task())
+
+    async def __rsgi__(self, scope, protocol):
+        # RSGI protocol handling
+```
+
 ## Protocols
 
 ### HTTP protocol
