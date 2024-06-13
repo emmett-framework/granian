@@ -11,7 +11,7 @@ use itertools::Itertools;
 use percent_encoding::percent_decode_str;
 use pyo3::{
     prelude::*,
-    types::{IntoPyDict, PyDict},
+    types::{IntoPyDict, PyBytes, PyDict},
 };
 use std::borrow::Cow;
 use std::net::SocketAddr;
@@ -39,7 +39,7 @@ fn run_callback(
         .uri
         .path_and_query()
         .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
-    let path = percent_decode_str(path_raw).decode_utf8().unwrap();
+    let path = percent_decode_str(path_raw).collect_vec();
     let version = match parts.version {
         Version::HTTP_10 => "HTTP/1",
         Version::HTTP_11 => "HTTP/1.1",
@@ -75,7 +75,10 @@ fn run_callback(
         environ.set_item(pyo3::intern!(py, "SERVER_PORT"), server.1)?;
         environ.set_item(pyo3::intern!(py, "REMOTE_ADDR"), client)?;
         environ.set_item(pyo3::intern!(py, "REQUEST_METHOD"), parts.method.as_str())?;
-        environ.set_item(pyo3::intern!(py, "PATH_INFO"), path)?;
+        environ.set_item(
+            pyo3::intern!(py, "PATH_INFO"),
+            PyBytes::new_bound(py, &path).call_method1(pyo3::intern!(py, "decode"), (pyo3::intern!(py, "latin1"),))?,
+        )?;
         environ.set_item(pyo3::intern!(py, "QUERY_STRING"), query_string)?;
         environ.set_item(pyo3::intern!(py, "wsgi.url_scheme"), scheme)?;
         environ.set_item(pyo3::intern!(py, "wsgi.input"), Py::new(py, WSGIBody::new(rt, body))?)?;
