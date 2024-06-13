@@ -198,6 +198,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--process-name',
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
+@option(
+    '--pid',
+    type=click.Path(exists=False, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
+    help='A filename to use for the PID file.',
+)
 @click.version_option(message='%(prog)s %(version)s')
 def cli(
     app: str,
@@ -238,6 +243,7 @@ def cli(
     respawn_interval: float,
     reload: bool,
     process_name: Optional[str],
+    pid: Optional[pathlib.Path],
 ) -> None:
     log_dictconfig = None
     if log_config:
@@ -289,6 +295,7 @@ def cli(
         respawn_interval=respawn_interval,
         reload=reload,
         process_name=process_name,
+        pid=pid,
     )
 
     try:
