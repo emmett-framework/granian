@@ -51,10 +51,10 @@ tokio-stream = "0.1"
 tokio-tungstenite = "=0.21"
 tokio-util = { version = "0.7", features = ["codec"] }
 
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(any(target_os = "freebsd", target_os = "windows"))'.dependencies]
 mimalloc = { version = "0.1.39", default-features = false, features = ["local_dynamic_tls"] }
 
-[target.'cfg(not(target_os = "windows"))'.dependencies]
+[target.'cfg(not(any(target_os = "freebsd", target_os = "windows")))'.dependencies]
 tikv-jemallocator = { version = "0.5.4", default-features = false, features = ["disable_initial_exec_tls"] }
 
 [profile.release]
