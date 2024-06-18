@@ -1,16 +1,12 @@
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use http_body_util::BodyExt;
 use hyper::body::{self, Bytes};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
-use std::{
-    borrow::Cow,
-    convert::Infallible,
-    task::{Context, Poll},
-};
 use tokio::sync::Mutex as AsyncMutex;
-use tokio_util::bytes::BytesMut;
+use tokio_util::bytes::{BufMut, BytesMut};
 
 use crate::conversion::BytesToPy;
 use crate::runtime::RuntimeRef;
@@ -39,19 +35,26 @@ impl WSGIBody {
         }
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn fill_buffer(
         stream: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
         buffer: Arc<Mutex<BytesMut>>,
         buffering: WSGIBodyBuffering,
     ) {
+        let mut buffer = buffer.lock().unwrap();
+        if let WSGIBodyBuffering::Size(size) = buffering {
+            if buffer.len() >= size {
+                return;
+            }
+        }
+
         let mut stream = stream.lock().await;
         loop {
             if let Some(chunk) = stream.next().await {
                 let data = chunk
                     .map(|buf| buf.into_data().unwrap_or_default())
                     .unwrap_or(Bytes::new());
-                let mut buffer = buffer.lock().unwrap();
-                buffer.extend_from_slice(data.as_ref());
+                buffer.put(data);
                 match buffering {
                     WSGIBodyBuffering::Line => {
                         if !buffer.contains(&LINE_SPLIT) {
@@ -72,10 +75,9 @@ impl WSGIBody {
     #[allow(clippy::map_unwrap_or)]
     fn _readline(&self, py: Python) -> Bytes {
         let inner = self.inner.clone();
-        let buffer = self.buffer.clone();
         py.allow_threads(|| {
             self.rt.inner.block_on(async move {
-                WSGIBody::fill_buffer(inner, buffer, WSGIBodyBuffering::Line).await;
+                WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Line).await;
             });
         });
 
@@ -83,10 +85,10 @@ impl WSGIBody {
         buffer
             .iter()
             .position(|&c| c == LINE_SPLIT)
-            .map(|next_split| buffer.split_to(next_split).into())
+            .map(|next_split| buffer.split_to(next_split).freeze())
             .unwrap_or_else(|| {
                 let len = buffer.len();
-                buffer.split_to(len).into()
+                buffer.split_to(len).freeze()
             })
     }
 }
@@ -124,22 +126,24 @@ impl WSGIBody {
                 0 => BytesToPy(Bytes::new()),
                 size => {
                     let inner = self.inner.clone();
-                    let buffer = self.buffer.clone();
                     py.allow_threads(|| {
                         self.rt.inner.block_on(async move {
-                            WSGIBody::fill_buffer(inner, buffer, WSGIBodyBuffering::Size(size)).await;
+                            WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Size(size)).await;
                         });
                     });
+
                     let mut buffer = self.buffer.lock().unwrap();
                     let limit = buffer.len();
                     let rsize = if size > limit { limit } else { size };
-                    BytesToPy(buffer.split_to(rsize).into())
+                    let data = buffer.split_to(rsize).freeze();
+                    BytesToPy(data)
                 }
             },
         }
     }
 
-    fn readline(&self, py: Python) -> BytesToPy {
+    #[pyo3(signature = (_size=None))]
+    fn readline(&self, py: Python, _size: Option<usize>) -> BytesToPy {
         BytesToPy(self._readline(py))
     }
 
@@ -164,26 +168,42 @@ impl WSGIBody {
 
 pub(crate) struct WSGIResponseBodyIter {
     inner: PyObject,
+    closed: bool,
 }
 
 impl WSGIResponseBodyIter {
     pub fn new(body: PyObject) -> Self {
-        Self { inner: body }
+        Self {
+            inner: body,
+            closed: false,
+        }
     }
 
     #[inline]
-    fn close_inner(&self, py: Python) {
+    fn close_inner(&mut self, py: Python) {
         let _ = self.inner.call_method0(py, pyo3::intern!(py, "close"));
+        self.closed = true;
     }
 }
 
-impl Stream for WSGIResponseBodyIter {
-    type Item = Result<Box<[u8]>, Infallible>;
+impl Drop for WSGIResponseBodyIter {
+    fn drop(&mut self) {
+        if !self.closed {
+            Python::with_gil(|py| self.close_inner(py));
+        }
+    }
+}
 
-    fn poll_next(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let ret = Python::with_gil(|py| match self.inner.call_method0(py, pyo3::intern!(py, "__next__")) {
+impl Iterator for WSGIResponseBodyIter {
+    type Item = Result<body::Frame<Bytes>, anyhow::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Python::with_gil(|py| match self.inner.call_method0(py, pyo3::intern!(py, "__next__")) {
             Ok(chunk_obj) => match chunk_obj.extract::<Cow<[u8]>>(py) {
-                Ok(chunk) => Some(Ok(chunk.into())),
+                Ok(chunk) => {
+                    let chunk: Box<[u8]> = chunk.into();
+                    Some(Ok(body::Frame::data(Bytes::from(chunk))))
+                }
                 _ => {
                     self.close_inner(py);
                     None
@@ -196,7 +216,6 @@ impl Stream for WSGIResponseBodyIter {
                 self.close_inner(py);
                 None
             }
-        });
-        Poll::Ready(ret)
+        })
     }
 }

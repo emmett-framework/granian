@@ -19,6 +19,20 @@ class Response:
         self.headers = headers
 
 
+class ResponseIterWrap:
+    __slots__ = ['inner', 'iter']
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.iter = iter(inner)
+
+    def __next__(self):
+        return self.iter.__next__()
+
+    def close(self):
+        self.inner.close()
+
+
 def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], access_log_fmt=None):
     basic_env: Dict[str, Any] = dict(os.environ)
     basic_env.update(
@@ -44,7 +58,7 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
             rv = b''.join(rv)
         else:
             resp_type = 1
-            rv = iter(rv)
+            rv = ResponseIterWrap(rv)
 
         return (resp.status, resp.headers, resp_type, rv)
 

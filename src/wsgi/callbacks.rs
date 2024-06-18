@@ -1,4 +1,3 @@
-use futures::TryStreamExt;
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::{
@@ -107,12 +106,9 @@ fn run_callback(
                     .map_err(|e| match e {})
                     .boxed()
             }
-            WSGI_ITER_RESPONSE_BODY => {
-                let body = http_body_util::StreamBody::new(
-                    WSGIResponseBodyIter::new(pybody).map_ok(|v| body::Frame::data(Bytes::from(v))),
-                );
-                BodyExt::boxed(BodyExt::map_err(body, |e| match e {}))
-            }
+            WSGI_ITER_RESPONSE_BODY => BodyExt::boxed(http_body_util::StreamBody::new(tokio_stream::iter(
+                WSGIResponseBodyIter::new(pybody),
+            ))),
             _ => empty_body(),
         };
         Ok((status, headers, body))
