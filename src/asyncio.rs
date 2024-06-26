@@ -1,25 +1,38 @@
 use pyo3::{prelude::*, sync::GILOnceCell};
-use std::convert::Into;
+use std::{convert::Into, sync::Arc};
 
-static ASYNCIO: GILOnceCell<PyObject> = GILOnceCell::new();
-static ASYNCIO_LOOP: GILOnceCell<PyObject> = GILOnceCell::new();
 static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
+static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
 
-fn asyncio(py: Python) -> PyResult<&Bound<PyAny>> {
-    ASYNCIO
-        .get_or_try_init(py, || Ok(py.import_bound("asyncio")?.into()))
-        .map(|asyncio| asyncio.bind(py))
+#[derive(Clone, Debug)]
+pub struct PyContext {
+    event_loop: Arc<PyObject>,
+    context: Arc<PyObject>,
 }
 
-pub(crate) fn get_running_loop(py: Python) -> PyResult<Bound<PyAny>> {
-    ASYNCIO_LOOP
-        .get_or_try_init(py, || -> PyResult<PyObject> {
-            let asyncio = asyncio(py)?;
+impl PyContext {
+    pub fn new(event_loop: Bound<PyAny>) -> Self {
+        let pynone = event_loop.py().None();
+        Self {
+            event_loop: Arc::new(event_loop.unbind()),
+            context: Arc::new(pynone),
+        }
+    }
 
-            Ok(asyncio.getattr("get_running_loop")?.into())
-        })?
-        .bind(py)
-        .call0()
+    pub fn with_context(self, context: Bound<PyAny>) -> Self {
+        Self {
+            context: Arc::new(context.unbind()),
+            ..self
+        }
+    }
+
+    pub fn event_loop<'p>(&self, py: Python<'p>) -> Bound<'p, PyAny> {
+        self.event_loop.clone_ref(py).into_bound(py)
+    }
+
+    pub fn context<'p>(&self, py: Python<'p>) -> Bound<'p, PyAny> {
+        self.context.clone_ref(py).into_bound(py)
+    }
 }
 
 fn contextvars(py: Python) -> PyResult<&Bound<PyAny>> {
@@ -28,6 +41,18 @@ fn contextvars(py: Python) -> PyResult<&Bound<PyAny>> {
         .bind(py))
 }
 
+pub(crate) fn empty_context(py: Python) -> PyResult<&Bound<PyAny>> {
+    Ok(CONTEXT
+        .get_or_try_init(py, || {
+            contextvars(py)?
+                .getattr("Context")?
+                .call0()
+                .map(std::convert::Into::into)
+        })?
+        .bind(py))
+}
+
+#[allow(dead_code)]
 pub(crate) fn copy_context(py: Python) -> PyResult<Bound<PyAny>> {
     contextvars(py)?.call_method0("copy_context")
 }

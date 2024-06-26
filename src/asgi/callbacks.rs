@@ -8,12 +8,13 @@ use super::{
     utils::{build_scope_http, build_scope_ws, scope_native_parts},
 };
 use crate::{
+    asyncio::PyContext,
     callbacks::{
         callback_impl_loop_err, callback_impl_loop_pytask, callback_impl_loop_run, callback_impl_loop_step,
         callback_impl_loop_wake, callback_impl_run, callback_impl_run_pytask, CallbackWrapper,
     },
     http::{response_500, HTTPResponse},
-    runtime::{RuntimeRef, TaskLocals},
+    runtime::RuntimeRef,
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -21,7 +22,7 @@ use crate::{
 #[pyclass(frozen)]
 pub(crate) struct CallbackRunnerHTTP {
     proto: Py<HTTPProtocol>,
-    context: TaskLocals,
+    context: PyContext,
     cb: PyObject,
 }
 
@@ -69,13 +70,13 @@ macro_rules! callback_impl_done_err {
 #[pyclass(frozen)]
 pub(crate) struct CallbackTaskHTTP {
     proto: Py<HTTPProtocol>,
-    context: TaskLocals,
+    context: PyContext,
     pycontext: PyObject,
     cb: PyObject,
 }
 
 impl CallbackTaskHTTP {
-    pub fn new(py: Python, cb: PyObject, proto: Py<HTTPProtocol>, context: TaskLocals) -> PyResult<Self> {
+    pub fn new(py: Python, cb: PyObject, proto: Py<HTTPProtocol>, context: PyContext) -> PyResult<Self> {
         let pyctx = context.context(py);
         Ok(Self {
             proto,
@@ -112,7 +113,7 @@ impl CallbackTaskHTTP {
 pub(crate) struct CallbackWrappedRunnerHTTP {
     #[pyo3(get)]
     proto: Py<HTTPProtocol>,
-    context: TaskLocals,
+    context: PyContext,
     cb: PyObject,
     #[pyo3(get)]
     scope: PyObject,
@@ -123,7 +124,7 @@ impl CallbackWrappedRunnerHTTP {
         Self {
             proto: Py::new(py, proto).unwrap(),
             context: cb.context,
-            cb: cb.callback,
+            cb: cb.callback.clone_ref(py),
             scope: scope.into_py(py),
         }
     }
@@ -149,7 +150,7 @@ impl CallbackWrappedRunnerHTTP {
 #[pyclass(frozen)]
 pub(crate) struct CallbackRunnerWebsocket {
     proto: Py<WebsocketProtocol>,
-    context: TaskLocals,
+    context: PyContext,
     cb: PyObject,
 }
 
@@ -157,7 +158,7 @@ impl CallbackRunnerWebsocket {
     pub fn new(py: Python, cb: CallbackWrapper, proto: WebsocketProtocol, scope: Bound<PyDict>) -> Self {
         let pyproto = Py::new(py, proto).unwrap();
         Self {
-            proto: pyproto.clone(),
+            proto: pyproto.clone_ref(py),
             context: cb.context,
             cb: cb.callback.call1(py, (scope, pyproto)).unwrap(),
         }
@@ -169,7 +170,13 @@ impl CallbackRunnerWebsocket {
 #[pymethods]
 impl CallbackRunnerWebsocket {
     fn _loop_task<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        CallbackTaskWebsocket::new(py, self.cb.clone(), self.proto.clone(), self.context.clone())?.run(py)
+        CallbackTaskWebsocket::new(
+            py,
+            self.cb.clone_ref(py),
+            self.proto.clone_ref(py),
+            self.context.clone(),
+        )?
+        .run(py)
     }
 }
 
@@ -184,13 +191,13 @@ macro_rules! callback_impl_done_ws {
 #[pyclass(frozen)]
 pub(crate) struct CallbackTaskWebsocket {
     proto: Py<WebsocketProtocol>,
-    context: TaskLocals,
+    context: PyContext,
     pycontext: PyObject,
     cb: PyObject,
 }
 
 impl CallbackTaskWebsocket {
-    pub fn new(py: Python, cb: PyObject, proto: Py<WebsocketProtocol>, context: TaskLocals) -> PyResult<Self> {
+    pub fn new(py: Python, cb: PyObject, proto: Py<WebsocketProtocol>, context: PyContext) -> PyResult<Self> {
         let pyctx = context.context(py);
         Ok(Self {
             proto,
@@ -227,7 +234,7 @@ impl CallbackTaskWebsocket {
 pub(crate) struct CallbackWrappedRunnerWebsocket {
     #[pyo3(get)]
     proto: Py<WebsocketProtocol>,
-    context: TaskLocals,
+    context: PyContext,
     cb: PyObject,
     #[pyo3(get)]
     scope: PyObject,
@@ -238,7 +245,7 @@ impl CallbackWrappedRunnerWebsocket {
         Self {
             proto: Py::new(py, proto).unwrap(),
             context: cb.context,
-            cb: cb.callback,
+            cb: cb.callback.clone_ref(py),
             scope: scope.into_py(py),
         }
     }

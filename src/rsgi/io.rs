@@ -370,7 +370,7 @@ impl RSGIWebsocketProtocol {
                         let mut trx = itransport.lock().unwrap();
                         Ok(Python::with_gil(|py| {
                             let pytransport = Py::new(py, RSGIWebsocketTransport::new(rth, stream)).unwrap();
-                            *trx = Some(pytransport.clone());
+                            *trx = Some(pytransport.clone_ref(py));
                             pytransport
                         }))
                     }

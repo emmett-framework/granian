@@ -3,8 +3,8 @@ name: build
 on: workflow_dispatch
 
 env:
-  MATURIN_VERSION: 1.5.1
-  PY_ALL: 3.8 3.9 3.10 3.11 3.12 pypy3.8 pypy3.9 pypy3.10
+  MATURIN_VERSION: 1.6.0
+  PY_ALL: 3.8 3.9 3.10 3.11 3.12 3.13 pypy3.8 pypy3.9 pypy3.10
 
 jobs:
   wheels:
@@ -80,16 +80,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, macos-14, windows-latest]
         manylinux: [auto]
-        # interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12", "pypy3.8", "pypy3.9", "pypy3.10"]
-        interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
           - os: ubuntu-latest
             platform: linux
-        exclude:
-          - os: macos-14
-            interpreter: '3.8'
-          - os: macos-14
-            interpreter: '3.9'
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -97,6 +91,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.interpreter }}
+          allow-prereleases: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
