@@ -196,7 +196,7 @@ impl ASGIHTTPProtocol {
                         let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                         let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
                         let body_stream = http_body_util::StreamBody::new(
-                            tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(hyper::body::Frame::data),
+                            tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
                         );
                         *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                         self.send_response(status, headers, BodyExt::boxed(body_stream));

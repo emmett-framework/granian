@@ -159,7 +159,7 @@ impl RSGIHTTPProtocol {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
             let body_stream = http_body_util::StreamBody::new(
-                tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(hyper::body::Frame::data),
+                tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
             );
             let _ = tx.send(PyResponse::Body(PyResponseBody::new(
                 status,
