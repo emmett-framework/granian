@@ -1,3 +1,4 @@
+use futures::TryStreamExt;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::{
     body::{self, Bytes},
@@ -12,16 +13,18 @@ use pyo3::{
     types::{IntoPyDict, PyBytes, PyDict},
 };
 use std::{borrow::Cow, net::SocketAddr, sync::Arc};
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc, task::JoinHandle};
 
-use super::types::{WSGIBody, WSGIResponseBodyIter};
+use super::types::WSGIBody;
 use crate::callbacks::CallbackWrapper;
 use crate::http::empty_body;
 use crate::runtime::RuntimeRef;
+use crate::utils::log_application_callable_exception;
 
 const WSGI_BYTES_RESPONSE_BODY: i32 = 0;
 const WSGI_ITER_RESPONSE_BODY: i32 = 1;
 
+#[allow(unused_must_use)]
 #[inline]
 fn run_callback(
     rt: RuntimeRef,
@@ -105,9 +108,55 @@ fn run_callback(
                     .map_err(|e| match e {})
                     .boxed()
             }
-            WSGI_ITER_RESPONSE_BODY => BodyExt::boxed(http_body_util::StreamBody::new(tokio_stream::iter(
-                WSGIResponseBodyIter::new(pybody),
-            ))),
+            WSGI_ITER_RESPONSE_BODY => {
+                let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
+                tokio::task::spawn_blocking(move || {
+                    let mut closed = false;
+                    loop {
+                        if let Some(frame) =
+                            Python::with_gil(|py| match pybody.call_method0(py, pyo3::intern!(py, "__next__")) {
+                                Ok(chunk_obj) => match chunk_obj.extract::<Cow<[u8]>>(py) {
+                                    Ok(chunk) => {
+                                        let chunk: Box<[u8]> = chunk.into();
+                                        Some(Bytes::from(chunk))
+                                    }
+                                    _ => {
+                                        let _ = pybody.call_method0(py, pyo3::intern!(py, "close"));
+                                        closed = true;
+                                        None
+                                    }
+                                },
+                                Err(err) => {
+                                    if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
+                                        log_application_callable_exception(&err);
+                                    }
+                                    let _ = pybody.call_method0(py, pyo3::intern!(py, "close"));
+                                    closed = true;
+                                    None
+                                }
+                            })
+                        {
+                            if body_tx.blocking_send(Ok(frame)).is_ok() {
+                                continue;
+                            }
+                        }
+
+                        Python::with_gil(|py| {
+                            if !closed {
+                                let _ = pybody.call_method0(py, pyo3::intern!(py, "close"));
+                            }
+                            drop(pybody);
+                        });
+
+                        break;
+                    }
+                });
+
+                let body_stream = http_body_util::StreamBody::new(
+                    tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
+                );
+                BodyExt::boxed(BodyExt::map_err(body_stream, std::convert::Into::into))
+            }
             _ => empty_body(),
         };
         Ok((status, headers, body))
