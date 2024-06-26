@@ -42,8 +42,9 @@ pub(crate) async fn handle(
             Ok((status, headers, body)) => {
                 return build_response(status, headers, body);
             }
-            Err(ref err) => {
-                log_application_callable_exception(err);
+            Err(err) => {
+                log_application_callable_exception(&err);
+                pyo3::Python::with_gil(|_| drop(err));
             }
         }
     } else {

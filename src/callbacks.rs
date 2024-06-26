@@ -1,24 +1,21 @@
-use pyo3::{exceptions::PyStopIteration, prelude::*, sync::GILOnceCell};
+use pyo3::{exceptions::PyStopIteration, prelude::*};
 
 use std::sync::{atomic, Arc, RwLock};
 use tokio::sync::Notify;
 
-use super::runtime::TaskLocals;
-
-static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
-static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
+use super::asyncio::PyContext;
 
 #[derive(Clone)]
 pub(crate) struct CallbackWrapper {
-    pub callback: PyObject,
-    pub context: TaskLocals,
+    pub callback: Arc<PyObject>,
+    pub context: PyContext,
 }
 
 impl CallbackWrapper {
     pub(crate) fn new(callback: PyObject, event_loop: Bound<PyAny>, context: Bound<PyAny>) -> Self {
         Self {
-            callback,
-            context: TaskLocals::new(event_loop).with_context(context),
+            callback: Arc::new(callback),
+            context: PyContext::new(event_loop).with_context(context),
         }
     }
 }
@@ -288,33 +285,13 @@ impl PyFutureResultSetter {
     }
 }
 
-fn contextvars(py: Python) -> PyResult<&Bound<PyAny>> {
-    Ok(CONTEXTVARS
-        .get_or_try_init(py, || py.import_bound("contextvars").map(std::convert::Into::into))?
-        .bind(py))
-}
-
-pub fn empty_pycontext(py: Python) -> PyResult<&Bound<PyAny>> {
-    Ok(CONTEXT
-        .get_or_try_init(py, || {
-            contextvars(py)?
-                .getattr("Context")?
-                .call0()
-                .map(std::convert::Into::into)
-        })?
-        .bind(py))
-}
-
 macro_rules! callback_impl_run {
     () => {
         pub fn run(self, py: Python<'_>) -> PyResult<Bound<PyAny>> {
             let event_loop = self.context.event_loop(py);
             let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
             let kwctx = pyo3::types::PyDict::new_bound(py);
-            kwctx.set_item(
-                pyo3::intern!(py, "context"),
-                crate::callbacks::empty_pycontext(py)?,
-            )?;
+            kwctx.set_item(pyo3::intern!(py, "context"), crate::asyncio::empty_context(py)?)?;
             event_loop.call_method(pyo3::intern!(py, "call_soon_threadsafe"), (target,), Some(&kwctx))
         }
     };

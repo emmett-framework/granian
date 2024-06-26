@@ -336,7 +336,11 @@ macro_rules! serve_rth {
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.blocking_threads);
+            let rt = crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.blocking_threads,
+                std::sync::Arc::new(event_loop.clone().unbind()),
+            );
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
 
@@ -443,6 +447,8 @@ macro_rules! serve_rth {
                     _ => unreachable!(),
                 }
 
+                Python::with_gil(|_| drop(callback_wrapper));
+
                 log::info!("Stopping worker-{}", worker_id);
                 Ok(())
             });
@@ -468,7 +474,11 @@ macro_rules! serve_rth_ssl {
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(self.config.threads, self.config.blocking_threads);
+            let rt = crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.blocking_threads,
+                std::sync::Arc::new(event_loop.clone().unbind()),
+            );
             let rth = rt.handler();
             let tcp_listener = self.config.tcp_listener();
 
@@ -581,6 +591,8 @@ macro_rules! serve_rth_ssl {
                     _ => unreachable!(),
                 }
 
+                Python::with_gil(|_| drop(callback_wrapper));
+
                 log::info!("Stopping worker-{}", worker_id);
                 Ok(())
             });
@@ -606,12 +618,13 @@ macro_rules! serve_wth {
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
-            let rtm = crate::runtime::init_runtime_mt(1, 1);
+            let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
+            let py_loop = std::sync::Arc::new(event_loop.clone().unbind());
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
@@ -627,10 +640,11 @@ macro_rules! serve_wth {
                 let blocking_threads = self.config.blocking_threads.clone();
                 let backpressure = self.config.backpressure.clone();
                 let callback_wrapper = callback_wrapper.clone();
+                let py_loop = py_loop.clone();
                 let mut srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(blocking_threads);
+                    let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 
@@ -764,12 +778,13 @@ macro_rules! serve_wth_ssl {
             signal: Py<crate::workers::WorkerSignal>,
         ) {
             pyo3_log::init();
-            let rtm = crate::runtime::init_runtime_mt(1, 1);
+            let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
+            let py_loop = std::sync::Arc::new(event_loop.clone().unbind());
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
@@ -786,10 +801,11 @@ macro_rules! serve_wth_ssl {
                 let blocking_threads = self.config.blocking_threads.clone();
                 let backpressure = self.config.backpressure.clone();
                 let callback_wrapper = callback_wrapper.clone();
+                let py_loop = py_loop.clone();
                 let mut srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(blocking_threads);
+                    let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
                     let rth = rt.handler();
                     let local = tokio::task::LocalSet::new();
 

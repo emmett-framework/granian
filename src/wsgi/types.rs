@@ -167,21 +167,25 @@ impl WSGIBody {
 }
 
 pub(crate) struct WSGIResponseBodyIter {
-    inner: PyObject,
+    inner: Option<PyObject>,
     closed: bool,
 }
 
 impl WSGIResponseBodyIter {
     pub fn new(body: PyObject) -> Self {
         Self {
-            inner: body,
+            inner: Some(body),
             closed: false,
         }
     }
 
     #[inline]
     fn close_inner(&mut self, py: Python) {
-        let _ = self.inner.call_method0(py, pyo3::intern!(py, "close"));
+        let _ = self
+            .inner
+            .as_ref()
+            .unwrap()
+            .call_method0(py, pyo3::intern!(py, "close"));
         self.closed = true;
     }
 }
@@ -191,6 +195,8 @@ impl Drop for WSGIResponseBodyIter {
         if !self.closed {
             Python::with_gil(|py| self.close_inner(py));
         }
+        let inner = self.inner.take().unwrap();
+        Python::with_gil(|_| drop(inner));
     }
 }
 
@@ -198,23 +204,30 @@ impl Iterator for WSGIResponseBodyIter {
     type Item = Result<body::Frame<Bytes>, anyhow::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Python::with_gil(|py| match self.inner.call_method0(py, pyo3::intern!(py, "__next__")) {
-            Ok(chunk_obj) => match chunk_obj.extract::<Cow<[u8]>>(py) {
-                Ok(chunk) => {
-                    let chunk: Box<[u8]> = chunk.into();
-                    Some(Ok(body::Frame::data(Bytes::from(chunk))))
-                }
-                _ => {
+        Python::with_gil(|py| {
+            match self
+                .inner
+                .as_ref()
+                .unwrap()
+                .call_method0(py, pyo3::intern!(py, "__next__"))
+            {
+                Ok(chunk_obj) => match chunk_obj.extract::<Cow<[u8]>>(py) {
+                    Ok(chunk) => {
+                        let chunk: Box<[u8]> = chunk.into();
+                        Some(Ok(body::Frame::data(Bytes::from(chunk))))
+                    }
+                    _ => {
+                        self.close_inner(py);
+                        None
+                    }
+                },
+                Err(err) => {
+                    if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
+                        log_application_callable_exception(&err);
+                    }
                     self.close_inner(py);
                     None
                 }
-            },
-            Err(err) => {
-                if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
-                    log_application_callable_exception(&err);
-                }
-                self.close_inner(py);
-                None
             }
         })
     }

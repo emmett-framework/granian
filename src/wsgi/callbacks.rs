@@ -1,5 +1,4 @@
-use http_body_util::combinators::BoxBody;
-use http_body_util::BodyExt;
+use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::{
     body::{self, Bytes},
     header,
@@ -12,8 +11,7 @@ use pyo3::{
     prelude::*,
     types::{IntoPyDict, PyBytes, PyDict},
 };
-use std::borrow::Cow;
-use std::net::SocketAddr;
+use std::{borrow::Cow, net::SocketAddr, sync::Arc};
 use tokio::task::JoinHandle;
 
 use super::types::{WSGIBody, WSGIResponseBodyIter};
@@ -27,7 +25,7 @@ const WSGI_ITER_RESPONSE_BODY: i32 = 1;
 #[inline]
 fn run_callback(
     rt: RuntimeRef,
-    callback: PyObject,
+    callback: Arc<PyObject>,
     mut parts: request::Parts,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
@@ -68,6 +66,7 @@ fn run_callback(
     }
 
     Python::with_gil(|py| {
+        let callback = callback.clone_ref(py);
         let environ = PyDict::new_bound(py);
         environ.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), version)?;
         environ.set_item(pyo3::intern!(py, "SERVER_NAME"), server.0)?;
