@@ -16,6 +16,7 @@ classifiers = [
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
     'Programming Language :: Python :: Implementation :: CPython',
     'Programming Language :: Python :: Implementation :: PyPy',
     'Programming Language :: Python',
@@ -34,7 +35,7 @@ dynamic = [
 requires-python = '>=3.8'
 dependencies = [
     'click>=8.0.0',
-    'uvloop>=0.18.0; sys_platform != "win32" and platform_python_implementation == "CPython"',
+    'uvloop>=0.18.0; sys_platform != "win32" and platform_python_implementation == "CPython" and python_version != "3.13"',
 ]
 
 [project.optional-dependencies]
