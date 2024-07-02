@@ -705,8 +705,8 @@ dependencies = [
 
 [[package]]
 name = "pyo3-log"
-version = "0.10.0"
-source = "git+https://github.com/a1phyr/pyo3-log?rev=09e4ed97a8#09e4ed97a8e9ed4d745f4ca97e39515bee6bd943"
+version = "0.11.0"
+source = "git+https://github.com/vorner/pyo3-log?rev=b62a250533#b62a250533f0a85e245dfcd189cadb368b1c73fc"
 dependencies = [
  "arc-swap",
  "log",
