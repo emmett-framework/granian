@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import errno
 import multiprocessing
 import os
 import signal
@@ -19,7 +20,7 @@ from ._imports import setproctitle, watchfiles
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
-from .errors import ConfigurationError
+from .errors import ConfigurationError, PidFileError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
 from .net import SocketHolder
@@ -95,6 +96,7 @@ class Granian:
         respawn_interval: float = 3.5,
         reload: bool = False,
         process_name: Optional[str] = None,
+        pid_file: Optional[Path] = None,
     ):
         self.target = target
         self.bind_addr = address
@@ -128,6 +130,7 @@ class Granian:
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
         self.process_name = process_name
+        self.pid_file = pid_file
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
@@ -140,6 +143,7 @@ class Granian:
         self.interrupt_children = []
         self.respawned_procs = {}
         self.reload_signal = False
+        self.main_pid = None
 
     def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
         if not (cert and key):
@@ -461,9 +465,52 @@ class Granian:
         if sys.platform != 'win32':
             signal.signal(signal.SIGHUP, self.signal_handler_reload)
 
-    def startup(self, spawn_target, target_loader):
-        logger.info(f'Starting granian (main PID: {os.getpid()})')
+    def _write_pid(self):
+        with self.pid_file.open('w+') as pid_file:
+            pid_file.write(f'{self.main_pid}\n')
 
+    def _write_pidfile(self):
+        if not self.pid_file:
+            return
+
+        if self.pid_file.exists():
+            with self.pid_file.open('r') as pid_file:
+                try:
+                    old_pid = int(pid_file.read())
+                except ValueError:
+                    raise PidFileError('Invalid PID in pid file %s!' % (self.pid_file))
+            try:
+                os.kill(old_pid, 0)
+            except OSError as e:
+                if e.args[0] == errno.ESRCH:
+                    self._write_pid()
+                    return
+                else:
+                    raise e
+            if old_pid == self.main_pid:
+                return
+            msg = "Already running on PID %s (or pid file '%s' is stale)"
+            raise PidFileError(msg % (old_pid, self.pid_file))
+
+        self._write_pid()
+
+    def _unlink_pidfile(self):
+        if not (self.pid_file and self.pid_file.exists()):
+            return
+        with self.pid_file.open('r') as pid_file:
+            try:
+                file_pid = int(pid_file.read())
+            except ValueError:
+                logger.error('Invalid PID in pid file %s!' % (self.pid_file))
+                return
+
+        if file_pid == self.main_pid:
+            self.pid_file.unlink()
+
+    def startup(self, spawn_target, target_loader):
+        self.main_pid = os.getpid()
+        logger.info(f'Starting granian (main PID: {self.main_pid})')
+        self._write_pidfile()
         self.setup_signals()
         self._init_shared_socket()
         sock = socket.socket(fileno=self._sfd)
@@ -476,6 +523,7 @@ class Granian:
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
+        self._unlink_pidfile()
         self._stop_workers()
         if not exit_code and self.interrupt_children:
             exit_code = 1

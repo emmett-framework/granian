@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional, Type, TypeVar, Union
 import click
 
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
-from .errors import ConfigurationError
+from .errors import ConfigurationError, PidFileError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
 from .server import Granian
@@ -198,6 +198,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--process-name',
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
+@option(
+    '--pid-file',
+    type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, path_type=pathlib.Path),
+    help='A filename to use for the PID file.',
+)
 @click.version_option(message='%(prog)s %(version)s')
 def cli(
     app: str,
@@ -238,6 +243,7 @@ def cli(
     respawn_interval: float,
     reload: bool,
     process_name: Optional[str],
+    pid_file: Optional[pathlib.Path],
 ) -> None:
     log_dictconfig = None
     if log_config:
@@ -289,11 +295,15 @@ def cli(
         respawn_interval=respawn_interval,
         reload=reload,
         process_name=process_name,
+        pid_file=pid_file,
     )
 
     try:
         server.serve()
     except ConfigurationError:
+        raise click.exceptions.Exit(1)
+    except PidFileError as err:
+        print(err)
         raise click.exceptions.Exit(1)
 
 

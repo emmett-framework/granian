@@ -1,2 +1,6 @@
 class ConfigurationError(Exception):
     ...
+
+
+class PidFileError(Exception):
+    ...
