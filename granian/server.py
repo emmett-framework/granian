@@ -484,12 +484,16 @@ class Granian:
                 raise PidFileError
 
         if existing_pid is not None and existing_pid != self.pid:
+            existing_process = True
             try:
                 os.kill(existing_pid, 0)
             except OSError as e:
-                if e.args[0] != errno.ESRCH:
-                    logger.error(f'The PID file {self.pid_file} already exists for {existing_pid}')
-                    raise PidFileError
+                if e.args[0] == errno.ESRCH:
+                    existing_process = False
+
+            if existing_process:
+                logger.error(f'The PID file {self.pid_file} already exists for {existing_pid}')
+                raise PidFileError
 
         self._write_pid()
 
