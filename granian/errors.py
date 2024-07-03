@@ -1,6 +1,10 @@
-class ConfigurationError(Exception):
+class FatalError(Exception):
     ...
 
 
-class PidFileError(Exception):
+class ConfigurationError(FatalError):
+    ...
+
+
+class PidFileError(FatalError):
     ...

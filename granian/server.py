@@ -143,7 +143,7 @@ class Granian:
         self.interrupt_children = []
         self.respawned_procs = {}
         self.reload_signal = False
-        self.main_pid = None
+        self.pid = None
 
     def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
         if not (cert and key):
@@ -466,50 +466,50 @@ class Granian:
             signal.signal(signal.SIGHUP, self.signal_handler_reload)
 
     def _write_pid(self):
-        with self.pid_file.open('w+') as pid_file:
-            pid_file.write(f'{self.main_pid}\n')
+        with self.pid_file.open('w') as pid_file:
+            pid_file.write(str(self.pid))
 
     def _write_pidfile(self):
         if not self.pid_file:
             return
 
+        existing_pid = None
+
         if self.pid_file.exists():
-            with self.pid_file.open('r') as pid_file:
-                try:
-                    old_pid = int(pid_file.read())
-                except ValueError:
-                    raise PidFileError('Invalid PID in pid file %s!' % (self.pid_file))
             try:
-                os.kill(old_pid, 0)
+                with self.pid_file.open('r') as pid_file:
+                    existing_pid = int(pid_file.read())
+            except Exception:
+                logger.error(f'Unable to read existing PID file {self.pid_file}')
+                raise PidFileError
+
+        if existing_pid is not None and existing_pid != self.pid:
+            try:
+                os.kill(existing_pid, 0)
             except OSError as e:
-                if e.args[0] == errno.ESRCH:
-                    self._write_pid()
-                    return
-                else:
-                    raise e
-            if old_pid == self.main_pid:
-                return
-            msg = "Already running on PID %s (or pid file '%s' is stale)"
-            raise PidFileError(msg % (old_pid, self.pid_file))
+                if e.args[0] != errno.ESRCH:
+                    logger.error(f'The PID file {self.pid_file} already exists for {existing_pid}')
+                    raise PidFileError
 
         self._write_pid()
 
     def _unlink_pidfile(self):
         if not (self.pid_file and self.pid_file.exists()):
             return
-        with self.pid_file.open('r') as pid_file:
-            try:
-                file_pid = int(pid_file.read())
-            except ValueError:
-                logger.error('Invalid PID in pid file %s!' % (self.pid_file))
-                return
 
-        if file_pid == self.main_pid:
+        try:
+            with self.pid_file.open('r') as pid_file:
+                file_pid = int(pid_file.read())
+        except Exception:
+            logger.error(f'Unable to read PID file {self.pid_file}')
+            return
+
+        if file_pid == self.pid:
             self.pid_file.unlink()
 
     def startup(self, spawn_target, target_loader):
-        self.main_pid = os.getpid()
-        logger.info(f'Starting granian (main PID: {self.main_pid})')
+        self.pid = os.getpid()
+        logger.info(f'Starting granian (main PID: {self.pid})')
         self._write_pidfile()
         self.setup_signals()
         self._init_shared_socket()
@@ -523,8 +523,8 @@ class Granian:
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
-        self._unlink_pidfile()
         self._stop_workers()
+        self._unlink_pidfile()
         if not exit_code and self.interrupt_children:
             exit_code = 1
         if exit_code:

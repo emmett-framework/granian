@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional, Type, TypeVar, Union
 import click
 
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
-from .errors import ConfigurationError, PidFileError
+from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
 from .server import Granian
@@ -201,7 +201,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--pid-file',
     type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, path_type=pathlib.Path),
-    help='A filename to use for the PID file.',
+    help='A path to write the PID file to',
 )
 @click.version_option(message='%(prog)s %(version)s')
 def cli(
@@ -300,10 +300,7 @@ def cli(
 
     try:
         server.serve()
-    except ConfigurationError:
-        raise click.exceptions.Exit(1)
-    except PidFileError as err:
-        print(err)
+    except FatalError:
         raise click.exceptions.Exit(1)
 
 
