@@ -58,6 +58,10 @@ jobs:
           #   target: x86_64
     steps:
       - uses: actions/checkout@v4
+      - name: Set jemalloc for aarch64 Linux
+        if: matrix.target == 'aarch64' && matrix.os == 'ubuntu'
+        run: |
+          echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
       - uses: pyo3/maturin-action@v1
         with:
           maturin-version: v${{ env.MATURIN_VERSION }}
