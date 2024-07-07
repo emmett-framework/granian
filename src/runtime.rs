@@ -10,11 +10,9 @@ use tokio::{
 
 use super::blocking::BlockingRunner;
 use super::callbacks::PyEmptyAwaitable;
-#[cfg(unix)]
 use super::callbacks::PyFutureAwaitable;
 #[cfg(not(target_os = "linux"))]
 use super::callbacks::PyIterAwaitable;
-#[cfg(windows)]
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
 pub trait JoinError {
@@ -183,7 +181,7 @@ where
 //  It won't consume more cpu-cycles than standard asyncio implementation,
 //  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
 #[allow(unused_must_use)]
-#[cfg(unix)]
+// #[cfg(unix)]
 pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
@@ -211,9 +209,9 @@ where
     Ok(py_fut.into_any().into_bound(py))
 }
 
+#[allow(dead_code)]
 #[allow(unused_must_use)]
-#[cfg(windows)]
-pub(crate) fn future_into_py_futlike<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+pub(crate) fn future_into_py_future<R, F, T>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = PyResult<T>> + Send + 'static,
