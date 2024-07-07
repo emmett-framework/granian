@@ -97,6 +97,30 @@ class App:
         # RSGI protocol handling
 ```
 
+#### `__rsgi_del__` method
+
+The del method provides a way for RSGI applications to perform cleanup operations during server shutdown.
+
+The signature of `__rsgi_del__` is defined as follows, with the `loop` argument being the Python `asyncio` event loop:
+
+```
+function __rsgi_del__(loop)
+```
+
+> **Note:** the event loop won't be running at the time the del function gets called
+
+Thus, an application exposing the RSGI del interface might look like the following:
+
+```python
+class App:
+    def __rsgi_del__(self, loop):
+        some_sync_cleanup_task()
+        loop.run_until_complete(some_async_cleanup_task())
+
+    async def __rsgi__(self, scope, protocol):
+        # RSGI protocol handling
+```
+
 ## Protocols
 
 ### HTTP protocol
