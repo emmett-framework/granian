@@ -310,6 +310,9 @@ class Granian:
         callback_init = (
             getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else lambda *args, **kwargs: None
         )
+        callback_del = (
+            getattr(target, '__rsgi_del__') if hasattr(target, '__rsgi_del__') else lambda *args, **kwargs: None
+        )
         callback = _rsgi_call_wrap(callback, log_access_fmt)
 
         shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
@@ -335,6 +338,7 @@ class Granian:
             contextvars.copy_context(),
             shutdown_event,
         )
+        callback_del(loop)
 
     @staticmethod
     def _spawn_wsgi_worker(
