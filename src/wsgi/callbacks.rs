@@ -1,9 +1,7 @@
-use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::{
-    body::{self, Bytes},
-    header,
+    body, header,
     http::{request, uri::Authority},
-    Version,
+    HeaderMap, Version,
 };
 use itertools::Itertools;
 use percent_encoding::percent_decode_str;
@@ -11,27 +9,28 @@ use pyo3::{
     prelude::*,
     types::{IntoPyDict, PyBytes, PyDict},
 };
-use std::{borrow::Cow, net::SocketAddr, sync::Arc};
-use tokio::task::JoinHandle;
+use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::oneshot;
 
-use super::types::{WSGIBody, WSGIResponseBodyIter};
-use crate::callbacks::CallbackWrapper;
-use crate::http::empty_body;
-use crate::runtime::RuntimeRef;
-
-const WSGI_BYTES_RESPONSE_BODY: i32 = 0;
-const WSGI_ITER_RESPONSE_BODY: i32 = 1;
+use super::{io::WSGIProtocol, types::WSGIBody};
+use crate::{
+    callbacks::CallbackWrapper,
+    http::{empty_body, HTTPResponseBody},
+    runtime::RuntimeRef,
+    utils::log_application_callable_exception,
+};
 
 #[inline]
 fn run_callback(
     rt: RuntimeRef,
+    tx: oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>,
     callback: Arc<PyObject>,
     mut parts: request::Parts,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     scheme: &str,
     body: body::Incoming,
-) -> PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)> {
+) {
     let (path_raw, query_string) = parts
         .uri
         .path_and_query()
@@ -65,7 +64,8 @@ fn run_callback(
         headers.push(("HTTP_HOST".to_string(), host.to_string()));
     }
 
-    Python::with_gil(|py| {
+    let _ = Python::with_gil(|py| -> PyResult<()> {
+        let proto = Py::new(py, WSGIProtocol::new(tx))?;
         let callback = callback.clone_ref(py);
         let environ = PyDict::new_bound(py);
         environ.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), version)?;
@@ -94,24 +94,15 @@ fn run_callback(
         }
         environ.update(headers.into_py_dict_bound(py).as_mapping())?;
 
-        let (status, headers, body_type, pybody) =
-            callback
-                .call1(py, (environ,))?
-                .extract::<(i32, Vec<(String, String)>, i32, PyObject)>(py)?;
-        let body = match body_type {
-            WSGI_BYTES_RESPONSE_BODY => {
-                let data: Box<[u8]> = pybody.extract::<Cow<[u8]>>(py)?.into();
-                http_body_util::Full::new(Bytes::from(data))
-                    .map_err(|e| match e {})
-                    .boxed()
+        if let Err(err) = callback.call1(py, (proto.clone_ref(py), environ)) {
+            log_application_callable_exception(&err);
+            if let Some(tx) = proto.get().tx() {
+                let _ = tx.send((500, HeaderMap::new(), empty_body()));
             }
-            WSGI_ITER_RESPONSE_BODY => BodyExt::boxed(http_body_util::StreamBody::new(tokio_stream::iter(
-                WSGIResponseBodyIter::new(pybody),
-            ))),
-            _ => empty_body(),
-        };
-        Ok((status, headers, body))
-    })
+        }
+
+        Ok(())
+    });
 }
 
 #[inline(always)]
@@ -123,7 +114,11 @@ pub(crate) fn call_http(
     scheme: &str,
     req: request::Parts,
     body: body::Incoming,
-) -> JoinHandle<PyResult<(i32, Vec<(String, String)>, BoxBody<Bytes, anyhow::Error>)>> {
+) -> oneshot::Receiver<(u16, HeaderMap, HTTPResponseBody)> {
     let scheme: std::sync::Arc<str> = scheme.into();
-    tokio::task::spawn_blocking(move || run_callback(rt, cb.callback, req, server_addr, client_addr, &scheme, body))
+    let (tx, rx) = oneshot::channel();
+    tokio::task::spawn_blocking(move || {
+        run_callback(rt, tx, cb.callback, req, server_addr, client_addr, &scheme, body);
+    });
+    rx
 }
