@@ -1,29 +1,18 @@
-use hyper::{
-    header::{HeaderName, HeaderValue, SERVER as HK_SERVER},
-    Response,
-};
+use hyper::Response;
 use std::net::SocketAddr;
 
 use super::callbacks::call_http;
 use crate::{
     callbacks::CallbackWrapper,
-    http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody, HV_SERVER},
+    http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody},
     runtime::RuntimeRef,
-    utils::log_application_callable_exception,
 };
 
 #[inline(always)]
-fn build_response(status: i32, pyheaders: Vec<(String, String)>, body: HTTPResponseBody) -> HTTPResponse {
+fn build_response(status: u16, pyheaders: hyper::HeaderMap, body: HTTPResponseBody) -> HTTPResponse {
     let mut res = Response::new(body);
-    *res.status_mut() = hyper::StatusCode::from_u16(status as u16).unwrap();
-    let headers = res.headers_mut();
-    headers.insert(HK_SERVER, HV_SERVER);
-    for (key, val) in pyheaders {
-        headers.append(
-            HeaderName::from_bytes(key.as_bytes()).unwrap(),
-            HeaderValue::from_str(&val).unwrap(),
-        );
-    }
+    *res.status_mut() = hyper::StatusCode::from_u16(status).unwrap();
+    *res.headers_mut() = pyheaders;
     res
 }
 
@@ -37,18 +26,10 @@ pub(crate) async fn handle(
     scheme: &str,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
-    if let Ok(res) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
-        match res {
-            Ok((status, headers, body)) => {
-                return build_response(status, headers, body);
-            }
-            Err(err) => {
-                log_application_callable_exception(&err);
-                pyo3::Python::with_gil(|_| drop(err));
-            }
-        }
-    } else {
-        log::error!("WSGI protocol failure");
+    if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
+        return build_response(status, headers, body);
     }
+
+    log::error!("WSGI protocol failure");
     response_500()
 }

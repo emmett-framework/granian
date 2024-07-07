@@ -9,8 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::bytes::{BufMut, BytesMut};
 
-use crate::conversion::BytesToPy;
-use crate::runtime::RuntimeRef;
+use crate::{conversion::BytesToPy, runtime::RuntimeRef};
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 

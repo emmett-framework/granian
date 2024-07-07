@@ -20,14 +20,11 @@ class Response:
 
 
 class ResponseIterWrap:
-    __slots__ = ['inner', 'iter']
+    __slots__ = ['inner', '__next__']
 
     def __init__(self, inner):
         self.inner = inner
-        self.iter = iter(inner)
-
-    def __next__(self):
-        return self.iter.__next__()
+        self.__next__ = iter(inner).__next__
 
     def close(self):
         self.inner.close()
@@ -48,29 +45,27 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
         }
     )
 
-    def _runner(scope) -> Tuple[int, List[Tuple[str, str]], int, bytes]:
+    def _runner(proto, scope):
         resp = Response()
         scope.update(basic_env)
         rv = callback(scope, resp)
 
         if isinstance(rv, list):
-            resp_type = 0
-            rv = b''.join(rv)
+            proto.response_bytes(resp.status, resp.headers, b''.join(rv))
         else:
-            resp_type = 1
-            rv = ResponseIterWrap(rv)
+            proto.response_iter(resp.status, resp.headers, ResponseIterWrap(rv))
 
-        return (resp.status, resp.headers, resp_type, rv)
+        return resp.status
 
-    def _logger(scope):
+    def _logger(proto, scope):
         t = time.time()
         try:
-            rv = _runner(scope)
-            access_log(t, scope, rv[0])
+            status = _runner(proto, scope)
+            access_log(t, scope, status)
         except BaseException:
             access_log(t, scope, 500)
             raise
-        return rv
+        return status
 
     access_log = _build_access_logger(access_log_fmt)
     wrapper = _logger if access_log_fmt else _runner
