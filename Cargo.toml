@@ -35,7 +35,7 @@ anyhow = "=1.0"
 crossbeam-channel = "0.5"
 futures = "0.3"
 http-body-util = { version = "=0.1" }
-hyper = { version = "=1.3", features = ["http1", "http2", "server"] }
+hyper = { version = "=1.4", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 itertools = "0.13"
 log = "0.4"
@@ -45,7 +45,7 @@ pyo3 = { version = "=0.22", features = ["anyhow", "extension-module", "generate-
 pyo3-log = { version = "=0.11", git = "https://github.com/vorner/pyo3-log", rev = "b62a250533" }
 rustls-pemfile = "2.1"
 socket2 = { version = "0.5", features = ["all"] }
-tls-listener = { version = "=0.9", features = ["rustls"] }
+tls-listener = { version = "=0.10", features = ["rustls"] }
 tokio = { version = "1.38", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.23"
