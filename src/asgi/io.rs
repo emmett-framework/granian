@@ -227,8 +227,10 @@ impl ASGIHTTPProtocol {
                 self.tx.lock().unwrap().take(),
             ) {
                 (true, Some(tx)) => {
-                    let sent_response = self.sent_response_code.clone();
                     let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
+                    // FIXME: to store the actual status in case of 404 this should be re-implemented taking
+                    //        into account the following async flow (we return empty future to avoid waiting)
+                    self.sent_response_code.store(status, atomic::Ordering::Relaxed);
                     self.rt.spawn(async move {
                         let res = match File::open(&file_path).await {
                             Ok(file) => {
@@ -238,12 +240,10 @@ impl ASGIHTTPProtocol {
                                     Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
                                 *res.status_mut() = StatusCode::from_u16(status).unwrap();
                                 *res.headers_mut() = headers;
-                                sent_response.store(status, atomic::Ordering::Relaxed);
                                 res
                             }
                             Err(_) => {
                                 log::info!("Cannot open file {}", &file_path);
-                                sent_response.store(404, atomic::Ordering::Relaxed);
                                 response_404()
                             }
                         };
