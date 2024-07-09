@@ -206,7 +206,10 @@ where
             },
             () = cancel_tx.notified() => {
                 let _ = rb.run(move || {
-                    Python::with_gil(|_| drop(aw));
+                    Python::with_gil(|_| {
+                        drop(aw_ref);
+                        drop(aw);
+                    });
                 });
             }
         }
