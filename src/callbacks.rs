@@ -357,7 +357,6 @@ macro_rules! callback_impl_loop_step {
                             ($pyself.into_py($py).getattr($py, pyo3::intern!($py, "_loop_wake"))?,),
                             Some(&kwctx),
                         )?;
-                        Ok(())
                     }
                     false => {
                         let event_loop = $pyself.context.event_loop($py);
@@ -366,18 +365,20 @@ macro_rules! callback_impl_loop_step {
                             ($pyself.into_py($py).getattr($py, pyo3::intern!($py, "_loop_step"))?,),
                             Some(&kwctx),
                         )?;
-                        Ok(())
                     }
                 }
+                Ok(())
+            }
+            Err(err)
+                if (err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py)
+                    || err.is_instance_of::<pyo3::exceptions::PyStopAsyncIteration>($py)
+                    || err.is_instance_of::<pyo3::exceptions::asyncio::CancelledError>($py)) =>
+            {
+                $pyself.done();
+                Ok(())
             }
             Err(err) => {
-                if (err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py)
-                    || err.is_instance_of::<pyo3::exceptions::asyncio::CancelledError>($py))
-                {
-                    $pyself.done();
-                } else {
-                    $pyself.err(&err);
-                }
+                $pyself.err(&err);
                 Ok(())
             }
         }
