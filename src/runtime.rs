@@ -204,7 +204,11 @@ where
                     Python::with_gil(|_| drop(aw));
                 });
             },
-            () = cancel_tx.notified() => {}
+            () = cancel_tx.notified() => {
+                let _ = rb.run(move || {
+                    Python::with_gil(|_| drop(aw));
+                });
+            }
         }
     });
 
@@ -249,7 +253,14 @@ where
                     });
                 });
             },
-            () = cancel_tx.notified() => {}
+            () = cancel_tx.notified() => {
+                let _ = rb.run(move || {
+                    Python::with_gil(|py| {
+                        drop(fut_ref);
+                        drop(event_loop_ref);
+                    });
+                });
+            }
         }
     });
 
