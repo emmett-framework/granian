@@ -7,7 +7,7 @@ A Rust HTTP server for Python applications.
 The main reasons behind Granian design are:
 
 - Have a single, correct HTTP implementation, supporting versions 1, 2 (and eventually 3)
-- Provide a single package for several platforms 
+- Provide a single package for several platforms
 - Avoid the usual Gunicorn + uvicorn + http-tools dependency composition on unix systems
 - Provide stable [performance](https://github.com/emmett-framework/granian/blob/master/benchmarks/README.md) when compared to existing alternatives
 
@@ -192,6 +192,25 @@ Options:
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
                                   (disabled)]
+  --reload-paths TEXT             WatchFile paths to watch for changes
+                                  (requires granian[reload] extra)  [env var:
+                                  GRANIAN_RELOAD_PATHS; default:
+                                  /path/to/cwd]
+  --reload-ignore-paths TEXT      WatchFile paths to ignore changes for
+                                  (requires granian[reload] extra)  [env var:
+                                  GRANIAN_RELOAD_IGNORE_PATHS]
+  --reload-ignore-dirs TEXT       WatchFile directories to ignore changes for
+                                  (requires granian[reload] extra). Replaces
+                                  the default list of directories to ignore in
+                                  watchfiles.filters.DefaultFilter.  [env var:
+                                  GRANIAN_RELOAD_IGNORE_DIRS]
+  --reload-ignore-entity-patterns TEXT
+                                  WatchFile entity patterns to ignore changes
+                                  for (requires granian[reload] extra).
+                                  Replaces the default list of patterns to
+                                  ignore in watchfiles.filters.DefaultFilter.
+                                  [env var:
+                                  GRANIAN_RELOAD_IGNORE_ENTITY_PATTERNS]
   --process-name TEXT             Set a custom name for processes (requires
                                   granian[pname] extra)  [env var:
                                   GRANIAN_PROCESS_NAME]

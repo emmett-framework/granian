@@ -95,6 +95,10 @@ class Granian:
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         reload: bool = False,
+        reload_paths: Optional[List[str]] = None,
+        reload_ignore_paths: Optional[List[str]] = None,
+        reload_ignore_dirs: Optional[List[str]] = None,
+        reload_ignore_entity_patterns: Optional[List[str]] = None,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
     ):
@@ -129,6 +133,10 @@ class Granian:
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
+        self.reload_paths = reload_paths
+        self.reload_ignore_paths = reload_ignore_paths
+        self.reload_ignore_dirs = reload_ignore_dirs
+        self.reload_ignore_entity_patterns = reload_ignore_entity_patterns
         self.process_name = process_name
         self.pid_file = pid_file
 
@@ -577,11 +585,21 @@ class Granian:
             logger.error('Using --reload requires the granian[reload] extra')
             sys.exit(1)
 
-        reload_path = Path.cwd()
+        reload_paths = self.reload_paths or [Path.cwd()]
+        reload_filter = watchfiles.filters.DefaultFilter(
+            ignore_dirs=self.reload_ignore_dirs,
+            ignore_entity_patterns=self.reload_ignore_entity_patterns,
+            ignore_paths=self.reload_ignore_paths,
+        )
+
         sock = self.startup(spawn_target, target_loader)
 
         try:
-            for _ in watchfiles.watch(reload_path, stop_event=self.main_loop_interrupt):
+            for _ in watchfiles.watch(
+                *reload_paths,
+                watch_filter=reload_filter,
+                stop_event=self.main_loop_interrupt,
+            ):
                 logger.info('Changes detected, reloading workers..')
                 self._stop_workers()
                 self._spawn_workers(sock, spawn_target, target_loader)

@@ -1,7 +1,7 @@
 import json
 import pathlib
 from enum import Enum
-from typing import Any, Callable, Optional, Type, TypeVar, Union
+from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 import click
 
@@ -195,6 +195,33 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
 )
 @option(
+    '--reload-paths',
+    default=pathlib.Path.cwd(),
+    help='WatchFile paths to watch for changes (requires granian[reload] extra)',
+)
+@option(
+    '--reload-ignore-paths',
+    default=[],
+    help='WatchFile paths to ignore changes for (requires granian[reload] extra)',
+)
+@option(
+    '--reload-ignore-dirs',
+    default=[],
+    help=(
+        'WatchFile directories to ignore changes for (requires granian[reload] extra). '
+        'Replaces  the default list of directories to ignore in '
+        'watchfiles.filters.DefaultFilter.'
+    ),
+)
+@option(
+    '--reload-ignore-entity-patterns',
+    default=[],
+    help=(
+        'WatchFile entity patterns to ignore changes for (requires granian[reload] extra). '
+        'Replaces the default list of patterns to ignore in watchfiles.filters.DefaultFilter.'
+    ),
+)
+@option(
     '--process-name',
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
@@ -242,6 +269,10 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     reload: bool,
+    reload_paths: List[str],
+    reload_ignore_paths: List[str],
+    reload_ignore_dirs: List[str],
+    reload_ignore_entity_patterns: List[str],
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
 ) -> None:
@@ -294,6 +325,10 @@ def cli(
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
         reload=reload,
+        reload_paths=reload_paths,
+        reload_ignore_paths=reload_ignore_paths,
+        reload_ignore_dirs=reload_ignore_dirs,
+        reload_ignore_entity_patterns=reload_ignore_entity_patterns,
         process_name=process_name,
         pid_file=pid_file,
     )
