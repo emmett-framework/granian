@@ -46,7 +46,7 @@ reload = [
     'watchfiles~=0.21',
 ]
 lint = [
-    'ruff~=0.1.0',
+    'ruff~=0.5.0',
 ]
 test = [
     'httpx~=0.25.0',

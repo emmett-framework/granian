@@ -26,8 +26,7 @@ class Scope:
     authority: Optional[str]
 
     @property
-    def headers(self) -> Headers:
-        ...
+    def headers(self) -> Headers: ...
 
 
 class WebsocketMessageType(int, Enum):

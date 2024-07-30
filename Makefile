@@ -8,13 +8,13 @@ build-dev:
 
 .PHONY: format
 format:
-	ruff --fix $(pysources)
+	ruff check --fix $(pysources)
 	ruff format $(pysources)
 	cargo fmt
 
 .PHONY: lint-python
 lint-python:
-	ruff $(pysources)
+	ruff check $(pysources)
 	ruff format --check $(pysources)
 
 .PHONY: lint-rust
