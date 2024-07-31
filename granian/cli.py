@@ -196,30 +196,35 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--reload-paths',
-    default=pathlib.Path.cwd(),
-    help='WatchFile paths to watch for changes (requires granian[reload] extra)',
-)
-@option(
-    '--reload-ignore-paths',
-    default=[],
-    help='WatchFile paths to ignore changes for (requires granian[reload] extra)',
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, readable=True, path_type=pathlib.Path),
+    default=(pathlib.Path.cwd(),),
+    help='Paths to watch for changes',
+    multiple=True,
 )
 @option(
     '--reload-ignore-dirs',
-    default=[],
+    default=(),
     help=(
-        'WatchFile directories to ignore changes for (requires granian[reload] extra). '
-        'Replaces  the default list of directories to ignore in '
-        'watchfiles.filters.DefaultFilter.'
+        'Names of directories to ignore (i.e. should not trigger reload). '
+        'Extends the default list of directories to ignore in watchfiles.filters.DefaultFilter.'
     ),
+    multiple=True,
 )
 @option(
     '--reload-ignore-entity-patterns',
-    default=[],
+    default=(),
     help=(
-        'WatchFile entity patterns to ignore changes for (requires granian[reload] extra). '
-        'Replaces the default list of patterns to ignore in watchfiles.filters.DefaultFilter.'
+        'Regex patterns to ignore changes for. '
+        'Extends the default list of patterns to ignore in watchfiles.filters.DefaultFilter.'
     ),
+    multiple=True,
+)
+@option(
+    '--reload-ignore-paths',
+    type=click.Path(exists=False, path_type=pathlib.Path),
+    default=(),
+    help='Absolute paths to ignore changes for',
+    multiple=True,
 )
 @option(
     '--process-name',
@@ -269,10 +274,10 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     reload: bool,
-    reload_paths: List[str],
-    reload_ignore_paths: List[str],
-    reload_ignore_dirs: List[str],
-    reload_ignore_entity_patterns: List[str],
+    reload_paths: List[pathlib.Path],
+    reload_ignore_dirs: Optional[List[str]],
+    reload_ignore_entity_patterns: Optional[List[str]],
+    reload_ignore_paths: Optional[List[pathlib.Path]],
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
 ) -> None:

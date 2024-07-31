@@ -4,6 +4,7 @@ import contextvars
 import errno
 import multiprocessing
 import os
+import pathlib
 import signal
 import socket
 import ssl
@@ -12,11 +13,11 @@ import threading
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
-from ._imports import setproctitle, watchfiles
+from ._imports import BaseFilter, setproctitle, watchfiles
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
@@ -95,10 +96,11 @@ class Granian:
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         reload: bool = False,
-        reload_paths: Optional[List[str]] = None,
-        reload_ignore_paths: Optional[List[str]] = None,
-        reload_ignore_dirs: Optional[List[str]] = None,
-        reload_ignore_entity_patterns: Optional[List[str]] = None,
+        reload_paths: Sequence[pathlib.Path] = (pathlib.Path.cwd(),),
+        reload_ignore_dirs: Optional[Sequence[str]] = (),
+        reload_ignore_entity_patterns: Optional[Sequence[str]] = (),
+        reload_ignore_paths: Optional[Sequence[pathlib.Path]] = (),
+        reload_filter: Optional[BaseFilter] = None,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
     ):
@@ -137,6 +139,7 @@ class Granian:
         self.reload_ignore_paths = reload_ignore_paths
         self.reload_ignore_dirs = reload_ignore_dirs
         self.reload_ignore_entity_patterns = reload_ignore_entity_patterns
+        self.reload_filter = reload_filter
         self.process_name = process_name
         self.pid_file = pid_file
 
@@ -585,18 +588,25 @@ class Granian:
             logger.error('Using --reload requires the granian[reload] extra')
             sys.exit(1)
 
-        reload_paths = self.reload_paths or [Path.cwd()]
+        # Use given or default filter rules
+        reload_filter = self.reload_filter or watchfiles.filters.DefaultFilter
+        # Extend `reload_filter` with explicit args
+        ignore_dirs = (*reload_filter.ignore_dirs, *self.reload_ignore_dirs)
+        ignore_entity_patterns = (
+            *reload_filter.ignore_entity_patterns,
+            *self.reload_ignore_entity_patterns,
+        )
+        ignore_paths = (*reload_filter.ignore_paths, *self.reload_ignore_paths)
+        # Construct new filter
         reload_filter = watchfiles.filters.DefaultFilter(
-            ignore_dirs=self.reload_ignore_dirs,
-            ignore_entity_patterns=self.reload_ignore_entity_patterns,
-            ignore_paths=self.reload_ignore_paths,
+            ignore_dirs=ignore_dirs, ignore_entity_patterns=ignore_entity_patterns, ignore_paths=ignore_paths
         )
 
         sock = self.startup(spawn_target, target_loader)
 
         try:
             for _ in watchfiles.watch(
-                *reload_paths,
+                *self.reload_paths,
                 watch_filter=reload_filter,
                 stop_event=self.main_loop_interrupt,
             ):
