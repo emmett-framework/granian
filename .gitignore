@@ -8,3 +8,4 @@ __pycache__
 
 granian/*.so
 target/*
+.idea/
