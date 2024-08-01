@@ -2,6 +2,7 @@
 *.pyc
 __pycache__
 
+.idea/
 *.sublime-*
 .venv
 .vscode
