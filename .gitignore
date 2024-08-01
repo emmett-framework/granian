@@ -2,10 +2,10 @@
 *.pyc
 __pycache__
 
+.idea/
 *.sublime-*
 .venv
 .vscode
 
 granian/*.so
 target/*
-.idea/
