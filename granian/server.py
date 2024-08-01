@@ -13,7 +13,7 @@ import threading
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
@@ -100,7 +100,7 @@ class Granian:
         reload_ignore_dirs: Optional[Sequence[str]] = (),
         reload_ignore_entity_patterns: Optional[Sequence[str]] = (),
         reload_ignore_paths: Optional[Sequence[pathlib.Path]] = (),
-        reload_filter: Optional[BaseFilter] = None,
+        reload_filter: Optional[Type[BaseFilter]] = None,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
     ):
