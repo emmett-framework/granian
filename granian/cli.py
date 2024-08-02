@@ -197,13 +197,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--reload-paths',
     type=click.Path(exists=True, file_okay=True, dir_okay=True, readable=True, path_type=pathlib.Path),
-    default=(pathlib.Path.cwd(),),
     help='Paths to watch for changes',
+    show_default='pathlib.Path.cwd()',
     multiple=True,
 )
 @option(
     '--reload-ignore-dirs',
-    default=(),
     help=(
         'Names of directories to ignore (i.e. should not trigger reload). '
         'Extends the default list of directories to ignore in watchfiles.filters.DefaultFilter.'
@@ -212,7 +211,6 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--reload-ignore-patterns',
-    default=(),
     help=(
         'Regex patterns to ignore changes for. '
         'Extends the default list of patterns to ignore in watchfiles.filters.DefaultFilter.'
@@ -222,7 +220,6 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--reload-ignore-paths',
     type=click.Path(exists=False, path_type=pathlib.Path),
-    default=(),
     help='Absolute paths to ignore changes for',
     multiple=True,
 )
