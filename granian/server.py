@@ -4,7 +4,6 @@ import contextvars
 import errno
 import multiprocessing
 import os
-import pathlib
 import signal
 import socket
 import ssl
@@ -96,10 +95,10 @@ class Granian:
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         reload: bool = False,
-        reload_paths: Sequence[pathlib.Path] = (pathlib.Path.cwd(),),
+        reload_paths: Sequence[Path] = (Path.cwd(),),
         reload_ignore_dirs: Optional[Sequence[str]] = (),
-        reload_ignore_entity_patterns: Optional[Sequence[str]] = (),
-        reload_ignore_paths: Optional[Sequence[pathlib.Path]] = (),
+        reload_ignore_patterns: Optional[Sequence[str]] = (),
+        reload_ignore_paths: Optional[Sequence[Path]] = (),
         reload_filter: Optional[Type[BaseFilter]] = None,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
@@ -138,7 +137,7 @@ class Granian:
         self.reload_paths = reload_paths
         self.reload_ignore_paths = reload_ignore_paths
         self.reload_ignore_dirs = reload_ignore_dirs
-        self.reload_ignore_entity_patterns = reload_ignore_entity_patterns
+        self.reload_ignore_patterns = reload_ignore_patterns
         self.reload_filter = reload_filter
         self.process_name = process_name
         self.pid_file = pid_file
@@ -594,7 +593,7 @@ class Granian:
         ignore_dirs = (*reload_filter.ignore_dirs, *self.reload_ignore_dirs)
         ignore_entity_patterns = (
             *reload_filter.ignore_entity_patterns,
-            *self.reload_ignore_entity_patterns,
+            *self.reload_ignore_patterns,
         )
         ignore_paths = (*reload_filter.ignore_paths, *self.reload_ignore_paths)
         # Construct new filter

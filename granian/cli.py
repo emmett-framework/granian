@@ -211,7 +211,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     multiple=True,
 )
 @option(
-    '--reload-ignore-entity-patterns',
+    '--reload-ignore-patterns',
     default=(),
     help=(
         'Regex patterns to ignore changes for. '
@@ -276,7 +276,7 @@ def cli(
     reload: bool,
     reload_paths: List[pathlib.Path],
     reload_ignore_dirs: Optional[List[str]],
-    reload_ignore_entity_patterns: Optional[List[str]],
+    reload_ignore_patterns: Optional[List[str]],
     reload_ignore_paths: Optional[List[pathlib.Path]],
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
@@ -333,7 +333,7 @@ def cli(
         reload_paths=reload_paths,
         reload_ignore_paths=reload_ignore_paths,
         reload_ignore_dirs=reload_ignore_dirs,
-        reload_ignore_entity_patterns=reload_ignore_entity_patterns,
+        reload_ignore_patterns=reload_ignore_patterns,
         process_name=process_name,
         pid_file=pid_file,
     )
