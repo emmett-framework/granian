@@ -68,3 +68,7 @@ WSGI is not part of the benchmark since the protocol doesn't implement anything 
 
 - [Versus 3rd party servers](./vs.md)
 - [Concurrency](./concurrency.md)
+
+### 3rd party benchmarks
+
+- [TFB](./external/tfb.md)

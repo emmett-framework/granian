@@ -26,3 +26,7 @@ Granian version: {{ =data.granian }}
 {{ if False: }}
 - [Python versions](./pyver.md)
 {{ pass }}
+
+### 3rd party benchmarks
+
+- [TFB](./external/tfb.md)
