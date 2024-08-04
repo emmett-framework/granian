@@ -190,6 +190,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='The number of seconds to sleep between workers respawn',
 )
 @option(
+    '--workers-max-lifetime',
+    type=click.IntRange(60),
+    help='The maximum amount of time in seconds a worker will be kept alive before respawn',
+)
+@option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
@@ -241,6 +246,7 @@ def cli(
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
     respawn_interval: float,
+    workers_max_lifetime: Optional[int],
     reload: bool,
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
@@ -293,6 +299,7 @@ def cli(
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
+        workers_max_lifetime=workers_max_lifetime,
         reload=reload,
         process_name=process_name,
         pid_file=pid_file,
