@@ -36,6 +36,7 @@ class Worker:
         self.parent = parent
         self.idx = idx
         self.interrupt_by_parent = False
+        self.birth = time.time()
         self._spawn(target, args)
 
     def _spawn(self, target, args):
@@ -94,6 +95,7 @@ class Granian:
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
+        workers_max_lifetime: Optional[int] = None,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
         reload_ignore_dirs: Optional[Sequence[str]] = None,
@@ -134,6 +136,7 @@ class Granian:
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
+        self.workers_lifetime = workers_max_lifetime
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
@@ -153,6 +156,7 @@ class Granian:
         self.interrupt_children = []
         self.respawned_procs = {}
         self.reload_signal = False
+        self.lifetime_signal = False
         self.pid = None
 
     def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
@@ -468,6 +472,15 @@ class Granian:
             proc.join()
         self.procs.clear()
 
+    def _workers_lifetime_watcher(self, ttl):
+        time.sleep(ttl)
+        self.lifetime_signal = True
+        self.main_loop_interrupt.set()
+
+    def _watch_workers_lifetime(self, ttl):
+        waker = threading.Thread(target=self._workers_lifetime_watcher, args=(ttl,), daemon=True)
+        waker.start()
+
     def setup_signals(self):
         signals = [signal.SIGINT, signal.SIGTERM]
         if sys.platform == 'win32':
@@ -537,6 +550,10 @@ class Granian:
         logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
 
         self._spawn_workers(sock, spawn_target, target_loader)
+
+        if self.workers_lifetime is not None:
+            self._watch_workers_lifetime(self.workers_lifetime)
+
         return sock
 
     def shutdown(self, exit_code=0):
@@ -579,6 +596,25 @@ class Granian:
 
             if self.reload_signal:
                 self._reload(sock, spawn_target, target_loader)
+
+            if self.lifetime_signal:
+                self.lifetime_signal = False
+                self.main_loop_interrupt.clear()
+                ttl = self.workers_lifetime * 0.95
+                now = time.time()
+                etas = [self.workers_lifetime]
+                for worker in list(self.procs):
+                    if (now - worker.birth) >= ttl:
+                        logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
+                        self._respawn_workers(
+                            [worker.idx], sock, spawn_target, target_loader, delay=self.respawn_interval
+                        )
+                    else:
+                        elapsed = now - worker.birth
+                        remaining = self.workers_lifetime - elapsed
+                        etas.append(max(60, int(remaining)))
+                next_tick = min(etas)
+                self._watch_workers_lifetime(next_tick)
 
     def _serve(self, spawn_target, target_loader):
         sock = self.startup(spawn_target, target_loader)
@@ -657,9 +693,9 @@ class Granian:
 
         if self.websockets:
             if self.interface == Interfaces.WSGI:
-                logger.info('Websockets are not supported on WSGI')
+                logger.info('Websockets are not supported on WSGI, ignoring')
             if self.http == HTTPModes.http2:
-                logger.info('Websockets are not supported on HTTP/2 only')
+                logger.info('Websockets are not supported on HTTP/2 only, ignoring')
 
         if setproctitle is not None:
             self.process_name = self.process_name or (
@@ -669,6 +705,13 @@ class Granian:
         elif self.process_name is not None:
             logger.error('Setting process name requires the granian[pname] extra')
             raise ConfigurationError('process_name')
+
+        if self.workers_lifetime is not None:
+            if self.reload_on_changes:
+                logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
+            if self.workers_lifetime < 60:
+                logger.error('Workers lifetime cannot be less than 60 seconds')
+                raise ConfigurationError('workers_lifetime')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)
