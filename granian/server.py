@@ -581,8 +581,10 @@ class Granian:
         sock = self.startup(spawn_target, target_loader)
 
         try:
-            for _ in watchfiles.watch(reload_path, stop_event=self.main_loop_interrupt):
+            for changes in watchfiles.watch(reload_path, stop_event=self.main_loop_interrupt):
                 logger.info('Changes detected, reloading workers..')
+                for change, file in changes:
+                    logger.info(f'{change.raw_str().capitalize()}: {file}')
                 self._stop_workers()
                 self._spawn_workers(sock, spawn_target, target_loader)
         except StopIteration:
