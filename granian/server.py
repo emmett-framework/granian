@@ -516,13 +516,12 @@ class Granian:
             self.pid_file.unlink()
 
     def _reload(self, sock, spawn_target, target_loader):
-        if self.reload_signal:
-            logger.info('HUP signal received, gracefully respawning workers..')
-            workers = list(range(self.workers))
-            self.reload_signal = False
-            self.respawned_procs.clear()
-            self.main_loop_interrupt.clear()
-            self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
+        logger.info('HUP signal received, gracefully respawning workers..')
+        workers = list(range(self.workers))
+        self.reload_signal = False
+        self.respawned_procs.clear()
+        self.main_loop_interrupt.clear()
+        self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
 
     def startup(self, spawn_target, target_loader):
         self.pid = os.getpid()
@@ -568,7 +567,8 @@ class Granian:
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, sock, spawn_target, target_loader)
 
-            self._reload(sock, spawn_target, target_loader)
+            if self.reload_signal:
+                self._reload(sock, spawn_target, target_loader)
 
     def _serve(self, spawn_target, target_loader):
         sock = self.startup(spawn_target, target_loader)
