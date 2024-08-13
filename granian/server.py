@@ -538,6 +538,14 @@ class Granian:
         if exit_code:
             sys.exit(exit_code)
 
+    def _reload(self, sock, spawn_target, target_loader):
+        logger.info('HUP signal received, gracefully respawning workers..')
+        workers = list(range(self.workers))
+        self.reload_signal = False
+        self.respawned_procs.clear()
+        self.main_loop_interrupt.clear()
+        self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
+
     def _serve_loop(self, sock, spawn_target, target_loader):
         while True:
             self.main_loop_interrupt.wait()
@@ -560,12 +568,7 @@ class Granian:
                 self._respawn_workers(workers, sock, spawn_target, target_loader)
 
             if self.reload_signal:
-                logger.info('HUP signal received, gracefully respawning workers..')
-                workers = list(range(self.workers))
-                self.reload_signal = False
-                self.respawned_procs.clear()
-                self.main_loop_interrupt.clear()
-                self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
+                self._reload(sock, spawn_target, target_loader)
 
     def _serve(self, spawn_target, target_loader):
         sock = self.startup(spawn_target, target_loader)
@@ -580,15 +583,22 @@ class Granian:
         reload_path = Path.cwd()
         sock = self.startup(spawn_target, target_loader)
 
-        try:
-            for changes in watchfiles.watch(reload_path, stop_event=self.main_loop_interrupt):
-                logger.info('Changes detected, reloading workers..')
-                for change, file in changes:
-                    logger.info(f'{change.raw_str().capitalize()}: {file}')
-                self._stop_workers()
-                self._spawn_workers(sock, spawn_target, target_loader)
-        except StopIteration:
-            pass
+        serve_loop = True
+        while serve_loop:
+            try:
+                for changes in watchfiles.watch(reload_path, stop_event=self.main_loop_interrupt):
+                    logger.info('Changes detected, reloading workers..')
+                    for change, file in changes:
+                        logger.info(f'{change.raw_str().capitalize()}: {file}')
+                    self._stop_workers()
+                    self._spawn_workers(sock, spawn_target, target_loader)
+            except StopIteration:
+                pass
+
+            if self.reload_signal:
+                self._reload(sock, spawn_target, target_loader)
+            else:
+                serve_loop = False
 
         self.shutdown()
 
