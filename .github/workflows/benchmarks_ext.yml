@@ -1,0 +1,58 @@
+name: benchmarks-ext
+
+on:
+  workflow_dispatch:
+  schedule:
+  - cron: '0 2 * * 1'
+
+jobs:
+  tfb:
+    if: github.repository == 'emmett-framework/granian'
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: deps
+      working-directory: ./benchmarks
+      run: |
+        pip install -r external/tfb/requirements.txt
+    - name: pull
+      working-directory: ./benchmarks
+      run: |
+        python external/tfb/loader.py > results/tfb.json
+    - name: upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: results-tfb
+        path: benchmarks/results/*
+
+  results:
+    if: github.repository == 'emmett-framework/granian'
+    runs-on: ubuntu-latest
+    needs: [tfb]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: gi0baro/setup-noir@v1
+    - uses: actions/download-artifact@v4
+      with:
+        name: results-tfb
+        path: benchmarks/results
+    - name: render
+      working-directory: ./benchmarks
+      run: |
+        noir -c data:results/tfb.json templates/external/tfb.md > external/tfb.md
+    - name: open PR
+      uses: peter-evans/create-pull-request@v6
+      with:
+        branch: benchmarks-ext-update
+        branch-suffix: timestamp
+        title: Update external benchmark results
+        body: SSIA
+        commit-message: |
+          Update external benchmark results
+        add-paths: |
+          benchmarks/external
