@@ -192,25 +192,19 @@ Options:
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
                                   (disabled)]
-  --reload-paths TEXT             WatchFile paths to watch for changes
-                                  (requires granian[reload] extra)  [env var:
-                                  GRANIAN_RELOAD_PATHS; default:
-                                  Working directory]
-  --reload-ignore-paths TEXT      WatchFile paths to ignore changes for
-                                  (requires granian[reload] extra)  [env var:
-                                  GRANIAN_RELOAD_IGNORE_PATHS]
-  --reload-ignore-dirs TEXT       WatchFile directories to ignore changes for
-                                  (requires granian[reload] extra). Extends
+  --reload-paths TEXT             Paths to watch for changes [env var:
+                                  GRANIAN_RELOAD_PATHS; default: Working directory]
+  --reload-ignore-dirs TEXT       Names of directories to ignore changes for 
+                                  (i.e. should not trigger reload). Extends
                                   the default list of directories to ignore in
-                                  watchfiles.filters.DefaultFilter.  [env var:
-                                  GRANIAN_RELOAD_IGNORE_DIRS]
-  --reload-ignore-patterns TEXT
-                                  WatchFile entity patterns (regex) to ignore changes
-                                  for (requires granian[reload] extra).
+                                  watchfiles.filters.DefaultFilter.  
+                                  [env var: GRANIAN_RELOAD_IGNORE_DIRS]
+  --reload-ignore-patterns TEXT   Entity patterns (regex) to ignore changes for.
                                   Extends the default list of patterns to
                                   ignore in watchfiles.filters.DefaultFilter.
-                                  [env var:
-                                  GRANIAN_RELOAD_IGNORE_ENTITY_PATTERNS]
+                                  [env var: GRANIAN_RELOAD_IGNORE_ENTITY_PATTERNS]
+  --reload-ignore-paths TEXT      Absolute paths to ignore changes for 
+                                  [env var: GRANIAN_RELOAD_IGNORE_PATHS]
   --process-name TEXT             Set a custom name for processes (requires
                                   granian[pname] extra)  [env var:
                                   GRANIAN_PROCESS_NAME]
