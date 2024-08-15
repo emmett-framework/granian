@@ -5,7 +5,5 @@ except ImportError:
 
 try:
     import watchfiles
-    from watchfiles import BaseFilter
 except ImportError:
     watchfiles = None
-    BaseFilter = None

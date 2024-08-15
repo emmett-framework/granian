@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
-from ._imports import BaseFilter, setproctitle, watchfiles
+from ._imports import setproctitle, watchfiles
 from ._internal import load_target
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
@@ -99,7 +99,7 @@ class Granian:
         reload_ignore_dirs: Optional[Sequence[str]] = None,
         reload_ignore_patterns: Optional[Sequence[str]] = None,
         reload_ignore_paths: Optional[Sequence[Path]] = None,
-        reload_filter: Optional[Type[BaseFilter]] = None,
+        reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
     ):
