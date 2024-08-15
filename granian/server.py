@@ -134,7 +134,7 @@ class Granian:
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
-        self.reload_paths = reload_paths or Path.cwd()
+        self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
         self.reload_ignore_patterns = reload_ignore_patterns or ()

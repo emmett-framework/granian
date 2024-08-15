@@ -195,19 +195,19 @@ Options:
   --reload-paths TEXT             WatchFile paths to watch for changes
                                   (requires granian[reload] extra)  [env var:
                                   GRANIAN_RELOAD_PATHS; default:
-                                  /path/to/cwd]
+                                  Working directory]
   --reload-ignore-paths TEXT      WatchFile paths to ignore changes for
                                   (requires granian[reload] extra)  [env var:
                                   GRANIAN_RELOAD_IGNORE_PATHS]
   --reload-ignore-dirs TEXT       WatchFile directories to ignore changes for
-                                  (requires granian[reload] extra). Replaces
+                                  (requires granian[reload] extra). Extends
                                   the default list of directories to ignore in
                                   watchfiles.filters.DefaultFilter.  [env var:
                                   GRANIAN_RELOAD_IGNORE_DIRS]
-  --reload-ignore-entity-patterns TEXT
-                                  WatchFile entity patterns to ignore changes
+  --reload-ignore-patterns TEXT
+                                  WatchFile entity patterns (regex) to ignore changes
                                   for (requires granian[reload] extra).
-                                  Replaces the default list of patterns to
+                                  Extends the default list of patterns to
                                   ignore in watchfiles.filters.DefaultFilter.
                                   [env var:
                                   GRANIAN_RELOAD_IGNORE_ENTITY_PATTERNS]

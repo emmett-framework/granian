@@ -198,7 +198,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--reload-paths',
     type=click.Path(exists=True, file_okay=True, dir_okay=True, readable=True, path_type=pathlib.Path),
     help='Paths to watch for changes',
-    show_default='pathlib.Path.cwd()',
+    show_default='Working directory',
     multiple=True,
 )
 @option(
@@ -271,7 +271,7 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     reload: bool,
-    reload_paths: List[pathlib.Path],
+    reload_paths: Optional[List[pathlib.Path]],
     reload_ignore_dirs: Optional[List[str]],
     reload_ignore_patterns: Optional[List[str]],
     reload_ignore_paths: Optional[List[pathlib.Path]],
