@@ -32,7 +32,8 @@ impl WSGIWorker {
             http2_opts=None,
             ssl_enabled=false,
             ssl_cert=None,
-            ssl_key=None
+            ssl_key=None,
+            ssl_key_password=None
         )
     )]
     fn new(
@@ -48,6 +49,7 @@ impl WSGIWorker {
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>,
+        ssl_key_password: Option<&str>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -64,6 +66,7 @@ impl WSGIWorker {
                 ssl_enabled,
                 ssl_cert,
                 ssl_key,
+                ssl_key_password,
             ),
         })
     }

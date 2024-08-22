@@ -169,15 +169,16 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option('--access-log/--no-access-log', 'log_access_enabled', default=False, help='Enable access log')
 @option('--access-log-fmt', 'log_access_fmt', help='Access log format')
 @option(
-    '--ssl-keyfile',
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
-    help='SSL key file',
-)
-@option(
     '--ssl-certificate',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
     help='SSL certificate file',
 )
+@option(
+    '--ssl-keyfile',
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
+    help='SSL key file',
+)
+@option('--ssl-password', help='SSL key password')
 @option('--url-path-prefix', help='URL path prefix the app is mounted on')
 @option(
     '--respawn-failed-workers/--no-respawn-failed-workers',
@@ -270,8 +271,9 @@ def cli(
     log_access_fmt: Optional[str],
     log_level: LogLevels,
     log_config: Optional[pathlib.Path],
-    ssl_keyfile: Optional[pathlib.Path],
     ssl_certificate: Optional[pathlib.Path],
+    ssl_keyfile: Optional[pathlib.Path],
+    ssl_password: Optional[str],
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
     respawn_interval: float,
@@ -329,6 +331,7 @@ def cli(
         log_access_format=log_access_fmt,
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
+        ssl_key_password=ssl_password,
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
