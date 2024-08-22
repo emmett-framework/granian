@@ -1,7 +1,7 @@
 import json
 import pathlib
 from enum import Enum
-from typing import Any, Callable, Optional, Type, TypeVar, Union
+from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 import click
 
@@ -195,6 +195,35 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
 )
 @option(
+    '--reload-paths',
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, readable=True, path_type=pathlib.Path),
+    help='Paths to watch for changes',
+    show_default='Working directory',
+    multiple=True,
+)
+@option(
+    '--reload-ignore-dirs',
+    help=(
+        'Names of directories to ignore changes for. '
+        "Extends the default list of directories to ignore in watchfiles' default filter"
+    ),
+    multiple=True,
+)
+@option(
+    '--reload-ignore-patterns',
+    help=(
+        'Path patterns (regex) to ignore changes for. '
+        "Extends the default list of patterns to ignore in watchfiles' default filter"
+    ),
+    multiple=True,
+)
+@option(
+    '--reload-ignore-paths',
+    type=click.Path(exists=False, path_type=pathlib.Path),
+    help='Absolute paths to ignore changes for',
+    multiple=True,
+)
+@option(
     '--process-name',
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
@@ -242,6 +271,10 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     reload: bool,
+    reload_paths: Optional[List[pathlib.Path]],
+    reload_ignore_dirs: Optional[List[str]],
+    reload_ignore_patterns: Optional[List[str]],
+    reload_ignore_paths: Optional[List[pathlib.Path]],
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
 ) -> None:
@@ -294,6 +327,10 @@ def cli(
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
         reload=reload,
+        reload_paths=reload_paths,
+        reload_ignore_paths=reload_ignore_paths,
+        reload_ignore_dirs=reload_ignore_dirs,
+        reload_ignore_patterns=reload_ignore_patterns,
         process_name=process_name,
         pid_file=pid_file,
     )

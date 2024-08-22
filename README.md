@@ -7,7 +7,7 @@ A Rust HTTP server for Python applications.
 The main reasons behind Granian design are:
 
 - Have a single, correct HTTP implementation, supporting versions 1, 2 (and eventually 3)
-- Provide a single package for several platforms 
+- Provide a single package for several platforms
 - Avoid the usual Gunicorn + uvicorn + http-tools dependency composition on unix systems
 - Provide stable [performance](https://github.com/emmett-framework/granian/blob/master/benchmarks/README.md) when compared to existing alternatives
 
@@ -192,6 +192,19 @@ Options:
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
                                   (disabled)]
+  --reload-paths PATH             Paths to watch for changes  [env var:
+                                  GRANIAN_RELOAD_PATHS; default: (Working
+                                  directory)]
+  --reload-ignore-dirs TEXT       Names of directories to ignore changes for.
+                                  Extends the default list of directories to
+                                  ignore in watchfiles' default filter  [env
+                                  var: GRANIAN_RELOAD_IGNORE_DIRS]
+  --reload-ignore-patterns TEXT   Path patterns (regex) to ignore changes for.
+                                  Extends the default list of patterns to
+                                  ignore in watchfiles' default filter  [env
+                                  var: GRANIAN_RELOAD_IGNORE_PATTERNS]
+  --reload-ignore-paths PATH      Absolute paths to ignore changes for  [env
+                                  var: GRANIAN_RELOAD_IGNORE_PATHS]
   --process-name TEXT             Set a custom name for processes (requires
                                   granian[pname] extra)  [env var:
                                   GRANIAN_PROCESS_NAME]
