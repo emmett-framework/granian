@@ -208,6 +208,8 @@ Options:
   --process-name TEXT             Set a custom name for processes (requires
                                   granian[pname] extra)  [env var:
                                   GRANIAN_PROCESS_NAME]
+  --pid-file FILE                 A path to write the PID file to  [env var:
+                                  GRANIAN_PID_FILE]
   --version                       Show the version and exit.
   --help                          Show this message and exit.
 ```
