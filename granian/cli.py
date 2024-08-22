@@ -204,16 +204,16 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--reload-ignore-dirs',
     help=(
-        'Names of directories to ignore changes for (i.e. should not trigger reload). '
-        'Extends the default list of directories to ignore in watchfiles.filters.DefaultFilter.'
+        'Names of directories to ignore changes for. '
+        "Extends the default list of directories to ignore in watchfiles' default filter"
     ),
     multiple=True,
 )
 @option(
     '--reload-ignore-patterns',
     help=(
-        'Entity patterns (regex) to ignore changes for. '
-        'Extends the default list of patterns to ignore in watchfiles.filters.DefaultFilter.'
+        'Path patterns (regex) to ignore changes for. '
+        "Extends the default list of patterns to ignore in watchfiles' default filter"
     ),
     multiple=True,
 )
