@@ -199,7 +199,8 @@ Options:
                                   Extends the default list of directories to
                                   ignore in watchfiles' default filter  [env
                                   var: GRANIAN_RELOAD_IGNORE_DIRS]
-  --reload-ignore-patterns TEXT   Path patterns (regex) to ignore changes for.
+  --reload-ignore-patterns TEXT   File/directory name patterns (regex) to
+                                  ignore changes for.
                                   Extends the default list of patterns to
                                   ignore in watchfiles' default filter  [env
                                   var: GRANIAN_RELOAD_IGNORE_PATTERNS]

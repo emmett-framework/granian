@@ -212,7 +212,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--reload-ignore-patterns',
     help=(
-        'Path patterns (regex) to ignore changes for. '
+        'File/directory name patterns (regex) to ignore changes for. '
         "Extends the default list of patterns to ignore in watchfiles' default filter"
     ),
     multiple=True,
