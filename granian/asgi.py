@@ -121,7 +121,7 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
         return rv
 
     def _ws_logger(scope, proto):
-        access_log(0, scope, 101)
+        access_log(time.time(), scope, 101)
         return _runner(scope, proto)
 
     def _logger(scope, proto):
