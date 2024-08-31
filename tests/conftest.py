@@ -26,8 +26,13 @@ async def _server(interface, port, threading_mode, tls=False):
         'loop_opt': bool(os.getenv('LOOP_OPT')),
     }
     if tls:
-        kwargs['ssl_cert'] = certs_path / 'cert.pem'
-        kwargs['ssl_key'] = certs_path / 'key.pem'
+        if tls == 'private':
+            kwargs['ssl_cert'] = certs_path / 'pcert.pem'
+            kwargs['ssl_key'] = certs_path / 'pkey.pem'
+            kwargs['ssl_key_password'] = 'foobar'  # noqa: S105
+        else:
+            kwargs['ssl_cert'] = certs_path / 'cert.pem'
+            kwargs['ssl_key'] = certs_path / 'key.pem'
 
     succeeded, spawn_failures = False, 0
     while spawn_failures < 3:

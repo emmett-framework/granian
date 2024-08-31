@@ -47,3 +47,13 @@ async def test_rsgi_ws_scope(rsgi_server, threading_mode):
 
     data = json.loads(res)
     assert data['scheme'] == 'https'
+
+
+@pytest.mark.asyncio
+async def test_tls_encrypted_key(rsgi_server):
+    async with rsgi_server('workers', tls='priv') as port:
+        res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data['scheme'] == 'https'
