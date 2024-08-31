@@ -50,6 +50,9 @@ class _LoggingProto:
     def __call__(self):
         return self.inner()
 
+    def __aiter__(self):
+        return self.inner.__aiter__()
+
     def response_empty(self, status, headers):
         self.status = status
         return self.inner.response_empty(status, headers)
