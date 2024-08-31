@@ -188,6 +188,10 @@ Options:
   --respawn-interval FLOAT        The number of seconds to sleep between
                                   workers respawn  [env var:
                                   GRANIAN_RESPAWN_INTERVAL; default: 3.5]
+  --workers-lifetime INTEGER RANGE
+                                  The maximum amount of time in seconds a
+                                  worker will be kept alive before respawn
+                                  [env var: GRANIAN_WORKERS_LIFETIME; x>=60]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
@@ -200,10 +204,10 @@ Options:
                                   ignore in watchfiles' default filter  [env
                                   var: GRANIAN_RELOAD_IGNORE_DIRS]
   --reload-ignore-patterns TEXT   File/directory name patterns (regex) to
-                                  ignore changes for.
-                                  Extends the default list of patterns to
-                                  ignore in watchfiles' default filter  [env
-                                  var: GRANIAN_RELOAD_IGNORE_PATTERNS]
+                                  ignore changes for. Extends the default list
+                                  of patterns to ignore in watchfiles' default
+                                  filter  [env var:
+                                  GRANIAN_RELOAD_IGNORE_PATTERNS]
   --reload-ignore-paths PATH      Absolute paths to ignore changes for  [env
                                   var: GRANIAN_RELOAD_IGNORE_PATHS]
   --process-name TEXT             Set a custom name for processes (requires

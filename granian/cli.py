@@ -190,7 +190,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='The number of seconds to sleep between workers respawn',
 )
 @option(
-    '--workers-max-lifetime',
+    '--workers-lifetime',
     type=click.IntRange(60),
     help='The maximum amount of time in seconds a worker will be kept alive before respawn',
 )
@@ -275,7 +275,7 @@ def cli(
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
     respawn_interval: float,
-    workers_max_lifetime: Optional[int],
+    workers_lifetime: Optional[int],
     reload: bool,
     reload_paths: Optional[List[pathlib.Path]],
     reload_ignore_dirs: Optional[List[str]],
@@ -332,7 +332,7 @@ def cli(
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
-        workers_max_lifetime=workers_max_lifetime,
+        workers_lifetime=workers_lifetime,
         reload=reload,
         reload_paths=reload_paths,
         reload_ignore_paths=reload_ignore_paths,

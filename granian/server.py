@@ -95,7 +95,7 @@ class Granian:
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
-        workers_max_lifetime: Optional[int] = None,
+        workers_lifetime: Optional[int] = None,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
         reload_ignore_dirs: Optional[Sequence[str]] = None,
@@ -136,7 +136,7 @@ class Granian:
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
-        self.workers_lifetime = workers_max_lifetime
+        self.workers_lifetime = workers_lifetime
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
