@@ -50,6 +50,9 @@ class _LoggingProto:
     def __call__(self):
         return self.inner()
 
+    def __aiter__(self):
+        return self.inner.__aiter__()
+
     def response_empty(self, status, headers):
         self.status = status
         return self.inner.response_empty(status, headers)
@@ -80,10 +83,14 @@ def _callback_wrapper(callback, access_log_fmt=False):
             access_log(t, scope, proto.status)
         return rv
 
+    def _ws_logger(scope, proto):
+        access_log(time.time(), scope, 101)
+        return callback(scope, proto)
+
     def _logger(scope, proto):
         if scope.proto == 'http':
             return _http_logger(scope, _LoggingProto(proto))
-        return callback(scope, proto)
+        return _ws_logger(scope, proto)
 
     access_log = _build_access_logger(access_log_fmt)
     wrapper = callback
