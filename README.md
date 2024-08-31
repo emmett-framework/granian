@@ -176,9 +176,11 @@ Options:
                                   (disabled)]
   --access-log-fmt TEXT           Access log format  [env var:
                                   GRANIAN_LOG_ACCESS_FMT]
-  --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
   --ssl-certificate FILE          SSL certificate file  [env var:
                                   GRANIAN_SSL_CERTIFICATE]
+  --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
+  --ssl-keyfile-password TEXT     SSL key password  [env var:
+                                  GRANIAN_SSL_KEYFILE_PASSWORD]
   --url-path-prefix TEXT          URL path prefix the app is mounted on  [env
                                   var: GRANIAN_URL_PATH_PREFIX]
   --respawn-failed-workers / --no-respawn-failed-workers

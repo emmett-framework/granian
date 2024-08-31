@@ -92,6 +92,7 @@ class Granian:
         log_access_format: Optional[str] = None,
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
+        ssl_key_password: Optional[str] = None,
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
@@ -147,7 +148,7 @@ class Granian:
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
-        self.build_ssl_context(ssl_cert, ssl_key)
+        self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password)
         self._shd = None
         self._sfd = None
         self.procs: List[Worker] = []
@@ -159,17 +160,17 @@ class Granian:
         self.lifetime_signal = False
         self.pid = None
 
-    def build_ssl_context(self, cert: Optional[Path], key: Optional[Path]):
+    def build_ssl_context(self, cert: Optional[Path], key: Optional[Path], password: Optional[str]):
         if not (cert and key):
             self.ssl_ctx = (False, None, None)
             return
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(cert, key, None)
+        ctx.load_cert_chain(cert, key, password)
         # with cert.open("rb") as f:
         #     cert_contents = f.read()
         # with key.open("rb") as f:
         #     key_contents = f.read()
-        self.ssl_ctx = (True, str(cert.resolve()), str(key.resolve()))
+        self.ssl_ctx = (True, str(cert.resolve()), str(key.resolve()), password)
 
     @staticmethod
     def _spawn_asgi_worker(
@@ -191,7 +192,7 @@ class Granian:
         log_level: LogLevels,
         log_config: Dict[str, Any],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
@@ -246,7 +247,7 @@ class Granian:
         log_level: LogLevels,
         log_config: Dict[str, Any],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
@@ -308,7 +309,7 @@ class Granian:
         log_level: LogLevels,
         log_config: Dict[str, Any],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals
@@ -374,7 +375,7 @@ class Granian:
         log_level: LogLevels,
         log_config: Dict[str, Any],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str]],
+        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
         from granian._loops import loops, set_loop_signals

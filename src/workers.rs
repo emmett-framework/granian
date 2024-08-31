@@ -68,6 +68,7 @@ pub(crate) struct WorkerConfig {
     pub ssl_enabled: bool,
     ssl_cert: Option<String>,
     ssl_key: Option<String>,
+    ssl_key_password: Option<String>,
 }
 
 impl WorkerConfig {
@@ -85,6 +86,7 @@ impl WorkerConfig {
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>,
+        ssl_key_password: Option<&str>,
     ) -> Self {
         Self {
             id,
@@ -100,6 +102,7 @@ impl WorkerConfig {
             ssl_enabled,
             ssl_cert: ssl_cert.map(std::convert::Into::into),
             ssl_key: ssl_key.map(std::convert::Into::into),
+            ssl_key_password: ssl_key_password.map(std::convert::Into::into),
         }
     }
 
@@ -122,7 +125,7 @@ impl WorkerConfig {
             .with_no_client_auth()
             .with_single_cert(
                 tls_load_certs(self.ssl_cert.clone().unwrap()).unwrap(),
-                tls_load_pkey(self.ssl_key.clone().unwrap()).unwrap(),
+                tls_load_pkey(self.ssl_key.clone().unwrap(), self.ssl_key_password.clone()).unwrap(),
             )
             .unwrap();
         cfg.alpn_protocols = match &self.http_mode[..] {
