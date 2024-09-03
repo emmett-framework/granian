@@ -196,6 +196,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='The maximum amount of time in seconds a worker will be kept alive before respawn',
 )
 @option(
+    '--factory/--no-factory',
+    default=False,
+    help='Treat target as a factory function, that should be invoked to build the actual target',
+)
+@option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
@@ -278,6 +283,7 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     workers_lifetime: Optional[int],
+    factory: bool,
     reload: bool,
     reload_paths: Optional[List[pathlib.Path]],
     reload_ignore_dirs: Optional[List[str]],
@@ -336,6 +342,7 @@ def cli(
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
         workers_lifetime=workers_lifetime,
+        factory=factory,
         reload=reload,
         reload_paths=reload_paths,
         reload_ignore_paths=reload_ignore_paths,

@@ -50,7 +50,7 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
     return sys.modules[module_name]
 
 
-def load_target(target: str) -> Callable[..., None]:
+def load_target(target: str, factory: bool = False) -> Callable[..., None]:
     sys.path.insert(0, '')
     path, name = get_import_components(target)
     path = prepare_import(path) if path else None
@@ -59,4 +59,6 @@ def load_target(target: str) -> Callable[..., None]:
     rv = module
     for element in name.split('.'):
         rv = getattr(rv, element)
+    if factory:
+        rv = rv()
     return rv
