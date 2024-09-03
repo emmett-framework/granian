@@ -203,7 +203,7 @@ macro_rules! handle_connection_loop {
     };
 }
 
-macro_rules! handle_tls_loop {
+macro_rules! handle_connection_loop_tls {
     ($tcp_listener:expr, $tls_config:expr, $quit_signal:expr, $backpressure:expr, $inner:expr) => {
         let (mut tls_listener, local_addr) = crate::tls::tls_listener($tls_config.into(), $tcp_listener).unwrap();
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
@@ -329,6 +329,230 @@ macro_rules! handle_connection_httpa {
     };
 }
 
+macro_rules! loop_match {
+    (
+        $http_mode:expr,
+        $http_upgrades:expr,
+        $tcp_listener:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rth:expr,
+        $callback_wrapper:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr,
+        $target:expr
+    ) => {
+        match (&$http_mode[..], $http_upgrades) {
+            ("auto", true) => {
+                crate::workers::handle_connection_loop!(
+                    $tcp_listener,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_httpa!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        $executor,
+                        serve_connection_with_upgrades,
+                        hyper_util::rt::TokioIo::new,
+                        "http",
+                        $http1_opts,
+                        $http2_opts,
+                        $target
+                    )
+                );
+            }
+            ("auto", false) => {
+                crate::workers::handle_connection_loop!(
+                    $tcp_listener,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_httpa!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        $executor,
+                        serve_connection,
+                        hyper_util::rt::TokioIo::new,
+                        "http",
+                        $http1_opts,
+                        $http2_opts,
+                        $target
+                    )
+                );
+            }
+            ("1", true) => {
+                crate::workers::handle_connection_loop!(
+                    $tcp_listener,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_http1_upgrades!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        hyper_util::rt::TokioIo::new,
+                        "http",
+                        $http1_opts,
+                        $target
+                    )
+                );
+            }
+            ("1", false) => {
+                crate::workers::handle_connection_loop!(
+                    $tcp_listener,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_http1!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        hyper_util::rt::TokioIo::new,
+                        "http",
+                        $http1_opts,
+                        $target
+                    )
+                );
+            }
+            ("2", _) => {
+                crate::workers::handle_connection_loop!(
+                    $tcp_listener,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_http2!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        $executor,
+                        $http2_stream_wrapper,
+                        "http",
+                        $http2_opts,
+                        $target
+                    )
+                );
+            }
+            _ => unreachable!(),
+        }
+    };
+}
+
+macro_rules! loop_match_tls {
+    (
+        $http_mode:expr,
+        $http_upgrades:expr,
+        $tcp_listener:expr,
+        $tls_config:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rth:expr,
+        $callback_wrapper:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr,
+        $target:expr
+    ) => {
+        match (&$http_mode[..], $http_upgrades) {
+            ("auto", true) => {
+                crate::workers::handle_connection_loop_tls!(
+                    $tcp_listener,
+                    $tls_config,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_httpa!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        $executor,
+                        serve_connection_with_upgrades,
+                        hyper_util::rt::TokioIo::new,
+                        "https",
+                        $http1_opts,
+                        $http2_opts,
+                        $target
+                    )
+                );
+            }
+            ("auto", false) => {
+                crate::workers::handle_connection_loop_tls!(
+                    $tcp_listener,
+                    $tls_config,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_httpa!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        $executor,
+                        serve_connection,
+                        hyper_util::rt::TokioIo::new,
+                        "https",
+                        $http1_opts,
+                        $http2_opts,
+                        $target
+                    )
+                );
+            }
+            ("1", true) => {
+                crate::workers::handle_connection_loop_tls!(
+                    $tcp_listener,
+                    $tls_config,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_http1_upgrades!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        hyper_util::rt::TokioIo::new,
+                        "https",
+                        $http1_opts,
+                        $target
+                    )
+                );
+            }
+            ("1", false) => {
+                crate::workers::handle_connection_loop_tls!(
+                    $tcp_listener,
+                    $tls_config,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_http1!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        hyper_util::rt::TokioIo::new,
+                        "https",
+                        $http1_opts,
+                        $target
+                    )
+                );
+            }
+            ("2", _) => {
+                crate::workers::handle_connection_loop_tls!(
+                    $tcp_listener,
+                    $tls_config,
+                    $pyrx.changed(),
+                    $backpressure,
+                    crate::workers::handle_connection_http2!(
+                        $rth,
+                        $callback_wrapper,
+                        $spawner,
+                        $executor,
+                        $http2_stream_wrapper,
+                        "https",
+                        $http2_opts,
+                        $target
+                    )
+                );
+            }
+            _ => unreachable!(),
+        }
+    };
+}
+
 macro_rules! serve_rth {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
@@ -359,96 +583,21 @@ macro_rules! serve_rth {
             log::info!("Started worker-{}", worker_id);
 
             let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
-                match (&http_mode[..], http_upgrades) {
-                    ("auto", true) => {
-                        crate::workers::handle_connection_loop!(
-                            tcp_listener,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_httpa!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioExecutor::new,
-                                serve_connection_with_upgrades,
-                                hyper_util::rt::TokioIo::new,
-                                "http",
-                                http1_opts,
-                                http2_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("auto", false) => {
-                        crate::workers::handle_connection_loop!(
-                            tcp_listener,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_httpa!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioExecutor::new,
-                                serve_connection,
-                                hyper_util::rt::TokioIo::new,
-                                "http",
-                                http1_opts,
-                                http2_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("1", true) => {
-                        crate::workers::handle_connection_loop!(
-                            tcp_listener,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_http1_upgrades!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioIo::new,
-                                "http",
-                                http1_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("1", false) => {
-                        crate::workers::handle_connection_loop!(
-                            tcp_listener,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_http1!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioIo::new,
-                                "http",
-                                http1_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("2", _) => {
-                        crate::workers::handle_connection_loop!(
-                            tcp_listener,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_http2!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioExecutor::new,
-                                hyper_util::rt::TokioIo::new,
-                                "http",
-                                http2_opts,
-                                $target
-                            )
-                        );
-                    }
-                    _ => unreachable!(),
-                }
+                crate::workers::loop_match!(
+                    http_mode,
+                    http_upgrades,
+                    tcp_listener,
+                    pyrx,
+                    backpressure,
+                    rth,
+                    callback_wrapper,
+                    tokio::spawn,
+                    hyper_util::rt::TokioExecutor::new,
+                    http1_opts,
+                    http2_opts,
+                    hyper_util::rt::TokioIo::new,
+                    $target
+                );
 
                 Python::with_gil(|_| drop(callback_wrapper));
 
@@ -498,101 +647,22 @@ macro_rules! serve_rth_ssl {
             log::info!("Started worker-{}", worker_id);
 
             let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
-                match (&http_mode[..], http_upgrades) {
-                    ("auto", true) => {
-                        crate::workers::handle_tls_loop!(
-                            tcp_listener,
-                            tls_cfg,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_httpa!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioExecutor::new,
-                                serve_connection_with_upgrades,
-                                hyper_util::rt::TokioIo::new,
-                                "https",
-                                http1_opts,
-                                http2_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("auto", false) => {
-                        crate::workers::handle_tls_loop!(
-                            tcp_listener,
-                            tls_cfg,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_httpa!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioExecutor::new,
-                                serve_connection,
-                                hyper_util::rt::TokioIo::new,
-                                "https",
-                                http1_opts,
-                                http2_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("1", true) => {
-                        crate::workers::handle_tls_loop!(
-                            tcp_listener,
-                            tls_cfg,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_http1_upgrades!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioIo::new,
-                                "https",
-                                http1_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("1", false) => {
-                        crate::workers::handle_tls_loop!(
-                            tcp_listener,
-                            tls_cfg,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_http1!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioIo::new,
-                                "https",
-                                http1_opts,
-                                $target
-                            )
-                        );
-                    }
-                    ("2", _) => {
-                        crate::workers::handle_tls_loop!(
-                            tcp_listener,
-                            tls_cfg,
-                            pyrx.changed(),
-                            backpressure,
-                            crate::workers::handle_connection_http2!(
-                                rth,
-                                callback_wrapper,
-                                tokio::spawn,
-                                hyper_util::rt::TokioExecutor::new,
-                                hyper_util::rt::TokioIo::new,
-                                "https",
-                                http2_opts,
-                                $target
-                            )
-                        );
-                    }
-                    _ => unreachable!(),
-                }
+                crate::workers::loop_match_tls!(
+                    http_mode,
+                    http_upgrades,
+                    tcp_listener,
+                    tls_cfg,
+                    pyrx,
+                    backpressure,
+                    rth,
+                    callback_wrapper,
+                    tokio::spawn,
+                    hyper_util::rt::TokioExecutor::new,
+                    http1_opts,
+                    http2_opts,
+                    hyper_util::rt::TokioIo::new,
+                    $target
+                );
 
                 Python::with_gil(|_| drop(callback_wrapper));
 
@@ -652,98 +722,21 @@ macro_rules! serve_wth {
                     let local = tokio::task::LocalSet::new();
 
                     crate::runtime::block_on_local(rt, local, async move {
-                        match (&http_mode[..], http_upgrades) {
-                            ("auto", true) => {
-                                crate::workers::handle_connection_loop!(
-                                    tcp_listener,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_httpa!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        crate::workers::WorkerExecutor::new,
-                                        serve_connection_with_upgrades,
-                                        hyper_util::rt::TokioIo::new,
-                                        "http",
-                                        http1_opts,
-                                        http2_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("auto", false) => {
-                                crate::workers::handle_connection_loop!(
-                                    tcp_listener,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_httpa!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        crate::workers::WorkerExecutor::new,
-                                        serve_connection,
-                                        hyper_util::rt::TokioIo::new,
-                                        "http",
-                                        http1_opts,
-                                        http2_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("1", true) => {
-                                crate::workers::handle_connection_loop!(
-                                    tcp_listener,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_http1_upgrades!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        hyper_util::rt::TokioIo::new,
-                                        "http",
-                                        http1_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("1", false) => {
-                                crate::workers::handle_connection_loop!(
-                                    tcp_listener,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_http1!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        hyper_util::rt::TokioIo::new,
-                                        "http",
-                                        http1_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("2", _) => {
-                                crate::workers::handle_connection_loop!(
-                                    tcp_listener,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_http2!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        crate::workers::WorkerExecutor::new,
-                                        |stream| {
-                                            crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream))
-                                        },
-                                        "http",
-                                        http2_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            _ => unreachable!(),
-                        }
+                        crate::workers::loop_match!(
+                            http_mode,
+                            http_upgrades,
+                            tcp_listener,
+                            srx,
+                            backpressure,
+                            rth,
+                            callback_wrapper,
+                            tokio::task::spawn_local,
+                            crate::workers::WorkerExecutor::new,
+                            http1_opts,
+                            http2_opts,
+                            |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
+                            $target
+                        );
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
                     });
@@ -813,103 +806,22 @@ macro_rules! serve_wth_ssl {
                     let local = tokio::task::LocalSet::new();
 
                     crate::runtime::block_on_local(rt, local, async move {
-                        match (&http_mode[..], http_upgrades) {
-                            ("auto", true) => {
-                                crate::workers::handle_tls_loop!(
-                                    tcp_listener,
-                                    tls_cfg,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_httpa!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        crate::workers::WorkerExecutor::new,
-                                        serve_connection_with_upgrades,
-                                        hyper_util::rt::TokioIo::new,
-                                        "https",
-                                        http1_opts,
-                                        http2_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("auto", false) => {
-                                crate::workers::handle_tls_loop!(
-                                    tcp_listener,
-                                    tls_cfg,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_httpa!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        crate::workers::WorkerExecutor::new,
-                                        serve_connection,
-                                        hyper_util::rt::TokioIo::new,
-                                        "https",
-                                        http1_opts,
-                                        http2_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("1", true) => {
-                                crate::workers::handle_tls_loop!(
-                                    tcp_listener,
-                                    tls_cfg,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_http1_upgrades!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        hyper_util::rt::TokioIo::new,
-                                        "https",
-                                        http1_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("1", false) => {
-                                crate::workers::handle_tls_loop!(
-                                    tcp_listener,
-                                    tls_cfg,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_http1!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        hyper_util::rt::TokioIo::new,
-                                        "https",
-                                        http1_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            ("2", _) => {
-                                crate::workers::handle_tls_loop!(
-                                    tcp_listener,
-                                    tls_cfg,
-                                    srx.changed(),
-                                    backpressure,
-                                    crate::workers::handle_connection_http2!(
-                                        rth,
-                                        callback_wrapper,
-                                        tokio::task::spawn_local,
-                                        crate::workers::WorkerExecutor::new,
-                                        |stream| {
-                                            crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream))
-                                        },
-                                        "https",
-                                        http2_opts,
-                                        $target
-                                    )
-                                );
-                            }
-                            _ => unreachable!(),
-                        }
+                        crate::workers::loop_match_tls!(
+                            http_mode,
+                            http_upgrades,
+                            tcp_listener,
+                            tls_cfg,
+                            srx,
+                            backpressure,
+                            rth,
+                            callback_wrapper,
+                            tokio::task::spawn_local,
+                            crate::workers::WorkerExecutor::new,
+                            http1_opts,
+                            http2_opts,
+                            |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
+                            $target
+                        );
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
                     });
@@ -943,7 +855,9 @@ pub(crate) use handle_connection_http1_upgrades;
 pub(crate) use handle_connection_http2;
 pub(crate) use handle_connection_httpa;
 pub(crate) use handle_connection_loop;
-pub(crate) use handle_tls_loop;
+pub(crate) use handle_connection_loop_tls;
+pub(crate) use loop_match;
+pub(crate) use loop_match_tls;
 pub(crate) use serve_rth;
 pub(crate) use serve_rth_ssl;
 pub(crate) use serve_wth;
