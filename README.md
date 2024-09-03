@@ -194,6 +194,10 @@ Options:
                                   The maximum amount of time in seconds a
                                   worker will be kept alive before respawn
                                   [env var: GRANIAN_WORKERS_LIFETIME; x>=60]
+  --factory / --no-factory        Treat target as a factory function, that
+                                  should be invoked to build the actual target
+                                  [env var: GRANIAN_FACTORY; default:
+                                  (disabled)]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
