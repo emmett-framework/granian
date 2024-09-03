@@ -97,6 +97,7 @@ class Granian:
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         workers_lifetime: Optional[int] = None,
+        factory: bool = False,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
         reload_ignore_dirs: Optional[Sequence[str]] = None,
@@ -138,6 +139,7 @@ class Granian:
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
         self.workers_lifetime = workers_lifetime
+        self.factory = factory
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
@@ -680,7 +682,7 @@ class Granian:
             if wrap_loader:
                 target_loader = partial(target_loader, self.target)
         else:
-            target_loader = partial(load_target, self.target)
+            target_loader = partial(load_target, self.target, factory=self.factory)
 
         if not spawn_target:
             spawn_target = default_spawners[self.interface]
