@@ -45,7 +45,7 @@ pin-project = "1.1"
 pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.22", features = ["anyhow", "extension-module", "generate-import-lib"] }
 pyo3-log = { version = "=0.11", git = "https://github.com/vorner/pyo3-log", rev = "b62a250533" }
-rustls-pemfile = "2.1"
+rustls-pemfile = "2.2"
 socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.10", features = ["rustls"] }
 tokio = { version = "1.40", features = ["full"] }
