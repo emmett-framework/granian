@@ -3,7 +3,7 @@ name: benchmarks-ext
 on:
   workflow_dispatch:
   schedule:
-  - cron: '0 2 * * 1'
+  - cron: '0 0 1,15 * *'
 
 jobs:
   tfb:
