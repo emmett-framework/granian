@@ -5,8 +5,8 @@
 [Repository](https://github.com/TechEmpower/FrameworkBenchmarks)    
 [Website](http://www.techempower.com/benchmarks/)
 
-Run at: Tue 17 Sep 2024, 20:06    
-Run ID: c35fdca1-35ea-4411-b75a-5766e7833e59 ([visualize](https://www.techempower.com/benchmarks/#section=test&runid=c35fdca1-35ea-4411-b75a-5766e7833e59))
+Run at: Mon 30 Sep 2024, 10:04    
+Run ID: c4ce919a-f64f-41bc-b6b7-23d1c7105b22 ([visualize](https://www.techempower.com/benchmarks/#section=test&runid=c4ce919a-f64f-41bc-b6b7-23d1c7105b22))
 
 
 ### Plain text
@@ -16,19 +16,19 @@ Run ID: c35fdca1-35ea-4411-b75a-5766e7833e59 ([visualize](https://www.techempowe
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| Granian (ASGI) | 1334204 | 0.66 |
-| Granian (RSGI) | 2027985 | 1.0 |
-| Robyn | 410295 | 0.2 |
-| Uvicorn (httptools) | 1046041 | 0.52 |
+| Granian (ASGI) | 1370268 | 0.68 |
+| Granian (RSGI) | 2015306 | 1.0 |
+| Robyn | 408619 | 0.2 |
+| Uvicorn (httptools) | 1045136 | 0.52 |
 
 #### Sync
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| Fastwsgi | 5327593 | 5.55 |
-| Granian (WSGI) | 960564 | 1.0 |
-| uWSGI | 180024 | 0.19 |
-| uWSGI + Nginx | 28115 | 0.03 |
+| Fastwsgi | 5266722 | 5.51 |
+| Granian (WSGI) | 956556 | 1.0 |
+| uWSGI | 179832 | 0.19 |
+| uWSGI + Nginx | 29611 | 0.03 |
 
 
 
@@ -39,19 +39,19 @@ Run ID: c35fdca1-35ea-4411-b75a-5766e7833e59 ([visualize](https://www.techempowe
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| FastWSGI (ASGI) | 1231267 | 1.02 |
-| Granian (ASGI) | 1048943 | 0.87 |
-| Granian (RSGI) | 1206261 | 1.0 |
-| Robyn | 294835 | 0.24 |
-| Uvicorn (httptools) | 872496 | 0.72 |
+| FastWSGI (ASGI) | 1241731 | 1.03 |
+| Granian (ASGI) | 1084113 | 0.9 |
+| Granian (RSGI) | 1199933 | 1.0 |
+| Robyn | 294030 | 0.25 |
+| Uvicorn (httptools) | 876846 | 0.73 |
 
 #### Sync
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| Fastwsgi | 2641129 | 2.96 |
-| Granian (WSGI) | 892816 | 1.0 |
-| uWSGI | 188501 | 0.21 |
-| uWSGI + Nginx | 15549 | 0.02 |
+| Fastwsgi | 2677134 | 3.02 |
+| Granian (WSGI) | 885073 | 1.0 |
+| uWSGI | 188155 | 0.21 |
+| uWSGI + Nginx | 16264 | 0.02 |
 
 
