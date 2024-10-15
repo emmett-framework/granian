@@ -376,16 +376,13 @@ impl ASGIWebsocketProtocol {
         let ws_tx = self.ws_tx.clone();
 
         future_into_py_iter(self.rt.clone(), py, async move {
-            match ws_tx.lock().await.take() {
-                Some(tx) => {
-                    closed.store(true, atomic::Ordering::Relaxed);
-                    WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
-                        .close()
-                        .await;
-                    Ok(())
-                }
-                _ => error_flow!(),
+            if let Some(tx) = ws_tx.lock().await.take() {
+                closed.store(true, atomic::Ordering::Relaxed);
+                WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
+                    .close()
+                    .await;
             }
+            Ok(())
         })
     }
 
