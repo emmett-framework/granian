@@ -120,7 +120,7 @@ jobs:
         noir -c data:results/base.json -v 'benv=GHA Linux x86_64' templates/main.md > README.md
         noir -c data:results/vs.json -v 'benv=GHA Linux x86_64' templates/vs.md > vs.md
     - name: open PR
-      uses: peter-evans/create-pull-request@v6
+      uses: peter-evans/create-pull-request@v7
       with:
         branch: benchmarks-update
         branch-suffix: timestamp
