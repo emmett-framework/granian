@@ -1,11 +1,12 @@
 import time
 
+
 HEADERS = [('content-type', 'text/plain; charset=utf-8')]
 
-BODY_BYTES_SHORT = b"Test"
-BODY_BYTES_LONG = b"Test" * 20_000
-BODY_STR_SHORT = "Test"
-BODY_STR_LONG = "Test" * 20_000
+BODY_BYTES_SHORT = b'Test'
+BODY_BYTES_LONG = b'Test' * 20_000
+BODY_STR_SHORT = 'Test'
+BODY_STR_LONG = 'Test' * 20_000
 
 
 def b_short(environ, proto):
@@ -20,12 +21,12 @@ def b_long(environ, proto):
 
 def s_short(environ, proto):
     proto('200 OK', HEADERS)
-    return [BODY_STR_SHORT.encode("utf8")]
+    return [BODY_STR_SHORT.encode('utf8')]
 
 
 def s_long(environ, proto):
     proto('200 OK', HEADERS)
-    return [BODY_STR_LONG.encode("utf8")]
+    return [BODY_STR_LONG.encode('utf8')]
 
 
 def echo(environ, proto):
@@ -35,16 +36,18 @@ def echo(environ, proto):
 
 def io_builder(wait):
     wait = wait / 1000
+
     def io(environ, proto):
         proto('200 OK', HEADERS)
         time.sleep(wait)
         return [BODY_BYTES_SHORT]
+
     return io
 
 
 def handle_404(environ, proto):
     proto('404 NOT FOUND', HEADERS)
-    return [b"not found"]
+    return [b'not found']
 
 
 routes = {
@@ -59,5 +62,5 @@ routes = {
 
 
 def app(environ, proto):
-    handler = routes.get(environ["PATH_INFO"], handle_404)
+    handler = routes.get(environ['PATH_INFO'], handle_404)
     return handler(environ, proto)
