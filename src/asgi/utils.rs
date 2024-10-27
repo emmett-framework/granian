@@ -70,7 +70,6 @@ pub(super) fn build_scope<'p>(
     scope.set_item(pyo3::intern!(py, "server"), server)?;
     scope.set_item(pyo3::intern!(py, "client"), client)?;
     scope.set_item(pyo3::intern!(py, "scheme"), scheme)?;
-    scope.set_item(pyo3::intern!(py, "method"), req.method.as_str())?;
     scope.set_item(pyo3::intern!(py, "path"), path)?;
     scope.set_item(pyo3::intern!(py, "raw_path"), PyBytes::new_bound(py, path.as_bytes()))?;
     scope.set_item(
@@ -108,7 +107,9 @@ pub(super) fn build_scope_http<'p>(
     path: &'p str,
     query_string: &'p str,
 ) -> PyResult<Bound<'p, PyDict>> {
-    build_scope(py, req, "http", version, server, client, scheme, path, query_string)
+    let scope = build_scope(py, req, "http", version, server, client, scheme, path, query_string)?;
+    scope.set_item(pyo3::intern!(py, "method"), req.method.as_str())?;
+    Ok(scope)
 }
 
 #[inline]
