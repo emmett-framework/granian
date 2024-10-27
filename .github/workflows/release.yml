@@ -4,11 +4,9 @@ on:
   push:
     tags:
       - v*.*.*
-  # release:
-  #   types: [published]
 
 env:
-  MATURIN_VERSION: 1.7.0
+  MATURIN_VERSION: 1.7.4
   PY_ALL: 3.8 3.9 3.10 3.11 3.12 3.13 pypy3.8 pypy3.9 pypy3.10
 
 jobs:
@@ -35,7 +33,6 @@ jobs:
 
   wheels:
     name: wheel ${{ matrix.platform || matrix.os }}(${{ matrix.target }}) - ${{ matrix.manylinux || 'auto' }}
-    runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +52,7 @@ jobs:
             interpreter: pypy3.8 pypy3.9 pypy3.10
           - os: macos
             target: aarch64
-            interpreter: 3.8 3.9 pypy3.8 pypy3.9 pypy3.10
+            interpreter: pypy3.8 pypy3.9 pypy3.10
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -74,14 +71,8 @@ jobs:
         exclude:
           - os: windows
             target: aarch64
-          # PGO builds
-          # - os: ubuntu
-          #   target: x86_64
-          #   manylinux: auto
-          # - os: macos
-          #   target: x86_64
-          # - os: windows
-          #   target: x86_64
+
+    runs-on: ${{ matrix.os }}-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set jemalloc for aarch64 Linux
@@ -105,7 +96,7 @@ jobs:
           path: dist
 
   wheels-pgo:
-    name: pgo-wheel ${{ matrix.os }} (${{ matrix.interpreter}})
+    name: pgo-wheel ${{ matrix.platform || matrix.os }} (${{ matrix.interpreter}})
     strategy:
       fail-fast: false
       matrix:
@@ -115,6 +106,8 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux
+          - os: windows-latest
+            platform: windows
 
     runs-on: ${{ matrix.os }}
     steps:
