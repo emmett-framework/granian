@@ -352,7 +352,7 @@ checksum = "40ecd4077b5ae9fd2e9e169b102c6c330d0605168eb0e8bf79952b256dbefffd"
 
 [[package]]
 name = "granian"
-version = "1.6.1"
+version = "1.6.2"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
