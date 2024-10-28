@@ -11,37 +11,38 @@ from contextlib import contextmanager
 
 CPU = multiprocessing.cpu_count()
 WRK_CONCURRENCIES = [64, 128, 256, 512]
+WS_CONCURRENCIES = [(8, 20_000), (16, 10_000), (32, 5000), (64, 2500)]
 
 APPS = {
     'asgi': (
         'granian --interface asgi --log-level warning --backlog 2048 '
-        '--no-ws --http {http} '
+        '{wsmode}--http {http} '
         '--workers {procs} --threads {threads}{bthreads} '
-        '--threading-mode {thmode} app.asgi:app'
+        '--threading-mode {thmode} {app}.asgi:app'
     ),
     'rsgi': (
         'granian --interface rsgi --log-level warning --backlog 2048 '
-        '--no-ws --http {http} '
+        '{wsmode}--http {http} '
         '--workers {procs} --threads {threads}{bthreads} '
-        '--threading-mode {thmode} app.rsgi:app'
+        '--threading-mode {thmode} {app}.rsgi:app'
     ),
     'wsgi': (
         'granian --interface wsgi --log-level warning --backlog 2048 '
-        '--no-ws --http {http} '
+        '{wsmode}--http {http} '
         '--workers {procs} --threads {threads}{bthreads} '
         '--threading-mode {thmode} app.wsgi:app'
     ),
     'uvicorn_h11': (
-        'uvicorn --interface asgi3 --no-access-log --log-level warning --http h11 --workers {procs} app.asgi:app'
+        'uvicorn --interface asgi3 --no-access-log --log-level warning --http h11 --workers {procs} {app}.asgi:app'
     ),
     'uvicorn_httptools': (
         'uvicorn --interface asgi3 '
         '--no-access-log --log-level warning '
-        '--http httptools --workers {procs} app.asgi:app'
+        '--http httptools --workers {procs} {app}.asgi:app'
     ),
     'hypercorn': (
         'hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 '
-        '--workers {procs} asgi:app.asgi:async_app'
+        '--workers {procs} asgi:{app}.asgi:async_app'
     ),
     'gunicorn_gthread': 'gunicorn --workers {procs} -k gthread app.wsgi:app',
     'gunicorn_gevent': 'gunicorn --workers {procs} -k gevent app.wsgi:app',
@@ -54,18 +55,21 @@ APPS = {
 
 
 @contextmanager
-def app(name, procs=None, threads=None, bthreads=None, thmode=None, http='1'):
+def app(name, procs=None, threads=None, bthreads=None, thmode=None, http='1', ws=False, app_path='app'):
     procs = procs or 1
     threads = threads or 1
     bthreads = f' --blocking-threads {bthreads}' if bthreads else ''
     thmode = thmode or 'workers'
+    wsmode = '--no-ws ' if not ws else ''
     exc_prefix = os.environ.get('BENCHMARK_EXC_PREFIX')
     proc_cmd = APPS[name].format(
+        app=app_path,
         procs=procs,
         threads=threads,
         bthreads=bthreads,
         thmode=thmode,
         http=http,
+        wsmode=wsmode,
     )
     if exc_prefix:
         proc_cmd = f'{exc_prefix}/{proc_cmd}'
@@ -113,6 +117,44 @@ def wrk(duration, concurrency, endpoint, post=False, h2=False):
         }
 
 
+def wsb(concurrency, msgs):
+    exc_prefix = os.environ.get('BENCHMARK_EXC_PREFIX')
+    cmd_parts = [
+        f'{exc_prefix}/python' if exc_prefix else 'python',
+        os.path.join(os.path.dirname(__file__), 'ws/benchmark.py'),
+    ]
+    env = dict(os.environ)
+    try:
+        proc = subprocess.run(  # noqa: S602
+            ' '.join(cmd_parts),
+            shell=True,
+            check=True,
+            capture_output=True,
+            env={
+                'BENCHMARK_CONCURRENCY': str(concurrency),
+                'BENCHMARK_MSGNO': str(msgs),
+                **env
+            }
+        )
+        return json.loads(proc.stdout.decode('utf8'))
+    except Exception as e:
+        print(f'WARN: got exception {e} while loading wsbench data')
+        return {
+            'timings': {
+                'recv': {'avg': 0, 'max': 0, 'min': 0},
+                'send': {'avg': 0, 'max': 0, 'min': 0},
+                'sum': {'avg': 0, 'max': 0, 'min': 0},
+                'all': {'avg': 0, 'max': 0, 'min': 0},
+            },
+            'throughput': {
+                'recv': 0,
+                'send': 0,
+                'all': 0,
+                'sum': 0,
+            },
+        }
+
+
 def benchmark(endpoint, post=False, h2=False, concurrencies=None):
     concurrencies = concurrencies or WRK_CONCURRENCIES
     results = {}
@@ -128,6 +170,17 @@ def benchmark(endpoint, post=False, h2=False, concurrencies=None):
         results[concurrency] = res
         time.sleep(3)
     time.sleep(1)
+    return results
+
+
+def benchmark_ws(concurrencies=None):
+    concurrencies = concurrencies or WS_CONCURRENCIES
+    results = {}
+    # bench
+    for concurrency, msgs in concurrencies:
+        res = wsb(concurrency, msgs)
+        results[concurrency] = res
+        time.sleep(2)
     return results
 
 
@@ -264,6 +317,21 @@ def vs_io():
     return results
 
 
+def vs_ws():
+    results = {}
+    for fw in [
+        'granian_rsgi',
+        'granian_asgi',
+        'uvicorn_h11',
+        'hypercorn',
+    ]:
+        fw_app = fw.split('_')[1] if fw.startswith('granian') else fw
+        title = ' '.join(item.title() for item in fw.split('_'))
+        with app(fw_app, ws=True, app_path='ws.app'):
+            results[title] = benchmark_ws()
+    return results
+
+
 def _granian_version():
     import granian
 
@@ -282,6 +350,7 @@ def run():
         'vs_http2': vs_http2,
         'vs_files': vs_files,
         'vs_io': vs_io,
+        'vs_ws': vs_ws,
     }
     inp_benchmarks = sys.argv[1:] or ['base']
     if 'base' in inp_benchmarks:
