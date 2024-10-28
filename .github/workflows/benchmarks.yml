@@ -180,7 +180,7 @@ jobs:
           -v pyvb=310 -v 'benv=GHA Linux x86_64' \
           templates/pyver.md > pyver.md
     - name: open PR
-      uses: peter-evans/create-pull-request@v6
+      uses: peter-evans/create-pull-request@v7
       with:
         branch: benchmarks-update
         branch-suffix: timestamp

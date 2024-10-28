@@ -46,7 +46,7 @@ jobs:
       run: |
         noir -c data:results/tfb.json templates/external/tfb.md > external/tfb.md
     - name: open PR
-      uses: peter-evans/create-pull-request@v6
+      uses: peter-evans/create-pull-request@v7
       with:
         branch: benchmarks-ext-update
         branch-suffix: timestamp
