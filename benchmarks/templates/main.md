@@ -23,9 +23,7 @@ Granian version: {{ =data.granian }}
 
 - [Versus 3rd party servers](./vs.md)
 - [Concurrency](./concurrency.md)
-{{ if False: }}
 - [Python versions](./pyver.md)
-{{ pass }}
 
 ### 3rd party benchmarks
 

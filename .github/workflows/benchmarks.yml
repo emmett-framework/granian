@@ -83,21 +83,70 @@ jobs:
         pip install -r benchmarks/envs/asgi.txt
         pip install -r benchmarks/envs/wsgi.txt
     - name: benchmark
-      env:
-        BENCHMARK_BASE: false
-        BENCHMARK_VS: true
       working-directory: ./benchmarks
       run: |
-        python benchmarks.py
+        python benchmarks.py vs
     - name: upload results
       uses: actions/upload-artifact@v4
       with:
         name: results-vs
         path: benchmarks/results/*
 
+  benchmark-pyver:
+    runs-on: ubuntu-latest
+    needs: [toolchain]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: |
+          3.10
+          3.11
+          3.12
+          3.13
+    - uses: actions/download-artifact@v4
+      with:
+        name: rewrk
+    - run: |
+        sudo mv rewrk /usr/local/bin && chmod +x /usr/local/bin/rewrk
+    - uses: pyo3/maturin-action@v1
+      with:
+        command: build
+        args: --release --interpreter python3.10 python3.11 python3.12 python3.13
+        target: x64
+        manylinux: auto
+        container: off
+    - name: setup venvs
+      run: |
+        python3.10 -m venv .venv310
+        python3.11 -m venv .venv311
+        python3.12 -m venv .venv312
+        python3.13 -m venv .venv313
+        .venv310/bin/pip install $(ls target/wheels/granian-*-cp310-*.whl)
+        .venv311/bin/pip install $(ls target/wheels/granian-*-cp311-*.whl)
+        .venv312/bin/pip install $(ls target/wheels/granian-*-cp312-*.whl)
+        .venv313/bin/pip install $(ls target/wheels/granian-*-cp313-*.whl)
+    - name: benchmark
+      working-directory: ./benchmarks
+      run: |
+        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv310/bin ${{ github.workspace }}/.venv310/bin/python benchmarks.py interfaces
+        mv results/data.json results/py310.json
+        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv311/bin ${{ github.workspace }}/.venv311/bin/python benchmarks.py interfaces
+        mv results/data.json results/py311.json
+        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv312/bin ${{ github.workspace }}/.venv312/bin/python benchmarks.py interfaces
+        mv results/data.json results/py312.json
+        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv313/bin ${{ github.workspace }}/.venv313/bin/python benchmarks.py interfaces
+        mv results/data.json results/py313.json
+    - name: upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: results-pyver
+        path: benchmarks/results/*
+
   results:
     runs-on: ubuntu-latest
-    needs: [benchmark-base, benchmark-vs]
+    needs: [benchmark-base, benchmark-vs, benchmark-pyver]
 
     steps:
     - uses: actions/checkout@v4
@@ -114,11 +163,22 @@ jobs:
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/vs.json
+    - uses: actions/download-artifact@v4
+      with:
+        name: results-pyver
+        path: benchmarks/results
     - name: render
       working-directory: ./benchmarks
       run: |
         noir -c data:results/base.json -v 'benv=GHA Linux x86_64' templates/main.md > README.md
         noir -c data:results/vs.json -v 'benv=GHA Linux x86_64' templates/vs.md > vs.md
+        noir \
+          -c data310:results/py310.json \
+          -c data311:results/py311.json \
+          -c data312:results/py312.json \
+          -c data313:results/py313.json \
+          -v pyvb=310 -v 'benv=GHA Linux x86_64' \
+          templates/pyver.md > pyver.md
     - name: open PR
       uses: peter-evans/create-pull-request@v6
       with:
@@ -131,3 +191,4 @@ jobs:
         add-paths: |
           benchmarks/README.md
           benchmarks/vs.md
+          benchmarks/pyver.md
