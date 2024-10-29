@@ -147,7 +147,7 @@ def _build_access_logger(fmt):
                 'protocol': 'HTTP/' + scope['http_version'],
                 'path': scope['path'],
                 'qs': scope['query_string'],
-                'method': scope['method'],
+                'method': scope.get('method', '-'),
                 'scheme': scope['scheme'],
             },
             resp_code,
