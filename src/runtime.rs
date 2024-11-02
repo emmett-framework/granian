@@ -313,7 +313,7 @@ where
     Ok(result)
 }
 
-pub(crate) fn block_on_local<F>(rt: RuntimeWrapper, local: LocalSet, fut: F)
+pub(crate) fn block_on_local<F>(rt: &RuntimeWrapper, local: LocalSet, fut: F)
 where
     F: Future + 'static,
 {

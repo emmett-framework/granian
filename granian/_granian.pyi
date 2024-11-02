@@ -1,3 +1,4 @@
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from ._types import WebsocketMessage
@@ -41,6 +42,12 @@ class WSGIScope:
     def to_environ(self, environ: Dict[str, Any]) -> Dict[str, Any]: ...
 
 class WorkerSignal:
+    def __init__(self): ...
+    def set(self): ...
+
+class WorkerSignalSync:
+    qs: threading.Event
+
     def __init__(self): ...
     def set(self): ...
 
