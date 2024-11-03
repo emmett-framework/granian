@@ -643,7 +643,7 @@ class Granian:
             reload_filter = watchfiles.filters.DefaultFilter(
                 ignore_dirs=ignore_dirs,
                 ignore_entity_patterns=ignore_entity_patterns,
-                ignore_paths=ignore_paths
+                ignore_paths=ignore_paths,
             )
         else:
             # Use given or python filter rules
@@ -651,9 +651,7 @@ class Granian:
             # Extend `reload_filter` with explicit args
             ignore_paths = (*reload_filter.ignore_paths, *self.reload_ignore_paths)
             # Construct new filter
-            reload_filter = watchfiles.filters.PythonFilter(
-                ignore_paths=ignore_paths
-            )
+            reload_filter = watchfiles.filters.PythonFilter(ignore_paths=ignore_paths)
 
         sock = self.startup(spawn_target, target_loader)
 
