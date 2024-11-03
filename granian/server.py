@@ -629,19 +629,31 @@ class Granian:
             logger.error('Using --reload requires the granian[reload] extra')
             sys.exit(1)
 
-        # Use given or default filter rules
-        reload_filter = self.reload_filter or watchfiles.filters.DefaultFilter
-        # Extend `reload_filter` with explicit args
-        ignore_dirs = (*reload_filter.ignore_dirs, *self.reload_ignore_dirs)
-        ignore_entity_patterns = (
-            *reload_filter.ignore_entity_patterns,
-            *self.reload_ignore_patterns,
-        )
-        ignore_paths = (*reload_filter.ignore_paths, *self.reload_ignore_paths)
-        # Construct new filter
-        reload_filter = watchfiles.filters.DefaultFilter(
-            ignore_dirs=ignore_dirs, ignore_entity_patterns=ignore_entity_patterns, ignore_paths=ignore_paths
-        )
+        if self.reload_ignore_dirs or self.reload_ignore_patterns:
+            # Use given or default filter rules
+            reload_filter = self.reload_filter or watchfiles.filters.DefaultFilter
+            # Extend `reload_filter` with explicit args
+            ignore_dirs = (*reload_filter.ignore_dirs, *self.reload_ignore_dirs)
+            ignore_entity_patterns = (
+                *reload_filter.ignore_entity_patterns,
+                *self.reload_ignore_patterns,
+            )
+            ignore_paths = (*reload_filter.ignore_paths, *self.reload_ignore_paths)
+            # Construct new filter
+            reload_filter = watchfiles.filters.DefaultFilter(
+                ignore_dirs=ignore_dirs,
+                ignore_entity_patterns=ignore_entity_patterns,
+                ignore_paths=ignore_paths
+            )
+        else:
+            # Use given or python filter rules
+            reload_filter = self.reload_filter or watchfiles.filters.PythonFilter
+            # Extend `reload_filter` with explicit args
+            ignore_paths = (*reload_filter.ignore_paths, *self.reload_ignore_paths)
+            # Construct new filter
+            reload_filter = watchfiles.filters.PythonFilter(
+                ignore_paths=ignore_paths
+            )
 
         sock = self.startup(spawn_target, target_loader)
 
