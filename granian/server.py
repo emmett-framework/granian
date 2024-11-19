@@ -477,7 +477,7 @@ class Granian:
             old_proc.terminate()
             old_proc.join(self.workers_graceful_timeout)
             if old_proc.proc.is_alive():
-                logger.error(f'Killing old worker-{idx + 1} after it refused to terminate')
+                logger.error(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
                 old_proc.kill()
                 old_proc.join()
 
@@ -487,7 +487,7 @@ class Granian:
         for proc in self.procs:
             proc.join(self.workers_graceful_timeout)
             if proc.proc.is_alive():
-                logger.error(f'Killing worker after it refused to terminate')
+                logger.error('Killing worker after it refused to gracefully stop')
                 proc.kill()
                 proc.join()
 
