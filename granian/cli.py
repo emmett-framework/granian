@@ -198,7 +198,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--workers-graceful-timeout',
     default=30.0,
-    help='The maximum amount of time in seconds a worker has time to gracefully stop'
+    help='The maximum amount of time in seconds a worker has time to gracefully stop',
 )
 @option(
     '--factory/--no-factory',
