@@ -196,7 +196,7 @@ Options:
                                   [env var: GRANIAN_WORKERS_LIFETIME; x>=60]
   --workers-graceful-timeout FLOAT
                                   The maximum amount of time in seconds a
-                                  worker has time to gracefully stop.  [env
+                                  worker has time to gracefully stop  [env
                                   var: GRANIAN_WORKERS_GRACEFUL_TIMEOUT;
                                   default: 30.0]
   --factory / --no-factory        Treat target as a factory function, that
