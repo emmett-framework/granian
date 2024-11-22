@@ -63,7 +63,7 @@ def configure_logging(level: LogLevels, config: Optional[Dict[str, Any]] = None,
     if config:
         log_config.update(config)
 
-    log_config['loggers']['_granian']['level'] = log_levels_map[level]
+    log_config['loggers'].setdefault('_granian', {})['level'] = log_levels_map[level]
     logging.config.dictConfig(log_config)
 
     if not enabled:
