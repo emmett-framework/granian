@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use super::{
@@ -114,6 +115,7 @@ pub(crate) struct CallbackWrappedRunnerHTTP {
     cb: PyObject,
     #[pyo3(get)]
     scope: PyObject,
+    pytaskref: Arc<Mutex<Option<PyObject>>>,
 }
 
 impl CallbackWrappedRunnerHTTP {
@@ -123,6 +125,7 @@ impl CallbackWrappedRunnerHTTP {
             context: cb.context,
             cb: cb.callback.clone_ref(py),
             scope: scope.into_py(py),
+            pytaskref: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -137,10 +140,12 @@ impl CallbackWrappedRunnerHTTP {
 
     fn done(&self) {
         callback_impl_done_http!(self);
+        self.pytaskref.lock().unwrap().take();
     }
 
     fn err(&self, err: Bound<PyAny>) {
         callback_impl_done_err!(self, &PyErr::from_value_bound(err));
+        self.pytaskref.lock().unwrap().take();
     }
 }
 
@@ -233,6 +238,7 @@ pub(crate) struct CallbackWrappedRunnerWebsocket {
     cb: PyObject,
     #[pyo3(get)]
     scope: PyObject,
+    pytaskref: Arc<Mutex<Option<PyObject>>>,
 }
 
 impl CallbackWrappedRunnerWebsocket {
@@ -242,6 +248,7 @@ impl CallbackWrappedRunnerWebsocket {
             context: cb.context,
             cb: cb.callback.clone_ref(py),
             scope: scope.into_py(py),
+            pytaskref: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -256,10 +263,12 @@ impl CallbackWrappedRunnerWebsocket {
 
     fn done(&self) {
         callback_impl_done_ws!(self);
+        self.pytaskref.lock().unwrap().take();
     }
 
     fn err(&self, err: Bound<PyAny>) {
         callback_impl_done_err!(self, &PyErr::from_value_bound(err));
+        self.pytaskref.lock().unwrap().take();
     }
 }
 
