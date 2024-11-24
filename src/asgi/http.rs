@@ -3,9 +3,9 @@ use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuil
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
-use super::callbacks::{call_http, call_http_pyw, call_ws, call_ws_pyw};
+use super::callbacks::{call_http, call_ws};
 use crate::{
-    callbacks::CallbackWrapper,
+    callbacks::ArcCBScheduler,
     http::{empty_body, response_500, HTTPRequest, HTTPResponse, HV_SERVER},
     runtime::RuntimeRef,
     ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
@@ -32,7 +32,7 @@ macro_rules! handle_request {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            callback: CallbackWrapper,
+            callback: ArcCBScheduler,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             req: HTTPRequest,
@@ -58,7 +58,7 @@ macro_rules! handle_request_with_ws {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            callback: CallbackWrapper,
+            callback: ArcCBScheduler,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             mut req: HTTPRequest,
@@ -154,10 +154,4 @@ macro_rules! handle_request_with_ws {
 }
 
 handle_request!(handle, call_http);
-// handle_request!(handle_rtb, call_rtb_http);
-handle_request!(handle_pyw, call_http_pyw);
-// handle_request!(handle_rtb_pyw, call_rtb_http_pyw);
 handle_request_with_ws!(handle_ws, call_http, call_ws);
-// handle_request_with_ws!(handle_rtb_ws, call_rtb_http, call_rtb_ws);
-handle_request_with_ws!(handle_ws_pyw, call_http_pyw, call_ws_pyw);
-// handle_request_with_ws!(handle_rtb_ws_pyw, call_rtb_http_pyw, call_rtb_ws_pyw);

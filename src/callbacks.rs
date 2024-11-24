@@ -3,20 +3,47 @@ use pyo3::{exceptions::PyStopIteration, prelude::*};
 use std::sync::{atomic, Arc, RwLock};
 use tokio::sync::Notify;
 
-use super::asyncio::PyContext;
+pub(crate) type ArcCBScheduler = Arc<Py<CallbackScheduler>>;
 
-#[derive(Clone)]
-pub(crate) struct CallbackWrapper {
-    pub callback: Arc<PyObject>,
-    pub context: PyContext,
+#[pyclass(frozen, subclass)]
+pub(crate) struct CallbackScheduler {
+    #[pyo3(get)]
+    _loop: PyObject,
+    #[pyo3(get)]
+    _ctx: PyObject,
+    schedule_fn: Arc<RwLock<PyObject>>,
+    pub cb: PyObject,
 }
 
-impl CallbackWrapper {
-    pub(crate) fn new(callback: PyObject, event_loop: Bound<PyAny>, context: Bound<PyAny>) -> Self {
-        Self {
-            callback: Arc::new(callback),
-            context: PyContext::new(event_loop).with_context(context),
+impl CallbackScheduler {
+    #[inline]
+    pub(crate) fn schedule(&self, _py: Python, watcher: &PyObject) {
+        // // let cb = self.cb.as_ptr();
+        let cbarg = watcher.as_ptr();
+        let sched = self.schedule_fn.read().unwrap().as_ptr();
+        unsafe {
+            // let coro = pyo3::ffi::PyObject_CallOneArg(cb, cbarg);
+            pyo3::ffi::PyObject_CallOneArg(sched, cbarg);
         }
+    }
+}
+
+#[pymethods]
+impl CallbackScheduler {
+    #[new]
+    fn new(py: Python, event_loop: PyObject, ctx: PyObject, cb: PyObject) -> Self {
+        Self {
+            _loop: event_loop,
+            _ctx: ctx,
+            schedule_fn: Arc::new(RwLock::new(py.None())),
+            cb,
+        }
+    }
+
+    #[setter(_schedule_fn)]
+    fn _set_schedule_fn(&self, val: PyObject) {
+        let mut guard = self.schedule_fn.write().unwrap();
+        *guard = val;
     }
 }
 
@@ -284,135 +311,3 @@ impl PyFutureResultSetter {
         let _ = target.call1((value,));
     }
 }
-
-macro_rules! callback_impl_run {
-    () => {
-        pub fn run(self, py: Python<'_>) -> PyResult<Bound<PyAny>> {
-            let event_loop = self.context.event_loop(py);
-            let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
-            let kwctx = pyo3::types::PyDict::new_bound(py);
-            kwctx.set_item(pyo3::intern!(py, "context"), crate::asyncio::empty_context(py)?)?;
-            event_loop.call_method(pyo3::intern!(py, "call_soon_threadsafe"), (target,), Some(&kwctx))
-        }
-    };
-}
-
-macro_rules! callback_impl_run_pytask {
-    () => {
-        pub fn run(self, py: Python<'_>) -> PyResult<Bound<PyAny>> {
-            let taskref = self.pytaskref.clone();
-            let event_loop = self.context.event_loop(py);
-            let context = self.context.context(py);
-            let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
-            let kwctx = pyo3::types::PyDict::new_bound(py);
-            {
-                let mut taskref_guard = taskref.lock().unwrap();
-                *taskref_guard = Some(target.clone_ref(py));
-            }
-            kwctx.set_item(pyo3::intern!(py, "context"), context)?;
-            event_loop.call_method(pyo3::intern!(py, "call_soon_threadsafe"), (target,), Some(&kwctx))
-        }
-    };
-}
-
-macro_rules! callback_impl_loop_run {
-    () => {
-        pub fn run(self, py: Python<'_>) -> PyResult<Bound<PyAny>> {
-            let context = self.pycontext.clone_ref(py).into_bound(py);
-            context.call_method1(
-                pyo3::intern!(py, "run"),
-                (self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_step"))?,),
-            )
-        }
-    };
-}
-
-macro_rules! callback_impl_loop_pytask {
-    ($pyself:expr, $py:expr) => {
-        $pyself.context.event_loop($py).call_method1(
-            pyo3::intern!($py, "create_task"),
-            ($pyself
-                .cb
-                .clone_ref($py)
-                .into_bound($py)
-                .call1(($pyself.into_py($py),))?,),
-        )
-    };
-}
-
-macro_rules! callback_impl_loop_step {
-    ($pyself:expr, $py:expr) => {
-        match $pyself.cb.call_method1($py, pyo3::intern!($py, "send"), ($py.None(),)) {
-            Ok(res) => {
-                let blocking: bool = match res.getattr($py, pyo3::intern!($py, "_asyncio_future_blocking")) {
-                    Ok(v) => v.extract($py)?,
-                    _ => false,
-                };
-
-                let ctx = $pyself.pycontext.clone_ref($py);
-                let kwctx = pyo3::types::PyDict::new_bound($py);
-                kwctx.set_item(pyo3::intern!($py, "context"), ctx)?;
-
-                match blocking {
-                    true => {
-                        res.setattr($py, pyo3::intern!($py, "_asyncio_future_blocking"), false)?;
-                        res.call_method_bound(
-                            $py,
-                            pyo3::intern!($py, "add_done_callback"),
-                            ($pyself.into_py($py).getattr($py, pyo3::intern!($py, "_loop_wake"))?,),
-                            Some(&kwctx),
-                        )?;
-                    }
-                    false => {
-                        let event_loop = $pyself.context.event_loop($py);
-                        event_loop.call_method(
-                            pyo3::intern!($py, "call_soon"),
-                            ($pyself.into_py($py).getattr($py, pyo3::intern!($py, "_loop_step"))?,),
-                            Some(&kwctx),
-                        )?;
-                    }
-                }
-                Ok(())
-            }
-            Err(err)
-                if (err.is_instance_of::<pyo3::exceptions::PyStopIteration>($py)
-                    || err.is_instance_of::<pyo3::exceptions::PyStopAsyncIteration>($py)
-                    || err.is_instance_of::<pyo3::exceptions::asyncio::CancelledError>($py)) =>
-            {
-                $pyself.done();
-                Ok(())
-            }
-            Err(err) => {
-                $pyself.err(&err);
-                Ok(())
-            }
-        }
-    };
-}
-
-macro_rules! callback_impl_loop_wake {
-    ($pyself:expr, $py:expr, $fut:expr) => {
-        match $fut.call_method0($py, pyo3::intern!($py, "result")) {
-            Ok(_) => $pyself.into_py($py).call_method0($py, pyo3::intern!($py, "_loop_step")),
-            Err(err) => $pyself._loop_err($py, err),
-        }
-    };
-}
-
-macro_rules! callback_impl_loop_err {
-    () => {
-        pub fn _loop_err(&self, py: Python, err: PyErr) -> PyResult<PyObject> {
-            self.err(&err);
-            let cberr = self.cb.call_method1(py, pyo3::intern!(py, "throw"), (err,));
-            cberr
-        }
-    };
-}
-
-pub(crate) use callback_impl_loop_err;
-pub(crate) use callback_impl_loop_pytask;
-pub(crate) use callback_impl_loop_run;
-pub(crate) use callback_impl_loop_step;
-pub(crate) use callback_impl_loop_wake;
-pub(crate) use callback_impl_run;
-pub(crate) use callback_impl_run_pytask;

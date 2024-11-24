@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 use super::http::handle;
 
+use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::workers::{
     serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignalSync, WorkerSignals,
@@ -64,7 +65,6 @@ impl WSGIWorker {
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
                 false,
-                true,
                 ssl_enabled,
                 ssl_cert,
                 ssl_key,
@@ -73,29 +73,17 @@ impl WSGIWorker {
         })
     }
 
-    fn serve_rth(
-        &self,
-        callback: PyObject,
-        event_loop: &Bound<PyAny>,
-        context: Bound<PyAny>,
-        signal: Py<WorkerSignalSync>,
-    ) {
+    fn serve_rth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignalSync>) {
         match self.config.ssl_enabled {
-            false => self._serve_rth(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
-            true => self._serve_rth_ssl(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
+            false => self._serve_rth(callback, event_loop, WorkerSignals::Crossbeam(signal)),
+            true => self._serve_rth_ssl(callback, event_loop, WorkerSignals::Crossbeam(signal)),
         }
     }
 
-    fn serve_wth(
-        &self,
-        callback: PyObject,
-        event_loop: &Bound<PyAny>,
-        context: Bound<PyAny>,
-        signal: Py<WorkerSignalSync>,
-    ) {
+    fn serve_wth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignalSync>) {
         match self.config.ssl_enabled {
-            false => self._serve_wth(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
-            true => self._serve_wth_ssl(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
+            false => self._serve_wth(callback, event_loop, WorkerSignals::Crossbeam(signal)),
+            true => self._serve_wth_ssl(callback, event_loop, WorkerSignals::Crossbeam(signal)),
         }
     }
 }

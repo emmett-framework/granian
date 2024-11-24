@@ -9,12 +9,12 @@ use pyo3::{
     prelude::*,
     types::{IntoPyDict, PyBytes, PyDict},
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 use tokio::sync::oneshot;
 
 use super::{io::WSGIProtocol, types::WSGIBody};
 use crate::{
-    callbacks::CallbackWrapper,
+    callbacks::ArcCBScheduler,
     http::{empty_body, HTTPResponseBody},
     runtime::RuntimeRef,
     utils::log_application_callable_exception,
@@ -24,7 +24,7 @@ use crate::{
 fn run_callback(
     rt: RuntimeRef,
     tx: oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>,
-    callback: Arc<PyObject>,
+    cbs: ArcCBScheduler,
     mut parts: request::Parts,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
@@ -66,7 +66,7 @@ fn run_callback(
 
     let _ = Python::with_gil(|py| -> PyResult<()> {
         let proto = Py::new(py, WSGIProtocol::new(tx))?;
-        let callback = callback.clone_ref(py);
+        let callback = cbs.get().cb.clone_ref(py);
         let environ = PyDict::new_bound(py);
         environ.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), version)?;
         environ.set_item(pyo3::intern!(py, "SERVER_NAME"), server.0)?;
@@ -108,7 +108,7 @@ fn run_callback(
 #[inline(always)]
 pub(crate) fn call_http(
     rt: RuntimeRef,
-    cb: CallbackWrapper,
+    cb: ArcCBScheduler,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     scheme: &str,
@@ -118,7 +118,7 @@ pub(crate) fn call_http(
     let scheme: std::sync::Arc<str> = scheme.into();
     let (tx, rx) = oneshot::channel();
     tokio::task::spawn_blocking(move || {
-        run_callback(rt, tx, cb.callback, req, server_addr, client_addr, &scheme, body);
+        run_callback(rt, tx, cb, req, server_addr, client_addr, &scheme, body);
     });
     rx
 }

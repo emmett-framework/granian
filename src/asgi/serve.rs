@@ -1,7 +1,8 @@
 use pyo3::prelude::*;
 
-use super::http::{handle, handle_pyw, handle_ws, handle_ws_pyw};
+use super::http::{handle, handle_ws};
 
+use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal, WorkerSignals};
 
@@ -12,21 +13,13 @@ pub struct ASGIWorker {
 
 impl ASGIWorker {
     serve_rth!(_serve_rth, handle);
-    serve_rth!(_serve_rth_pyw, handle_pyw);
     serve_rth!(_serve_rth_ws, handle_ws);
-    serve_rth!(_serve_rth_ws_pyw, handle_ws_pyw);
     serve_wth!(_serve_wth, handle);
-    serve_wth!(_serve_wth_pyw, handle_pyw);
     serve_wth!(_serve_wth_ws, handle_ws);
-    serve_wth!(_serve_wth_ws_pyw, handle_ws_pyw);
     serve_rth_ssl!(_serve_rth_ssl, handle);
-    serve_rth_ssl!(_serve_rth_ssl_pyw, handle_pyw);
     serve_rth_ssl!(_serve_rth_ssl_ws, handle_ws);
-    serve_rth_ssl!(_serve_rth_ssl_ws_pyw, handle_ws_pyw);
     serve_wth_ssl!(_serve_wth_ssl, handle);
-    serve_wth_ssl!(_serve_wth_ssl_pyw, handle_pyw);
     serve_wth_ssl!(_serve_wth_ssl_ws, handle_ws);
-    serve_wth_ssl!(_serve_wth_ssl_ws_pyw, handle_ws_pyw);
 }
 
 #[pymethods]
@@ -43,7 +36,6 @@ impl ASGIWorker {
             http1_opts=None,
             http2_opts=None,
             websockets_enabled=false,
-            opt_enabled=true,
             ssl_enabled=false,
             ssl_cert=None,
             ssl_key=None,
@@ -61,7 +53,6 @@ impl ASGIWorker {
         http1_opts: Option<PyObject>,
         http2_opts: Option<PyObject>,
         websockets_enabled: bool,
-        opt_enabled: bool,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>,
@@ -78,7 +69,6 @@ impl ASGIWorker {
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
                 websockets_enabled,
-                opt_enabled,
                 ssl_enabled,
                 ssl_cert,
                 ssl_key,
@@ -87,57 +77,21 @@ impl ASGIWorker {
         })
     }
 
-    fn serve_rth(
-        &self,
-        callback: PyObject,
-        event_loop: &Bound<PyAny>,
-        context: Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
-        match (
-            self.config.websockets_enabled,
-            self.config.ssl_enabled,
-            self.config.opt_enabled,
-        ) {
-            (false, false, true) => self._serve_rth(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (false, false, false) => self._serve_rth_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (true, false, true) => self._serve_rth_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (true, false, false) => self._serve_rth_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (false, true, true) => self._serve_rth_ssl(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (false, true, false) => {
-                self._serve_rth_ssl_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
-            }
-            (true, true, true) => self._serve_rth_ssl_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (true, true, false) => {
-                self._serve_rth_ssl_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
-            }
+    fn serve_rth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        match (self.config.websockets_enabled, self.config.ssl_enabled) {
+            (false, false) => self._serve_rth(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (true, false) => self._serve_rth_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (false, true) => self._serve_rth_ssl(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (true, true) => self._serve_rth_ssl_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
         }
     }
 
-    fn serve_wth(
-        &self,
-        callback: PyObject,
-        event_loop: &Bound<PyAny>,
-        context: Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
-        match (
-            self.config.websockets_enabled,
-            self.config.ssl_enabled,
-            self.config.opt_enabled,
-        ) {
-            (false, false, true) => self._serve_wth(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (false, false, false) => self._serve_wth_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (true, false, true) => self._serve_wth_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (true, false, false) => self._serve_wth_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (false, true, true) => self._serve_wth_ssl(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (false, true, false) => {
-                self._serve_wth_ssl_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
-            }
-            (true, true, true) => self._serve_wth_ssl_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
-            (true, true, false) => {
-                self._serve_wth_ssl_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
-            }
+    fn serve_wth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        match (self.config.websockets_enabled, self.config.ssl_enabled) {
+            (false, false) => self._serve_wth(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (true, false) => self._serve_wth_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (false, true) => self._serve_wth_ssl(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (true, true) => self._serve_wth_ssl_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
         }
     }
 }

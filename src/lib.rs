@@ -37,6 +37,7 @@ pub fn get_granian_version() -> &'static str {
 #[pymodule]
 fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("__version__", get_granian_version())?;
+    module.add_class::<callbacks::CallbackScheduler>()?;
     asgi::init_pymodule(module)?;
     rsgi::init_pymodule(py, module)?;
     tcp::init_pymodule(module)?;
