@@ -300,10 +300,15 @@ macro_rules! callback_impl_run {
 macro_rules! callback_impl_run_pytask {
     () => {
         pub fn run(self, py: Python<'_>) -> PyResult<Bound<PyAny>> {
+            let taskref = self.pytaskref.clone();
             let event_loop = self.context.event_loop(py);
             let context = self.context.context(py);
             let target = self.into_py(py).getattr(py, pyo3::intern!(py, "_loop_task"))?;
             let kwctx = pyo3::types::PyDict::new_bound(py);
+            {
+                let mut taskref_guard = taskref.lock().unwrap();
+                *taskref_guard = Some(target.clone_ref(py));
+            }
             kwctx.set_item(pyo3::intern!(py, "context"), context)?;
             event_loop.call_method(pyo3::intern!(py, "call_soon_threadsafe"), (target,), Some(&kwctx))
         }
