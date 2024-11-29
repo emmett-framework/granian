@@ -197,8 +197,9 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--workers-graceful-timeout',
-    default=30.0,
-    help='The maximum amount of time in seconds a worker has time to gracefully stop',
+    default=None,
+    type=click.IntRange(1, 1800),
+    help='The maximum amount of time in seconds a worker has time to gracefully stop, default no timeout.',
 )
 @option(
     '--factory/--no-factory',
@@ -288,7 +289,7 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     workers_lifetime: Optional[int],
-    workers_graceful_timeout: float,
+    workers_graceful_timeout: Optional[int],
     factory: bool,
     reload: bool,
     reload_paths: Optional[List[pathlib.Path]],

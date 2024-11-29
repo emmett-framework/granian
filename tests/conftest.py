@@ -17,7 +17,7 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode, tls=False):
+async def _server(interface, port, threading_mode, tls=False, extra_args=None):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
@@ -25,6 +25,8 @@ async def _server(interface, port, threading_mode, tls=False):
         'threading_mode': threading_mode,
         'loop_opt': bool(os.getenv('LOOP_OPT')),
     }
+    if extra_args:
+        kwargs.update(extra_args)
     if tls:
         if tls == 'private':
             kwargs['ssl_cert'] = certs_path / 'pcert.pem'
@@ -60,7 +62,7 @@ async def _server(interface, port, threading_mode, tls=False):
         raise RuntimeError('Cannot bind server')
 
     try:
-        yield port
+        yield port, proc.pid
     finally:
         proc.terminate()
         proc.join()
@@ -85,8 +87,8 @@ def rsgi_server(server_port):
 
 
 @pytest.fixture(scope='function')
-def wsgi_server(server_port):
-    return partial(_server, 'wsgi', server_port)
+def wsgi_server(server_port, extra_args=None):
+    return partial(_server, 'wsgi', server_port, extra_args=extra_args)
 
 
 @pytest.fixture(scope='function')

@@ -66,9 +66,6 @@ class Worker:
         self.interrupt_by_parent = True
         self.proc.kill()
 
-    def is_alive(self):
-        return self.proc.is_alive()
-
     def join(self, timeout=None):
         self.proc.join(timeout=timeout)
 
@@ -104,7 +101,7 @@ class Granian:
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         workers_lifetime: Optional[int] = None,
-        workers_graceful_timeout: float = 30.0,
+        workers_graceful_timeout: Optional[int] = None,
         factory: bool = False,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
@@ -476,6 +473,8 @@ class Granian:
             logger.info(f'Stopping old worker-{idx + 1}')
             old_proc.terminate()
             old_proc.join(self.workers_graceful_timeout)
+            # give it a short moment to exit
+            time.sleep(0.01)
             if old_proc.proc.is_alive():
                 logger.error(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
                 old_proc.kill()
@@ -486,6 +485,8 @@ class Granian:
             proc.terminate()
         for proc in self.procs:
             proc.join(self.workers_graceful_timeout)
+            # give it a short moment to exit
+            time.sleep(0.01)
             if proc.proc.is_alive():
                 logger.error('Killing worker after it refused to gracefully stop')
                 proc.kill()
