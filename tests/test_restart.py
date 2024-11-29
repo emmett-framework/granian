@@ -38,8 +38,10 @@ async def test_app_worker_restart(wsgi_server, threading_mode):
 async def test_app_worker_graceful_restart(wsgi_server, threading_mode):
     workers_graceful_timeout = 2
 
-    async with wsgi_server(threading_mode, extra_args={'workers_graceful_timeout': workers_graceful_timeout
-                                                       }) as (port, pid):
+    async with wsgi_server(threading_mode, extra_args={'workers_graceful_timeout': workers_graceful_timeout}) as (
+        port,
+        pid,
+    ):
         res = httpx.get(f'http://localhost:{port}/pid')
         assert res.status_code == 200
         worker_pid = res.json()['pid']

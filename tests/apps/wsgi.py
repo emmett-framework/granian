@@ -48,8 +48,6 @@ def pid(environ, protocol):
 
 
 def app(environ, protocol):
-    return \
-    {'/info': info, '/echo': echo, '/iterbody': iterbody, '/err_app': err_app, '/pid': pid}[
-        environ['PATH_INFO']](
-        environ, protocol
-    )
+    return {'/info': info, '/echo': echo, '/iterbody': iterbody, '/err_app': err_app, '/pid': pid}[
+        environ['PATH_INFO']
+    ](environ, protocol)
