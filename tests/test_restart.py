@@ -22,6 +22,7 @@ def _wait_for_new_pid(port: int, old_pids):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(platform.system() == 'Windows', reason='SIGHUP not available on Windows')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_app_worker_restart(wsgi_server, threading_mode):
     async with wsgi_server(threading_mode) as (port, pid):
@@ -35,7 +36,7 @@ async def test_app_worker_restart(wsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(platform.system() == 'Windows', reason='SIGSTOP not available')
+@pytest.mark.skipif(platform.system() == 'Windows', reason='SIGHUP/SIGSTOP not available on Windows')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_app_worker_graceful_restart(wsgi_server, threading_mode):
     workers_graceful_timeout = 2
