@@ -1,7 +1,5 @@
 import json
 import os
-import threading
-import time
 
 
 def info(environ, protocol):
