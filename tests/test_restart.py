@@ -1,4 +1,5 @@
 import os
+import platform
 import signal
 import time
 
@@ -34,6 +35,7 @@ async def test_app_worker_restart(wsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(platform.system() == 'Windows', reason='SIGSTOP not available')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_app_worker_graceful_restart(wsgi_server, threading_mode):
     workers_graceful_timeout = 2
