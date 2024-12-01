@@ -67,7 +67,7 @@ fn run_callback(
     let _ = Python::with_gil(|py| -> PyResult<()> {
         let proto = Py::new(py, WSGIProtocol::new(tx))?;
         let callback = cbs.get().cb.clone_ref(py);
-        let environ = PyDict::new_bound(py);
+        let environ = PyDict::new(py);
         environ.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), version)?;
         environ.set_item(pyo3::intern!(py, "SERVER_NAME"), server.0)?;
         environ.set_item(pyo3::intern!(py, "SERVER_PORT"), server.1)?;
@@ -75,7 +75,7 @@ fn run_callback(
         environ.set_item(pyo3::intern!(py, "REQUEST_METHOD"), parts.method.as_str())?;
         environ.set_item(
             pyo3::intern!(py, "PATH_INFO"),
-            PyBytes::new_bound(py, &path).call_method1(pyo3::intern!(py, "decode"), (pyo3::intern!(py, "latin1"),))?,
+            PyBytes::new(py, &path).call_method1(pyo3::intern!(py, "decode"), (pyo3::intern!(py, "latin1"),))?,
         )?;
         environ.set_item(pyo3::intern!(py, "QUERY_STRING"), query_string)?;
         environ.set_item(pyo3::intern!(py, "wsgi.url_scheme"), scheme)?;
@@ -92,7 +92,7 @@ fn run_callback(
                 content_len.to_str().unwrap_or_default(),
             )?;
         }
-        environ.update(headers.into_py_dict_bound(py).as_mapping())?;
+        environ.update(headers.into_py_dict(py).unwrap().as_mapping())?;
 
         if let Err(err) = callback.call1(py, (proto.clone_ref(py), environ)) {
             log_application_callable_exception(&err);

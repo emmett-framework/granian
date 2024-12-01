@@ -38,14 +38,14 @@ pub(crate) struct CallbackWatcherHTTP {
     #[pyo3(get)]
     proto: Py<HTTPProtocol>,
     #[pyo3(get)]
-    scope: PyObject,
+    scope: Py<HTTPScope>,
 }
 
 impl CallbackWatcherHTTP {
     pub fn new(py: Python, proto: HTTPProtocol, scope: HTTPScope) -> Self {
         Self {
             proto: Py::new(py, proto).unwrap(),
-            scope: scope.into_py(py),
+            scope: Py::new(py, scope).unwrap(),
         }
     }
 }
@@ -57,7 +57,7 @@ impl CallbackWatcherHTTP {
     }
 
     fn err(&self, err: Bound<PyAny>) {
-        callback_impl_done_err!(self, &PyErr::from_value_bound(err));
+        callback_impl_done_err!(self, &PyErr::from_value(err));
     }
 }
 
@@ -66,14 +66,14 @@ pub(crate) struct CallbackWatcherWebsocket {
     #[pyo3(get)]
     proto: Py<WebsocketProtocol>,
     #[pyo3(get)]
-    scope: PyObject,
+    scope: Py<WebsocketScope>,
 }
 
 impl CallbackWatcherWebsocket {
     pub fn new(py: Python, proto: WebsocketProtocol, scope: WebsocketScope) -> Self {
         Self {
             proto: Py::new(py, proto).unwrap(),
-            scope: scope.into_py(py),
+            scope: Py::new(py, scope).unwrap(),
         }
     }
 }
@@ -85,7 +85,7 @@ impl CallbackWatcherWebsocket {
     }
 
     fn err(&self, err: Bound<PyAny>) {
-        callback_impl_done_err!(self, &PyErr::from_value_bound(err));
+        callback_impl_done_err!(self, &PyErr::from_value(err));
     }
 }
 

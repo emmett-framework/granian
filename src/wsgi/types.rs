@@ -147,7 +147,7 @@ impl WSGIBody {
     }
 
     #[pyo3(signature = (_hint=None))]
-    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> Bound<'p, PyList> {
+    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> PyResult<Bound<'p, PyList>> {
         let inner = self.inner.clone();
         let data = py.allow_threads(|| {
             self.rt.inner.block_on(async move {
@@ -159,8 +159,8 @@ impl WSGIBody {
         });
         let lines: Vec<Bound<PyBytes>> = data
             .split(|&c| c == LINE_SPLIT)
-            .map(|item| PyBytes::new_bound(py, item))
+            .map(|item| PyBytes::new(py, item))
             .collect();
-        PyList::new_bound(py, lines)
+        PyList::new(py, lines)
     }
 }

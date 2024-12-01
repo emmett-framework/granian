@@ -1,20 +1,16 @@
-use pyo3::prelude::*;
+use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::workers::{HTTP1Config, HTTP2Config};
 
 pub(crate) struct BytesToPy(pub hyper::body::Bytes);
 
-impl IntoPy<PyObject> for BytesToPy {
-    #[inline]
-    fn into_py(self, py: Python) -> PyObject {
-        self.0.as_ref().into_py(py)
-    }
-}
+impl<'p> IntoPyObject<'p> for BytesToPy {
+    type Target = PyAny;
+    type Output = Bound<'p, Self::Target>;
+    type Error = PyErr;
 
-impl ToPyObject for BytesToPy {
-    #[inline]
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        self.0.as_ref().into_py(py)
+    fn into_pyobject(self, py: Python<'p>) -> Result<Self::Output, Self::Error> {
+        self.0.as_ref().into_bound_py_any(py)
     }
 }
 

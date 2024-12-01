@@ -1,5 +1,4 @@
-use pyo3::prelude::*;
-use pyo3::types::PyType;
+use pyo3::{prelude::*, types::PyType, IntoPyObjectExt};
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
 #[cfg(unix)]
@@ -53,23 +52,23 @@ impl ListenerHolder {
     #[cfg(unix)]
     pub fn __getstate__(&self, py: Python) -> PyObject {
         let fd = self.socket.as_raw_fd();
-        (fd.into_py(py),).to_object(py)
+        (fd,).into_py_any(py).unwrap()
     }
 
     #[cfg(windows)]
     pub fn __getstate__(&self, py: Python) -> PyObject {
         let fd = self.socket.as_raw_socket();
-        (fd.into_py(py),).to_object(py)
+        (fd,).into_py_any(py).unwrap()
     }
 
     #[cfg(unix)]
     pub fn get_fd(&self, py: Python) -> PyObject {
-        self.socket.as_raw_fd().into_py(py).to_object(py)
+        self.socket.as_raw_fd().into_py_any(py).unwrap()
     }
 
     #[cfg(windows)]
     pub fn get_fd(&self, py: Python) -> PyObject {
-        self.socket.as_raw_socket().into_py(py).to_object(py)
+        self.socket.as_raw_socket().into_py_any(py).unwrap()
     }
 }
 

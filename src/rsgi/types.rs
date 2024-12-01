@@ -68,7 +68,7 @@ impl RSGIHeaders {
     }
 
     fn __iter__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyIterator>> {
-        PyIterator::from_bound_object(&PyList::new_bound(py, self.keys()))
+        PyIterator::from_object(PyList::new(py, self.keys())?.as_any())
     }
 
     fn __len__(&self) -> usize {
@@ -79,7 +79,7 @@ impl RSGIHeaders {
     fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
         match self.inner.get(key) {
             Some(val) => match val.to_str() {
-                Ok(string) => Some(PyString::new_bound(py, string).into()),
+                Ok(string) => Some(PyString::new(py, string).into()),
                 _ => default,
             },
             _ => default,
@@ -87,13 +87,13 @@ impl RSGIHeaders {
     }
 
     #[pyo3(signature = (key))]
-    fn get_all<'p>(&self, py: Python<'p>, key: &'p str) -> Bound<'p, PyList> {
-        PyList::new_bound(
+    fn get_all<'p>(&self, py: Python<'p>, key: &'p str) -> PyResult<Bound<'p, PyList>> {
+        PyList::new(
             py,
             self.inner
                 .get_all(key)
                 .iter()
-                .map(|v| PyString::new_bound(py, v.to_str().unwrap()))
+                .map(|v| PyString::new(py, v.to_str().unwrap()))
                 .collect::<Vec<Bound<PyString>>>(),
         )
     }
