@@ -166,7 +166,7 @@ Options:
                                   409600]
   --log / --no-log                Enable logging  [env var:
                                   GRANIAN_LOG_ENABLED; default: (enabled)]
-  --log-level [critical|error|warning|warn|info|debug]
+  --log-level [critical|error|warning|warn|info|debug|notset]
                                   Log level  [env var: GRANIAN_LOG_LEVEL;
                                   default: (info)]
   --log-config FILE               Logging configuration file (json)  [env var:

@@ -14,6 +14,7 @@ class LogLevels(str, Enum):
     warn = 'warn'
     info = 'info'
     debug = 'debug'
+    notset = 'notset'
 
 
 log_levels_map = {
@@ -23,6 +24,7 @@ log_levels_map = {
     LogLevels.warn: logging.WARN,
     LogLevels.info: logging.INFO,
     LogLevels.debug: logging.DEBUG,
+    LogLevels.notset: logging.NOTSET,
 }
 
 LOGGING_CONFIG = {
