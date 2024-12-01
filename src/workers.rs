@@ -100,7 +100,6 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
-    pub opt_enabled: bool,
     pub ssl_enabled: bool,
     ssl_cert: Option<String>,
     ssl_key: Option<String>,
@@ -118,7 +117,6 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
-        opt_enabled: bool,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>,
@@ -134,7 +132,6 @@ impl WorkerConfig {
             http1_opts,
             http2_opts,
             websockets_enabled,
-            opt_enabled,
             ssl_enabled,
             ssl_cert: ssl_cert.map(std::convert::Into::into),
             ssl_key: ssl_key.map(std::convert::Into::into),
@@ -593,9 +590,8 @@ macro_rules! serve_rth {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
-            callback: PyObject,
+            callback: Py<crate::callbacks::CallbackScheduler>,
             event_loop: &Bound<PyAny>,
-            context: Bound<PyAny>,
             signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
@@ -609,7 +605,7 @@ macro_rules! serve_rth {
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
+            let callback_wrapper = std::sync::Arc::new(callback);
 
             let rt = crate::runtime::init_runtime_mt(
                 self.config.threads,
@@ -673,9 +669,9 @@ macro_rules! serve_rth_ssl {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
-            callback: PyObject,
+            callback: Py<crate::callbacks::CallbackScheduler>,
             event_loop: &Bound<PyAny>,
-            context: Bound<PyAny>,
+            // context: Bound<PyAny>,
             signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
@@ -690,7 +686,8 @@ macro_rules! serve_rth_ssl {
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
+            // let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
+            let callback_wrapper = std::sync::Arc::new(callback);
 
             let rt = crate::runtime::init_runtime_mt(
                 self.config.threads,
@@ -752,8 +749,9 @@ macro_rules! serve_rth_ssl {
 }
 
 macro_rules! serve_wth_inner {
-    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $context:expr, $wid:expr, $workers:expr, $srx:expr) => {
-        let callback_wrapper = crate::callbacks::CallbackWrapper::new($callback, $event_loop.clone(), $context);
+    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
+        // let callback_wrapper = crate::callbacks::CallbackWrapper::new($callback, $event_loop.clone(), $context);
+        let callback_wrapper = std::sync::Arc::new($callback);
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
 
         for thread_id in 0..$self.config.threads {
@@ -807,9 +805,9 @@ macro_rules! serve_wth {
     ($func_name: ident, $target:expr) => {
         fn $func_name(
             &self,
-            callback: PyObject,
+            callback: Py<crate::callbacks::CallbackScheduler>,
             event_loop: &Bound<PyAny>,
-            context: Bound<PyAny>,
+            // context: Bound<PyAny>,
             signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
@@ -819,7 +817,7 @@ macro_rules! serve_wth {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_wth_inner!(self, $target, callback, event_loop, context, worker_id, workers, srx);
+            crate::workers::serve_wth_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
             match signal {
                 crate::workers::WorkerSignals::Tokio(sig) => {
@@ -865,8 +863,9 @@ macro_rules! serve_wth {
 }
 
 macro_rules! serve_wth_ssl_inner {
-    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $context:expr, $wid:expr, $workers:expr, $srx:expr) => {
-        let callback_wrapper = crate::callbacks::CallbackWrapper::new($callback, $event_loop.clone(), $context);
+    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
+        // let callback_wrapper = crate::callbacks::CallbackWrapper::new($callback, $event_loop.clone(), $context);
+        let callback_wrapper = std::sync::Arc::new($callback);
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
 
         for thread_id in 0..$self.config.threads {
@@ -918,9 +917,9 @@ macro_rules! serve_wth_ssl {
     ($func_name: ident, $target:expr) => {
         fn $func_name(
             &self,
-            callback: PyObject,
+            callback: Py<crate::callbacks::CallbackScheduler>,
             event_loop: &Bound<PyAny>,
-            context: Bound<PyAny>,
+            // context: Bound<PyAny>,
             signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
@@ -930,7 +929,7 @@ macro_rules! serve_wth_ssl {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_wth_ssl_inner!(self, $target, callback, event_loop, context, worker_id, workers, srx);
+            crate::workers::serve_wth_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
             match signal {
                 crate::workers::WorkerSignals::Tokio(sig) => {

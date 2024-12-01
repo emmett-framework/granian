@@ -1,6 +1,8 @@
 import json
 import pathlib
 
+import sniffio
+
 
 PLAINTEXT_RESPONSE = {
     'type': 'http.response.start',
@@ -36,6 +38,13 @@ async def info(scope, receive, send):
             ).encode('utf8'),
             'more_body': False,
         }
+    )
+
+
+async def sniff_aio_impl(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    await send(
+        {'type': 'http.response.body', 'body': sniffio.current_async_library().encode('utf8'), 'more_body': False}
     )
 
 
@@ -129,6 +138,7 @@ def app(scope, receive, send):
         return lifespan(scope, receive, send)
     return {
         '/info': info,
+        '/sniffio': sniff_aio_impl,
         '/echo': echo,
         '/file': pathsend,
         '/ws_reject': ws_reject,

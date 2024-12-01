@@ -1,6 +1,5 @@
 import asyncio
 import multiprocessing as mp
-import os
 import socket
 from contextlib import asynccontextmanager, closing
 from functools import partial
@@ -23,7 +22,6 @@ async def _server(interface, port, threading_mode, tls=False):
         'interface': interface,
         'port': port,
         'threading_mode': threading_mode,
-        'loop_opt': bool(os.getenv('LOOP_OPT')),
     }
     if tls:
         if tls == 'private':

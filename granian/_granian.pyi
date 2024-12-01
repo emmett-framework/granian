@@ -107,3 +107,7 @@ class ListenerHolder:
     @classmethod
     def from_address(cls, address: str, port: int, backlog: int) -> ListenerHolder: ...
     def get_fd(self) -> Any: ...
+
+class CallbackScheduler:
+    _loop: Any
+    _ctx: Any

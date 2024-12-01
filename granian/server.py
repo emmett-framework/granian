@@ -13,7 +13,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
-from ._futures import future_watcher_wrapper
+from ._futures import _CBScheduler, _future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._imports import setproctitle, watchfiles
 from ._internal import load_target
@@ -78,7 +78,6 @@ class Granian:
         blocking_threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
-        loop_opt: bool = False,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
@@ -115,7 +114,6 @@ class Granian:
         self.threads = max(1, threads)
         self.threading_mode = threading_mode
         self.loop = loop
-        self.loop_opt = loop_opt
         self.http = http
         self.websockets = websockets
         self.backlog = max(128, backlog)
@@ -189,7 +187,6 @@ class Granian:
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        loop_opt: bool,
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
@@ -207,12 +204,8 @@ class Granian:
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
-
         shutdown_event = set_loop_signals(loop)
-
         wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
-        if not loop_opt:
-            wcallback = future_watcher_wrapper(wcallback)
 
         worker = ASGIWorker(
             worker_id,
@@ -224,11 +217,11 @@ class Granian:
             http1_settings,
             http2_settings,
             websockets,
-            loop_opt,
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
+        scheduler = _CBScheduler(loop, contextvars.copy_context(), _future_watcher_wrapper(wcallback))
+        serve(scheduler, loop, shutdown_event)
 
     @staticmethod
     def _spawn_asgi_lifespan_worker(
@@ -245,7 +238,6 @@ class Granian:
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        loop_opt: bool,
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
@@ -271,10 +263,7 @@ class Granian:
             sys.exit(1)
 
         shutdown_event = set_loop_signals(loop)
-
         wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
-        if not loop_opt:
-            wcallback = future_watcher_wrapper(wcallback)
 
         worker = ASGIWorker(
             worker_id,
@@ -286,11 +275,11 @@ class Granian:
             http1_settings,
             http2_settings,
             websockets,
-            loop_opt,
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(wcallback, loop, contextvars.copy_context(), shutdown_event)
+        scheduler = _CBScheduler(loop, contextvars.copy_context(), _future_watcher_wrapper(wcallback))
+        serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
@@ -308,7 +297,6 @@ class Granian:
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        loop_opt: bool,
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
@@ -334,7 +322,6 @@ class Granian:
             getattr(target, '__rsgi_del__') if hasattr(target, '__rsgi_del__') else lambda *args, **kwargs: None
         )
         callback = _rsgi_call_wrap(callback, log_access_fmt)
-
         shutdown_event = set_loop_signals(loop)
         callback_init(loop)
 
@@ -348,16 +335,11 @@ class Granian:
             http1_settings,
             http2_settings,
             websockets,
-            loop_opt,
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(
-            future_watcher_wrapper(callback) if not loop_opt else callback,
-            loop,
-            contextvars.copy_context(),
-            shutdown_event,
-        )
+        scheduler = _CBScheduler(loop, contextvars.copy_context(), _future_watcher_wrapper(callback))
+        serve(scheduler, loop, shutdown_event)
         callback_del(loop)
 
     @staticmethod
@@ -375,7 +357,6 @@ class Granian:
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        loop_opt: bool,
         log_enabled: bool,
         log_level: LogLevels,
         log_config: Dict[str, Any],
@@ -393,14 +374,16 @@ class Granian:
         loop = loops.get(loop_impl)
         sfd = socket.fileno()
         callback = callback_loader()
-
         shutdown_event = set_sync_signals()
 
         worker = WSGIWorker(
             worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        serve(_wsgi_call_wrap(callback, scope_opts, log_access_fmt), loop, contextvars.copy_context(), shutdown_event)
+        scheduler = _CBScheduler(
+            loop, contextvars.copy_context(), _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
+        )
+        serve(scheduler, loop, shutdown_event)
         shutdown_event.qs.wait()
 
     def _init_shared_socket(self):
@@ -434,7 +417,6 @@ class Granian:
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
-                self.loop_opt,
                 self.log_enabled,
                 self.log_level,
                 self.log_config,

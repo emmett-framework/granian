@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use super::callbacks::call_http;
 use crate::{
-    callbacks::CallbackWrapper,
+    callbacks::ArcCBScheduler,
     http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody},
     runtime::RuntimeRef,
 };
@@ -19,7 +19,7 @@ fn build_response(status: u16, pyheaders: hyper::HeaderMap, body: HTTPResponseBo
 #[inline]
 pub(crate) async fn handle(
     rt: RuntimeRef,
-    callback: CallbackWrapper,
+    callback: ArcCBScheduler,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: HTTPRequest,

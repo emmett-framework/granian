@@ -100,8 +100,6 @@ Options:
                                   GRANIAN_THREADING_MODE; default: (workers)]
   --loop [auto|asyncio|uvloop]    Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
-  --opt / --no-opt                Enable loop optimizations  [env var:
-                                  GRANIAN_LOOP_OPT; default: (disabled)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog (globally)  [env var:
                                   GRANIAN_BACKLOG; default: 1024; x>=128]

@@ -77,7 +77,6 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='Threading mode to use',
 )
 @option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
-@option('--opt/--no-opt', 'loop_opt', default=False, help='Enable loop optimizations')
 @option(
     '--backlog',
     type=click.IntRange(128),
@@ -256,7 +255,6 @@ def cli(
     blocking_threads: Optional[int],
     threading_mode: ThreadModes,
     loop: Loops,
-    loop_opt: bool,
     backlog: int,
     backpressure: Optional[int],
     http1_buffer_size: int,
@@ -311,7 +309,6 @@ def cli(
         blocking_threads=blocking_threads,
         threading_mode=threading_mode,
         loop=loop,
-        loop_opt=loop_opt,
         http=http,
         websockets=websockets,
         backlog=backlog,

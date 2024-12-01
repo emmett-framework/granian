@@ -4,11 +4,11 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
 use super::{
-    callbacks::{call_http, call_http_pyw, call_ws, call_ws_pyw},
+    callbacks::{call_http, call_ws},
     types::{PyResponse, RSGIHTTPScope as HTTPScope, RSGIWebsocketScope as WebsocketScope},
 };
 use crate::{
-    callbacks::CallbackWrapper,
+    callbacks::ArcCBScheduler,
     http::{empty_body, response_500, HTTPRequest, HTTPResponse, HV_SERVER},
     runtime::RuntimeRef,
     ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
@@ -46,7 +46,7 @@ macro_rules! handle_request {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            callback: CallbackWrapper,
+            callback: ArcCBScheduler,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             req: HTTPRequest,
@@ -59,12 +59,30 @@ macro_rules! handle_request {
     };
 }
 
+// macro_rules! handle_request2 {
+//     ($func_name:ident, $handler:expr) => {
+//         #[inline]
+//         pub(crate) async fn $func_name(
+//             rt: RuntimeRef,
+//             callback: ArcCBScheduler,
+//             server_addr: SocketAddr,
+//             client_addr: SocketAddr,
+//             req: HTTPRequest,
+//             scheme: &str,
+//         ) -> HTTPResponse {
+//             let (parts, body) = req.into_parts();
+//             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
+//             handle_http_response!($handler, rt, callback, body, scope)
+//         }
+//     };
+// }
+
 macro_rules! handle_request_with_ws {
     ($func_name:ident, $handler_req:expr, $handler_ws:expr) => {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            callback: CallbackWrapper,
+            callback: ArcCBScheduler,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             mut req: HTTPRequest,
@@ -136,6 +154,7 @@ macro_rules! handle_request_with_ws {
 }
 
 handle_request!(handle, call_http);
-handle_request!(handle_pyw, call_http_pyw);
+// handle_request!(handle_pyw, call_http_pyw);
+// handle_request2!(handle2, call_http2);
 handle_request_with_ws!(handle_ws, call_http, call_ws);
-handle_request_with_ws!(handle_ws_pyw, call_http_pyw, call_ws_pyw);
+// handle_request_with_ws!(handle_ws_pyw, call_http_pyw, call_ws_pyw);
