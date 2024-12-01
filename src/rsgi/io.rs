@@ -96,29 +96,37 @@ impl RSGIHTTPProtocol {
         error_proto!()
     }
 
-    fn __aiter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        if let Some(body) = pyself.body.lock().unwrap().take() {
-            let mut stream = pyself.body_stream.blocking_lock();
+    fn __aiter__(pyself: Py<Self>, py: Python) -> PyResult<Py<Self>> {
+        let inner = pyself.get();
+        if let Some(body) = inner.body.lock().unwrap().take() {
+            let mut stream = inner.body_stream.blocking_lock();
             *stream = Some(http_body_util::BodyStream::new(body));
+            return Ok(pyself.clone_ref(py));
         }
-        pyself
+        error_proto!()
     }
 
-    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Option<Bound<'p, PyAny>>> {
+    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        if self.body_stream.blocking_lock().is_none() {
+            return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
+        }
         let body_stream = self.body_stream.clone();
-        let pyfut = future_into_py_iter(self.rt.clone(), py, async move {
-            if let Some(stream) = &mut *body_stream.lock().await {
-                if let Some(chunk) = stream.next().await {
+        future_into_py_iter(self.rt.clone(), py, async move {
+            let guard = &mut *body_stream.lock().await;
+            let bytes = match guard.as_mut().unwrap().next().await {
+                Some(chunk) => {
                     let chunk = chunk
                         .map(|buf| buf.into_data().unwrap_or_default())
                         .unwrap_or(body::Bytes::new());
-                    return Ok(BytesToPy(chunk));
-                };
-                return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
-            }
-            error_proto!()
-        })?;
-        Ok(Some(pyfut))
+                    BytesToPy(chunk)
+                }
+                _ => {
+                    let _ = guard.take();
+                    BytesToPy(body::Bytes::new())
+                }
+            };
+            Ok(bytes)
+        })
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
