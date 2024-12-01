@@ -7,7 +7,7 @@ on:
 
 env:
   MATURIN_VERSION: 1.7.4
-  PY_ALL: 3.8 3.9 3.10 3.11 3.12 3.13 pypy3.8 pypy3.9 pypy3.10
+  PY_ALL: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
 
 jobs:
   sdist:
@@ -46,13 +46,13 @@ jobs:
             platform: linux
             target: x86_64
             manylinux: auto
-            interpreter: pypy3.8 pypy3.9 pypy3.10
+            interpreter: pypy3.9 pypy3.10
           - os: macos
             target: x86_64
-            interpreter: pypy3.8 pypy3.9 pypy3.10
+            interpreter: pypy3.9 pypy3.10
           - os: macos
             target: aarch64
-            interpreter: pypy3.8 pypy3.9 pypy3.10
+            interpreter: pypy3.9 pypy3.10
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -67,7 +67,7 @@ jobs:
             manylinux: musllinux_1_1
           - os: windows
             target: x86_64
-            interpreter: pypy3.8 pypy3.9 pypy3.10
+            interpreter: pypy3.9 pypy3.10
         exclude:
           - os: windows
             target: aarch64
@@ -102,7 +102,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-13, macos-14, windows-latest]
         manylinux: [auto]
-        interpreter: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+        interpreter: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
           - os: ubuntu-latest
             platform: linux
