@@ -1,10 +1,7 @@
 import asyncio
 import os
-import signal
 import sys
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
-
-from ._granian import WorkerSignal
 
 
 WrappableT = Callable[..., Any]
@@ -91,19 +88,3 @@ def build_auto_loop():
     if 'uvloop' in loops:
         return loops.get('uvloop')
     return loops.get('asyncio')
-
-
-def set_loop_signals(loop, signals):
-    signal_event = WorkerSignal()
-
-    def signal_handler(signum, frame):
-        signal_event.set()
-
-    try:
-        for sigval in signals:
-            loop.add_signal_handler(sigval, signal_handler, sigval, None)
-    except NotImplementedError:
-        for sigval in signals:
-            signal.signal(sigval, signal_handler)
-
-    return signal_event

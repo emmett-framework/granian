@@ -4,7 +4,6 @@ import contextvars
 import errno
 import multiprocessing
 import os
-import signal
 import socket
 import ssl
 import sys
@@ -18,6 +17,7 @@ from ._futures import future_watcher_wrapper
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._imports import setproctitle, watchfiles
 from ._internal import load_target
+from ._signals import set_main_signals
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from .constants import HTTPModes, Interfaces, Loops, ThreadModes
 from .errors import ConfigurationError, PidFileError
@@ -197,7 +197,8 @@ class Granian:
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        from granian._loops import loops, set_loop_signals
+        from granian._loops import loops
+        from granian._signals import set_loop_signals
 
         if process_name:
             setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
@@ -207,7 +208,7 @@ class Granian:
         sfd = socket.fileno()
         callback = callback_loader()
 
-        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+        shutdown_event = set_loop_signals(loop)
 
         wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
         if not loop_opt:
@@ -252,7 +253,8 @@ class Granian:
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        from granian._loops import loops, set_loop_signals
+        from granian._loops import loops
+        from granian._signals import set_loop_signals
 
         if process_name:
             setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
@@ -268,7 +270,7 @@ class Granian:
             logger.error('ASGI lifespan startup failed', exc_info=lifespan_handler.exc)
             sys.exit(1)
 
-        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+        shutdown_event = set_loop_signals(loop)
 
         wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
         if not loop_opt:
@@ -314,7 +316,8 @@ class Granian:
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        from granian._loops import loops, set_loop_signals
+        from granian._loops import loops
+        from granian._signals import set_loop_signals
 
         if process_name:
             setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
@@ -332,7 +335,7 @@ class Granian:
         )
         callback = _rsgi_call_wrap(callback, log_access_fmt)
 
-        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+        shutdown_event = set_loop_signals(loop)
         callback_init(loop)
 
         worker = RSGIWorker(
@@ -380,7 +383,8 @@ class Granian:
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        from granian._loops import loops, set_loop_signals
+        from granian._loops import loops
+        from granian._signals import set_sync_signals
 
         if process_name:
             setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
@@ -390,13 +394,14 @@ class Granian:
         sfd = socket.fileno()
         callback = callback_loader()
 
-        shutdown_event = set_loop_signals(loop, [signal.SIGTERM, signal.SIGINT])
+        shutdown_event = set_sync_signals()
 
         worker = WSGIWorker(
             worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         serve(_wsgi_call_wrap(callback, scope_opts, log_access_fmt), loop, contextvars.copy_context(), shutdown_event)
+        shutdown_event.qs.wait()
 
     def _init_shared_socket(self):
         self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
@@ -484,17 +489,6 @@ class Granian:
         waker = threading.Thread(target=self._workers_lifetime_watcher, args=(ttl,), daemon=True)
         waker.start()
 
-    def setup_signals(self):
-        signals = [signal.SIGINT, signal.SIGTERM]
-        if sys.platform == 'win32':
-            signals.append(signal.SIGBREAK)
-
-        for sig in signals:
-            signal.signal(sig, self.signal_handler_interrupt)
-
-        if sys.platform != 'win32':
-            signal.signal(signal.SIGHUP, self.signal_handler_reload)
-
     def _write_pid(self):
         with self.pid_file.open('w') as pid_file:
             pid_file.write(str(self.pid))
@@ -545,7 +539,7 @@ class Granian:
         self.pid = os.getpid()
         logger.info(f'Starting granian (main PID: {self.pid})')
         self._write_pidfile()
-        self.setup_signals()
+        set_main_signals(self.signal_handler_interrupt, self.signal_handler_reload)
         self._init_shared_socket()
         sock = socket.socket(fileno=self._sfd)
         sock.set_inheritable(True)

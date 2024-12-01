@@ -3,7 +3,9 @@ use pyo3::prelude::*;
 use super::http::handle;
 
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
+use crate::workers::{
+    serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignalSync, WorkerSignals,
+};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct WSGIWorker {
@@ -76,11 +78,11 @@ impl WSGIWorker {
         callback: PyObject,
         event_loop: &Bound<PyAny>,
         context: Bound<PyAny>,
-        signal: Py<WorkerSignal>,
+        signal: Py<WorkerSignalSync>,
     ) {
         match self.config.ssl_enabled {
-            false => self._serve_rth(callback, event_loop, context, signal),
-            true => self._serve_rth_ssl(callback, event_loop, context, signal),
+            false => self._serve_rth(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
+            true => self._serve_rth_ssl(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
         }
     }
 
@@ -89,11 +91,11 @@ impl WSGIWorker {
         callback: PyObject,
         event_loop: &Bound<PyAny>,
         context: Bound<PyAny>,
-        signal: Py<WorkerSignal>,
+        signal: Py<WorkerSignalSync>,
     ) {
         match self.config.ssl_enabled {
-            false => self._serve_wth(callback, event_loop, context, signal),
-            true => self._serve_wth_ssl(callback, event_loop, context, signal),
+            false => self._serve_wth(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
+            true => self._serve_wth_ssl(callback, event_loop, context, WorkerSignals::Crossbeam(signal)),
         }
     }
 }

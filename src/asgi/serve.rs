@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use super::http::{handle, handle_pyw, handle_ws, handle_ws_pyw};
 
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
+use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal, WorkerSignals};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
@@ -99,14 +99,18 @@ impl ASGIWorker {
             self.config.ssl_enabled,
             self.config.opt_enabled,
         ) {
-            (false, false, true) => self._serve_rth(callback, event_loop, context, signal),
-            (false, false, false) => self._serve_rth_pyw(callback, event_loop, context, signal),
-            (true, false, true) => self._serve_rth_ws(callback, event_loop, context, signal),
-            (true, false, false) => self._serve_rth_ws_pyw(callback, event_loop, context, signal),
-            (false, true, true) => self._serve_rth_ssl(callback, event_loop, context, signal),
-            (false, true, false) => self._serve_rth_ssl_pyw(callback, event_loop, context, signal),
-            (true, true, true) => self._serve_rth_ssl_ws(callback, event_loop, context, signal),
-            (true, true, false) => self._serve_rth_ssl_ws_pyw(callback, event_loop, context, signal),
+            (false, false, true) => self._serve_rth(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (false, false, false) => self._serve_rth_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (true, false, true) => self._serve_rth_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (true, false, false) => self._serve_rth_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (false, true, true) => self._serve_rth_ssl(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (false, true, false) => {
+                self._serve_rth_ssl_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
+            }
+            (true, true, true) => self._serve_rth_ssl_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (true, true, false) => {
+                self._serve_rth_ssl_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
+            }
         }
     }
 
@@ -122,14 +126,18 @@ impl ASGIWorker {
             self.config.ssl_enabled,
             self.config.opt_enabled,
         ) {
-            (false, false, true) => self._serve_wth(callback, event_loop, context, signal),
-            (false, false, false) => self._serve_wth_pyw(callback, event_loop, context, signal),
-            (true, false, true) => self._serve_wth_ws(callback, event_loop, context, signal),
-            (true, false, false) => self._serve_wth_ws_pyw(callback, event_loop, context, signal),
-            (false, true, true) => self._serve_wth_ssl(callback, event_loop, context, signal),
-            (false, true, false) => self._serve_wth_ssl_pyw(callback, event_loop, context, signal),
-            (true, true, true) => self._serve_wth_ssl_ws(callback, event_loop, context, signal),
-            (true, true, false) => self._serve_wth_ssl_ws_pyw(callback, event_loop, context, signal),
+            (false, false, true) => self._serve_wth(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (false, false, false) => self._serve_wth_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (true, false, true) => self._serve_wth_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (true, false, false) => self._serve_wth_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (false, true, true) => self._serve_wth_ssl(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (false, true, false) => {
+                self._serve_wth_ssl_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
+            }
+            (true, true, true) => self._serve_wth_ssl_ws(callback, event_loop, context, WorkerSignals::Tokio(signal)),
+            (true, true, false) => {
+                self._serve_wth_ssl_ws_pyw(callback, event_loop, context, WorkerSignals::Tokio(signal));
+            }
         }
     }
 }

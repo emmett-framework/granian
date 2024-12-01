@@ -12,6 +12,11 @@ use super::rsgi::serve::RSGIWorker;
 use super::tls::{load_certs as tls_load_certs, load_private_key as tls_load_pkey};
 use super::wsgi::serve::WSGIWorker;
 
+pub(crate) enum WorkerSignals {
+    Tokio(Py<WorkerSignal>),
+    Crossbeam(Py<WorkerSignalSync>),
+}
+
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WorkerSignal {
     pub rx: Mutex<Option<tokio::sync::watch::Receiver<bool>>>,
@@ -26,6 +31,37 @@ impl WorkerSignal {
         Self {
             rx: Mutex::new(Some(rx)),
             tx,
+        }
+    }
+
+    fn set(&self) {
+        let _ = self.tx.send(true);
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian")]
+pub(crate) struct WorkerSignalSync {
+    pub rx: Mutex<Option<crossbeam_channel::Receiver<bool>>>,
+    tx: crossbeam_channel::Sender<bool>,
+    #[pyo3(get)]
+    pub qs: PyObject,
+}
+
+impl WorkerSignalSync {
+    pub fn release(&self, py: Python) -> PyResult<PyObject> {
+        self.qs.call_method0(py, "set")
+    }
+}
+
+#[pymethods]
+impl WorkerSignalSync {
+    #[new]
+    fn new(qs: PyObject) -> Self {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        Self {
+            rx: Mutex::new(Some(rx)),
+            tx,
+            qs,
         }
     }
 
@@ -560,34 +596,51 @@ macro_rules! serve_rth {
             callback: PyObject,
             event_loop: &Bound<PyAny>,
             context: Bound<PyAny>,
-            signal: Py<crate::workers::WorkerSignal>,
+            signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(
-                self.config.threads,
-                self.config.blocking_threads,
-                std::sync::Arc::new(event_loop.clone().unbind()),
-            );
-            let rth = rt.handler();
-            let tcp_listener = self.config.tcp_listener();
 
+            let worker_id = self.config.id;
+            log::info!("Started worker-{}", worker_id);
+
+            let tcp_listener = self.config.tcp_listener();
             let http_mode = self.config.http_mode.clone();
             let http_upgrades = self.config.websockets_enabled;
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
-            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
-            let worker_id = self.config.id;
-            log::info!("Started worker-{}", worker_id);
+            let rt = crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.blocking_threads,
+                std::sync::Arc::new(event_loop.clone().unbind()),
+            );
+            let rth = rt.handler();
+            let mut srx = match signal {
+                crate::workers::WorkerSignals::Crossbeam(sig) => {
+                    let (stx, srx) = tokio::sync::watch::channel(false);
+                    std::thread::spawn(move || {
+                        let pyrx = sig.get().rx.lock().unwrap().take().unwrap();
+                        let _ = pyrx.recv();
+                        stx.send(true).unwrap();
 
-            let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
+                        Python::with_gil(|py| {
+                            let _ = sig.get().release(py);
+                            drop(sig);
+                        });
+                    });
+                    srx
+                }
+                crate::workers::WorkerSignals::Tokio(sig) => sig.get().rx.lock().unwrap().take().unwrap(),
+            };
+
+            let main_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
                 crate::workers::loop_match!(
                     http_mode,
                     http_upgrades,
                     tcp_listener,
-                    pyrx,
+                    srx,
                     backpressure,
                     rth,
                     callback_wrapper,
@@ -599,13 +652,13 @@ macro_rules! serve_rth {
                     $target
                 );
 
-                Python::with_gil(|_| drop(callback_wrapper));
-
                 log::info!("Stopping worker-{}", worker_id);
+
+                Python::with_gil(|_| drop(callback_wrapper));
                 Ok(())
             });
 
-            match svc_loop {
+            match main_loop {
                 Ok(()) => {}
                 Err(err) => {
                     log::error!("{}", err);
@@ -623,17 +676,14 @@ macro_rules! serve_rth_ssl {
             callback: PyObject,
             event_loop: &Bound<PyAny>,
             context: Bound<PyAny>,
-            signal: Py<crate::workers::WorkerSignal>,
+            signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
-            let rt = crate::runtime::init_runtime_mt(
-                self.config.threads,
-                self.config.blocking_threads,
-                std::sync::Arc::new(event_loop.clone().unbind()),
-            );
-            let rth = rt.handler();
-            let tcp_listener = self.config.tcp_listener();
 
+            let worker_id = self.config.id;
+            log::info!("Started worker-{}", worker_id);
+
+            let tcp_listener = self.config.tcp_listener();
             let http_mode = self.config.http_mode.clone();
             let http_upgrades = self.config.websockets_enabled;
             let http1_opts = self.config.http1_opts.clone();
@@ -641,18 +691,38 @@ macro_rules! serve_rth_ssl {
             let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
             let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
-            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
 
-            let worker_id = self.config.id;
-            log::info!("Started worker-{}", worker_id);
+            let rt = crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.blocking_threads,
+                std::sync::Arc::new(event_loop.clone().unbind()),
+            );
+            let rth = rt.handler();
+            let mut srx = match signal {
+                crate::workers::WorkerSignals::Crossbeam(sig) => {
+                    let (stx, srx) = tokio::sync::watch::channel(false);
+                    std::thread::spawn(move || {
+                        let pyrx = sig.get().rx.lock().unwrap().take().unwrap();
+                        let _ = pyrx.recv();
+                        stx.send(true).unwrap();
 
-            let svc_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
+                        Python::with_gil(|py| {
+                            let _ = sig.get().release(py);
+                            drop(sig);
+                        });
+                    });
+                    srx
+                }
+                crate::workers::WorkerSignals::Tokio(sig) => sig.get().rx.lock().unwrap().take().unwrap(),
+            };
+
+            let main_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
                 crate::workers::loop_match_tls!(
                     http_mode,
                     http_upgrades,
                     tcp_listener,
                     tls_cfg,
-                    pyrx,
+                    srx,
                     backpressure,
                     rth,
                     callback_wrapper,
@@ -664,19 +734,71 @@ macro_rules! serve_rth_ssl {
                     $target
                 );
 
-                Python::with_gil(|_| drop(callback_wrapper));
-
                 log::info!("Stopping worker-{}", worker_id);
+
+                Python::with_gil(|_| drop(callback_wrapper));
                 Ok(())
             });
 
-            match svc_loop {
+            match main_loop {
                 Ok(()) => {}
                 Err(err) => {
                     log::error!("{}", err);
                     std::process::exit(1);
                 }
             };
+        }
+    };
+}
+
+macro_rules! serve_wth_inner {
+    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $context:expr, $wid:expr, $workers:expr, $srx:expr) => {
+        let callback_wrapper = crate::callbacks::CallbackWrapper::new($callback, $event_loop.clone(), $context);
+        let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
+
+        for thread_id in 0..$self.config.threads {
+            log::info!("Started worker-{} runtime-{}", $wid, thread_id + 1);
+
+            let tcp_listener = $self.config.tcp_listener();
+            let http_mode = $self.config.http_mode.clone();
+            let http_upgrades = $self.config.websockets_enabled;
+            let http1_opts = $self.config.http1_opts.clone();
+            let http2_opts = $self.config.http2_opts.clone();
+            let blocking_threads = $self.config.blocking_threads.clone();
+            let backpressure = $self.config.backpressure.clone();
+            let callback_wrapper = callback_wrapper.clone();
+            let py_loop = py_loop.clone();
+            let mut srx = $srx.clone();
+
+            $workers.push(std::thread::spawn(move || {
+                let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
+                let rth = rt.handler();
+                let local = tokio::task::LocalSet::new();
+
+                crate::runtime::block_on_local(&rt, local, async move {
+                    crate::workers::loop_match!(
+                        http_mode,
+                        http_upgrades,
+                        tcp_listener,
+                        srx,
+                        backpressure,
+                        rth,
+                        callback_wrapper,
+                        tokio::task::spawn_local,
+                        crate::workers::WorkerExecutor::new,
+                        http1_opts,
+                        http2_opts,
+                        |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
+                        $target
+                    );
+
+                    log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
+
+                    Python::with_gil(|_| drop(callback_wrapper));
+                });
+
+                Python::with_gil(|_| drop(rt));
+            }));
         }
     };
 }
@@ -688,78 +810,106 @@ macro_rules! serve_wth {
             callback: PyObject,
             event_loop: &Bound<PyAny>,
             context: Bound<PyAny>,
-            signal: Py<crate::workers::WorkerSignal>,
+            signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
-            let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
-            let py_loop = std::sync::Arc::new(event_loop.clone().unbind());
-            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
+            crate::workers::serve_wth_inner!(self, $target, callback, event_loop, context, worker_id, workers, srx);
 
-            for thread_id in 0..self.config.threads {
-                log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);
-
-                let tcp_listener = self.config.tcp_listener();
-                let http_mode = self.config.http_mode.clone();
-                let http_upgrades = self.config.websockets_enabled;
-                let http1_opts = self.config.http1_opts.clone();
-                let http2_opts = self.config.http2_opts.clone();
-                let blocking_threads = self.config.blocking_threads.clone();
-                let backpressure = self.config.backpressure.clone();
-                let callback_wrapper = callback_wrapper.clone();
-                let py_loop = py_loop.clone();
-                let mut srx = srx.clone();
-
-                workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
-                    let rth = rt.handler();
-                    let local = tokio::task::LocalSet::new();
-
-                    crate::runtime::block_on_local(rt, local, async move {
-                        crate::workers::loop_match!(
-                            http_mode,
-                            http_upgrades,
-                            tcp_listener,
-                            srx,
-                            backpressure,
-                            rth,
-                            callback_wrapper,
-                            tokio::task::spawn_local,
-                            crate::workers::WorkerExecutor::new,
-                            http1_opts,
-                            http2_opts,
-                            |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
-                            $target
-                        );
-
-                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
+            match signal {
+                crate::workers::WorkerSignals::Tokio(sig) => {
+                    let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
+                    let mut pyrx = sig.get().rx.lock().unwrap().take().unwrap();
+                    let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
+                        let _ = pyrx.changed().await;
+                        stx.send(true).unwrap();
+                        log::info!("Stopping worker-{}", worker_id);
+                        while let Some(worker) = workers.pop() {
+                            worker.join().unwrap();
+                        }
+                        Ok(())
                     });
-                }));
+
+                    match main_loop {
+                        Ok(()) => {}
+                        Err(err) => {
+                            log::error!("{}", err);
+                            std::process::exit(1);
+                        }
+                    };
+                }
+                crate::workers::WorkerSignals::Crossbeam(sig) => {
+                    std::thread::spawn(move || {
+                        let pyrx = sig.get().rx.lock().unwrap().take().unwrap();
+                        let _ = pyrx.recv();
+                        stx.send(true).unwrap();
+                        log::info!("Stopping worker-{}", worker_id);
+                        while let Some(worker) = workers.pop() {
+                            worker.join().unwrap();
+                        }
+
+                        Python::with_gil(|py| {
+                            let _ = sig.get().release(py);
+                            drop(sig);
+                        });
+                    });
+                }
             }
+        }
+    };
+}
 
-            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
-                let _ = pyrx.changed().await;
-                stx.send(true).unwrap();
-                log::info!("Stopping worker-{}", worker_id);
-                while let Some(worker) = workers.pop() {
-                    worker.join().unwrap();
-                }
-                Ok(())
-            });
+macro_rules! serve_wth_ssl_inner {
+    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $context:expr, $wid:expr, $workers:expr, $srx:expr) => {
+        let callback_wrapper = crate::callbacks::CallbackWrapper::new($callback, $event_loop.clone(), $context);
+        let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
 
-            match main_loop {
-                Ok(()) => {}
-                Err(err) => {
-                    log::error!("{}", err);
-                    std::process::exit(1);
-                }
-            };
+        for thread_id in 0..$self.config.threads {
+            log::info!("Started worker-{} runtime-{}", $wid, thread_id + 1);
+
+            let tcp_listener = $self.config.tcp_listener();
+            let http_mode = $self.config.http_mode.clone();
+            let http_upgrades = $self.config.websockets_enabled;
+            let http1_opts = $self.config.http1_opts.clone();
+            let http2_opts = $self.config.http2_opts.clone();
+            let tls_cfg = $self.config.tls_cfg();
+            let blocking_threads = $self.config.blocking_threads.clone();
+            let backpressure = $self.config.backpressure.clone();
+            let callback_wrapper = callback_wrapper.clone();
+            let py_loop = py_loop.clone();
+            let mut srx = $srx.clone();
+
+            $workers.push(std::thread::spawn(move || {
+                let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
+                let rth = rt.handler();
+                let local = tokio::task::LocalSet::new();
+
+                crate::runtime::block_on_local(&rt, local, async move {
+                    crate::workers::loop_match_tls!(
+                        http_mode,
+                        http_upgrades,
+                        tcp_listener,
+                        tls_cfg,
+                        srx,
+                        backpressure,
+                        rth,
+                        callback_wrapper,
+                        tokio::task::spawn_local,
+                        crate::workers::WorkerExecutor::new,
+                        http1_opts,
+                        http2_opts,
+                        |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
+                        $target
+                    );
+
+                    log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
+                });
+            }));
         }
     };
 }
@@ -771,80 +921,53 @@ macro_rules! serve_wth_ssl {
             callback: PyObject,
             event_loop: &Bound<PyAny>,
             context: Bound<PyAny>,
-            signal: Py<crate::workers::WorkerSignal>,
+            signal: crate::workers::WorkerSignals,
         ) {
             pyo3_log::init();
-            let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
 
             let worker_id = self.config.id;
             log::info!("Started worker-{}", worker_id);
 
-            let callback_wrapper = crate::callbacks::CallbackWrapper::new(callback, event_loop.clone(), context);
-            let py_loop = std::sync::Arc::new(event_loop.clone().unbind());
-            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
+            crate::workers::serve_wth_ssl_inner!(self, $target, callback, event_loop, context, worker_id, workers, srx);
 
-            for thread_id in 0..self.config.threads {
-                log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);
-
-                let tcp_listener = self.config.tcp_listener();
-                let http_mode = self.config.http_mode.clone();
-                let http_upgrades = self.config.websockets_enabled;
-                let http1_opts = self.config.http1_opts.clone();
-                let http2_opts = self.config.http2_opts.clone();
-                let tls_cfg = self.config.tls_cfg();
-                let blocking_threads = self.config.blocking_threads.clone();
-                let backpressure = self.config.backpressure.clone();
-                let callback_wrapper = callback_wrapper.clone();
-                let py_loop = py_loop.clone();
-                let mut srx = srx.clone();
-
-                workers.push(std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
-                    let rth = rt.handler();
-                    let local = tokio::task::LocalSet::new();
-
-                    crate::runtime::block_on_local(rt, local, async move {
-                        crate::workers::loop_match_tls!(
-                            http_mode,
-                            http_upgrades,
-                            tcp_listener,
-                            tls_cfg,
-                            srx,
-                            backpressure,
-                            rth,
-                            callback_wrapper,
-                            tokio::task::spawn_local,
-                            crate::workers::WorkerExecutor::new,
-                            http1_opts,
-                            http2_opts,
-                            |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
-                            $target
-                        );
-
-                        log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
+            match signal {
+                crate::workers::WorkerSignals::Tokio(sig) => {
+                    let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
+                    let mut pyrx = sig.get().rx.lock().unwrap().take().unwrap();
+                    let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
+                        let _ = pyrx.changed().await;
+                        stx.send(true).unwrap();
+                        log::info!("Stopping worker-{}", worker_id);
+                        while let Some(worker) = workers.pop() {
+                            worker.join().unwrap();
+                        }
+                        Ok(())
                     });
-                }));
+
+                    match main_loop {
+                        Ok(()) => {}
+                        Err(err) => {
+                            log::error!("{}", err);
+                            std::process::exit(1);
+                        }
+                    };
+                }
+                crate::workers::WorkerSignals::Crossbeam(sig) => {
+                    let py = event_loop.py();
+                    let pyrx = sig.get().rx.lock().unwrap().take().unwrap();
+
+                    py.allow_threads(|| {
+                        let _ = pyrx.recv();
+                        stx.send(true).unwrap();
+                        log::info!("Stopping worker-{}", worker_id);
+                        while let Some(worker) = workers.pop() {
+                            worker.join().unwrap();
+                        }
+                    });
+                }
             }
-
-            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
-                let _ = pyrx.changed().await;
-                stx.send(true).unwrap();
-                log::info!("Stopping worker-{}", worker_id);
-                while let Some(worker) = workers.pop() {
-                    worker.join().unwrap();
-                }
-                Ok(())
-            });
-
-            match main_loop {
-                Ok(()) => {}
-                Err(err) => {
-                    log::error!("{}", err);
-                    std::process::exit(1);
-                }
-            };
         }
     };
 }
@@ -861,10 +984,13 @@ pub(crate) use loop_match_tls;
 pub(crate) use serve_rth;
 pub(crate) use serve_rth_ssl;
 pub(crate) use serve_wth;
+pub(crate) use serve_wth_inner;
 pub(crate) use serve_wth_ssl;
+pub(crate) use serve_wth_ssl_inner;
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<WorkerSignal>()?;
+    module.add_class::<WorkerSignalSync>()?;
     module.add_class::<ASGIWorker>()?;
     module.add_class::<RSGIWorker>()?;
     module.add_class::<WSGIWorker>()?;
