@@ -8,8 +8,8 @@ pub(crate) mod serve;
 mod types;
 
 pub(crate) fn init_pymodule(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
-    module.add("RSGIProtocolError", py.get_type_bound::<errors::RSGIProtocolError>())?;
-    module.add("RSGIProtocolClosed", py.get_type_bound::<errors::RSGIProtocolClosed>())?;
+    module.add("RSGIProtocolError", py.get_type::<errors::RSGIProtocolError>())?;
+    module.add("RSGIProtocolClosed", py.get_type::<errors::RSGIProtocolClosed>())?;
     module.add_class::<io::RSGIHTTPProtocol>()?;
     module.add_class::<io::RSGIHTTPStreamTransport>()?;
     module.add_class::<io::RSGIWebsocketProtocol>()?;

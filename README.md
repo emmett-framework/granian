@@ -277,7 +277,7 @@ You might test the effect such optimizations cause over your application and dec
 
 Granian is currently under active development.
 
-Granian is compatible with Python 3.8 and above versions.
+Granian is compatible with Python 3.9 and above versions.
 
 ## License
 

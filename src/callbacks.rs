@@ -78,9 +78,9 @@ impl PyIterAwaitable {
         }
     }
 
-    pub(crate) fn set_result(&self, result: PyResult<impl IntoPy<PyObject>>) {
+    pub(crate) fn set_result(&self, result: PyResult<PyObject>) {
         let mut res = self.result.write().unwrap();
-        *res = Some(Python::with_gil(|py| result.map(|v| v.into_py(py))));
+        *res = Some(result);
     }
 }
 
@@ -138,17 +138,17 @@ impl PyFutureAwaitable {
         Ok((Py::new(py, self)?, cancel_tx))
     }
 
-    pub(crate) fn set_result(&self, result: PyResult<impl IntoPy<PyObject>>, aw: Py<PyFutureAwaitable>) {
+    pub(crate) fn set_result(&self, result: PyResult<PyObject>, aw: Py<PyFutureAwaitable>) {
         Python::with_gil(|py| {
             let mut state = self.state.write().unwrap();
             if !matches!(&mut *state, PyFutureAwaitableState::Pending) {
                 return;
             }
-            *state = PyFutureAwaitableState::Completed(result.map(|v| v.into_py(py)));
+            *state = PyFutureAwaitableState::Completed(result);
 
             let ack = self.ack.read().unwrap();
             if let Some((cb, ctx)) = &*ack {
-                let _ = self.event_loop.clone_ref(py).call_method_bound(
+                let _ = self.event_loop.clone_ref(py).call_method(
                     py,
                     pyo3::intern!(py, "call_soon_threadsafe"),
                     (cb, aw),
@@ -198,7 +198,7 @@ impl PyFutureAwaitable {
     #[pyo3(signature = (cb, context=None))]
     fn add_done_callback(pyself: PyRef<'_, Self>, cb: PyObject, context: Option<PyObject>) -> PyResult<()> {
         let py = pyself.py();
-        let kwctx = pyo3::types::PyDict::new_bound(py);
+        let kwctx = pyo3::types::PyDict::new(py);
         kwctx.set_item(pyo3::intern!(py, "context"), context)?;
 
         let state = pyself.state.read().unwrap();
@@ -211,7 +211,7 @@ impl PyFutureAwaitable {
             _ => {
                 drop(state);
                 let event_loop = pyself.event_loop.clone_ref(py);
-                event_loop.call_method_bound(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(&kwctx))?;
+                event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(&kwctx))?;
                 Ok(())
             }
         }
@@ -244,7 +244,7 @@ impl PyFutureAwaitable {
             drop(ack);
             drop(state);
 
-            let _ = event_loop.call_method_bound(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(ctx.bind(py)));
+            let _ = event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(ctx.bind(py)));
         }
 
         true

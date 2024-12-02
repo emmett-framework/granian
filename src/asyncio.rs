@@ -6,7 +6,7 @@ static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
 
 fn contextvars(py: Python) -> PyResult<&Bound<PyAny>> {
     Ok(CONTEXTVARS
-        .get_or_try_init(py, || py.import_bound("contextvars").map(Into::into))?
+        .get_or_try_init(py, || py.import("contextvars").map(Into::into))?
         .bind(py))
 }
 
