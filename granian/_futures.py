@@ -1,4 +1,6 @@
-from asyncio.tasks import _enter_task, _leave_task
+import contextvars
+from asyncio.tasks import _enter_task as _aio_taskenter, _leave_task as _aio_taskleave
+from functools import partial
 
 from ._granian import CallbackScheduler as _BaseCBScheduler
 
@@ -18,50 +20,15 @@ def _future_watcher_wrapper(inner):
 class _CBScheduler(_BaseCBScheduler):
     __slots__ = []
 
-    def __init__(self, loop, ctx, cb):
+    def __init__(self, loop, ctx, cb, aio_tenter, aio_texit):
         super().__init__()
         self._schedule_fn = _cbsched_schedule(loop, ctx, self._run, cb)
 
-    def _waker(self, coro):
-        def _wake(fut):
-            self._resume(coro, fut)
 
-        return _wake
-
-    def _resume(self, coro, fut):
-        try:
-            fut.result()
-        except BaseException as exc:
-            self._throw(coro, exc)
-        else:
-            self._run(coro)
-
-    def _run(self, coro):
-        _enter_task(self._loop, self)
-        try:
-            try:
-                result = coro.send(None)
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except BaseException:
-                pass
-            else:
-                if getattr(result, '_asyncio_future_blocking', None):
-                    result._asyncio_future_blocking = False
-                    result.add_done_callback(self._waker(coro), context=self._ctx)
-                elif result is None:
-                    self._loop.call_soon(self._run, coro, context=self._ctx)
-        finally:
-            _leave_task(self._loop, self)
-
-    def _throw(self, coro, exc):
-        _enter_task(self._loop, self)
-        try:
-            coro.throw(exc)
-        except BaseException:
-            pass
-        finally:
-            _leave_task(self._loop, self)
+def _new_cbscheduler(loop, cb):
+    return _CBScheduler(
+        loop, contextvars.copy_context(), cb, partial(_aio_taskenter, loop), partial(_aio_taskleave, loop)
+    )
 
 
 def _cbsched_schedule(loop, ctx, run, cb):

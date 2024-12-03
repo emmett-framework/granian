@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextvars
 import errno
 import multiprocessing
 import os
@@ -13,7 +12,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
-from ._futures import _CBScheduler, _future_watcher_wrapper
+from ._futures import _future_watcher_wrapper, _new_cbscheduler
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
 from ._imports import setproctitle, watchfiles
 from ._internal import load_target
@@ -220,7 +219,7 @@ class Granian:
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _CBScheduler(loop, contextvars.copy_context(), _future_watcher_wrapper(wcallback))
+        scheduler = _new_cbscheduler(loop, _future_watcher_wrapper(wcallback))
         serve(scheduler, loop, shutdown_event)
 
     @staticmethod
@@ -278,7 +277,7 @@ class Granian:
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _CBScheduler(loop, contextvars.copy_context(), _future_watcher_wrapper(wcallback))
+        scheduler = _new_cbscheduler(loop, _future_watcher_wrapper(wcallback))
         serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
 
@@ -338,7 +337,7 @@ class Granian:
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _CBScheduler(loop, contextvars.copy_context(), _future_watcher_wrapper(callback))
+        scheduler = _new_cbscheduler(loop, _future_watcher_wrapper(callback))
         serve(scheduler, loop, shutdown_event)
         callback_del(loop)
 
@@ -380,9 +379,7 @@ class Granian:
             worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _CBScheduler(
-            loop, contextvars.copy_context(), _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
-        )
+        scheduler = _new_cbscheduler(loop, _wsgi_call_wrap(callback, scope_opts, log_access_fmt))
         serve(scheduler, loop, shutdown_event)
         shutdown_event.qs.wait()
 
