@@ -111,3 +111,5 @@ class ListenerHolder:
 class CallbackScheduler:
     _loop: Any
     _ctx: Any
+
+    def _run(self, coro: Any): ...

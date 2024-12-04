@@ -128,7 +128,7 @@ impl ASGIHTTPProtocol {
         let body_ref = self.request_body.clone();
         let flow_ref = self.flow_rx_exhausted.clone();
         let flow_hld = self.flow_tx_waiter.clone();
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             let mut bodym = body_ref.lock().await;
             let body = &mut *bodym;
             let mut more_body = false;
@@ -327,7 +327,7 @@ impl ASGIWebsocketProtocol {
         let tx = self.ws_tx.clone();
         let pynone = py.None();
 
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
                 let upgrade_headers = match subproto {
                     Some(v) => vec![(WS_SUBPROTO_HNAME.to_string(), v)],
@@ -347,6 +347,7 @@ impl ASGIWebsocketProtocol {
                     }
                 }
             }
+            Python::with_gil(|_| drop(pynone));
             error_flow!()
         })
     }
@@ -369,6 +370,7 @@ impl ASGIWebsocketProtocol {
                     }
                 };
             };
+            Python::with_gil(|_| drop(pynone));
             error_flow!()
         })
     }
