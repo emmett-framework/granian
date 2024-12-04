@@ -20,7 +20,7 @@ use super::{
 };
 use crate::{
     conversion::BytesToPy,
-    runtime::{future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
+    runtime::{future_into_py_futlike, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSStream, WSTxStream},
 };
 
@@ -48,7 +48,10 @@ impl RSGIHTTPStreamTransport {
         future_into_py_futlike(self.rt.clone(), py, async move {
             match transport.send(Ok(body::Bytes::from(bdata))).await {
                 Ok(()) => Ok(pynone),
-                _ => error_stream!(),
+                _ => {
+                    Python::with_gil(|_| drop(pynone));
+                    error_stream!()
+                }
             }
         })
     }
@@ -60,7 +63,10 @@ impl RSGIHTTPStreamTransport {
         future_into_py_futlike(self.rt.clone(), py, async move {
             match transport.send(Ok(body::Bytes::from(data))).await {
                 Ok(()) => Ok(pynone),
-                _ => error_stream!(),
+                _ => {
+                    Python::with_gil(|_| drop(pynone));
+                    error_stream!()
+                }
             }
         })
     }
@@ -93,7 +99,7 @@ impl RSGIHTTPProtocol {
 impl RSGIHTTPProtocol {
     fn __call__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         if let Some(body) = self.body.lock().unwrap().take() {
-            return future_into_py_iter(self.rt.clone(), py, async move {
+            return future_into_py_futlike(self.rt.clone(), py, async move {
                 match body.collect().await {
                     Ok(data) => {
                         let bytes = BytesToPy(data.to_bytes());
@@ -121,7 +127,7 @@ impl RSGIHTTPProtocol {
             return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
         }
         let body_stream = self.body_stream.clone();
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             let guard = &mut *body_stream.lock().await;
             let bytes = match guard.as_mut().unwrap().next().await {
                 Some(chunk) => {
@@ -252,13 +258,17 @@ impl RSGIWebsocketTransport {
         let bdata: Box<[u8]> = data.into();
         let pynone = py.None();
 
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(bdata[..].into()).await {
                     Ok(()) => Ok(pynone),
-                    _ => error_stream!(),
+                    _ => {
+                        Python::with_gil(|_| drop(pynone));
+                        error_stream!()
+                    }
                 };
             }
+            Python::with_gil(|_| drop(pynone));
             error_proto!()
         })
     }
@@ -267,13 +277,17 @@ impl RSGIWebsocketTransport {
         let transport = self.tx.clone();
         let pynone = py.None();
 
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(Message::Text(data)).await {
                     Ok(()) => Ok(pynone),
-                    _ => error_stream!(),
+                    _ => {
+                        Python::with_gil(|_| drop(pynone));
+                        error_stream!()
+                    }
                 };
             }
+            Python::with_gil(|_| drop(pynone));
             error_proto!()
         })
     }
@@ -384,7 +398,7 @@ impl RSGIWebsocketProtocol {
         let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
         let transport = self.websocket.clone();
         let itransport = self.transport.clone();
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             let mut ws = transport.lock().await;
             match upgrade.send(None).await {
                 Ok(()) => match (&mut *ws).await {

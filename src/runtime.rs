@@ -14,7 +14,6 @@ use super::blocking::BlockingRunner;
 use super::callbacks::PyEmptyAwaitable;
 #[cfg(unix)]
 use super::callbacks::PyFutureAwaitable;
-#[cfg(not(target_os = "linux"))]
 use super::callbacks::PyIterAwaitable;
 #[cfg(windows)]
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
@@ -142,7 +141,6 @@ pub(crate) fn init_runtime_st(blocking_threads: usize, py_loop: Arc<PyObject>) -
 //  It consumes more cpu-cycles than `future_into_py_futlike`,
 //  but for "quick" operations it's something like 12% faster.
 #[allow(unused_must_use)]
-#[cfg(not(target_os = "linux"))]
 pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
@@ -164,20 +162,6 @@ where
 }
 
 // NOTE:
-//  for some unknown reasons, it seems on Linux the real implementation
-//  has performance issues. We just fallback to `futlike` impl on such targets.
-//  MacOS works best with original impl, Windows still needs further analysis.
-#[cfg(target_os = "linux")]
-#[inline(always)]
-pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
-where
-    R: Runtime + ContextExt + Clone,
-    F: Future<Output = PyResult<PyObject>> + Send + 'static,
-{
-    future_into_py_futlike(rt, py, fut)
-}
-
-// NOTE:
 //  `future_into_py_futlike` relies on an `asyncio.Future` like implementation.
 //  This is generally ~38% faster than `pyo3_asyncio.future_into_py` implementation.
 //  It won't consume more cpu-cycles than standard asyncio implementation,
@@ -191,25 +175,16 @@ where
 {
     let event_loop = rt.py_event_loop(py);
     let (aw, cancel_tx) = PyFutureAwaitable::new(event_loop).to_spawn(py)?;
-    let aw_ref = aw.clone_ref(py);
     let py_fut = aw.clone_ref(py);
     let rb = rt.blocking();
 
     rt.spawn(async move {
         tokio::select! {
             result = fut => {
-                let _ = rb.run(move || {
-                    aw.get().set_result(result, aw_ref);
-                    Python::with_gil(|_| drop(aw));
-                });
+                let _ = rb.run(move || PyFutureAwaitable::set_result(aw, result));
             },
             () = cancel_tx.notified() => {
-                let _ = rb.run(move || {
-                    Python::with_gil(|_| {
-                        drop(aw_ref);
-                        drop(aw);
-                    });
-                });
+                let _ = rb.run(move || Python::with_gil(|_| drop(aw)));
             }
         }
     });
