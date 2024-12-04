@@ -1,6 +1,6 @@
 # Granian
 
-A Rust HTTP server for Python applications.
+A Rust HTTP server for Python applications built on top of the [Hyper crate](https://github.com/hyperium/hyper).
 
 ## Rationale
 
@@ -98,7 +98,8 @@ Options:
   --threading-mode [runtime|workers]
                                   Threading mode to use  [env var:
                                   GRANIAN_THREADING_MODE; default: (workers)]
-  --loop [auto|asyncio|uvloop]    Event loop implementation  [env var:
+  --loop [auto|asyncio|rloop|uvloop]
+                                  Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog (globally)  [env var:
@@ -266,12 +267,6 @@ Granian offers two different threading paradigms, due to the fact the inner Rust
 Given you specify N threads with the relevant option, in **workers** threading mode Granian will spawn N single-threaded Rust runtimes, while in **runtime** threading mode Granian will spawn a single multi-threaded runtime with N threads.
 
 Benchmarks suggests **workers** mode to be more efficient with a small amount of processes, while **runtime** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
-
-### Event loop optimizations
-
-With the `--opt` option Granian will use custom task handlers for Python coroutines and awaitables to improve Python code execution. Due to the nature of such handlers some libraries and specific application code relying on `asyncio` internals might not work.
-
-You might test the effect such optimizations cause over your application and decide whether to enable 'em or leave 'em disabled (as per default).
 
 ## Project status
 
