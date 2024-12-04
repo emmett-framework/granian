@@ -83,8 +83,18 @@ def build_uv_loop(uvloop):
     return loop
 
 
+@loops.register('rloop', packages=['rloop'])
+def build_rloop(rloop):
+    asyncio.set_event_loop_policy(rloop.EventLoopPolicy())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop
+
+
 @loops.register('auto')
 def build_auto_loop():
+    if 'rloop' in loops:
+        return loops.get('rloop')
     if 'uvloop' in loops:
         return loops.get('uvloop')
     return loops.get('asyncio')

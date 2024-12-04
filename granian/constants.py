@@ -27,4 +27,5 @@ class ThreadModes(StrEnum):
 class Loops(StrEnum):
     auto = 'auto'
     asyncio = 'asyncio'
+    rloop = 'rloop'
     uvloop = 'uvloop'
