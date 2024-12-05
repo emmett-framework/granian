@@ -1,5 +1,4 @@
 import json
-import os
 
 
 def info(environ, protocol):
@@ -36,18 +35,7 @@ def err_app(environ, protocol):
     1 / 0
 
 
-def pid(environ, protocol):
-    protocol('200 OK', [('content-type', 'text/plain; charset=utf-8')])
-    return [
-        json.dumps(
-            {
-                'pid': os.getpid(),
-            }
-        ).encode('utf8')
-    ]
-
-
 def app(environ, protocol):
-    return {'/info': info, '/echo': echo, '/iterbody': iterbody, '/err_app': err_app, '/pid': pid}[
-        environ['PATH_INFO']
-    ](environ, protocol)
+    return {'/info': info, '/echo': echo, '/iterbody': iterbody, '/err_app': err_app}[environ['PATH_INFO']](
+        environ, protocol
+    )

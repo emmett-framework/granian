@@ -11,13 +11,13 @@ import pytest
 from granian import Granian
 
 
-def _serve(**kwargs):
-    server = Granian(f'tests.apps.{kwargs["interface"]}:app', **kwargs)
+def _serve(app, **kwargs):
+    server = Granian(f'tests.apps.{app}:app', **kwargs)
     server.serve()
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode, tls=False, extra_args=None):
+async def _server(interface, app, port, threading_mode, tls=False, extra_args=None):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
@@ -38,9 +38,8 @@ async def _server(interface, port, threading_mode, tls=False, extra_args=None):
 
     succeeded, spawn_failures = False, 0
     while spawn_failures < 3:
-        proc = mp.get_context('spawn').Process(target=_serve, kwargs=kwargs)
+        proc = mp.get_context('spawn').Process(target=_serve, args=(app,), kwargs=kwargs)
         proc.start()
-
         conn_failures = 0
         while conn_failures < 3:
             try:
@@ -62,7 +61,7 @@ async def _server(interface, port, threading_mode, tls=False, extra_args=None):
         raise RuntimeError('Cannot bind server')
 
     try:
-        yield port, proc.pid
+        yield port
     finally:
         proc.terminate()
         proc.join()
@@ -78,24 +77,29 @@ def server_port():
 
 @pytest.fixture(scope='function')
 def asgi_server(server_port):
-    return partial(_server, 'asgi', server_port)
+    return partial(_server, 'asgi', 'asgi', server_port)
 
 
 @pytest.fixture(scope='function')
 def rsgi_server(server_port):
-    return partial(_server, 'rsgi', server_port)
+    return partial(_server, 'rsgi', 'rsgi', server_port)
 
 
 @pytest.fixture(scope='function')
-def wsgi_server(server_port, extra_args=None):
-    return partial(_server, 'wsgi', server_port, extra_args=extra_args)
+def wsgi_server(server_port):
+    return partial(_server, 'wsgi', 'wsgi', server_port)
 
 
 @pytest.fixture(scope='function')
 def server(server_port, request):
-    return partial(_server, request.param, server_port)
+    return partial(_server, request.param, request.param, server_port)
 
 
 @pytest.fixture(scope='function')
 def server_tls(server_port, request):
-    return partial(_server, request.param, server_port, tls=True)
+    return partial(_server, request.param, request.param, server_port, tls=True)
+
+
+@pytest.fixture(scope='function')
+def server_app(server_port):
+    return partial(_server, port=server_port)

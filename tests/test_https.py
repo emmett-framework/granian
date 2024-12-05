@@ -11,7 +11,7 @@ import websockets
 @pytest.mark.parametrize('server_tls', ['asgi', 'rsgi'], indirect=True)
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_http_scope(server_tls, threading_mode):
-    async with server_tls(threading_mode) as (port, _):
+    async with server_tls(threading_mode) as port:
         res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
 
     assert res.status_code == 200
@@ -26,7 +26,7 @@ async def test_asgi_ws_scope(asgi_server, threading_mode):
     localhost_pem = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls' / 'cert.pem'
     ssl_context.load_verify_locations(localhost_pem)
 
-    async with asgi_server(threading_mode, tls=True) as (port, _):
+    async with asgi_server(threading_mode, tls=True) as port:
         async with websockets.connect(f'wss://localhost:{port}/ws_info?test=true', ssl=ssl_context) as ws:
             res = await ws.recv()
 
@@ -41,7 +41,7 @@ async def test_rsgi_ws_scope(rsgi_server, threading_mode):
     localhost_pem = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls' / 'cert.pem'
     ssl_context.load_verify_locations(localhost_pem)
 
-    async with rsgi_server(threading_mode, tls=True) as (port, _):
+    async with rsgi_server(threading_mode, tls=True) as port:
         async with websockets.connect(f'wss://localhost:{port}/ws_info?test=true', ssl=ssl_context) as ws:
             res = await ws.recv()
 
@@ -51,7 +51,7 @@ async def test_rsgi_ws_scope(rsgi_server, threading_mode):
 
 @pytest.mark.asyncio
 async def test_tls_encrypted_key(rsgi_server):
-    async with rsgi_server('workers', tls='priv') as (port, _):
+    async with rsgi_server('workers', tls='priv') as port:
         res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
 
     assert res.status_code == 200
