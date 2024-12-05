@@ -16,8 +16,10 @@ The "echo" request is a 4bytes POST request responding with the same body.
 
 | Python version | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- | --- |
-{{ for pykey in ["310", "311", "312", "313"]: }}
+{{ for pykey in ["309", "310", "311", "312", "313"]: }}
 {{ _data = globals().get(f"data{pykey}") }}
+{{ if not _data: }}
+{{ continue }}
 {{ for key, runs in _data.results["interfaces"].items(): }}
 {{ max_c, run = get_max_concurrency_run(runs) }}
 | {{ =_data.pyver }} | {{ =key }} (c{{ =max_c }}) | {{ =run["requests"]["total"] }} | {{ =run["requests"]["rps"] }} | {{ =fmt_ms(run["latency"]["avg"]) }} | {{ =fmt_ms(run["latency"]["max"]) }} |
