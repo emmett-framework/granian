@@ -9,7 +9,7 @@ import websockets
 @pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_messages(server, threading_mode):
-    async with server(threading_mode) as port:
+    async with server(threading_mode) as (port, _):
         async with websockets.connect(f'ws://localhost:{port}/ws_echo') as ws:
             await ws.send('foo')
             res_text = await ws.recv()
@@ -24,7 +24,7 @@ async def test_messages(server, threading_mode):
 @pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_reject(server, threading_mode):
-    async with server(threading_mode) as port:
+    async with server(threading_mode) as (port, _):
         with pytest.raises(websockets.InvalidStatusCode) as exc:
             async with websockets.connect(f'ws://localhost:{port}/ws_reject'):
                 pass
@@ -36,7 +36,7 @@ async def test_reject(server, threading_mode):
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_asgi_scope(asgi_server, threading_mode):
-    async with asgi_server(threading_mode) as port:
+    async with asgi_server(threading_mode) as (port, _):
         async with websockets.connect(f'ws://localhost:{port}/ws_info?test=true') as ws:
             res = await ws.recv()
 
@@ -55,7 +55,7 @@ async def test_asgi_scope(asgi_server, threading_mode):
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_rsgi_scope(rsgi_server, threading_mode):
-    async with rsgi_server(threading_mode) as port:
+    async with rsgi_server(threading_mode) as (port, _):
         async with websockets.connect(f'ws://localhost:{port}/ws_info?test=true') as ws:
             res = await ws.recv()
 
