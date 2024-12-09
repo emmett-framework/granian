@@ -61,6 +61,10 @@ class Worker:
         self.interrupt_by_parent = True
         self.proc.terminate()
 
+    def kill(self):
+        self.interrupt_by_parent = True
+        self.proc.kill()
+
     def join(self, timeout=None):
         self.proc.join(timeout=timeout)
 
@@ -95,6 +99,7 @@ class Granian:
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         workers_lifetime: Optional[int] = None,
+        workers_graceful_timeout: Optional[int] = None,
         factory: bool = False,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
@@ -136,6 +141,7 @@ class Granian:
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
         self.workers_lifetime = workers_lifetime
+        self.workers_graceful_timeout = workers_graceful_timeout
         self.factory = factory
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
@@ -450,13 +456,32 @@ class Granian:
             time.sleep(delay)
             logger.info(f'Stopping old worker-{idx + 1}')
             old_proc.terminate()
-            old_proc.join()
+            old_proc.join(self.workers_graceful_timeout)
+
+            # the process might still be reported after `join`, if so give a short moment to exit properly
+            if old_proc.proc.is_alive():
+                time.sleep(0.001)
+
+            if old_proc.proc.is_alive():
+                logger.error(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
+                old_proc.kill()
+                old_proc.join()
 
     def _stop_workers(self):
         for proc in self.procs:
             proc.terminate()
         for proc in self.procs:
-            proc.join()
+            proc.join(self.workers_graceful_timeout)
+
+            # the process might still be reported after `join`, if so give a short moment to exit properly
+            if proc.proc.is_alive():
+                time.sleep(0.001)
+
+            if proc.proc.is_alive():
+                logger.error('Killing worker after it refused to gracefully stop')
+                proc.kill()
+                proc.join()
+
         self.procs.clear()
 
     def _workers_lifetime_watcher(self, ttl):
