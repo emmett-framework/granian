@@ -27,7 +27,6 @@ from .net import SocketHolder
 from .rsgi import _callback_wrapper as _rsgi_call_wrap
 from .wsgi import _callback_wrapper as _wsgi_call_wrap
 
-
 multiprocessing.allow_connection_pickling()
 
 
@@ -473,8 +472,11 @@ class Granian:
             logger.info(f'Stopping old worker-{idx + 1}')
             old_proc.terminate()
             old_proc.join(self.workers_graceful_timeout)
-            # give it a short moment to exit, as the process might still be reported after `join`
-            time.sleep(0.01)
+
+            # the process might still be reported after `join`, if so give a short moment to exit properly
+            if old_proc.proc.is_alive():
+                time.sleep(0.001)
+
             if old_proc.proc.is_alive():
                 logger.error(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
                 old_proc.kill()
@@ -485,8 +487,11 @@ class Granian:
             proc.terminate()
         for proc in self.procs:
             proc.join(self.workers_graceful_timeout)
-            # give it a short moment to exit, as the process might still be reported after `join`
-            time.sleep(0.01)
+
+            # the process might still be reported after `join`, if so give a short moment to exit properly
+            if proc.proc.is_alive():
+                time.sleep(0.001)
+
             if proc.proc.is_alive():
                 logger.error('Killing worker after it refused to gracefully stop')
                 proc.kill()
