@@ -274,6 +274,28 @@ Granian is currently under active development.
 
 Granian is compatible with Python 3.9 and above versions.
 
+### Contributing
+
+Create a virtual environment and install:
+
+```shell
+pip install .[hacking]
+```
+
+On zsh, you may need to do: `.\[hacking\]` instead of `.[hacking]`
+
+To finalize setup, run:
+
+```shell
+pre-commit install
+```
+
+To edit rust files, first install Rust if you haven't. Then compile the project:
+
+```shell
+maturin develop
+```
+
 ## License
 
 Granian is released under the BSD License.
