@@ -2,4 +2,4 @@ httpx
 pytest
 pytest-asyncio
 sniffio
-websockets
+websockets==11.0.3

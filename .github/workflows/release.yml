@@ -116,6 +116,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
+      - name: prepare profiling directory
+        shell: bash
+        run: mkdir -p ${{ github.workspace }}/profdata
       - name: Build initial wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -132,7 +135,7 @@ jobs:
       - name: Generate PGO data
         shell: bash
         run: |
-          pip install .[test]
+          pip install -r .github/workflows/_pgo_deps.txt
           pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
           PGO_RUN=y pytest tests
       - name: merge PGO data
