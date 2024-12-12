@@ -66,14 +66,6 @@ and serve it using:
 
     $ granian --interface rsgi main:app
 
-
-## Log Output
-
-Despite being a Rust project, Granian is a good Python citizen and routes all its logs through the standard library's [`logging`](https://docs.python.org/3/library/logging.html) module under the logger name `granian`.
-
-This means you can freely configure your log level and log format using the [standard idioms](https://docs.python.org/3/howto/logging.html) you probably already use for the rest of your application.
-
-
 ## Options
 
 You can check all the options provided by Granian with the `--help` command:
@@ -232,6 +224,15 @@ Options:
   --version                       Show the version and exit.
   --help                          Show this message and exit.
 ```
+
+### Logging
+
+Despite being a Rust project, Granian is a good Python citizen and uses the standard library's [`logging`](https://docs.python.org/3/library/logging.html) module to produce logs. This means you can freely configure your logging level and format using the [standard idioms](https://docs.python.org/3/howto/logging.html) you probably familiar with.
+
+As many other web servers, Granian uses two different loggers, specifically:
+
+- the `_granian` logger for runtime messages
+- the `granian.access` logger for access logs
 
 ### Access log format
 
