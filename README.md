@@ -230,6 +230,15 @@ Options:
   --help                          Show this message and exit.
 ```
 
+### Logging
+
+Despite being a Rust project, Granian is a good Python citizen and uses the standard library's [`logging`](https://docs.python.org/3/library/logging.html) module to produce logs. This means you can freely configure your logging level and format using the [standard idioms](https://docs.python.org/3/howto/logging.html) you probably familiar with.
+
+As many other web servers, Granian uses two different loggers, specifically:
+
+- the `_granian` logger for runtime messages
+- the `granian.access` logger for access logs
+
 ### Access log format
 
 The access log format can be configured by specifying the atoms (see below) to include in a specific format. By default Granian will use `[%(time)s] %(addr)s - "%(method)s %(path)s %(protocol)s" %(status)d %(dt_ms).3f` as the format.
