@@ -112,8 +112,8 @@ jobs:
       - name: Generate PGO data
         shell: bash
         run: |
-          pip install granian --no-index --no-deps --find-links pgo_wheel
-          pip install .[test]
+          pip install -r .github/workflows/_pgo_deps.txt
+          pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
           PGO_RUN=y pytest tests
       - name: merge PGO data
         run: ${{ env.LLVM_PROFDATA }} merge -o ${{ github.workspace }}/merged.profdata ${{ github.workspace }}/profdata
