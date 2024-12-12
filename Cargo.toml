@@ -59,6 +59,9 @@ mimalloc = { version = "0.1.43", default-features = false, features = ["local_dy
 [target.'cfg(not(any(target_os = "freebsd", target_os = "windows")))'.dependencies]
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"] }
 
+[build-dependencies]
+pyo3-build-config = { version = "=0.23", features = ["resolve-config"] }
+
 [profile.release]
 codegen-units = 1
 debug = false

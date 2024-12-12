@@ -24,6 +24,7 @@ pub(crate) struct CallbackScheduler {
     pyfalse: PyObject,
 }
 
+#[cfg(not(PyPy))]
 impl CallbackScheduler {
     #[inline]
     pub(crate) fn schedule(&self, _py: Python, watcher: &PyObject) {
@@ -109,6 +110,106 @@ impl CallbackScheduler {
             pyo3::ffi::PyObject_CallOneArg(corom, err.as_ptr());
             pyo3::ffi::PyErr_Clear();
             pyo3::ffi::PyObject_CallOneArg(rself.aio_texit.as_ptr(), ptr);
+        }
+    }
+}
+
+#[cfg(PyPy)]
+impl CallbackScheduler {
+    #[inline]
+    pub(crate) fn schedule(&self, py: Python, watcher: &PyObject) {
+        let cbarg = (watcher,).into_pyobject(py).unwrap().into_ptr();
+        let sched = self.schedule_fn.get().unwrap().as_ptr();
+
+        unsafe {
+            pyo3::ffi::PyObject_CallObject(sched, cbarg);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn send(pyself: Py<Self>, py: Python, coro: PyObject) {
+        let rself = pyself.get();
+        let ptr = (pyself.clone_ref(py),).into_pyobject(py).unwrap().into_ptr();
+
+        unsafe {
+            pyo3::ffi::PyObject_CallObject(rself.aio_tenter.as_ptr(), ptr);
+        }
+
+        if let Ok(res) = unsafe {
+            let res = pyo3::ffi::PyObject_CallMethodObjArgs(
+                coro.as_ptr(),
+                rself.pyname_aiosend.as_ptr(),
+                rself.pynone.as_ptr(),
+                std::ptr::null_mut::<PyObject>(),
+            );
+            Bound::from_owned_ptr_or_err(py, res)
+        } {
+            if unsafe {
+                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
+                Bound::from_owned_ptr_or_err(py, vptr)
+                    .map(|v| v.extract::<bool>().unwrap_or(false))
+                    .unwrap_or(false)
+            } {
+                let waker = Py::new(
+                    py,
+                    CallbackSchedulerWaker {
+                        sched: pyself.clone_ref(py),
+                        coro,
+                    },
+                )
+                .unwrap();
+                let resp = res.as_ptr();
+
+                unsafe {
+                    pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
+                    pyo3::ffi::PyObject_CallMethodObjArgs(
+                        resp,
+                        rself.pyname_donecb.as_ptr(),
+                        waker.as_ptr(),
+                        std::ptr::null_mut::<PyObject>(),
+                    );
+                }
+            } else {
+                let sref = Py::new(
+                    py,
+                    CallbackSchedulerRef {
+                        sched: pyself.clone_ref(py),
+                        coro,
+                    },
+                )
+                .unwrap();
+
+                unsafe {
+                    pyo3::ffi::PyObject_CallMethodObjArgs(
+                        #[allow(clippy::used_underscore_binding)]
+                        rself._loop.as_ptr(),
+                        rself.pyname_loopcs.as_ptr(),
+                        sref.as_ptr(),
+                        std::ptr::null_mut::<PyObject>(),
+                    );
+                }
+            }
+        }
+
+        unsafe {
+            pyo3::ffi::PyObject_CallObject(rself.aio_texit.as_ptr(), ptr);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn throw(pyself: Py<Self>, py: Python, coro: PyObject, err: PyObject) {
+        let pyname_aiothrow = pyself.get().pyname_aiothrow.as_ptr();
+        let aio_tenter = pyself.get().aio_tenter.as_ptr();
+        let aio_texit = pyself.get().aio_texit.as_ptr();
+        let ptr = (pyself,).into_py_any(py).unwrap().as_ptr();
+        let errptr = (err,).into_py_any(py).unwrap().as_ptr();
+
+        unsafe {
+            let corom = pyo3::ffi::PyObject_GetAttr(coro.as_ptr(), pyname_aiothrow);
+            pyo3::ffi::PyObject_CallObject(aio_tenter, ptr);
+            pyo3::ffi::PyObject_CallObject(corom, errptr);
+            pyo3::ffi::PyErr_Clear();
+            pyo3::ffi::PyObject_CallObject(aio_texit, ptr);
         }
     }
 }
