@@ -6,7 +6,6 @@ on:
       - v*.*.*
 
 env:
-  MATURIN_VERSION: 1.7.8
   PY_ALL: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
 
 jobs:
@@ -21,7 +20,6 @@ jobs:
         python-version: '3.10'
     - uses: pyo3/maturin-action@v1
       with:
-        maturin-version: v${{ env.MATURIN_VERSION }}
         rust-toolchain: stable
         command: sdist
         args: --out dist
@@ -81,7 +79,6 @@ jobs:
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
       - uses: pyo3/maturin-action@v1
         with:
-          maturin-version: v${{ env.MATURIN_VERSION }}
           rust-toolchain: stable
           command: build
           args: --release --out dist --interpreter ${{ matrix.interpreter || env.PY_ALL }}
@@ -122,7 +119,6 @@ jobs:
       - name: Build initial wheel
         uses: PyO3/maturin-action@v1
         with:
-          maturin-version: v${{ env.MATURIN_VERSION }}
           rust-toolchain: stable
           command: build
           args: --release --out pgo_wheel --interpreter ${{ matrix.interpreter }}
@@ -144,7 +140,6 @@ jobs:
       - name: Build PGO wheel
         uses: PyO3/maturin-action@v1
         with:
-          maturin-version: v${{ env.MATURIN_VERSION }}
           command: build
           args: --release --out dist --interpreter ${{ matrix.interpreter }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
