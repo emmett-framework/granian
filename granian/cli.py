@@ -195,6 +195,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='The maximum amount of time in seconds a worker will be kept alive before respawn',
 )
 @option(
+    '--workers-kill-timeout',
+    type=click.IntRange(1, 1800),
+    help='The amount of time in seconds to wait for killing workers that refused to gracefully stop',
+    show_default='disabled',
+)
+@option(
     '--factory/--no-factory',
     default=False,
     help='Treat target as a factory function, that should be invoked to build the actual target',
@@ -281,6 +287,7 @@ def cli(
     respawn_failed_workers: bool,
     respawn_interval: float,
     workers_lifetime: Optional[int],
+    workers_kill_timeout: Optional[int],
     factory: bool,
     reload: bool,
     reload_paths: Optional[List[pathlib.Path]],
@@ -339,6 +346,7 @@ def cli(
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
         workers_lifetime=workers_lifetime,
+        workers_kill_timeout=workers_kill_timeout,
         factory=factory,
         reload=reload,
         reload_paths=reload_paths,

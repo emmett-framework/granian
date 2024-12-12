@@ -193,6 +193,12 @@ Options:
                                   The maximum amount of time in seconds a
                                   worker will be kept alive before respawn
                                   [env var: GRANIAN_WORKERS_LIFETIME; x>=60]
+  --workers-kill-timeout INTEGER RANGE
+                                  The amount of time in seconds to wait for
+                                  killing workers that refused to gracefully
+                                  stop  [env var:
+                                  GRANIAN_WORKERS_KILL_TIMEOUT; default:
+                                  (disabled); 1<=x<=1800]
   --factory / --no-factory        Treat target as a factory function, that
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:
