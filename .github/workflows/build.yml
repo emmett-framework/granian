@@ -124,26 +124,32 @@ jobs:
       #     uv pip install -r .github/workflows/_pgo_deps.txt
       #     uv pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
       #     PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw uv run --no-sync pytest tests
-      - name: Generate PGO data
-        shell: bash
-        run: |
-          pip install -r .github/workflows/_pgo_deps.txt
-          pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
-          PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw pytest tests
-      - name: merge PGO data
-        run: ${{ env.LLVM_PROFDATA }} merge --failure-mode=all -o ${{ github.workspace }}/merged.profdata ${{ github.workspace }}/profdata
-      - name: Build PGO wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          args: --release --out dist --interpreter ${{ matrix.interpreter }}
-          manylinux: ${{ matrix.manylinux || 'auto' }}
-          rust-toolchain: stable
-          docker-options: -e CI
-        env:
-          RUSTFLAGS: "-Cprofile-use=${{ github.workspace }}/merged.profdata"
-      - name: Upload wheels
+      - name: Upload temp wheels
         uses: actions/upload-artifact@v3
         with:
-          name: dist
-          path: dist
+          name: pgo_wheel
+          path: pgo_wheel
+
+      # - name: Generate PGO data
+      #   shell: bash
+      #   run: |
+      #     pip install -r .github/workflows/_pgo_deps.txt
+      #     pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
+      #     PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw pytest tests
+      # - name: merge PGO data
+      #   run: ${{ env.LLVM_PROFDATA }} merge --failure-mode=all -o ${{ github.workspace }}/merged.profdata ${{ github.workspace }}/profdata
+      # - name: Build PGO wheel
+      #   uses: PyO3/maturin-action@v1
+      #   with:
+      #     command: build
+      #     args: --release --out dist --interpreter ${{ matrix.interpreter }}
+      #     manylinux: ${{ matrix.manylinux || 'auto' }}
+      #     rust-toolchain: stable
+      #     docker-options: -e CI
+      #   env:
+      #     RUSTFLAGS: "-Cprofile-use=${{ github.workspace }}/merged.profdata"
+      # - name: Upload wheels
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: dist
+      #     path: dist
