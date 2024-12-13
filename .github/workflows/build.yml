@@ -74,28 +74,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-13, macos-14, windows-latest]
+        # os: [ubuntu-latest, macos-13, macos-14, windows-latest]
+        os: [ubuntu-latest]
         manylinux: [auto]
         interpreter: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
           - os: ubuntu-latest
             platform: linux
-          - os: windows-latest
-            platform: windows
+          # - os: windows-latest
+          #   platform: windows
 
     runs-on: ${{ matrix.os }}
     env:
       UV_PYTHON: ${{ matrix.interpreter }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: false
+      # - uses: astral-sh/setup-uv@v4
+      #   with:
+      #     enable-cache: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
-      - shell: bash
-        run: uv python install ${{ env.UV_PYTHON }}
+      # - shell: bash
+      #   run: uv python install ${{ env.UV_PYTHON }}
       - name: prepare profiling directory
         shell: bash
         run: mkdir -p ${{ github.workspace }}/profdata
@@ -112,13 +113,23 @@ jobs:
       - run: |
           RUST_HOST=$(rustc -Vv | grep host | cut -d ' ' -f 2) rustup run stable bash -c 'echo LLVM_PROFDATA=$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN/lib/rustlib/$RUST_HOST/bin/llvm-profdata >> "$GITHUB_ENV"'
         shell: bash
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.interpreter }}
+          allow-prereleases: true
+      # - name: Generate PGO data
+      #   shell: bash
+      #   run: |
+      #     uv venv .venv
+      #     uv pip install -r .github/workflows/_pgo_deps.txt
+      #     uv pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
+      #     PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw uv run --no-sync pytest tests
       - name: Generate PGO data
         shell: bash
         run: |
-          uv venv .venv
-          uv pip install -r .github/workflows/_pgo_deps.txt
-          uv pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
-          PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw uv run --no-sync pytest tests
+          pip install -r .github/workflows/_pgo_deps.txt
+          pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
+          PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw pytest tests
       - name: merge PGO data
         run: ${{ env.LLVM_PROFDATA }} merge --failure-mode=all -o ${{ github.workspace }}/merged.profdata ${{ github.workspace }}/profdata
       - name: Build PGO wheel
