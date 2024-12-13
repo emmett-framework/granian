@@ -47,15 +47,15 @@ async def test_app_worker_restart(server_app, threading_mode):
 @pytest.mark.asyncio
 @pytest.mark.skipif(platform.system() == 'Windows', reason='SIGHUP/SIGSTOP not available on Windows')
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_app_worker_graceful_restart(server_app, threading_mode):
-    workers_graceful_timeout = 2
+async def test_app_workers_kill_timeout(server_app, threading_mode):
+    workers_kill_timeout = 2
     with tempfile.TemporaryDirectory() as tmp_dir:
         pid_file_path = Path(tmp_dir, 'server.pid')
         async with server_app(
             interface='wsgi',
             app='restart',
             threading_mode=threading_mode,
-            extra_args={'workers_graceful_timeout': workers_graceful_timeout, 'pid_file': pid_file_path},
+            extra_args={'workers_kill_timeout': workers_kill_timeout, 'pid_file': pid_file_path},
         ) as port:
             with pid_file_path.open('r') as pid_fd:
                 server_pid = int(pid_fd.read().strip())
@@ -73,7 +73,7 @@ async def test_app_worker_graceful_restart(server_app, threading_mode):
             assert worker_pid_after_one_restart is not None
 
             # wait until the worker_pid is gone
-            time.sleep(workers_graceful_timeout + 0.01)
+            time.sleep(workers_kill_timeout + 0.01)
 
             # suspend the new worker process to simulate that it hangs
             os.kill(worker_pid_after_one_restart, signal.SIGSTOP)
