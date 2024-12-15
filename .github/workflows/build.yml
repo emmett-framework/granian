@@ -109,7 +109,7 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           docker-options: -e CI
         env:
-          RUSTFLAGS: "-Cprofile-generate=${{ github.workspace }}/profdata -Cprofile-arcs"
+          RUSTFLAGS: "-Cprofile-generate=${{ github.workspace }}/profdata -Cinstrument-coverage"
       - run: |
           RUST_HOST=$(rustc -Vv | grep host | cut -d ' ' -f 2) rustup run stable bash -c 'echo LLVM_PROFDATA=$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN/lib/rustlib/$RUST_HOST/bin/llvm-profdata >> "$GITHUB_ENV"'
         shell: bash
