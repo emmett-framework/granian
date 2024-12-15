@@ -47,17 +47,11 @@ pyo3 = { version = "=0.23", features = ["anyhow", "extension-module", "generate-
 pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
 socket2 = { version = "0.5", features = ["all"] }
-tls-listener = { version = "=0.10", features = ["rustls"] }
+tls-listener = { version = "=0.10", features = ["rustls-ring"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.24"
 tokio-util = { version = "0.7", features = ["codec"] }
-
-[target.'cfg(any(target_os = "freebsd", target_os = "windows"))'.dependencies]
-mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls"] }
-
-[target.'cfg(not(any(target_os = "freebsd", target_os = "windows")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"] }
 
 [build-dependencies]
 pyo3-build-config = "=0.23"

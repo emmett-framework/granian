@@ -17,11 +17,12 @@ jobs:
         include:
           - os: ubuntu
             platform: linux
-          - os: ubuntu
-            platform: linux
-            target: x86_64
-            manylinux: auto
-            interpreter: pypy3.9 pypy3.10
+          # FIXME: for some unknown reasons PGO builds are failing on Linux
+          # - os: ubuntu
+          #   platform: linux
+          #   target: x86_64
+          #   manylinux: auto
+          #   interpreter: pypy3.9 pypy3.10
           - os: macos
             target: x86_64
             interpreter: pypy3.9 pypy3.10
@@ -50,10 +51,11 @@ jobs:
     runs-on: ${{ matrix.os }}-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set jemalloc for aarch64 Linux
-        if: matrix.target == 'aarch64' && matrix.os == 'ubuntu'
-        run: |
-          echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
+      # NOTE: we don't use jemalloc anymore
+      # - name: Set jemalloc for aarch64 Linux
+      #   if: matrix.target == 'aarch64' && matrix.os == 'ubuntu'
+      #   run: |
+      #     echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
       - uses: pyo3/maturin-action@v1
         with:
           rust-toolchain: stable
@@ -74,12 +76,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-13, macos-14, windows-latest]
+        # FIXME: for some unknown reasons PGO builds are failing on Linux
+        # os: [ubuntu-latest, macos-13, macos-14, windows-latest]
+        os: [macos-13, macos-14, windows-latest]
         manylinux: [auto]
         interpreter: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
-          - os: ubuntu-latest
-            platform: linux
+          # - os: ubuntu-latest
+          #   platform: linux
           - os: windows-latest
             platform: windows
 
@@ -94,8 +98,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
-      - shell: bash
-        run: uv python install ${{ env.UV_PYTHON }}
       - name: prepare profiling directory
         shell: bash
         run: mkdir -p ${{ github.workspace }}/profdata
@@ -115,10 +117,11 @@ jobs:
       - name: Generate PGO data
         shell: bash
         run: |
+          uv python install ${{ env.UV_PYTHON }}
           uv venv .venv
           uv pip install -r .github/workflows/_pgo_deps.txt
           uv pip install granian --no-index --no-deps --find-links pgo_wheel --force-reinstall
-          PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/%m_%p.profraw uv run --no-sync pytest tests
+          PGO_RUN=y LLVM_PROFILE_FILE=${{ github.workspace }}/profdata/granian_%m_%p.profraw uv run --no-sync pytest tests
       - name: merge PGO data
         run: ${{ env.LLVM_PROFDATA }} merge --failure-mode=all -o ${{ github.workspace }}/merged.profdata ${{ github.workspace }}/profdata
       - name: Build PGO wheel
