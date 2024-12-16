@@ -14,11 +14,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ._futures import _future_watcher_wrapper, _new_cbscheduler
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
-from ._imports import setproctitle, watchfiles
+from ._imports import anyio, setproctitle, watchfiles
 from ._internal import load_target
 from ._signals import set_main_signals
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
-from .constants import HTTPModes, Interfaces, Loops, ThreadModes
+from .constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
 from .errors import ConfigurationError, PidFileError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
@@ -81,6 +81,7 @@ class Granian:
         blocking_threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
+        task_impl: TaskImpl = TaskImpl.auto,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
@@ -118,6 +119,7 @@ class Granian:
         self.threads = max(1, threads)
         self.threading_mode = threading_mode
         self.loop = loop
+        self.task_impl = task_impl
         self.http = http
         self.websockets = websockets
         self.backlog = max(128, backlog)
@@ -188,6 +190,7 @@ class Granian:
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
+        task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
@@ -225,7 +228,9 @@ class Granian:
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(loop, _future_watcher_wrapper(wcallback))
+        scheduler = _new_cbscheduler(
+            loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
+        )
         serve(scheduler, loop, shutdown_event)
 
     @staticmethod
@@ -239,6 +244,7 @@ class Granian:
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
+        task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
@@ -283,7 +289,9 @@ class Granian:
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(loop, _future_watcher_wrapper(wcallback))
+        scheduler = _new_cbscheduler(
+            loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
+        )
         serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
 
@@ -298,6 +306,7 @@ class Granian:
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
+        task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
@@ -343,7 +352,9 @@ class Granian:
             *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(loop, _future_watcher_wrapper(callback))
+        scheduler = _new_cbscheduler(
+            loop, _future_watcher_wrapper(callback), impl_asyncio=task_impl == TaskImpl.asyncio
+        )
         serve(scheduler, loop, shutdown_event)
         callback_del(loop)
 
@@ -358,6 +369,7 @@ class Granian:
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
+        task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
@@ -385,7 +397,9 @@ class Granian:
             worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(loop, _wsgi_call_wrap(callback, scope_opts, log_access_fmt))
+        scheduler = _new_cbscheduler(
+            loop, _wsgi_call_wrap(callback, scope_opts, log_access_fmt), impl_asyncio=task_impl == TaskImpl.asyncio
+        )
         serve(scheduler, loop, shutdown_event)
         shutdown_event.qs.wait()
 
@@ -416,6 +430,7 @@ class Granian:
                 self.blocking_threads,
                 self.backpressure,
                 self.threading_mode,
+                self.task_impl,
                 self.http,
                 self.http1_settings,
                 self.http2_settings,
@@ -712,6 +727,9 @@ class Granian:
             if self.workers_lifetime < 60:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
+
+        if self.task_impl == TaskImpl.auto:
+            self.task_impl = TaskImpl.asyncio if anyio is not None else TaskImpl.rust
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)

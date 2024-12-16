@@ -5,7 +5,7 @@ from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 import click
 
-from .constants import HTTPModes, Interfaces, Loops, ThreadModes
+from .constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
@@ -77,6 +77,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='Threading mode to use',
 )
 @option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
+@option(
+    '--task-impl',
+    type=EnumType(TaskImpl),
+    default=TaskImpl.auto,
+    help='Async task implementation to use',
+)
 @option(
     '--backlog',
     type=click.IntRange(128),
@@ -261,6 +267,7 @@ def cli(
     blocking_threads: Optional[int],
     threading_mode: ThreadModes,
     loop: Loops,
+    task_impl: TaskImpl,
     backlog: int,
     backpressure: Optional[int],
     http1_buffer_size: int,
@@ -316,6 +323,7 @@ def cli(
         blocking_threads=blocking_threads,
         threading_mode=threading_mode,
         loop=loop,
+        task_impl=task_impl,
         http=http,
         websockets=websockets,
         backlog=backlog,
