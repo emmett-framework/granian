@@ -29,3 +29,9 @@ class Loops(StrEnum):
     asyncio = 'asyncio'
     rloop = 'rloop'
     uvloop = 'uvloop'
+
+
+class TaskImpl(StrEnum):
+    auto = 'auto'
+    rust = 'rust'
+    asyncio = 'asyncio'

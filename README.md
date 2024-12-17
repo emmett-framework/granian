@@ -101,6 +101,9 @@ Options:
   --loop [auto|asyncio|rloop|uvloop]
                                   Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
+  --task-impl [auto|rust|asyncio]
+                                  Async task implementation to use  [env var:
+                                  GRANIAN_TASK_IMPL; default: (auto)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog (globally)  [env var:
                                   GRANIAN_BACKLOG; default: 1024; x>=128]

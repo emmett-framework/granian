@@ -25,10 +25,17 @@ class _CBScheduler(_BaseCBScheduler):
         self._schedule_fn = _cbsched_schedule(loop, ctx, self._run, cb)
 
 
-def _new_cbscheduler(loop, cb):
-    return _CBScheduler(
-        loop, contextvars.copy_context(), cb, partial(_aio_taskenter, loop), partial(_aio_taskleave, loop)
-    )
+class _CBSchedulerAIO(_BaseCBScheduler):
+    __slots__ = []
+
+    def __init__(self, loop, ctx, cb, aio_tenter, aio_texit):
+        super().__init__()
+        self._schedule_fn = _cbsched_schedule(loop, ctx, loop.create_task, cb)
+
+
+def _new_cbscheduler(loop, cb, impl_asyncio=False):
+    _cls = _CBSchedulerAIO if impl_asyncio else _CBScheduler
+    return _cls(loop, contextvars.copy_context(), cb, partial(_aio_taskenter, loop), partial(_aio_taskleave, loop))
 
 
 def _cbsched_schedule(loop, ctx, run, cb):
