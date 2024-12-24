@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use std::sync::OnceLock;
 use tokio::sync::oneshot;
 
 use super::{
@@ -33,12 +34,19 @@ macro_rules! callback_impl_done_err {
     };
 }
 
+macro_rules! callback_impl_taskref {
+    ($self:expr, $py:expr, $task:expr) => {
+        let _ = $self.aio_taskref.set($task.clone_ref($py));
+    };
+}
+
 #[pyclass(frozen)]
 pub(crate) struct CallbackWatcherHTTP {
     #[pyo3(get)]
     proto: Py<HTTPProtocol>,
     #[pyo3(get)]
     scope: Py<HTTPScope>,
+    aio_taskref: OnceLock<PyObject>,
 }
 
 impl CallbackWatcherHTTP {
@@ -46,6 +54,7 @@ impl CallbackWatcherHTTP {
         Self {
             proto: Py::new(py, proto).unwrap(),
             scope: Py::new(py, scope).unwrap(),
+            aio_taskref: OnceLock::new(),
         }
     }
 }
@@ -59,6 +68,10 @@ impl CallbackWatcherHTTP {
     fn err(&self, err: Bound<PyAny>) {
         callback_impl_done_err!(self, &PyErr::from_value(err));
     }
+
+    fn taskref(&self, py: Python, task: PyObject) {
+        callback_impl_taskref!(self, py, task);
+    }
 }
 
 #[pyclass(frozen)]
@@ -67,6 +80,7 @@ pub(crate) struct CallbackWatcherWebsocket {
     proto: Py<WebsocketProtocol>,
     #[pyo3(get)]
     scope: Py<WebsocketScope>,
+    aio_taskref: OnceLock<PyObject>,
 }
 
 impl CallbackWatcherWebsocket {
@@ -74,6 +88,7 @@ impl CallbackWatcherWebsocket {
         Self {
             proto: Py::new(py, proto).unwrap(),
             scope: Py::new(py, scope).unwrap(),
+            aio_taskref: OnceLock::new(),
         }
     }
 }
@@ -86,6 +101,10 @@ impl CallbackWatcherWebsocket {
 
     fn err(&self, err: Bound<PyAny>) {
         callback_impl_done_err!(self, &PyErr::from_value(err));
+    }
+
+    fn taskref(&self, py: Python, task: PyObject) {
+        callback_impl_taskref!(self, py, task);
     }
 }
 
