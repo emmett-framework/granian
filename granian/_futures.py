@@ -30,7 +30,7 @@ class _CBSchedulerAIO(_BaseCBScheduler):
 
     def __init__(self, loop, ctx, cb, aio_tenter, aio_texit):
         super().__init__()
-        self._schedule_fn = _cbsched_schedule(loop, ctx, loop.create_task, cb)
+        self._schedule_fn = _cbsched_aioschedule(loop, ctx, cb)
 
 
 def _new_cbscheduler(loop, cb, impl_asyncio=False):
@@ -41,5 +41,16 @@ def _new_cbscheduler(loop, cb, impl_asyncio=False):
 def _cbsched_schedule(loop, ctx, run, cb):
     def _schedule(watcher):
         loop.call_soon_threadsafe(run, cb(watcher), context=ctx)
+
+    return _schedule
+
+
+def _cbsched_aioschedule(loop, ctx, cb):
+    def _run(coro, watcher):
+        task = loop.create_task(coro)
+        watcher.taskref(task)
+
+    def _schedule(watcher):
+        loop.call_soon_threadsafe(_run, cb(watcher), watcher, context=ctx)
 
     return _schedule
