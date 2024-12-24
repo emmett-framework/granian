@@ -390,7 +390,10 @@ impl PyFutureAwaitable {
             )
             .is_err()
         {
-            Python::with_gil(|_| drop(result));
+            Python::with_gil(|_| {
+                drop(result);
+                drop(pyself);
+            });
             return;
         }
 
