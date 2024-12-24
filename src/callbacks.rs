@@ -1,4 +1,4 @@
-use pyo3::{exceptions::PyStopIteration, prelude::*, IntoPyObjectExt};
+use pyo3::{exceptions::PyStopIteration, prelude::*, types::PyDict, IntoPyObjectExt};
 
 use std::sync::{atomic, Arc, OnceLock, RwLock};
 use tokio::sync::Notify;
@@ -15,6 +15,7 @@ pub(crate) struct CallbackScheduler {
     schedule_fn: OnceLock<PyObject>,
     aio_tenter: PyObject,
     aio_texit: PyObject,
+    pykw_ctx: PyObject,
     pyname_aioblock: PyObject,
     pyname_aiosend: PyObject,
     pyname_aiothrow: PyObject,
@@ -71,7 +72,11 @@ impl CallbackScheduler {
 
                 unsafe {
                     pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
-                    pyo3::ffi::PyObject_CallMethodOneArg(resp, rself.pyname_donecb.as_ptr(), waker.as_ptr());
+                    pyo3::ffi::PyObject_Call(
+                        pyo3::ffi::PyObject_GetAttr(resp, rself.pyname_donecb.as_ptr()),
+                        (waker,).into_py_any(py).unwrap().into_ptr(),
+                        rself.pykw_ctx.as_ptr(),
+                    );
                 }
             } else {
                 let sref = Py::new(
@@ -162,11 +167,10 @@ impl CallbackScheduler {
 
                 unsafe {
                     pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
-                    pyo3::ffi::PyObject_CallMethodObjArgs(
-                        resp,
-                        rself.pyname_donecb.as_ptr(),
-                        waker.as_ptr(),
-                        std::ptr::null_mut::<PyObject>(),
+                    pyo3::ffi::PyObject_Call(
+                        pyo3::ffi::PyObject_GetAttr(resp, rself.pyname_donecb.as_ptr()),
+                        (waker,).into_py_any(py).unwrap().into_ptr(),
+                        rself.pykw_ctx.as_ptr(),
                     );
                 }
             } else {
@@ -225,6 +229,9 @@ impl CallbackScheduler {
         aio_tenter: PyObject,
         aio_texit: PyObject,
     ) -> Self {
+        let ctxd = PyDict::new(py);
+        ctxd.set_item(pyo3::intern!(py, "context"), ctx.clone_ref(py)).unwrap();
+
         Self {
             _loop: event_loop,
             _ctx: ctx,
@@ -234,6 +241,7 @@ impl CallbackScheduler {
             aio_texit,
             pyfalse: false.into_py_any(py).unwrap(),
             pynone: py.None(),
+            pykw_ctx: ctxd.into_py_any(py).unwrap(),
             pyname_aioblock: pyo3::intern!(py, "_asyncio_future_blocking").into_py_any(py).unwrap(),
             pyname_aiosend: pyo3::intern!(py, "send").into_py_any(py).unwrap(),
             pyname_aiothrow: pyo3::intern!(py, "throw").into_py_any(py).unwrap(),
