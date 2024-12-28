@@ -1,6 +1,5 @@
 use pyo3::{exceptions::PyStopIteration, prelude::*, types::PyDict, IntoPyObjectExt};
-
-use std::sync::{atomic, Arc, OnceLock, RwLock};
+use std::sync::{atomic, Arc, Mutex, OnceLock, RwLock};
 use tokio::sync::Notify;
 
 pub(crate) type ArcCBScheduler = Arc<Py<CallbackScheduler>>;
@@ -255,8 +254,141 @@ impl CallbackScheduler {
         self.schedule_fn.set(val).unwrap();
     }
 
+    #[cfg(not(any(Py_3_12, Py_3_13)))]
     fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
         CallbackScheduler::send(pyself, py, coro);
+    }
+
+    #[cfg(any(Py_3_12, Py_3_13))]
+    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
+        let stepper = Py::new(py, CallbackSchedulerStep::new(py, pyself, coro)).unwrap();
+        CallbackSchedulerStep::send(stepper, py);
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian")]
+pub(crate) struct CallbackSchedulerStep {
+    sched: Py<CallbackScheduler>,
+    coro: PyObject,
+    futw: Mutex<Option<PyObject>>,
+    pyname_wake: PyObject,
+}
+
+impl CallbackSchedulerStep {
+    #[cfg(any(Py_3_12, Py_3_13))]
+    pub(crate) fn new(py: Python, sched: Py<CallbackScheduler>, coro: PyObject) -> Self {
+        Self {
+            sched,
+            coro,
+            futw: Mutex::new(None),
+            pyname_wake: pyo3::intern!(py, "wake").into_py_any(py).unwrap(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn send(pyself: Py<Self>, py: Python) {
+        let rself = pyself.get();
+        let rsched = rself.sched.get();
+        let ptr = pyself.as_ptr();
+
+        {
+            let mut guard = rself.futw.lock().unwrap();
+            *guard = None;
+        }
+
+        unsafe {
+            pyo3::ffi::PyObject_CallOneArg(rsched.aio_tenter.as_ptr(), ptr);
+        }
+
+        if let Ok(res) = unsafe {
+            let res = pyo3::ffi::PyObject_CallMethodOneArg(
+                rself.coro.as_ptr(),
+                rsched.pyname_aiosend.as_ptr(),
+                rsched.pynone.as_ptr(),
+            );
+            Bound::from_owned_ptr_or_err(py, res)
+        } {
+            if unsafe {
+                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rsched.pyname_aioblock.as_ptr());
+                Bound::from_owned_ptr_or_err(py, vptr)
+                    .map(|v| v.extract::<bool>().unwrap_or(false))
+                    .unwrap_or(false)
+            } {
+                let resp = res.as_ptr();
+                {
+                    let mut guard = rself.futw.lock().unwrap();
+                    *guard = Some(res.unbind().clone_ref(py));
+                }
+
+                unsafe {
+                    pyo3::ffi::PyObject_SetAttr(resp, rsched.pyname_aioblock.as_ptr(), rsched.pyfalse.as_ptr());
+                    pyo3::ffi::PyObject_Call(
+                        pyo3::ffi::PyObject_GetAttr(resp, rsched.pyname_donecb.as_ptr()),
+                        (pyself.clone_ref(py),).into_py_any(py).unwrap().into_ptr(),
+                        rsched.pykw_ctx.as_ptr(),
+                    );
+                }
+            } else {
+                unsafe {
+                    let mptr = pyo3::ffi::PyObject_GetAttr(ptr, rself.pyname_wake.as_ptr());
+                    pyo3::ffi::PyObject_CallMethodOneArg(
+                        #[allow(clippy::used_underscore_binding)]
+                        rsched._loop.as_ptr(),
+                        rsched.pyname_loopcs.as_ptr(),
+                        mptr,
+                    );
+                }
+            }
+        }
+
+        unsafe {
+            pyo3::ffi::PyObject_CallOneArg(rsched.aio_texit.as_ptr(), ptr);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn throw(pyself: Py<Self>, _py: Python, err: PyObject) {
+        let rself = pyself.get();
+        let rsched = rself.sched.get();
+        let ptr = pyself.as_ptr();
+
+        unsafe {
+            let corom = pyo3::ffi::PyObject_GetAttr(rself.coro.as_ptr(), rsched.pyname_aiothrow.as_ptr());
+            pyo3::ffi::PyObject_CallOneArg(rsched.aio_tenter.as_ptr(), ptr);
+            pyo3::ffi::PyObject_CallOneArg(corom, err.as_ptr());
+            pyo3::ffi::PyErr_Clear();
+            pyo3::ffi::PyObject_CallOneArg(rsched.aio_texit.as_ptr(), ptr);
+        }
+    }
+}
+
+#[pymethods]
+impl CallbackSchedulerStep {
+    fn _step(pyself: Py<Self>, py: Python) {
+        CallbackSchedulerStep::send(pyself, py);
+    }
+
+    fn __call__(pyself: Py<Self>, py: Python, fut: PyObject) {
+        match fut.call_method0(py, pyo3::intern!(py, "result")) {
+            Ok(_) => CallbackSchedulerStep::send(pyself, py),
+            Err(err) => CallbackSchedulerStep::throw(pyself, py, err.into_py_any(py).unwrap()),
+        }
+    }
+
+    fn cancel(&self, py: Python) -> PyResult<PyObject> {
+        let guard = self.futw.lock().unwrap();
+        if let Some(v) = guard.as_ref() {
+            return v.call_method0(py, pyo3::intern!(py, "cancel"));
+        }
+        Ok(self.sched.get().pyfalse.clone_ref(py))
+    }
+
+    fn cancelling(&self) -> i32 {
+        0
+    }
+
+    fn uncancel(&self) -> i32 {
+        0
     }
 }
 

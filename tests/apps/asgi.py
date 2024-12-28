@@ -1,3 +1,4 @@
+import asyncio
 import json
 import pathlib
 
@@ -126,6 +127,31 @@ async def err_proto(scope, receive, send):
     await send({'type': 'wrong.msg'})
 
 
+async def timeout_n(scope, receive, send):
+    async def _inner():
+        return b'ok'
+
+    await send(PLAINTEXT_RESPONSE)
+    try:
+        ret = await asyncio.wait_for(_inner(), None)
+    except asyncio.TimeoutError:
+        ret = b'timeout'
+    await send({'type': 'http.response.body', 'body': ret, 'more_body': False})
+
+
+async def timeout_w(scope, receive, send):
+    async def _inner():
+        await asyncio.sleep(3)
+        return b'ok'
+
+    await send(PLAINTEXT_RESPONSE)
+    try:
+        ret = await asyncio.wait_for(_inner(), 1)
+    except asyncio.TimeoutError:
+        ret = b'timeout'
+    await send({'type': 'http.response.body', 'body': ret, 'more_body': False})
+
+
 async def lifespan(scope, receive, send):
     msg = await receive()
     if msg['type'] == 'lifespan.startup':
@@ -147,4 +173,6 @@ def app(scope, receive, send):
         '/ws_push': ws_push,
         '/err_app': err_app,
         '/err_proto': err_proto,
+        '/timeout_n': timeout_n,
+        '/timeout_w': timeout_w,
     }[scope['path']](scope, receive, send)
