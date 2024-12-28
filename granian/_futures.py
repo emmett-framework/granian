@@ -24,6 +24,15 @@ class _CBScheduler(_BaseCBScheduler):
         super().__init__()
         self._schedule_fn = _cbsched_schedule(loop, ctx, self._run, cb)
 
+    def cancel(self):
+        return False
+
+    def cancelling(self):
+        return 0
+
+    def uncancel(self):
+        return 0
+
 
 class _CBSchedulerAIO(_BaseCBScheduler):
     __slots__ = []

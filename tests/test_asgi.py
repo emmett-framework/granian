@@ -88,3 +88,20 @@ async def test_sniffio(asgi_server, threading_mode):
 
     assert res.status_code == 200
     assert res.text == 'asyncio'
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
+async def test_timeout(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f'http://localhost:{port}/timeout_n')
+
+    assert res.status_code == 200
+    assert res.text == 'ok'
+
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f'http://localhost:{port}/timeout_w')
+
+    assert res.status_code == 200
+    assert res.text == 'timeout'
