@@ -107,7 +107,7 @@ def _build_access_logger(fmt):
         logger(
             t,
             {
-                'addr_remote': scope.client.split(':')[0],
+                'addr_remote': scope.client.rsplit(':', 1)[0],
                 'protocol': 'HTTP/' + scope.http_version,
                 'path': scope.path,
                 'qs': scope.query_string,
