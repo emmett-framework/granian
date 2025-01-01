@@ -50,7 +50,7 @@ socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.10", features = ["rustls-ring"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = "0.1"
-tokio-tungstenite = "=0.24"
+tokio-tungstenite = "=0.26"
 tokio-util = { version = "0.7", features = ["codec"] }
 
 [build-dependencies]
