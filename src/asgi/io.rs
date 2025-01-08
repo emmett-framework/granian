@@ -27,7 +27,7 @@ use super::{
     types::ASGIMessageType,
 };
 use crate::{
-    conversion::BytesToPy,
+    conversion::{BytesToPy, Utf8BytesToPy},
     http::{response_404, HTTPResponse, HTTPResponseBody, HV_SERVER},
     runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
@@ -542,10 +542,13 @@ fn ws_message_into_rs(py: Python, message: &Bound<PyDict>) -> PyResult<Message> 
             let data: Cow<[u8]> = item.extract().unwrap_or(EMPTY_BYTES);
             Ok(data[..].into())
         }
-        (None, Some(item)) => Ok(Message::Text(item.extract().unwrap_or(EMPTY_STRING))),
-        (Some(itemb), Some(itemt)) => match (itemb.extract().unwrap_or(None), itemt.extract().unwrap_or(None)) {
-            (Some(msgb), None) => Ok(Message::Binary(msgb)),
-            (None, Some(msgt)) => Ok(Message::Text(msgt)),
+        (None, Some(item)) => Ok(Message::Text(item.extract::<String>().unwrap_or(EMPTY_STRING).into())),
+        (Some(itemb), Some(itemt)) => match (itemb.is_none(), itemt.is_none()) {
+            (false, true) => {
+                let data: Box<[u8]> = itemb.extract::<Cow<[u8]>>()?.into();
+                Ok(Message::Binary(body::Bytes::from(data)))
+            }
+            (true, false) => Ok(itemt.extract::<String>()?.into()),
             _ => error_message!(),
         },
         _ => error_message!(),
@@ -564,7 +567,7 @@ fn ws_message_into_py(message: Message) -> PyResult<PyObject> {
         Message::Text(message) => Python::with_gil(|py| {
             let dict = PyDict::new(py);
             dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.receive"))?;
-            dict.set_item(pyo3::intern!(py, "text"), message)?;
+            dict.set_item(pyo3::intern!(py, "text"), Utf8BytesToPy(message))?;
             Ok(dict.into_any().unbind())
         }),
         Message::Close(frame) => Python::with_gil(|py| {

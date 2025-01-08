@@ -3,6 +3,7 @@ use pyo3::{prelude::*, IntoPyObjectExt};
 use crate::workers::{HTTP1Config, HTTP2Config};
 
 pub(crate) struct BytesToPy(pub hyper::body::Bytes);
+pub(crate) struct Utf8BytesToPy(pub tokio_tungstenite::tungstenite::Utf8Bytes);
 
 impl<'p> IntoPyObject<'p> for BytesToPy {
     type Target = PyAny;
@@ -11,6 +12,16 @@ impl<'p> IntoPyObject<'p> for BytesToPy {
 
     fn into_pyobject(self, py: Python<'p>) -> Result<Self::Output, Self::Error> {
         self.0.as_ref().into_bound_py_any(py)
+    }
+}
+
+impl<'p> IntoPyObject<'p> for Utf8BytesToPy {
+    type Target = PyAny;
+    type Output = Bound<'p, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'p>) -> Result<Self::Output, Self::Error> {
+        self.0.as_str().into_bound_py_any(py)
     }
 }
 

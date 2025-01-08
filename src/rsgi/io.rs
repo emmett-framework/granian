@@ -279,7 +279,7 @@ impl RSGIWebsocketTransport {
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send(Message::Text(data)).await {
+                return match stream.send(data.into()).await {
                     Ok(()) => Ok(pynone),
                     _ => {
                         Python::with_gil(|_| drop(pynone));
