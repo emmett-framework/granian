@@ -24,6 +24,9 @@ class _CBScheduler(_BaseCBScheduler):
         super().__init__()
         self._schedule_fn = _cbsched_schedule(loop, ctx, self._run, cb)
 
+    def _run(self, coro):
+        self._run_wctx(coro, contextvars.copy_context())
+
     def cancel(self):
         return False
 
