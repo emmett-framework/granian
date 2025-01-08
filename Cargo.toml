@@ -37,7 +37,7 @@ futures = "=0.3"
 http-body-util = { version = "=0.1" }
 hyper = { version = "=1.5", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
-itertools = "0.13"
+itertools = "0.14"
 log = "0.4"
 pem = "=3.0"
 percent-encoding = "=2.3"
