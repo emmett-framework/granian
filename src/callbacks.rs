@@ -1,5 +1,7 @@
 use pyo3::{exceptions::PyStopIteration, prelude::*, types::PyDict, IntoPyObjectExt};
-use std::sync::{atomic, Arc, Mutex, OnceLock, RwLock};
+#[cfg(any(Py_3_12, Py_3_13))]
+use std::sync::Mutex;
+use std::sync::{atomic, Arc, OnceLock, RwLock};
 use tokio::sync::Notify;
 
 pub(crate) type ArcCBScheduler = Arc<Py<CallbackScheduler>>;
@@ -136,7 +138,7 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    pub(crate) fn send(pyself: Py<Self>, py: Python, coro: PyObject) {
+    pub(crate) fn send(pyself: Py<Self>, py: Python, coro: PyObject, ctx: PyObject) {
         let rself = pyself.get();
         let ptr = (pyself.clone_ref(py),).into_pyobject(py).unwrap().into_ptr();
 
