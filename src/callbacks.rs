@@ -266,6 +266,7 @@ impl CallbackScheduler {
     }
 }
 
+#[cfg(any(Py_3_12, Py_3_13))]
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct CallbackSchedulerStep {
     sched: Py<CallbackScheduler>,
@@ -274,8 +275,8 @@ pub(crate) struct CallbackSchedulerStep {
     pyname_wake: PyObject,
 }
 
+#[cfg(any(Py_3_12, Py_3_13))]
 impl CallbackSchedulerStep {
-    #[cfg(any(Py_3_12, Py_3_13))]
     pub(crate) fn new(py: Python, sched: Py<CallbackScheduler>, coro: PyObject) -> Self {
         Self {
             sched,
@@ -362,6 +363,7 @@ impl CallbackSchedulerStep {
     }
 }
 
+#[cfg(any(Py_3_12, Py_3_13))]
 #[pymethods]
 impl CallbackSchedulerStep {
     fn _step(pyself: Py<Self>, py: Python) {
