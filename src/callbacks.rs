@@ -14,12 +14,11 @@ pub(crate) struct CallbackScheduler {
     schedule_fn: OnceLock<PyObject>,
     aio_tenter: PyObject,
     aio_texit: PyObject,
-    pykw_ctx: PyObject,
+    pym_lcs: PyObject,
     pyname_aioblock: PyObject,
     pyname_aiosend: PyObject,
     pyname_aiothrow: PyObject,
     pyname_donecb: PyObject,
-    pyname_loopcs: PyObject,
     pynone: PyObject,
     pyfalse: PyObject,
 }
@@ -37,7 +36,7 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    pub(crate) fn send(pyself: Py<Self>, py: Python, coro: PyObject) {
+    pub(crate) fn send(pyself: Py<Self>, py: Python, coro: PyObject, ctx: PyObject) {
         let rself = pyself.get();
         let ptr = pyself.as_ptr();
 
@@ -53,6 +52,11 @@ impl CallbackScheduler {
             );
             Bound::from_owned_ptr_or_err(py, res)
         } {
+            let aio_ctxd = PyDict::new(py);
+            aio_ctxd
+                .set_item(pyo3::intern!(py, "context"), ctx.clone_ref(py))
+                .unwrap();
+
             if unsafe {
                 let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
                 Bound::from_owned_ptr_or_err(py, vptr)
@@ -64,6 +68,7 @@ impl CallbackScheduler {
                     CallbackSchedulerWaker {
                         sched: pyself.clone_ref(py),
                         coro,
+                        ctx: ctx.clone_ref(py),
                     },
                 )
                 .unwrap();
@@ -74,7 +79,7 @@ impl CallbackScheduler {
                     pyo3::ffi::PyObject_Call(
                         pyo3::ffi::PyObject_GetAttr(resp, rself.pyname_donecb.as_ptr()),
                         (waker,).into_py_any(py).unwrap().into_ptr(),
-                        rself.pykw_ctx.as_ptr(),
+                        aio_ctxd.as_ptr(),
                     );
                 }
             } else {
@@ -83,16 +88,16 @@ impl CallbackScheduler {
                     CallbackSchedulerRef {
                         sched: pyself.clone_ref(py),
                         coro,
+                        ctx: ctx.clone_ref(py),
                     },
                 )
                 .unwrap();
 
                 unsafe {
-                    pyo3::ffi::PyObject_CallMethodOneArg(
-                        #[allow(clippy::used_underscore_binding)]
-                        rself._loop.as_ptr(),
-                        rself.pyname_loopcs.as_ptr(),
-                        sref.as_ptr(),
+                    pyo3::ffi::PyObject_Call(
+                        rself.pym_lcs.as_ptr(),
+                        (sref,).into_py_any(py).unwrap().into_ptr(),
+                        aio_ctxd.as_ptr(),
                     );
                 }
             }
@@ -148,6 +153,11 @@ impl CallbackScheduler {
             );
             Bound::from_owned_ptr_or_err(py, res)
         } {
+            let aio_ctxd = PyDict::new(py);
+            aio_ctxd
+                .set_item(pyo3::intern!(py, "context"), ctx.clone_ref(py))
+                .unwrap();
+
             if unsafe {
                 let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
                 Bound::from_owned_ptr_or_err(py, vptr)
@@ -159,6 +169,7 @@ impl CallbackScheduler {
                     CallbackSchedulerWaker {
                         sched: pyself.clone_ref(py),
                         coro,
+                        ctx: ctx.clone_ref(py),
                     },
                 )
                 .unwrap();
@@ -169,7 +180,7 @@ impl CallbackScheduler {
                     pyo3::ffi::PyObject_Call(
                         pyo3::ffi::PyObject_GetAttr(resp, rself.pyname_donecb.as_ptr()),
                         (waker,).into_py_any(py).unwrap().into_ptr(),
-                        rself.pykw_ctx.as_ptr(),
+                        aio_ctxd.as_ptr(),
                     );
                 }
             } else {
@@ -178,17 +189,16 @@ impl CallbackScheduler {
                     CallbackSchedulerRef {
                         sched: pyself.clone_ref(py),
                         coro,
+                        ctx: ctx.clone_ref(py),
                     },
                 )
                 .unwrap();
 
                 unsafe {
-                    pyo3::ffi::PyObject_CallMethodObjArgs(
-                        #[allow(clippy::used_underscore_binding)]
-                        rself._loop.as_ptr(),
-                        rself.pyname_loopcs.as_ptr(),
-                        sref.as_ptr(),
-                        std::ptr::null_mut::<PyObject>(),
+                    pyo3::ffi::PyObject_Call(
+                        rself.pym_lcs.as_ptr(),
+                        (sref,).into_py_any(py).unwrap().into_ptr(),
+                        aio_ctxd.as_ptr(),
                     );
                 }
             }
@@ -228,8 +238,7 @@ impl CallbackScheduler {
         aio_tenter: PyObject,
         aio_texit: PyObject,
     ) -> Self {
-        let ctxd = PyDict::new(py);
-        ctxd.set_item(pyo3::intern!(py, "context"), ctx.clone_ref(py)).unwrap();
+        let pym_lcs = event_loop.getattr(py, pyo3::intern!(py, "call_soon")).unwrap();
 
         Self {
             _loop: event_loop,
@@ -240,12 +249,11 @@ impl CallbackScheduler {
             aio_texit,
             pyfalse: false.into_py_any(py).unwrap(),
             pynone: py.None(),
-            pykw_ctx: ctxd.into_py_any(py).unwrap(),
+            pym_lcs,
             pyname_aioblock: pyo3::intern!(py, "_asyncio_future_blocking").into_py_any(py).unwrap(),
             pyname_aiosend: pyo3::intern!(py, "send").into_py_any(py).unwrap(),
             pyname_aiothrow: pyo3::intern!(py, "throw").into_py_any(py).unwrap(),
             pyname_donecb: pyo3::intern!(py, "add_done_callback").into_py_any(py).unwrap(),
-            pyname_loopcs: pyo3::intern!(py, "call_soon").into_py_any(py).unwrap(),
         }
     }
 
@@ -255,14 +263,31 @@ impl CallbackScheduler {
     }
 
     #[cfg(not(any(Py_3_12, Py_3_13)))]
-    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
-        CallbackScheduler::send(pyself, py, coro);
+    fn _run_wctx(pyself: Py<Self>, py: Python, coro: PyObject, ctx: PyObject) {
+        unsafe {
+            pyo3::ffi::PyContext_Enter(ctx.as_ptr());
+        }
+
+        CallbackScheduler::send(pyself, py, coro, ctx.clone_ref(py));
+
+        unsafe {
+            pyo3::ffi::PyContext_Exit(ctx.as_ptr());
+        }
     }
 
     #[cfg(any(Py_3_12, Py_3_13))]
-    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
-        let stepper = Py::new(py, CallbackSchedulerStep::new(py, pyself, coro)).unwrap();
+    fn _run_wctx(pyself: Py<Self>, py: Python, coro: PyObject, ctx: PyObject) {
+        let stepper = Py::new(py, CallbackSchedulerStep::new(pyself, coro, ctx.clone_ref(py))).unwrap();
+
+        unsafe {
+            pyo3::ffi::PyContext_Enter(ctx.as_ptr());
+        }
+
         CallbackSchedulerStep::send(stepper, py);
+
+        unsafe {
+            pyo3::ffi::PyContext_Exit(ctx.as_ptr());
+        }
     }
 }
 
@@ -271,18 +296,18 @@ impl CallbackScheduler {
 pub(crate) struct CallbackSchedulerStep {
     sched: Py<CallbackScheduler>,
     coro: PyObject,
+    ctx: PyObject,
     futw: Mutex<Option<PyObject>>,
-    pyname_wake: PyObject,
 }
 
 #[cfg(any(Py_3_12, Py_3_13))]
 impl CallbackSchedulerStep {
-    pub(crate) fn new(py: Python, sched: Py<CallbackScheduler>, coro: PyObject) -> Self {
+    pub(crate) fn new(sched: Py<CallbackScheduler>, coro: PyObject, ctx: PyObject) -> Self {
         Self {
             sched,
             coro,
+            ctx,
             futw: Mutex::new(None),
-            pyname_wake: pyo3::intern!(py, "wake").into_py_any(py).unwrap(),
         }
     }
 
@@ -309,6 +334,11 @@ impl CallbackSchedulerStep {
             );
             Bound::from_owned_ptr_or_err(py, res)
         } {
+            let aio_ctxd = PyDict::new(py);
+            aio_ctxd
+                .set_item(pyo3::intern!(py, "context"), rself.ctx.clone_ref(py))
+                .unwrap();
+
             if unsafe {
                 let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rsched.pyname_aioblock.as_ptr());
                 Bound::from_owned_ptr_or_err(py, vptr)
@@ -326,17 +356,16 @@ impl CallbackSchedulerStep {
                     pyo3::ffi::PyObject_Call(
                         pyo3::ffi::PyObject_GetAttr(resp, rsched.pyname_donecb.as_ptr()),
                         (pyself.clone_ref(py),).into_py_any(py).unwrap().into_ptr(),
-                        rsched.pykw_ctx.as_ptr(),
+                        aio_ctxd.as_ptr(),
                     );
                 }
             } else {
                 unsafe {
-                    let mptr = pyo3::ffi::PyObject_GetAttr(ptr, rself.pyname_wake.as_ptr());
-                    pyo3::ffi::PyObject_CallMethodOneArg(
-                        #[allow(clippy::used_underscore_binding)]
-                        rsched._loop.as_ptr(),
-                        rsched.pyname_loopcs.as_ptr(),
-                        mptr,
+                    let sref = pyself.getattr(py, pyo3::intern!(py, "_step")).unwrap();
+                    pyo3::ffi::PyObject_Call(
+                        rsched.pym_lcs.as_ptr(),
+                        (sref,).into_py_any(py).unwrap().into_ptr(),
+                        aio_ctxd.as_ptr(),
                     );
                 }
             }
@@ -398,13 +427,19 @@ impl CallbackSchedulerStep {
 pub(crate) struct CallbackSchedulerWaker {
     sched: Py<CallbackScheduler>,
     coro: PyObject,
+    ctx: PyObject,
 }
 
 #[pymethods]
 impl CallbackSchedulerWaker {
     fn __call__(&self, py: Python, fut: PyObject) {
         match fut.call_method0(py, pyo3::intern!(py, "result")) {
-            Ok(_) => CallbackScheduler::send(self.sched.clone_ref(py), py, self.coro.clone_ref(py)),
+            Ok(_) => CallbackScheduler::send(
+                self.sched.clone_ref(py),
+                py,
+                self.coro.clone_ref(py),
+                self.ctx.clone_ref(py),
+            ),
             Err(err) => CallbackScheduler::throw(
                 self.sched.clone_ref(py),
                 py,
@@ -419,12 +454,18 @@ impl CallbackSchedulerWaker {
 pub(crate) struct CallbackSchedulerRef {
     sched: Py<CallbackScheduler>,
     coro: PyObject,
+    ctx: PyObject,
 }
 
 #[pymethods]
 impl CallbackSchedulerRef {
     fn __call__(&self, py: Python) {
-        CallbackScheduler::send(self.sched.clone_ref(py), py, self.coro.clone_ref(py));
+        CallbackScheduler::send(
+            self.sched.clone_ref(py),
+            py,
+            self.coro.clone_ref(py),
+            self.ctx.clone_ref(py),
+        );
     }
 }
 
