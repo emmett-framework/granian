@@ -34,7 +34,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos, windows]
+        # FIXME: win with pypy gives strange link err for PyContext_
+        # os: [ubuntu, macos, windows]
+        os: [ubuntu, macos]
         target: [x86_64, aarch64]
         manylinux: [auto]
         include:
@@ -64,12 +66,13 @@ jobs:
             platform: linux
             target: aarch64
             manylinux: musllinux_1_1
-          - os: windows
-            target: x86_64
-            interpreter: pypy3.9 pypy3.10
-        exclude:
-          - os: windows
-            target: aarch64
+          # FIXME: win with pypy gives strange link err for PyContext_
+          # - os: windows
+          #   target: x86_64
+          #   interpreter: pypy3.9 pypy3.10
+        # exclude:
+        #   - os: windows
+        #     target: aarch64
 
     runs-on: ${{ matrix.os }}-latest
     steps:
