@@ -1,6 +1,7 @@
-use pyo3::prelude::*;
 #[cfg(windows)]
 use pyo3::IntoPyObjectExt;
+
+use pyo3::prelude::*;
 use std::{
     future::Future,
     sync::{Arc, Mutex},
@@ -10,13 +11,15 @@ use tokio::{
     task::{JoinHandle, LocalSet},
 };
 
-use super::blocking::BlockingRunner;
-use super::callbacks::PyEmptyAwaitable;
 #[cfg(unix)]
 use super::callbacks::PyFutureAwaitable;
-use super::callbacks::PyIterAwaitable;
 #[cfg(windows)]
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
+
+use super::blocking::BlockingRunner;
+use super::callbacks::PyEmptyAwaitable;
+use super::callbacks::PyIterAwaitable;
+use super::conversion::FutureResultToPy;
 
 pub trait JoinError {
     #[allow(dead_code)]
@@ -144,7 +147,7 @@ pub(crate) fn init_runtime_st(blocking_threads: usize, py_loop: Arc<PyObject>) -
 pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
-    F: Future<Output = PyResult<PyObject>> + Send + 'static,
+    F: Future<Output = FutureResultToPy> + Send + 'static,
 {
     let aw = Py::new(py, PyIterAwaitable::new())?;
     let py_fut = aw.clone_ref(py);
@@ -153,8 +156,10 @@ where
     rt.spawn(async move {
         let result = fut.await;
         let _ = rb.run(move || {
-            aw.get().set_result(result);
-            Python::with_gil(|_| drop(aw));
+            Python::with_gil(|py| {
+                aw.get().set_result(py, result);
+                drop(aw)
+            });
         });
     });
 
@@ -171,7 +176,7 @@ where
 pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
-    F: Future<Output = PyResult<PyObject>> + Send + 'static,
+    F: Future<Output = FutureResultToPy> + Send + 'static,
 {
     let event_loop = rt.py_event_loop(py);
     let (aw, cancel_tx) = PyFutureAwaitable::new(event_loop).to_spawn(py)?;
@@ -181,7 +186,7 @@ where
     rt.spawn(async move {
         tokio::select! {
             result = fut => {
-                let _ = rb.run(move || PyFutureAwaitable::set_result(aw, result));
+                let _ = rb.run(move || Python::with_gil(|py| PyFutureAwaitable::set_result(aw, py, result)));
             },
             () = cancel_tx.notified() => {
                 let _ = rb.run(move || Python::with_gil(|_| drop(aw)));

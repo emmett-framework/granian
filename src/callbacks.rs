@@ -1,8 +1,11 @@
-use pyo3::{exceptions::PyStopIteration, prelude::*, types::PyDict, IntoPyObjectExt};
 #[cfg(any(Py_3_12, Py_3_13))]
 use std::sync::Mutex;
+
+use pyo3::{exceptions::PyStopIteration, prelude::*, types::PyDict, IntoPyObjectExt};
 use std::sync::{atomic, Arc, OnceLock, RwLock};
 use tokio::sync::Notify;
+
+use crate::{asyncio::copy_context, conversion::FutureResultToPy};
 
 pub(crate) type ArcCBScheduler = Arc<Py<CallbackScheduler>>;
 
@@ -116,9 +119,8 @@ impl CallbackScheduler {
         let ptr = pyself.as_ptr();
 
         unsafe {
-            let corom = pyo3::ffi::PyObject_GetAttr(coro.as_ptr(), rself.pyname_aiothrow.as_ptr());
             pyo3::ffi::PyObject_CallOneArg(rself.aio_tenter.as_ptr(), ptr);
-            pyo3::ffi::PyObject_CallOneArg(corom, err.as_ptr());
+            pyo3::ffi::PyObject_CallMethodOneArg(coro.as_ptr(), rself.pyname_aiothrow.as_ptr(), err.into_ptr());
             pyo3::ffi::PyErr_Clear();
             pyo3::ffi::PyObject_CallOneArg(rself.aio_texit.as_ptr(), ptr);
         }
@@ -213,18 +215,20 @@ impl CallbackScheduler {
 
     #[inline]
     pub(crate) fn throw(pyself: Py<Self>, py: Python, coro: PyObject, err: PyObject) {
-        let pyname_aiothrow = pyself.get().pyname_aiothrow.as_ptr();
-        let aio_tenter = pyself.get().aio_tenter.as_ptr();
-        let aio_texit = pyself.get().aio_texit.as_ptr();
-        let ptr = (pyself,).into_py_any(py).unwrap().as_ptr();
-        let errptr = (err,).into_py_any(py).unwrap().as_ptr();
+        let rself = pyself.get();
+        let ptr = (pyself.clone_ref(py),).into_pyobject(py).unwrap().into_ptr();
+        let errptr = (err,).into_py_any(py).unwrap().into_ptr();
 
         unsafe {
-            let corom = pyo3::ffi::PyObject_GetAttr(coro.as_ptr(), pyname_aiothrow);
-            pyo3::ffi::PyObject_CallObject(aio_tenter, ptr);
-            pyo3::ffi::PyObject_CallObject(corom, errptr);
+            pyo3::ffi::PyObject_CallObject(rself.aio_tenter.as_ptr(), ptr);
+            pyo3::ffi::PyObject_CallMethodObjArgs(
+                coro.as_ptr(),
+                rself.pyname_aiothrow.as_ptr(),
+                errptr,
+                std::ptr::null_mut::<PyObject>(),
+            );
             pyo3::ffi::PyErr_Clear();
-            pyo3::ffi::PyObject_CallObject(aio_texit, ptr);
+            pyo3::ffi::PyObject_CallObject(rself.aio_texit.as_ptr(), ptr);
         }
     }
 }
@@ -265,7 +269,9 @@ impl CallbackScheduler {
     }
 
     #[cfg(not(any(Py_3_12, Py_3_13)))]
-    fn _run_wctx(pyself: Py<Self>, py: Python, coro: PyObject, ctx: PyObject) {
+    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
+        let ctx = copy_context(py);
+
         unsafe {
             pyo3::ffi::PyContext_Enter(ctx.as_ptr());
         }
@@ -278,7 +284,8 @@ impl CallbackScheduler {
     }
 
     #[cfg(any(Py_3_12, Py_3_13))]
-    fn _run_wctx(pyself: Py<Self>, py: Python, coro: PyObject, ctx: PyObject) {
+    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
+        let ctx = copy_context(py);
         let stepper = Py::new(py, CallbackSchedulerStep::new(pyself, coro, ctx.clone_ref(py))).unwrap();
 
         unsafe {
@@ -385,9 +392,8 @@ impl CallbackSchedulerStep {
         let ptr = pyself.as_ptr();
 
         unsafe {
-            let corom = pyo3::ffi::PyObject_GetAttr(rself.coro.as_ptr(), rsched.pyname_aiothrow.as_ptr());
             pyo3::ffi::PyObject_CallOneArg(rsched.aio_tenter.as_ptr(), ptr);
-            pyo3::ffi::PyObject_CallOneArg(corom, err.as_ptr());
+            pyo3::ffi::PyObject_CallMethodOneArg(rself.coro.as_ptr(), rsched.pyname_aiothrow.as_ptr(), err.into_ptr());
             pyo3::ffi::PyErr_Clear();
             pyo3::ffi::PyObject_CallOneArg(rsched.aio_texit.as_ptr(), ptr);
         }
@@ -502,8 +508,8 @@ impl PyIterAwaitable {
     }
 
     #[inline]
-    pub(crate) fn set_result(&self, result: PyResult<PyObject>) {
-        let _ = self.result.set(result);
+    pub(crate) fn set_result(&self, py: Python, result: FutureResultToPy) {
+        let _ = self.result.set(result.into_pyobject(py).map(Bound::unbind));
     }
 }
 
@@ -563,7 +569,7 @@ impl PyFutureAwaitable {
         Ok((Py::new(py, self)?, cancel_tx))
     }
 
-    pub(crate) fn set_result(pyself: Py<Self>, result: PyResult<PyObject>) {
+    pub(crate) fn set_result(pyself: Py<Self>, py: Python, result: FutureResultToPy) {
         let rself = pyself.get();
         if rself
             .state
@@ -575,28 +581,19 @@ impl PyFutureAwaitable {
             )
             .is_err()
         {
-            Python::with_gil(|_| {
-                drop(result);
-                drop(pyself);
-            });
             return;
         }
 
-        let _ = rself.result.set(result);
-
-        Python::with_gil(|py| {
-            let ack = pyself.get().ack.read().unwrap();
-            if let Some((cb, ctx)) = &*ack {
-                let _ = pyself.get().event_loop.clone_ref(py).call_method(
-                    py,
-                    pyo3::intern!(py, "call_soon_threadsafe"),
-                    (cb, pyself.clone_ref(py)),
-                    Some(ctx.bind(py)),
-                );
-            }
-            drop(ack);
-            drop(pyself);
-        });
+        let _ = rself.result.set(result.into_pyobject(py).map(Bound::unbind));
+        let ack = rself.ack.read().unwrap();
+        if let Some((cb, ctx)) = &*ack {
+            let _ = rself.event_loop.clone_ref(py).call_method(
+                py,
+                pyo3::intern!(py, "call_soon_threadsafe"),
+                (cb, pyself.clone_ref(py)),
+                Some(ctx.bind(py)),
+            );
+        }
     }
 }
 

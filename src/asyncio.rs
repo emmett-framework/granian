@@ -22,7 +22,10 @@ pub(crate) fn empty_context(py: Python) -> PyResult<&Bound<PyAny>> {
         .bind(py))
 }
 
-#[allow(dead_code)]
-pub(crate) fn copy_context(py: Python) -> PyResult<Bound<PyAny>> {
-    contextvars(py)?.call_method0("copy_context")
+pub(crate) fn copy_context(py: Python) -> PyObject {
+    let ctx = unsafe {
+        let ptr = pyo3::ffi::PyContext_CopyCurrent();
+        Bound::from_owned_ptr(py, ptr)
+    };
+    ctx.unbind()
 }

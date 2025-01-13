@@ -1,11 +1,14 @@
-use hyper::HeaderMap;
+use hyper::{body, HeaderMap};
 use tokio_tungstenite::tungstenite::Message;
 
 pub(crate) enum ASGIMessageType {
-    HTTPStart((u16, HeaderMap)),
-    HTTPBody((Box<[u8]>, bool)),
-    HTTPFile(String),
+    HTTPResponseStart((u16, HeaderMap)),
+    HTTPResponseBody((Box<[u8]>, bool)),
+    HTTPResponseFile(String),
+    HTTPDisconnect,
+    HTTPRequestBody((body::Bytes, bool)),
     WSAccept(Option<String>),
+    WSConnect,
     WSClose,
     WSMessage(Message),
 }

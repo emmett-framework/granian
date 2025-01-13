@@ -8,7 +8,7 @@ use hyper::{
     Method, Uri, Version,
 };
 use percent_encoding::percent_decode_str;
-use pyo3::types::{PyIterator, PyList, PyString};
+use pyo3::types::{PyBytes, PyIterator, PyList, PyString};
 use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{borrow::Cow, net::SocketAddr, sync::Arc};
 use tokio::fs::File;
@@ -301,6 +301,60 @@ impl PyResponseFile {
                 log::info!("Cannot open file {}", &self.file_path);
                 response_404()
             }
+        }
+    }
+}
+
+enum WebsocketMessageType {
+    Close = 0,
+    Bytes = 1,
+    Text = 2,
+}
+
+#[pyclass(frozen, module = "granian._granian")]
+pub(super) struct WebsocketInboundCloseMessage {
+    #[pyo3(get)]
+    kind: usize,
+}
+
+impl WebsocketInboundCloseMessage {
+    pub fn new() -> Self {
+        Self {
+            kind: WebsocketMessageType::Close as usize,
+        }
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian")]
+pub(super) struct WebsocketInboundBytesMessage {
+    #[pyo3(get)]
+    kind: usize,
+    #[pyo3(get)]
+    data: Py<PyBytes>,
+}
+
+impl WebsocketInboundBytesMessage {
+    pub fn new(data: Py<PyBytes>) -> Self {
+        Self {
+            kind: WebsocketMessageType::Bytes as usize,
+            data,
+        }
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian")]
+pub(super) struct WebsocketInboundTextMessage {
+    #[pyo3(get)]
+    kind: usize,
+    #[pyo3(get)]
+    data: Py<PyString>,
+}
+
+impl WebsocketInboundTextMessage {
+    pub fn new(data: Py<PyString>) -> Self {
+        Self {
+            kind: WebsocketMessageType::Text as usize,
+            data,
         }
     }
 }

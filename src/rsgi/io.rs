@@ -1,12 +1,7 @@
 use futures::{sink::SinkExt, StreamExt, TryStreamExt};
 use http_body_util::BodyExt;
 use hyper::body;
-use pyo3::{
-    prelude::*,
-    pybacked::PyBackedStr,
-    types::{PyBytes, PyString},
-    IntoPyObjectExt,
-};
+use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{
     borrow::Cow,
     sync::{atomic, Arc, Mutex, RwLock},
@@ -19,7 +14,7 @@ use super::{
     types::{PyResponse, PyResponseBody, PyResponseFile},
 };
 use crate::{
-    conversion::BytesToPy,
+    conversion::FutureResultToPy,
     runtime::{future_into_py_futlike, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSStream, WSTxStream},
 };
@@ -43,30 +38,22 @@ impl RSGIHTTPStreamTransport {
     fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
         let bdata: Box<[u8]> = data.into();
-        let pynone = py.None();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             match transport.send(Ok(body::Bytes::from(bdata))).await {
-                Ok(()) => Ok(pynone),
-                _ => {
-                    Python::with_gil(|_| drop(pynone));
-                    error_stream!()
-                }
+                Ok(()) => FutureResultToPy::None,
+                _ => FutureResultToPy::Err(error_stream!()),
             }
         })
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
-        let pynone = py.None();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             match transport.send(Ok(body::Bytes::from(data))).await {
-                Ok(()) => Ok(pynone),
-                _ => {
-                    Python::with_gil(|_| drop(pynone));
-                    error_stream!()
-                }
+                Ok(()) => FutureResultToPy::None,
+                _ => FutureResultToPy::Err(error_stream!()),
             }
         })
     }
@@ -101,11 +88,8 @@ impl RSGIHTTPProtocol {
         if let Some(body) = self.body.lock().unwrap().take() {
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 match body.collect().await {
-                    Ok(data) => {
-                        let bytes = BytesToPy(data.to_bytes());
-                        Ok(Python::with_gil(|py| bytes.into_py_any(py))?)
-                    }
-                    _ => error_stream!(),
+                    Ok(data) => FutureResultToPy::Bytes(data.to_bytes()),
+                    _ => FutureResultToPy::Err(error_stream!()),
                 }
             });
         }
@@ -129,19 +113,18 @@ impl RSGIHTTPProtocol {
         let body_stream = self.body_stream.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             let guard = &mut *body_stream.lock().await;
-            let bytes = match guard.as_mut().unwrap().next().await {
+            match guard.as_mut().unwrap().next().await {
                 Some(chunk) => {
                     let chunk = chunk
                         .map(|buf| buf.into_data().unwrap_or_default())
                         .unwrap_or(body::Bytes::new());
-                    BytesToPy(chunk)
+                    FutureResultToPy::Bytes(chunk)
                 }
                 _ => {
                     let _ = guard.take();
-                    BytesToPy(body::Bytes::new())
+                    FutureResultToPy::Bytes(body::Bytes::new())
                 }
-            };
-            Python::with_gil(|py| bytes.into_py_any(py))
+            }
         })
     }
 
@@ -243,52 +226,42 @@ impl RSGIWebsocketTransport {
                 while let Some(recv) = stream.next().await {
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => continue,
-                        Ok(message) => return message_into_py(message),
+                        Ok(message) => return FutureResultToPy::RSGIWSMessage(message),
                         _ => break,
                     }
                 }
-                return error_stream!();
+                return FutureResultToPy::Err(error_stream!());
             }
-            error_proto!()
+            FutureResultToPy::Err(error_proto!())
         })
     }
 
     fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
         let bdata: Box<[u8]> = data.into();
-        let pynone = py.None();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(bdata[..].into()).await {
-                    Ok(()) => Ok(pynone),
-                    _ => {
-                        Python::with_gil(|_| drop(pynone));
-                        error_stream!()
-                    }
+                    Ok(()) => FutureResultToPy::None,
+                    _ => FutureResultToPy::Err(error_stream!()),
                 };
             }
-            Python::with_gil(|_| drop(pynone));
-            error_proto!()
+            FutureResultToPy::Err(error_proto!())
         })
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.tx.clone();
-        let pynone = py.None();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
                 return match stream.send(data.into()).await {
-                    Ok(()) => Ok(pynone),
-                    _ => {
-                        Python::with_gil(|_| drop(pynone));
-                        error_stream!()
-                    }
+                    Ok(()) => FutureResultToPy::None,
+                    _ => FutureResultToPy::Err(error_stream!()),
                 };
             }
-            Python::with_gil(|_| drop(pynone));
-            error_proto!()
+            FutureResultToPy::Err(error_proto!())
         })
     }
 }
@@ -323,60 +296,6 @@ impl RSGIWebsocketProtocol {
     }
 }
 
-enum WebsocketMessageType {
-    Close = 0,
-    Bytes = 1,
-    Text = 2,
-}
-
-#[pyclass(frozen)]
-struct WebsocketInboundCloseMessage {
-    #[pyo3(get)]
-    kind: usize,
-}
-
-impl WebsocketInboundCloseMessage {
-    pub fn new() -> Self {
-        Self {
-            kind: WebsocketMessageType::Close as usize,
-        }
-    }
-}
-
-#[pyclass(frozen)]
-struct WebsocketInboundBytesMessage {
-    #[pyo3(get)]
-    kind: usize,
-    #[pyo3(get)]
-    data: Py<PyBytes>,
-}
-
-impl WebsocketInboundBytesMessage {
-    pub fn new(data: Py<PyBytes>) -> Self {
-        Self {
-            kind: WebsocketMessageType::Bytes as usize,
-            data,
-        }
-    }
-}
-
-#[pyclass(frozen)]
-struct WebsocketInboundTextMessage {
-    #[pyo3(get)]
-    kind: usize,
-    #[pyo3(get)]
-    data: Py<PyString>,
-}
-
-impl WebsocketInboundTextMessage {
-    pub fn new(data: Py<PyString>) -> Self {
-        Self {
-            kind: WebsocketMessageType::Text as usize,
-            data,
-        }
-    }
-}
-
 #[pymethods]
 impl RSGIWebsocketProtocol {
     #[pyo3(signature = (status=None))]
@@ -404,35 +323,16 @@ impl RSGIWebsocketProtocol {
                 Ok(()) => match (&mut *ws).await {
                     Ok(stream) => {
                         let mut trx = itransport.lock().unwrap();
-                        Ok(Python::with_gil(|py| {
+                        Python::with_gil(|py| {
                             let pytransport = Py::new(py, RSGIWebsocketTransport::new(rth, stream)).unwrap();
                             *trx = Some(pytransport.clone_ref(py));
-                            pytransport.into_any()
-                        }))
+                            FutureResultToPy::Py(pytransport.into_any())
+                        })
                     }
-                    _ => error_proto!(),
+                    _ => FutureResultToPy::Err(error_proto!()),
                 },
-                _ => error_proto!(),
+                _ => FutureResultToPy::Err(error_proto!()),
             }
         })
-    }
-}
-
-#[inline(always)]
-fn message_into_py(message: Message) -> PyResult<PyObject> {
-    match message {
-        Message::Binary(message) => Ok(Python::with_gil(|py| {
-            WebsocketInboundBytesMessage::new(PyBytes::new(py, &message).unbind()).into_py_any(py)
-        })?),
-        Message::Text(message) => Ok(Python::with_gil(|py| {
-            WebsocketInboundTextMessage::new(PyString::new(py, &message).unbind()).into_py_any(py)
-        })?),
-        Message::Close(_) => Ok(Python::with_gil(|py| {
-            WebsocketInboundCloseMessage::new().into_py_any(py)
-        })?),
-        v => {
-            log::warn!("Unsupported websocket message received {:?}", v);
-            error_proto!()
-        }
     }
 }

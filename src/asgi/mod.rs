@@ -1,11 +1,12 @@
 use pyo3::prelude::*;
 
 mod callbacks;
+pub(crate) mod conversion;
 mod errors;
 mod http;
 mod io;
 pub(crate) mod serve;
-mod types;
+pub(crate) mod types;
 mod utils;
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {

@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 mod callbacks;
+pub(crate) mod conversion;
 mod errors;
 mod http;
 mod io;
