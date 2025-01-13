@@ -202,7 +202,7 @@ where
 pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
-    F: Future<Output = PyResult<PyObject>> + Send + 'static,
+    F: Future<Output = FutureResultToPy> + Send + 'static,
 {
     let event_loop = rt.py_event_loop(py);
     let event_loop_ref = event_loop.clone_ref(py);
@@ -224,7 +224,8 @@ where
             result = fut => {
                 let _ = rb.run(move || {
                     Python::with_gil(|py| {
-                        let (cb, value) = match result {
+                        let pyres = result.into_pyobject(py).map(Bound::unbind);
+                        let (cb, value) = match pyres {
                             Ok(val) => (fut_ref.getattr(py, pyo3::intern!(py, "set_result")).unwrap(), val),
                             Err(err) => (fut_ref.getattr(py, pyo3::intern!(py, "set_exception")).unwrap(), err.into_py_any(py).unwrap())
                         };
