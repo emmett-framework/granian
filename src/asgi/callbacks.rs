@@ -138,6 +138,7 @@ impl CallbackWatcherWebsocket {
 //     }
 // }
 
+#[cfg(not(Py_GIL_DISABLED))]
 #[inline]
 pub(crate) fn call_http(
     cb: ArcCBScheduler,
@@ -174,6 +175,41 @@ pub(crate) fn call_http(
     rx
 }
 
+#[cfg(Py_GIL_DISABLED)]
+#[inline]
+pub(crate) fn call_http(
+    cb: ArcCBScheduler,
+    rt: RuntimeRef,
+    server_addr: SocketAddr,
+    client_addr: SocketAddr,
+    scheme: &str,
+    req: hyper::http::request::Parts,
+    body: hyper::body::Incoming,
+) -> oneshot::Receiver<HTTPResponse> {
+    let (tx, rx) = oneshot::channel();
+    let protocol = HTTPProtocol::new(rt, body, tx);
+    let scheme: Arc<str> = scheme.into();
+
+    scope_native_parts!(
+        req,
+        server_addr,
+        client_addr,
+        path,
+        query_string,
+        version,
+        server,
+        client
+    );
+    Python::with_gil(|py| {
+        let scope = build_scope_http(py, &req, version, server, client, &scheme, &path, query_string).unwrap();
+        let watcher = Py::new(py, CallbackWatcherHTTP::new(py, protocol, scope)).unwrap();
+        cb.get().schedule(py, watcher.as_any());
+    });
+
+    rx
+}
+
+#[cfg(not(Py_GIL_DISABLED))]
 #[inline]
 pub(crate) fn call_ws(
     cb: ArcCBScheduler,
@@ -206,6 +242,41 @@ pub(crate) fn call_ws(
             let watcher = Py::new(py, CallbackWatcherWebsocket::new(py, protocol, scope)).unwrap();
             cb.get().schedule(py, watcher.as_any());
         });
+    });
+
+    rx
+}
+
+#[cfg(Py_GIL_DISABLED)]
+#[inline]
+pub(crate) fn call_ws(
+    cb: ArcCBScheduler,
+    rt: RuntimeRef,
+    server_addr: SocketAddr,
+    client_addr: SocketAddr,
+    scheme: &str,
+    ws: HyperWebsocket,
+    req: hyper::http::request::Parts,
+    upgrade: UpgradeData,
+) -> oneshot::Receiver<WebsocketDetachedTransport> {
+    let (tx, rx) = oneshot::channel();
+    let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+    let scheme: Arc<str> = scheme.into();
+
+    scope_native_parts!(
+        req,
+        server_addr,
+        client_addr,
+        path,
+        query_string,
+        version,
+        server,
+        client
+    );
+    Python::with_gil(|py| {
+        let scope = build_scope_ws(py, &req, version, server, client, &scheme, &path, query_string).unwrap();
+        let watcher = Py::new(py, CallbackWatcherWebsocket::new(py, protocol, scope)).unwrap();
+        cb.get().schedule(py, watcher.as_any());
     });
 
     rx

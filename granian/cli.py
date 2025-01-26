@@ -9,7 +9,7 @@ from .constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
-from .server import Granian
+from .server import Server
 
 
 _AnyCallable = Callable[..., Any]
@@ -313,7 +313,7 @@ def cli(
                 print('Unable to parse provided logging config.')
                 raise click.exceptions.Exit(1)
 
-    server = Granian(
+    server = Server(
         app,
         address=host,
         port=port,

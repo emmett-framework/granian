@@ -13,18 +13,18 @@ jobs:
   lint:
     runs-on: ubuntu-latest
 
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
+    - uses: astral-sh/setup-uv@v5
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: false
     - name: Install
       run: |
-        python -m venv .venv
-        source .venv/bin/activate
-        pip install maturin
-        maturin develop --extras=lint
+        uv python install ${{ env.UV_PYTHON }}
+        uv venv .venv
+        uv sync --group lint
     - name: Lint
       run: |
         source .venv/bin/activate

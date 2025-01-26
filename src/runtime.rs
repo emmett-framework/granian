@@ -34,6 +34,7 @@ pub trait Runtime: Send + 'static {
     where
         F: Future<Output = ()> + Send + 'static;
 
+    #[cfg(not(Py_GIL_DISABLED))]
     fn blocking(&self) -> BlockingRunner;
 }
 
@@ -103,6 +104,7 @@ impl Runtime for RuntimeRef {
         self.inner.spawn(fut)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
     fn blocking(&self) -> BlockingRunner {
         self.innerb.clone()
     }
@@ -144,6 +146,7 @@ pub(crate) fn init_runtime_st(blocking_threads: usize, py_loop: Arc<PyObject>) -
 //  It consumes more cpu-cycles than `future_into_py_futlike`,
 //  but for "quick" operations it's something like 12% faster.
 #[allow(unused_must_use)]
+#[cfg(not(Py_GIL_DISABLED))]
 pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
@@ -166,13 +169,34 @@ where
     Ok(py_fut.into_any().into_bound(py))
 }
 
+#[allow(unused_must_use)]
+#[cfg(Py_GIL_DISABLED)]
+pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+where
+    R: Runtime + ContextExt + Clone,
+    F: Future<Output = FutureResultToPy> + Send + 'static,
+{
+    let aw = Py::new(py, PyIterAwaitable::new())?;
+    let py_fut = aw.clone_ref(py);
+
+    rt.spawn(async move {
+        let result = fut.await;
+        Python::with_gil(|py| {
+            aw.get().set_result(py, result);
+            drop(aw);
+        });
+    });
+
+    Ok(py_fut.into_any().into_bound(py))
+}
+
 // NOTE:
 //  `future_into_py_futlike` relies on an `asyncio.Future` like implementation.
 //  This is generally ~38% faster than `pyo3_asyncio.future_into_py` implementation.
 //  It won't consume more cpu-cycles than standard asyncio implementation,
 //  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
 #[allow(unused_must_use)]
-#[cfg(unix)]
+#[cfg(all(unix, not(Py_GIL_DISABLED)))]
 pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
@@ -198,7 +222,32 @@ where
 }
 
 #[allow(unused_must_use)]
-#[cfg(windows)]
+#[cfg(all(unix, Py_GIL_DISABLED))]
+pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+where
+    R: Runtime + ContextExt + Clone,
+    F: Future<Output = FutureResultToPy> + Send + 'static,
+{
+    let event_loop = rt.py_event_loop(py);
+    let (aw, cancel_tx) = PyFutureAwaitable::new(event_loop).to_spawn(py)?;
+    let py_fut = aw.clone_ref(py);
+
+    rt.spawn(async move {
+        tokio::select! {
+            result = fut => {
+                Python::with_gil(|py| PyFutureAwaitable::set_result(aw, py, result));
+            },
+            () = cancel_tx.notified() => {
+                Python::with_gil(|_| drop(aw));
+            }
+        }
+    });
+
+    Ok(py_fut.into_any().into_bound(py))
+}
+
+#[allow(unused_must_use)]
+#[cfg(all(windows, not(Py_GIL_DISABLED)))]
 pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
@@ -241,6 +290,53 @@ where
                         drop(fut_ref);
                         drop(event_loop_ref);
                     });
+                });
+            }
+        }
+    });
+
+    Ok(py_fut.into_bound(py))
+}
+
+#[allow(unused_must_use)]
+#[cfg(all(windows, Py_GIL_DISABLED))]
+pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+where
+    R: Runtime + ContextExt + Clone,
+    F: Future<Output = FutureResultToPy> + Send + 'static,
+{
+    let event_loop = rt.py_event_loop(py);
+    let event_loop_ref = event_loop.clone_ref(py);
+    let cancel_tx = Arc::new(tokio::sync::Notify::new());
+
+    let py_fut = event_loop.call_method0(py, pyo3::intern!(py, "create_future"))?;
+    py_fut.call_method1(
+        py,
+        pyo3::intern!(py, "add_done_callback"),
+        (PyFutureDoneCallback {
+            cancel_tx: cancel_tx.clone(),
+        },),
+    )?;
+    let fut_ref = py_fut.clone_ref(py);
+
+    rt.spawn(async move {
+        tokio::select! {
+            result = fut => {
+                Python::with_gil(|py| {
+                    let pyres = result.into_pyobject(py).map(Bound::unbind);
+                    let (cb, value) = match pyres {
+                        Ok(val) => (fut_ref.getattr(py, pyo3::intern!(py, "set_result")).unwrap(), val),
+                        Err(err) => (fut_ref.getattr(py, pyo3::intern!(py, "set_exception")).unwrap(), err.into_py_any(py).unwrap())
+                    };
+                    let _ = event_loop_ref.call_method1(py, pyo3::intern!(py, "call_soon_threadsafe"), (PyFutureResultSetter, cb, value));
+                    drop(fut_ref);
+                    drop(event_loop_ref);
+                });
+            },
+            () = cancel_tx.notified() => {
+                Python::with_gil(|_| {
+                    drop(fut_ref);
+                    drop(event_loop_ref);
                 });
             }
         }

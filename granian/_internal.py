@@ -41,7 +41,7 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
     except ImportError:
         if sys.exc_info()[-1].tb_next:
             raise RuntimeError(
-                f"While importing '{module_name}', an ImportError was raised:" f'\n\n{traceback.format_exc()}'
+                f"While importing '{module_name}', an ImportError was raised:\n\n{traceback.format_exc()}"
             )
         elif raise_on_failure:
             raise RuntimeError(f"Could not import '{module_name}'.")

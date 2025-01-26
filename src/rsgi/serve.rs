@@ -4,7 +4,7 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal, WorkerSignals};
+use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct RSGIWorker {
@@ -79,19 +79,19 @@ impl RSGIWorker {
 
     fn serve_rth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_rth(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, false) => self._serve_rth_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (false, true) => self._serve_rth_ssl(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, true) => self._serve_rth_ssl_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (false, false) => self._serve_rth(callback, event_loop, signal),
+            (true, false) => self._serve_rth_ws(callback, event_loop, signal),
+            (false, true) => self._serve_rth_ssl(callback, event_loop, signal),
+            (true, true) => self._serve_rth_ssl_ws(callback, event_loop, signal),
         }
     }
 
     fn serve_wth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_wth(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, false) => self._serve_wth_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (false, true) => self._serve_wth_ssl(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, true) => self._serve_wth_ssl_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (false, false) => self._serve_wth(callback, event_loop, signal),
+            (true, false) => self._serve_wth_ws(callback, event_loop, signal),
+            (false, true) => self._serve_wth_ssl(callback, event_loop, signal),
+            (true, true) => self._serve_wth_ssl_ws(callback, event_loop, signal),
         }
     }
 }
