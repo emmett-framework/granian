@@ -105,3 +105,11 @@ async def test_timeout(asgi_server, threading_mode):
 
     assert res.status_code == 200
     assert res.text == 'timeout'
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
+async def test_protocol_error(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f'http://localhost:{port}/%c0')
+    assert res.status_code == 404

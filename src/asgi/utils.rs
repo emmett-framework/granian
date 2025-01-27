@@ -17,9 +17,7 @@ macro_rules! scope_native_parts {
             .uri
             .path_and_query()
             .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
-        let $path = percent_encoding::percent_decode_str(path_raw)
-            .decode_utf8()
-            .unwrap_or("".into());
+        let $path = percent_encoding::percent_decode_str(path_raw).decode_utf8_lossy();
         let $version = match $req.version {
             hyper::Version::HTTP_10 => "1",
             hyper::Version::HTTP_11 => "1.1",
