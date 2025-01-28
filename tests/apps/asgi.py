@@ -10,6 +10,11 @@ PLAINTEXT_RESPONSE = {
     'status': 200,
     'headers': [[b'content-type', b'text/plain; charset=utf-8']],
 }
+NOT_FOUND_RESPONSE = {
+    'type': 'http.response.start',
+    'status': 404,
+    'headers': [[b'content-type', b'text/plain; charset=utf-8']],
+}
 JSON_RESPONSE = {'type': 'http.response.start', 'status': 200, 'headers': [[b'content-type', b'application/json']]}
 MEDIA_RESPONSE = {
     'type': 'http.response.start',
@@ -158,11 +163,13 @@ async def lifespan(scope, receive, send):
         scope['state']['global'] = 'test'
         await send({'type': 'lifespan.startup.complete'})
 
+async def not_found(scope, receive, send):
+    await send(NOT_FOUND_RESPONSE)
 
 def app(scope, receive, send):
     if scope['type'] == 'lifespan':
         return lifespan(scope, receive, send)
-    return {
+    paths = {
         '/info': info,
         '/sniffio': sniff_aio_impl,
         '/echo': echo,
@@ -174,5 +181,8 @@ def app(scope, receive, send):
         '/err_app': err_app,
         '/err_proto': err_proto,
         '/timeout_n': timeout_n,
-        '/timeout_w': timeout_w,
-    }[scope['path']](scope, receive, send)
+        '/timeout_w': timeout_w
+        }
+    if scope['path'] not in paths:
+        return not_found(scope,receive, send)
+    return paths[scope['path']](scope, receive, send) 

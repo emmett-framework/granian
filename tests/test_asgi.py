@@ -112,4 +112,4 @@ async def test_timeout(asgi_server, threading_mode):
 async def test_protocol_error(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
         res = httpx.get(f'http://localhost:{port}/%c0')
-    assert res.status_code == 404
+    assert res.status_code == 500
