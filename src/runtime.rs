@@ -158,7 +158,7 @@ where
         let _ = rb.run(move || {
             Python::with_gil(|py| {
                 aw.get().set_result(py, result);
-                drop(aw)
+                drop(aw);
             });
         });
     });
