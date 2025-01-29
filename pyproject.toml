@@ -117,13 +117,3 @@ asyncio_mode = 'auto'
 
 [tool.uv]
 package = false
-
-[dependency-groups]
-dev = [
-    "httpx>=0.25.2",
-    "maturin>=1.8.1",
-    "pip>=25.0",
-    "pytest>=7.4.4",
-    "pytest-asyncio>=0.21.2",
-    "websockets>=11.0.3",
-]
