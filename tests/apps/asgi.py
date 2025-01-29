@@ -174,5 +174,5 @@ def app(scope, receive, send):
         '/err_app': err_app,
         '/err_proto': err_proto,
         '/timeout_n': timeout_n,
-        '/timeout_w': timeout_w
+        '/timeout_w': timeout_w,
     }.get(scope['path'], info)(scope, receive, send)

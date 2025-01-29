@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ._futures import _future_watcher_wrapper, _new_cbscheduler
 from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
-from ._imports import anyio, setproctitle, watchfiles
+from ._imports import setproctitle, watchfiles
 from ._internal import load_target
 from ._signals import set_main_signals
 from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -728,8 +728,12 @@ class Granian:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
 
+        # FIXME: `rust` impl seems to mem-leak
         if self.task_impl == TaskImpl.auto:
-            self.task_impl = TaskImpl.asyncio if anyio is not None else TaskImpl.rust
+            # self.task_impl = TaskImpl.asyncio if anyio is not None else TaskImpl.rust
+            self.task_impl = TaskImpl.asyncio
+        if self.task_impl == TaskImpl.rust:
+            logger.warning('Rust task implementation is still experimental and might cause memory leaks!')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)
