@@ -28,6 +28,18 @@ async def test_scope(asgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
+async def test_scope_path_utf8_lossy(asgi_server, threading_mode):
+    async with asgi_server(threading_mode) as port:
+        res = httpx.get(f'http://localhost:{port}/%c0')
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data['path'] == '/\ufffd'
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_body(asgi_server, threading_mode):
     async with asgi_server(threading_mode) as port:
