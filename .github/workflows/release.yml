@@ -14,19 +14,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
     - uses: pyo3/maturin-action@v1
       with:
         rust-toolchain: stable
         command: sdist
         args: --out dist
     - name: Upload sdist
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: dist
+        name: dist-sdist
         path: dist
 
   wheels:
@@ -92,13 +88,13 @@ jobs:
           container: ${{ matrix.container }}
           docker-options: -e CI
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ matrix.platform || matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: dist
 
   wheels-pgo:
-    name: pgo-wheel ${{ matrix.platform || matrix.os }} (${{ matrix.interpreter}})
+    name: pgo-wheel ${{ matrix.platform || matrix.os }} (${{ matrix.interpreter }})
     strategy:
       fail-fast: false
       matrix:
@@ -161,9 +157,9 @@ jobs:
         env:
           RUSTFLAGS: "-Cprofile-use=${{ github.workspace }}/merged.profdata"
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-pgo-${{ matrix.platform || matrix.os }}-${{ matrix.interpreter }}
           path: dist
 
   release:
@@ -176,9 +172,10 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: dist
+          pattern: dist-*
+          merge-multiple: true
           path: dist
       - name: Publish package to pypi
         uses: pypa/gh-action-pypi-publish@release/v1

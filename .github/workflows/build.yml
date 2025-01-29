@@ -66,13 +66,13 @@ jobs:
           container: ${{ matrix.container }}
           docker-options: -e CI
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ matrix.platform || matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: dist
 
   wheels-pgo:
-    name: pgo-wheel ${{ matrix.platform || matrix.os }} (${{ matrix.interpreter}})
+    name: pgo-wheel ${{ matrix.platform || matrix.os }} (${{ matrix.interpreter }})
     strategy:
       fail-fast: false
       matrix:
@@ -135,7 +135,7 @@ jobs:
         env:
           RUSTFLAGS: "-Cprofile-use=${{ github.workspace }}/merged.profdata"
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-pgo-${{ matrix.platform || matrix.os }}-${{ matrix.interpreter }}
           path: dist
