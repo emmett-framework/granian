@@ -571,6 +571,8 @@ impl PyFutureAwaitable {
 
     pub(crate) fn set_result(pyself: Py<Self>, py: Python, result: FutureResultToPy) {
         let rself = pyself.get();
+
+        _ = rself.result.set(result.into_pyobject(py).map(Bound::unbind));
         if rself
             .state
             .compare_exchange(
@@ -584,7 +586,6 @@ impl PyFutureAwaitable {
             return;
         }
 
-        let _ = rself.result.set(result.into_pyobject(py).map(Bound::unbind));
         let ack = rself.ack.read().unwrap();
         if let Some((cb, ctx)) = &*ack {
             let _ = rself.event_loop.clone_ref(py).call_method(
