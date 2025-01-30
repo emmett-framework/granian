@@ -21,3 +21,6 @@ async def app(scope, receive, send):
 
     finally:
         clients.remove(send)
+
+
+async_app = app

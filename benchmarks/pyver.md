@@ -4,9 +4,9 @@
 
 ## Python versions
 
-Run at: Thu 05 Dec 2024, 19:19    
+Run at: Thu 30 Jan 2025, 03:32    
 Environment: AMD Ryzen 7 5700X @ Ubuntu 24.04 (CPUs: 16)    
-Granian version: 1.7.0    
+Granian version: 1.7.6    
 
 Comparison between different Python versions of Granian application protocols using 4bytes plain text response.    
 Bytes and string response are reported for every protocol just to report the difference with RSGI protocol.    
@@ -15,48 +15,48 @@ The "echo" request is a 4bytes POST request responding with the same body.
 
 | Python version | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- | --- |
-| 3.9 | RSGI bytes (c64) | 1321556 | 132150 | 0.484ms | 1.496ms |
-| 3.9 | RSGI str (c64) | 1314383 | 131441 | 0.486ms | 1.637ms |
-| 3.9 | RSGI echo (c512) | 854276 | 85770 | 5.962ms | 43.878ms |
-| 3.9 | ASGI bytes (c64) | 1311686 | 131176 | 0.487ms | 2.455ms |
-| 3.9 | ASGI str (c128) | 1315554 | 131625 | 0.971ms | 10.937ms |
-| 3.9 | ASGI echo (c128) | 899181 | 89981 | 1.42ms | 11.494ms |
-| 3.9 | WSGI bytes (c64) | 1324932 | 132489 | 0.483ms | 1.653ms |
-| 3.9 | WSGI str (c64) | 1305102 | 130505 | 0.49ms | 1.556ms |
-| 3.9 | WSGI echo (c64) | 1311938 | 131187 | 0.487ms | 2.577ms |
-| 3.10 | RSGI bytes (c64) | 1327959 | 132793 | 0.481ms | 2.307ms |
-| 3.10 | RSGI str (c128) | 1318196 | 131891 | 0.969ms | 18.843ms |
-| 3.10 | RSGI echo (c512) | 875041 | 87820 | 5.824ms | 48.898ms |
-| 3.10 | ASGI bytes (c64) | 1320131 | 132006 | 0.484ms | 1.609ms |
-| 3.10 | ASGI str (c64) | 1303674 | 130363 | 0.49ms | 1.498ms |
-| 3.10 | ASGI echo (c64) | 890942 | 89094 | 0.718ms | 1.57ms |
-| 3.10 | WSGI bytes (c64) | 1325236 | 132521 | 0.482ms | 1.565ms |
-| 3.10 | WSGI str (c64) | 1337376 | 133736 | 0.478ms | 1.709ms |
-| 3.10 | WSGI echo (c64) | 1324390 | 132436 | 0.483ms | 1.527ms |
-| 3.11 | RSGI bytes (c256) | 979695 | 98170 | 2.605ms | 16.536ms |
-| 3.11 | RSGI str (c256) | 979044 | 98034 | 2.609ms | 14.028ms |
-| 3.11 | RSGI echo (c512) | 514804 | 51668 | 9.899ms | 40.282ms |
-| 3.11 | ASGI bytes (c256) | 753404 | 75416 | 3.388ms | 30.286ms |
-| 3.11 | ASGI str (c128) | 770893 | 77119 | 1.658ms | 15.361ms |
-| 3.11 | ASGI echo (c512) | 466150 | 46726 | 10.942ms | 42.779ms |
-| 3.11 | WSGI bytes (c64) | 642988 | 64298 | 0.994ms | 1.816ms |
-| 3.11 | WSGI str (c128) | 606384 | 60661 | 2.108ms | 11.511ms |
-| 3.11 | WSGI echo (c256) | 589528 | 59049 | 4.33ms | 13.673ms |
-| 3.12 | RSGI bytes (c256) | 987209 | 98849 | 2.585ms | 27.041ms |
-| 3.12 | RSGI str (c256) | 992975 | 99511 | 2.57ms | 15.944ms |
-| 3.12 | RSGI echo (c512) | 504614 | 50645 | 10.093ms | 41.187ms |
-| 3.12 | ASGI bytes (c256) | 727276 | 72832 | 3.512ms | 17.573ms |
-| 3.12 | ASGI str (c256) | 760182 | 76107 | 3.36ms | 16.687ms |
-| 3.12 | ASGI echo (c256) | 448423 | 44926 | 5.69ms | 17.904ms |
-| 3.12 | WSGI bytes (c128) | 622144 | 62252 | 2.054ms | 7.601ms |
-| 3.12 | WSGI str (c256) | 603226 | 60458 | 4.229ms | 13.546ms |
-| 3.12 | WSGI echo (c64) | 575707 | 57572 | 1.11ms | 1.793ms |
-| 3.13 | RSGI bytes (c512) | 1015261 | 101920 | 5.02ms | 34.988ms |
-| 3.13 | RSGI str (c512) | 1010240 | 101369 | 5.048ms | 47.614ms |
-| 3.13 | RSGI echo (c512) | 541106 | 54237 | 9.429ms | 36.025ms |
-| 3.13 | ASGI bytes (c256) | 766256 | 76704 | 3.331ms | 30.396ms |
-| 3.13 | ASGI str (c256) | 759011 | 76044 | 3.363ms | 15.583ms |
-| 3.13 | ASGI echo (c512) | 470398 | 47177 | 10.833ms | 39.879ms |
-| 3.13 | WSGI bytes (c64) | 630754 | 63075 | 1.014ms | 1.692ms |
-| 3.13 | WSGI str (c128) | 622884 | 62324 | 2.052ms | 17.309ms |
-| 3.13 | WSGI echo (c128) | 587677 | 58790 | 2.175ms | 15.24ms |
+| 3.9 | RSGI bytes (c128) | 1311851 | 131227 | 0.975ms | 17.567ms |
+| 3.9 | RSGI str (c64) | 1335286 | 133521 | 0.479ms | 1.707ms |
+| 3.9 | RSGI echo (c64) | 1176034 | 117605 | 0.543ms | 1.535ms |
+| 3.9 | ASGI bytes (c128) | 1239218 | 123972 | 1.032ms | 14.22ms |
+| 3.9 | ASGI str (c64) | 1192748 | 119276 | 0.536ms | 2.37ms |
+| 3.9 | ASGI echo (c128) | 808472 | 80909 | 1.58ms | 19.078ms |
+| 3.9 | WSGI bytes (c64) | 1342118 | 134207 | 0.476ms | 1.542ms |
+| 3.9 | WSGI str (c64) | 1339134 | 133907 | 0.477ms | 1.502ms |
+| 3.9 | WSGI echo (c64) | 1321322 | 132130 | 0.484ms | 1.55ms |
+| 3.10 | RSGI bytes (c128) | 1323978 | 132531 | 0.964ms | 14.834ms |
+| 3.10 | RSGI str (c64) | 1340361 | 134034 | 0.477ms | 1.576ms |
+| 3.10 | RSGI echo (c128) | 1203623 | 120427 | 1.061ms | 18.959ms |
+| 3.10 | ASGI bytes (c128) | 1231374 | 123213 | 1.038ms | 15.009ms |
+| 3.10 | ASGI str (c64) | 1206823 | 120683 | 0.53ms | 1.611ms |
+| 3.10 | ASGI echo (c64) | 765316 | 76532 | 0.835ms | 2.143ms |
+| 3.10 | WSGI bytes (c256) | 1319475 | 132235 | 1.934ms | 17.009ms |
+| 3.10 | WSGI str (c64) | 1327550 | 132746 | 0.482ms | 1.563ms |
+| 3.10 | WSGI echo (c128) | 1323622 | 132456 | 0.965ms | 13.517ms |
+| 3.11 | RSGI bytes (c256) | 901759 | 90302 | 2.833ms | 13.647ms |
+| 3.11 | RSGI str (c256) | 885121 | 88661 | 2.885ms | 13.819ms |
+| 3.11 | RSGI echo (c128) | 643517 | 64377 | 1.987ms | 13.493ms |
+| 3.11 | ASGI bytes (c128) | 716894 | 71717 | 1.783ms | 17.229ms |
+| 3.11 | ASGI str (c128) | 718844 | 71915 | 1.778ms | 9.746ms |
+| 3.11 | ASGI echo (c64) | 490595 | 49063 | 1.302ms | 2.382ms |
+| 3.11 | WSGI bytes (c512) | 642697 | 64468 | 7.932ms | 44.61ms |
+| 3.11 | WSGI str (c256) | 632896 | 63398 | 4.034ms | 14.664ms |
+| 3.11 | WSGI echo (c256) | 598930 | 59976 | 4.261ms | 23.042ms |
+| 3.12 | RSGI bytes (c256) | 895507 | 89667 | 2.853ms | 11.617ms |
+| 3.12 | RSGI str (c256) | 898199 | 89988 | 2.843ms | 14.007ms |
+| 3.12 | RSGI echo (c128) | 616345 | 61658 | 2.074ms | 15.792ms |
+| 3.12 | ASGI bytes (c128) | 659380 | 65961 | 1.939ms | 13.531ms |
+| 3.12 | ASGI str (c256) | 652380 | 65326 | 3.916ms | 12.502ms |
+| 3.12 | ASGI echo (c64) | 472725 | 47273 | 1.352ms | 2.462ms |
+| 3.12 | WSGI bytes (c64) | 597478 | 59751 | 1.069ms | 1.843ms |
+| 3.12 | WSGI str (c128) | 582559 | 58295 | 2.193ms | 11.852ms |
+| 3.12 | WSGI echo (c64) | 559954 | 55995 | 1.142ms | 1.966ms |
+| 3.13 | RSGI bytes (c256) | 897838 | 89954 | 2.843ms | 13.808ms |
+| 3.13 | RSGI str (c256) | 914436 | 91586 | 2.793ms | 17.394ms |
+| 3.13 | RSGI echo (c256) | 654864 | 65601 | 3.898ms | 15.93ms |
+| 3.13 | ASGI bytes (c128) | 748006 | 74827 | 1.709ms | 16.539ms |
+| 3.13 | ASGI str (c512) | 676968 | 67945 | 7.526ms | 34.523ms |
+| 3.13 | ASGI echo (c64) | 497521 | 49751 | 1.285ms | 2.17ms |
+| 3.13 | WSGI bytes (c64) | 630906 | 63095 | 1.013ms | 1.987ms |
+| 3.13 | WSGI str (c64) | 620920 | 62092 | 1.03ms | 2.32ms |
+| 3.13 | WSGI echo (c128) | 586590 | 58680 | 2.178ms | 18.345ms |

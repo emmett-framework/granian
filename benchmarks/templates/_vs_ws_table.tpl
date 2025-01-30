@@ -1,8 +1,13 @@
-| Server | Send throughput | Receive throughput | Combined throughput |
-| --- | --- | --- | --- |
-{{ for key, runs in _data.items(): }}
-{{ max_c, run = get_max_concurrency_run(runs, "throughput", "sum") }}
+| Clients | Server | Send throughput | Receive throughput | Combined throughput |
+| --- | --- | --- | --- | --- |
+{{ _skeys = list(_data.keys()) }}
+{{ for concur in [8, 16, 32]: }}
+{{ for key in _skeys: }}
+{{ run = _data[key][str(concur)] }}
 {{ if run["throughput"]["sum"]: }}
-| {{ =key }} (c{{ =max_c }}) | {{ =round(run["throughput"]["send"]) }} | {{ =round(run["throughput"]["recv"]) }} | {{ =round(run["throughput"]["sum"]) }} |
+| {{ =concur }} | {{ =key }} | {{ =round(run["throughput"]["send"]) }} | {{ =round(run["throughput"]["recv"]) }} | {{ =round(run["throughput"]["sum"]) }} |
+{{ else: }}
+| {{ =concur }} | {{ =key }} | N/A | N/A | N/A |
+{{ pass }}
 {{ pass }}
 {{ pass }}

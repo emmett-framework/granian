@@ -5,7 +5,9 @@
 Run at: {{ =datetime.datetime.fromtimestamp(data.run_at).strftime('%a %d %b %Y, %H:%M') }}    
 Environment: {{ =benv }} (CPUs: {{ =data.cpu }})    
 Python version: {{ =data.pyver }}    
-Granian version: {{ =data.granian }}    
+Granian version: {{ =data.granian }}
+
+*Note: unless otherwise specified, all benchmarks are run with 1 server worker and 1 thread.*
 
 {{ _data = data.results["rsgi_body"] }}
 {{ include './_rsgi.md' }}
