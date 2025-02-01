@@ -4,7 +4,7 @@ use hyper::body;
 use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{
     borrow::Cow,
-    sync::{atomic, Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
 use tokio_tungstenite::tungstenite::Message;
@@ -15,11 +15,11 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    runtime::{future_into_py_futlike, Runtime, RuntimeRef},
-    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSStream, WSTxStream},
+    runtime::{future_into_py_futlike, RuntimeRef},
+    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
-pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<tokio::task::JoinHandle<()>>);
+pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<WSTxStream>);
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
@@ -183,37 +183,17 @@ impl RSGIHTTPProtocol {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
-    tx: Arc<AsyncMutex<WSTxStream>>,
+    tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     rx: Arc<AsyncMutex<WSRxStream>>,
-    closed: atomic::AtomicBool,
 }
 
 impl RSGIWebsocketTransport {
-    pub fn new(rt: RuntimeRef, transport: WSStream) -> Self {
-        let (tx, rx) = transport.split();
+    pub fn new(rt: RuntimeRef, tx: Arc<AsyncMutex<Option<WSTxStream>>>, rx: WSRxStream) -> Self {
         Self {
             rt,
-            tx: Arc::new(AsyncMutex::new(tx)),
+            tx,
             rx: Arc::new(AsyncMutex::new(rx)),
-            closed: false.into(),
         }
-    }
-
-    pub fn close(&self) -> Option<tokio::task::JoinHandle<()>> {
-        if self.closed.load(atomic::Ordering::Relaxed) {
-            return None;
-        }
-        self.closed.store(true, atomic::Ordering::Relaxed);
-
-        let tx = self.tx.clone();
-        let handle = self.rt.spawn(async move {
-            if let Ok(mut tx) = tx.try_lock() {
-                if let Err(err) = tx.close().await {
-                    log::info!("Failed to close websocket with error {:?}", err);
-                }
-            }
-        });
-        Some(handle)
     }
 }
 
@@ -241,11 +221,13 @@ impl RSGIWebsocketTransport {
         let bdata: Box<[u8]> = data.into();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send(bdata[..].into()).await {
-                    Ok(()) => FutureResultToPy::None,
-                    _ => FutureResultToPy::Err(error_stream!()),
-                };
+            if let Ok(mut guard) = transport.try_lock() {
+                if let Some(stream) = &mut *guard {
+                    return match stream.send(bdata[..].into()).await {
+                        Ok(()) => FutureResultToPy::None,
+                        _ => FutureResultToPy::Err(error_stream!()),
+                    };
+                }
             }
             FutureResultToPy::Err(error_proto!())
         })
@@ -255,11 +237,13 @@ impl RSGIWebsocketTransport {
         let transport = self.tx.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock() {
-                return match stream.send(data.into()).await {
-                    Ok(()) => FutureResultToPy::None,
-                    _ => FutureResultToPy::Err(error_stream!()),
-                };
+            if let Ok(mut guard) = transport.try_lock() {
+                if let Some(stream) = &mut *guard {
+                    return match stream.send(data.into()).await {
+                        Ok(()) => FutureResultToPy::None,
+                        _ => FutureResultToPy::Err(error_stream!()),
+                    };
+                }
             }
             FutureResultToPy::Err(error_proto!())
         })
@@ -272,7 +256,7 @@ pub(crate) struct RSGIWebsocketProtocol {
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
     websocket: Arc<AsyncMutex<HyperWebsocket>>,
     upgrade: RwLock<Option<UpgradeData>>,
-    transport: Arc<Mutex<Option<Py<RSGIWebsocketTransport>>>>,
+    transport: Arc<AsyncMutex<Option<WSTxStream>>>,
 }
 
 impl RSGIWebsocketProtocol {
@@ -287,7 +271,7 @@ impl RSGIWebsocketProtocol {
             tx: Mutex::new(Some(tx)),
             websocket: Arc::new(AsyncMutex::new(websocket)),
             upgrade: RwLock::new(Some(upgrade)),
-            transport: Arc::new(Mutex::new(None)),
+            transport: Arc::new(AsyncMutex::new(None)),
         }
     }
 
@@ -304,7 +288,7 @@ impl RSGIWebsocketProtocol {
             let mut handle = None;
             if let Ok(mut transport) = self.transport.try_lock() {
                 if let Some(transport) = transport.take() {
-                    handle = transport.get().close();
+                    handle = Some(transport);
                 }
             }
 
@@ -322,12 +306,16 @@ impl RSGIWebsocketProtocol {
             match upgrade.send(None).await {
                 Ok(()) => match (&mut *ws).await {
                     Ok(stream) => {
-                        let mut trx = itransport.lock().unwrap();
-                        Python::with_gil(|py| {
-                            let pytransport = Py::new(py, RSGIWebsocketTransport::new(rth, stream)).unwrap();
-                            *trx = Some(pytransport.clone_ref(py));
-                            FutureResultToPy::Py(pytransport.into_any())
-                        })
+                        let (stx, srx) = stream.split();
+                        {
+                            let mut guard = itransport.lock().await;
+                            *guard = Some(stx);
+                        }
+                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(
+                            rth.clone(),
+                            itransport.clone(),
+                            srx,
+                        ))
                     }
                     _ => FutureResultToPy::Err(error_proto!()),
                 },

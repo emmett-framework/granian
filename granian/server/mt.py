@@ -148,6 +148,7 @@ class MTServer(AbstractServer[WorkerThread]):
             loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
         )
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
     def _spawn_rsgi_worker(

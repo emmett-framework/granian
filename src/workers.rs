@@ -610,7 +610,7 @@ macro_rules! serve_rth {
             let rth = rt.handler();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
-            let main_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
+            let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
                 crate::workers::loop_match!(
                     http_mode,
                     http_upgrades,
@@ -633,13 +633,10 @@ macro_rules! serve_rth {
                 Ok(())
             });
 
-            match main_loop {
-                Ok(()) => {}
-                Err(err) => {
-                    log::error!("{}", err);
-                    std::process::exit(1);
-                }
-            };
+            if let Err(err) = main_loop {
+                log::error!("{}", err);
+                std::process::exit(1);
+            }
         }
     };
 }
@@ -674,7 +671,7 @@ macro_rules! serve_rth_ssl {
             let rth = rt.handler();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
-            let main_loop = crate::runtime::run_until_complete(rt.handler(), event_loop.clone(), async move {
+            let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
                 crate::workers::loop_match_tls!(
                     http_mode,
                     http_upgrades,
@@ -698,13 +695,10 @@ macro_rules! serve_rth_ssl {
                 Ok(())
             });
 
-            match main_loop {
-                Ok(()) => {}
-                Err(err) => {
-                    log::error!("{}", err);
-                    std::process::exit(1);
-                }
-            };
+            if let Err(err) = main_loop {
+                log::error!("{}", err);
+                std::process::exit(1);
+            }
         }
     };
 }
@@ -751,8 +745,6 @@ macro_rules! serve_wth_inner {
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
-
-                    Python::with_gil(|_| drop(callback_wrapper));
                 });
 
                 Python::with_gil(|_| drop(rt));
@@ -780,7 +772,7 @@ macro_rules! serve_wth {
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
-            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
+            let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
                 log::info!("Stopping worker-{}", worker_id);
@@ -790,13 +782,10 @@ macro_rules! serve_wth {
                 Ok(())
             });
 
-            match main_loop {
-                Ok(()) => {}
-                Err(err) => {
-                    log::error!("{}", err);
-                    std::process::exit(1);
-                }
-            };
+            if let Err(err) = main_loop {
+                log::error!("{}", err);
+                std::process::exit(1);
+            }
         }
     };
 }
@@ -870,7 +859,7 @@ macro_rules! serve_wth_ssl {
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
-            let main_loop = crate::runtime::run_until_complete(rtm.handler(), event_loop.clone(), async move {
+            let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
                 log::info!("Stopping worker-{}", worker_id);
@@ -880,13 +869,10 @@ macro_rules! serve_wth_ssl {
                 Ok(())
             });
 
-            match main_loop {
-                Ok(()) => {}
-                Err(err) => {
-                    log::error!("{}", err);
-                    std::process::exit(1);
-                }
-            };
+            if let Err(err) = main_loop {
+                log::error!("{}", err);
+                std::process::exit(1);
+            }
         }
     };
 }

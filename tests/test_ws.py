@@ -25,11 +25,11 @@ async def test_messages(server, threading_mode):
 @pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
 async def test_reject(server, threading_mode):
     async with server(threading_mode) as port:
-        with pytest.raises(websockets.InvalidStatusCode) as exc:
+        with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
             async with websockets.connect(f'ws://localhost:{port}/ws_reject'):
                 pass
 
-    assert exc.value.status_code == 403
+    assert exc.value.response.status_code == 403
 
 
 @pytest.mark.asyncio

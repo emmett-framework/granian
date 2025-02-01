@@ -31,8 +31,8 @@ pub(crate) enum FutureResultToPy {
     Bytes(hyper::body::Bytes),
     ASGIMessage(crate::asgi::types::ASGIMessageType),
     ASGIWSMessage(tokio_tungstenite::tungstenite::Message),
+    RSGIWSAccept(crate::rsgi::io::RSGIWebsocketTransport),
     RSGIWSMessage(tokio_tungstenite::tungstenite::Message),
-    Py(PyObject),
 }
 
 impl<'p> IntoPyObject<'p> for FutureResultToPy {
@@ -47,8 +47,8 @@ impl<'p> IntoPyObject<'p> for FutureResultToPy {
             Self::Bytes(inner) => inner.into_pyobject(py),
             Self::ASGIMessage(message) => crate::asgi::conversion::message_into_py(py, message),
             Self::ASGIWSMessage(message) => crate::asgi::conversion::ws_message_into_py(py, message),
+            Self::RSGIWSAccept(obj) => obj.into_bound_py_any(py),
             Self::RSGIWSMessage(message) => crate::rsgi::conversion::ws_message_into_py(py, message),
-            Self::Py(obj) => Ok(obj.into_bound(py)),
         }
     }
 }

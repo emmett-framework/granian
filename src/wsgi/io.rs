@@ -82,7 +82,7 @@ impl WSGIProtocol {
                     },
                     Err(err) => {
                         if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
-                            log_application_callable_exception(&err);
+                            log_application_callable_exception(py, &err);
                         }
                         let _ = body.call_method0(pyo3::intern!(py, "close"));
                         closed = true;

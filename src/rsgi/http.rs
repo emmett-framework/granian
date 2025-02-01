@@ -1,3 +1,4 @@
+use futures::sink::SinkExt;
 use http_body_util::BodyExt;
 use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder, StatusCode};
 use std::net::SocketAddr;
@@ -99,7 +100,7 @@ macro_rules! handle_request_with_ws {
                             let tx_ref = restx.clone();
 
                             match $handler_ws(callback, rt, ws, UpgradeData::new(res, restx), scope).await {
-                                Ok((status, consumed, handle)) => match (consumed, handle) {
+                                Ok((status, consumed, stream)) => match (consumed, stream) {
                                     (false, _) => {
                                         let _ = tx_ref
                                             .send(
@@ -111,8 +112,8 @@ macro_rules! handle_request_with_ws {
                                             )
                                             .await;
                                     }
-                                    (true, Some(handle)) => {
-                                        let _ = handle.await;
+                                    (true, Some(mut stream)) => {
+                                        let _ = stream.close().await;
                                     }
                                     _ => {}
                                 },

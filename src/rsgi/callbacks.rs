@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     callbacks::ArcCBScheduler,
-    runtime::RuntimeRef,
+    runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -28,9 +28,9 @@ macro_rules! callback_impl_done_ws {
 }
 
 macro_rules! callback_impl_done_err {
-    ($self:expr, $err:expr) => {
+    ($self:expr, $py:expr, $err:expr) => {
         $self.done();
-        log_application_callable_exception($err);
+        log_application_callable_exception($py, $err);
     };
 }
 
@@ -65,8 +65,8 @@ impl CallbackWatcherHTTP {
         callback_impl_done_http!(self);
     }
 
-    fn err(&self, err: Bound<PyAny>) {
-        callback_impl_done_err!(self, &PyErr::from_value(err));
+    fn err(&self, py: Python, err: Bound<PyAny>) {
+        callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
     fn taskref(&self, py: Python, task: PyObject) {
@@ -99,8 +99,8 @@ impl CallbackWatcherWebsocket {
         callback_impl_done_ws!(self);
     }
 
-    fn err(&self, err: Bound<PyAny>) {
-        callback_impl_done_err!(self, &PyErr::from_value(err));
+    fn err(&self, py: Python, err: Bound<PyAny>) {
+        callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
     fn taskref(&self, py: Python, task: PyObject) {
@@ -108,29 +108,6 @@ impl CallbackWatcherWebsocket {
     }
 }
 
-#[cfg(not(Py_GIL_DISABLED))]
-#[inline]
-pub(crate) fn call_http(
-    cb: ArcCBScheduler,
-    rt: RuntimeRef,
-    body: hyper::body::Incoming,
-    scope: HTTPScope,
-) -> oneshot::Receiver<PyResponse> {
-    let brt = rt.innerb.clone();
-    let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt, tx, body);
-
-    let _ = brt.run(move || {
-        Python::with_gil(|py| {
-            let watcher = Py::new(py, CallbackWatcherHTTP::new(py, protocol, scope)).unwrap();
-            cb.get().schedule(py, watcher.as_any());
-        });
-    });
-
-    rx
-}
-
-#[cfg(Py_GIL_DISABLED)]
 #[inline]
 pub(crate) fn call_http(
     cb: ArcCBScheduler,
@@ -139,40 +116,16 @@ pub(crate) fn call_http(
     scope: HTTPScope,
 ) -> oneshot::Receiver<PyResponse> {
     let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt, tx, body);
+    let protocol = HTTPProtocol::new(rt.clone(), tx, body);
 
-    Python::with_gil(|py| {
-        let watcher = Py::new(py, CallbackWatcherHTTP::new(py, protocol, scope)).unwrap();
-        cb.get().schedule(py, watcher.as_any());
+    rt.spawn_blocking(move |py| {
+        cb.get()
+            .schedule(py, Py::new(py, CallbackWatcherHTTP::new(py, protocol, scope)).unwrap());
     });
 
     rx
 }
 
-#[cfg(not(Py_GIL_DISABLED))]
-#[inline]
-pub(crate) fn call_ws(
-    cb: ArcCBScheduler,
-    rt: RuntimeRef,
-    ws: HyperWebsocket,
-    upgrade: UpgradeData,
-    scope: WebsocketScope,
-) -> oneshot::Receiver<WebsocketDetachedTransport> {
-    let brt = rt.innerb.clone();
-    let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
-
-    let _ = brt.run(move || {
-        Python::with_gil(|py| {
-            let watcher = Py::new(py, CallbackWatcherWebsocket::new(py, protocol, scope)).unwrap();
-            cb.get().schedule(py, watcher.as_any());
-        });
-    });
-
-    rx
-}
-
-#[cfg(Py_GIL_DISABLED)]
 #[inline]
 pub(crate) fn call_ws(
     cb: ArcCBScheduler,
@@ -182,11 +135,13 @@ pub(crate) fn call_ws(
     scope: WebsocketScope,
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
     let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt, tx, ws, upgrade);
+    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade);
 
-    Python::with_gil(|py| {
-        let watcher = Py::new(py, CallbackWatcherWebsocket::new(py, protocol, scope)).unwrap();
-        cb.get().schedule(py, watcher.as_any());
+    rt.spawn_blocking(move |py| {
+        cb.get().schedule(
+            py,
+            Py::new(py, CallbackWatcherWebsocket::new(py, protocol, scope)).unwrap(),
+        );
     });
 
     rx

@@ -4,7 +4,7 @@ mod callbacks;
 pub(crate) mod conversion;
 mod errors;
 mod http;
-mod io;
+pub(crate) mod io;
 pub(crate) mod serve;
 mod types;
 

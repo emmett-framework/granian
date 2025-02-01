@@ -40,7 +40,7 @@ impl WSGIWorker {
         let rth = rt.handler();
 
         let (stx, mut srx) = tokio::sync::watch::channel(false);
-        let main_loop = rt.handler().inner.spawn(async move {
+        let main_loop = rt.inner.spawn(async move {
             crate::workers::loop_match!(
                 http_mode,
                 http_upgrades,
@@ -145,7 +145,7 @@ impl WSGIWorker {
         let rth = rt.handler();
 
         let (stx, mut srx) = tokio::sync::watch::channel(false);
-        rt.handler().inner.spawn(async move {
+        rt.inner.spawn(async move {
             crate::workers::loop_match_tls!(
                 http_mode,
                 http_upgrades,

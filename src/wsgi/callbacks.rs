@@ -95,7 +95,7 @@ fn run_callback(
         environ.update(headers.into_py_dict(py).unwrap().as_mapping())?;
 
         if let Err(err) = callback.call1(py, (proto.clone_ref(py), environ)) {
-            log_application_callable_exception(&err);
+            log_application_callable_exception(py, &err);
             if let Some(tx) = proto.get().tx() {
                 let _ = tx.send((500, HeaderMap::new(), empty_body()));
             }
