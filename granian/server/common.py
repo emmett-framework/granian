@@ -10,28 +10,25 @@ import threading
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
+from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
 
-from ._futures import _future_watcher_wrapper, _new_cbscheduler
-from ._granian import ASGIWorker, RSGIWorker, WSGIWorker
-from ._imports import setproctitle, watchfiles
-from ._internal import load_target
-from ._signals import set_main_signals
-from .asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
-from .constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
-from .errors import ConfigurationError, PidFileError
-from .http import HTTP1Settings, HTTP2Settings
-from .log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
-from .net import SocketHolder
-from .rsgi import _callback_wrapper as _rsgi_call_wrap
-from .wsgi import _callback_wrapper as _wsgi_call_wrap
+from .._imports import setproctitle, watchfiles
+from .._internal import load_target
+from .._signals import set_main_signals
+from ..constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
+from ..errors import ConfigurationError, PidFileError
+from ..http import HTTP1Settings, HTTP2Settings
+from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
+from ..net import SocketHolder
 
 
-multiprocessing.allow_connection_pickling()
+WT = TypeVar('WT')
 
 
-class Worker:
-    def __init__(self, parent: Granian, idx: int, target: Any, args: Any):
+class AbstractWorker:
+    _idl = 'id'
+
+    def __init__(self, parent: AbstractServer, idx: int, target: Any, args: Any):
         self.parent = parent
         self.idx = idx
         self.interrupt_by_parent = False
@@ -39,10 +36,13 @@ class Worker:
         self._spawn(target, args)
 
     def _spawn(self, target, args):
-        self.proc = multiprocessing.get_context().Process(name='granian-worker', target=target, args=args)
+        raise NotImplementedError
+
+    def _id(self):
+        raise NotImplementedError
 
     def _watcher(self):
-        self.proc.join()
+        self.inner.join()
         if not self.interrupt_by_parent:
             logger.error(f'Unexpected exit from worker-{self.idx + 1}')
             self.parent.interrupt_children.append(self.idx)
@@ -53,23 +53,24 @@ class Worker:
         watcher.start()
 
     def start(self):
-        self.proc.start()
-        logger.info(f'Spawning worker-{self.idx + 1} with pid: {self.proc.pid}')
+        self.inner.start()
+        logger.info(f'Spawning worker-{self.idx + 1} with {self._idl}: {self._id()}')
         self._watch()
 
+    def is_alive(self):
+        return self.inner.is_alive()
+
     def terminate(self):
-        self.interrupt_by_parent = True
-        self.proc.terminate()
+        raise NotImplementedError
 
     def kill(self):
-        self.interrupt_by_parent = True
-        self.proc.kill()
+        raise NotImplementedError
 
     def join(self, timeout=None):
-        self.proc.join(timeout=timeout)
+        self.inner.join(timeout=timeout)
 
 
-class Granian:
+class AbstractServer(Generic[WT]):
     def __init__(
         self,
         target: str,
@@ -78,6 +79,7 @@ class Granian:
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         threads: int = 1,
+        io_blocking_threads: Optional[int] = None,
         blocking_threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
@@ -117,6 +119,7 @@ class Granian:
         self.interface = interface
         self.workers = max(1, workers)
         self.threads = max(1, threads)
+        self.io_blocking_threads = 512 if io_blocking_threads is None else max(1, io_blocking_threads)
         self.threading_mode = threading_mode
         self.loop = loop
         self.task_impl = task_impl
@@ -127,9 +130,7 @@ class Granian:
         self.blocking_threads = (
             blocking_threads
             if blocking_threads is not None
-            else max(
-                1, (self.backpressure if self.interface == Interfaces.WSGI else min(2, multiprocessing.cpu_count()))
-            )
+            else max(1, (multiprocessing.cpu_count() * 2 - 1) if self.interface == Interfaces.WSGI else 1)
         )
         self.http1_settings = http1_settings
         self.http2_settings = http2_settings
@@ -158,11 +159,11 @@ class Granian:
         self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password)
         self._shd = None
         self._sfd = None
-        self.procs: List[Worker] = []
+        self.wrks: List[WT] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
         self.interrupt_children = []
-        self.respawned_procs = {}
+        self.respawned_wrks = {}
         self.reload_signal = False
         self.lifetime_signal = False
         self.pid = None
@@ -179,230 +180,6 @@ class Granian:
         #     key_contents = f.read()
         self.ssl_ctx = (True, str(cert.resolve()), str(key.resolve()), password)
 
-    @staticmethod
-    def _spawn_asgi_worker(
-        worker_id: int,
-        process_name: Optional[str],
-        callback_loader: Callable[..., Any],
-        socket: socket.socket,
-        loop_impl: Loops,
-        threads: int,
-        blocking_threads: int,
-        backpressure: int,
-        threading_mode: ThreadModes,
-        task_impl: TaskImpl,
-        http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
-        websockets: bool,
-        log_enabled: bool,
-        log_level: LogLevels,
-        log_config: Dict[str, Any],
-        log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
-        scope_opts: Dict[str, Any],
-    ):
-        from granian._loops import loops
-        from granian._signals import set_loop_signals
-
-        if process_name:
-            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
-        configure_logging(log_level, log_config, log_enabled)
-
-        loop = loops.get(loop_impl)
-        sfd = socket.fileno()
-        callback = callback_loader()
-        shutdown_event = set_loop_signals(loop)
-        wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
-
-        worker = ASGIWorker(
-            worker_id,
-            sfd,
-            threads,
-            blocking_threads,
-            backpressure,
-            http_mode,
-            http1_settings,
-            http2_settings,
-            websockets,
-            *ssl_ctx,
-        )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(
-            loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
-        serve(scheduler, loop, shutdown_event)
-
-    @staticmethod
-    def _spawn_asgi_lifespan_worker(
-        worker_id: int,
-        process_name: Optional[str],
-        callback_loader: Callable[..., Any],
-        socket: socket.socket,
-        loop_impl: Loops,
-        threads: int,
-        blocking_threads: int,
-        backpressure: int,
-        threading_mode: ThreadModes,
-        task_impl: TaskImpl,
-        http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
-        websockets: bool,
-        log_enabled: bool,
-        log_level: LogLevels,
-        log_config: Dict[str, Any],
-        log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
-        scope_opts: Dict[str, Any],
-    ):
-        from granian._loops import loops
-        from granian._signals import set_loop_signals
-
-        if process_name:
-            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
-        configure_logging(log_level, log_config, log_enabled)
-
-        loop = loops.get(loop_impl)
-        sfd = socket.fileno()
-        callback = callback_loader()
-        lifespan_handler = LifespanProtocol(callback)
-
-        loop.run_until_complete(lifespan_handler.startup())
-        if lifespan_handler.interrupt:
-            logger.error('ASGI lifespan startup failed', exc_info=lifespan_handler.exc)
-            sys.exit(1)
-
-        shutdown_event = set_loop_signals(loop)
-        wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
-
-        worker = ASGIWorker(
-            worker_id,
-            sfd,
-            threads,
-            blocking_threads,
-            backpressure,
-            http_mode,
-            http1_settings,
-            http2_settings,
-            websockets,
-            *ssl_ctx,
-        )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(
-            loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
-        serve(scheduler, loop, shutdown_event)
-        loop.run_until_complete(lifespan_handler.shutdown())
-
-    @staticmethod
-    def _spawn_rsgi_worker(
-        worker_id: int,
-        process_name: Optional[str],
-        callback_loader: Callable[..., Any],
-        socket: socket.socket,
-        loop_impl: Loops,
-        threads: int,
-        blocking_threads: int,
-        backpressure: int,
-        threading_mode: ThreadModes,
-        task_impl: TaskImpl,
-        http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
-        websockets: bool,
-        log_enabled: bool,
-        log_level: LogLevels,
-        log_config: Dict[str, Any],
-        log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
-        scope_opts: Dict[str, Any],
-    ):
-        from granian._loops import loops
-        from granian._signals import set_loop_signals
-
-        if process_name:
-            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
-        configure_logging(log_level, log_config, log_enabled)
-
-        loop = loops.get(loop_impl)
-        sfd = socket.fileno()
-        target = callback_loader()
-        callback = getattr(target, '__rsgi__') if hasattr(target, '__rsgi__') else target
-        callback_init = (
-            getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else lambda *args, **kwargs: None
-        )
-        callback_del = (
-            getattr(target, '__rsgi_del__') if hasattr(target, '__rsgi_del__') else lambda *args, **kwargs: None
-        )
-        callback = _rsgi_call_wrap(callback, log_access_fmt)
-        shutdown_event = set_loop_signals(loop)
-        callback_init(loop)
-
-        worker = RSGIWorker(
-            worker_id,
-            sfd,
-            threads,
-            blocking_threads,
-            backpressure,
-            http_mode,
-            http1_settings,
-            http2_settings,
-            websockets,
-            *ssl_ctx,
-        )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(
-            loop, _future_watcher_wrapper(callback), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
-        serve(scheduler, loop, shutdown_event)
-        callback_del(loop)
-
-    @staticmethod
-    def _spawn_wsgi_worker(
-        worker_id: int,
-        process_name: Optional[str],
-        callback_loader: Callable[..., Any],
-        socket: socket.socket,
-        loop_impl: Loops,
-        threads: int,
-        blocking_threads: int,
-        backpressure: int,
-        threading_mode: ThreadModes,
-        task_impl: TaskImpl,
-        http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
-        websockets: bool,
-        log_enabled: bool,
-        log_level: LogLevels,
-        log_config: Dict[str, Any],
-        log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
-        scope_opts: Dict[str, Any],
-    ):
-        from granian._loops import loops
-        from granian._signals import set_sync_signals
-
-        if process_name:
-            setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
-        configure_logging(log_level, log_config, log_enabled)
-
-        loop = loops.get(loop_impl)
-        sfd = socket.fileno()
-        callback = callback_loader()
-        shutdown_event = set_sync_signals()
-
-        worker = WSGIWorker(
-            worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
-        )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
-        scheduler = _new_cbscheduler(
-            loop, _wsgi_call_wrap(callback, scope_opts, log_access_fmt), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
-        serve(scheduler, loop, shutdown_event)
-        shutdown_event.qs.wait()
-
     def _init_shared_socket(self):
         self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
         self._sfd = self._shd.get_fd()
@@ -415,88 +192,62 @@ class Granian:
         self.reload_signal = True
         self.main_loop_interrupt.set()
 
-    def _spawn_proc(self, idx, target, callback_loader, socket_loader) -> Worker:
-        return Worker(
-            parent=self,
-            idx=idx,
-            target=target,
-            args=(
-                idx + 1,
-                self.process_name,
-                callback_loader,
-                socket_loader(),
-                self.loop,
-                self.threads,
-                self.blocking_threads,
-                self.backpressure,
-                self.threading_mode,
-                self.task_impl,
-                self.http,
-                self.http1_settings,
-                self.http2_settings,
-                self.websockets,
-                self.log_enabled,
-                self.log_level,
-                self.log_config,
-                self.log_access_format if self.log_access else None,
-                self.ssl_ctx,
-                {'url_path_prefix': self.url_path_prefix},
-            ),
-        )
+    def _spawn_worker(self, idx, target, callback_loader, socket_loader) -> WT:
+        raise NotImplementedError
 
     def _spawn_workers(self, sock, spawn_target, target_loader):
         def socket_loader():
             return sock
 
         for idx in range(self.workers):
-            proc = self._spawn_proc(
+            wrk = self._spawn_worker(
                 idx=idx, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
             )
-            proc.start()
-            self.procs.append(proc)
+            wrk.start()
+            self.wrks.append(wrk)
 
     def _respawn_workers(self, workers, sock, spawn_target, target_loader, delay: float = 0):
         def socket_loader():
             return sock
 
         for idx in workers:
-            self.respawned_procs[idx] = time.time()
+            self.respawned_wrks[idx] = time.time()
             logger.info(f'Respawning worker-{idx + 1}')
-            old_proc = self.procs.pop(idx)
-            proc = self._spawn_proc(
+            old_wrk = self.wrks.pop(idx)
+            wrk = self._spawn_worker(
                 idx=idx, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
             )
-            proc.start()
-            self.procs.insert(idx, proc)
+            wrk.start()
+            self.wrks.insert(idx, wrk)
             time.sleep(delay)
             logger.info(f'Stopping old worker-{idx + 1}')
-            old_proc.terminate()
-            old_proc.join(self.workers_kill_timeout)
+            old_wrk.terminate()
+            old_wrk.join(self.workers_kill_timeout)
             if self.workers_kill_timeout:
-                # the process might still be reported alive after `join`, let's context switch
-                if old_proc.proc.is_alive():
+                # the worker might still be reported alive after `join`, let's context switch
+                if old_wrk.is_alive():
                     time.sleep(0.001)
-                if old_proc.proc.is_alive():
+                if old_wrk.is_alive():
                     logger.warning(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
-                    old_proc.kill()
-                    old_proc.join()
+                    old_wrk.kill()
+                    old_wrk.join()
 
     def _stop_workers(self):
-        for proc in self.procs:
-            proc.terminate()
+        for wrk in self.wrks:
+            wrk.terminate()
 
-        for proc in self.procs:
-            proc.join(self.workers_kill_timeout)
+        for wrk in self.wrks:
+            wrk.join(self.workers_kill_timeout)
             if self.workers_kill_timeout:
-                # the process might still be reported after `join`, let's context switch
-                if proc.proc.is_alive():
+                # the worker might still be reported after `join`, let's context switch
+                if wrk.is_alive():
                     time.sleep(0.001)
-                if proc.proc.is_alive():
-                    logger.warning(f'Killing worker-{proc.idx} after it refused to gracefully stop')
-                    proc.kill()
-                    proc.join()
+                if wrk.is_alive():
+                    logger.warning(f'Killing worker-{wrk.idx} after it refused to gracefully stop')
+                    wrk.kill()
+                    wrk.join()
 
-        self.procs.clear()
+        self.wrks.clear()
 
     def _workers_lifetime_watcher(self, ttl):
         time.sleep(ttl)
@@ -584,7 +335,7 @@ class Granian:
         logger.info('HUP signal received, gracefully respawning workers..')
         workers = list(range(self.workers))
         self.reload_signal = False
-        self.respawned_procs.clear()
+        self.respawned_wrks.clear()
         self.main_loop_interrupt.clear()
         self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
 
@@ -599,13 +350,13 @@ class Granian:
                     break
 
                 cycle = time.time()
-                if any(cycle - self.respawned_procs.get(idx, 0) <= 5.5 for idx in self.interrupt_children):
+                if any(cycle - self.respawned_wrks.get(idx, 0) <= 5.5 for idx in self.interrupt_children):
                     logger.error('Worker crash loop detected, exiting')
                     break
 
                 workers = list(self.interrupt_children)
                 self.interrupt_children.clear()
-                self.respawned_procs.clear()
+                self.respawned_wrks.clear()
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, sock, spawn_target, target_loader)
 
@@ -618,7 +369,7 @@ class Granian:
                 ttl = self.workers_lifetime * 0.95
                 now = time.time()
                 etas = [self.workers_lifetime]
-                for worker in list(self.procs):
+                for worker in list(self.wrks):
                     if (now - worker.birth) >= ttl:
                         logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
                         self._respawn_workers(
@@ -705,6 +456,10 @@ class Granian:
                     "granian can't support multiple workers on this platform. "
                     'Number of workers will now fallback to 1.'
                 )
+
+        if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
+            logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
+            raise ConfigurationError('blocking_threads')
 
         if self.websockets:
             if self.interface == Interfaces.WSGI:

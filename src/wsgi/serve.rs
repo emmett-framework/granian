@@ -4,9 +4,7 @@ use super::http::handle;
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{
-    serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignalSync, WorkerSignals,
-};
+use crate::workers::{WorkerConfig, WorkerSignalSync};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct WSGIWorker {
@@ -14,10 +12,213 @@ pub struct WSGIWorker {
 }
 
 impl WSGIWorker {
-    serve_rth!(_serve_rth, handle);
-    serve_wth!(_serve_wth, handle);
-    serve_rth_ssl!(_serve_rth_ssl, handle);
-    serve_wth_ssl!(_serve_wth_ssl, handle);
+    fn _serve_rth(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignalSync>,
+    ) {
+        _ = pyo3_log::try_init();
+
+        let worker_id = self.config.id;
+        log::info!("Started worker-{}", worker_id);
+
+        let tcp_listener = self.config.tcp_listener();
+        let http_mode = self.config.http_mode.clone();
+        let http_upgrades = self.config.websockets_enabled;
+        let http1_opts = self.config.http1_opts.clone();
+        let http2_opts = self.config.http2_opts.clone();
+        let backpressure = self.config.backpressure;
+        let callback_wrapper = std::sync::Arc::new(callback);
+
+        let rt = crate::runtime::init_runtime_mt(
+            self.config.threads,
+            self.config.io_blocking_threads,
+            self.config.blocking_threads,
+            std::sync::Arc::new(event_loop.clone().unbind()),
+        );
+        let rth = rt.handler();
+
+        let (stx, mut srx) = tokio::sync::watch::channel(false);
+        let main_loop = rt.inner.spawn(async move {
+            crate::workers::loop_match!(
+                http_mode,
+                http_upgrades,
+                tcp_listener,
+                srx,
+                backpressure,
+                rth,
+                callback_wrapper,
+                tokio::spawn,
+                hyper_util::rt::TokioExecutor::new,
+                http1_opts,
+                http2_opts,
+                hyper_util::rt::TokioIo::new,
+                handle
+            );
+
+            log::info!("Stopping worker-{}", worker_id);
+
+            Python::with_gil(|_| drop(callback_wrapper));
+        });
+
+        let pysig = signal.clone_ref(py);
+        std::thread::spawn(move || {
+            let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+            _ = pyrx.recv();
+            stx.send(true).unwrap();
+
+            while !main_loop.is_finished() {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+
+            Python::with_gil(|py| {
+                _ = pysig.get().release(py);
+                drop(pysig);
+            });
+        });
+
+        _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
+    }
+
+    fn _serve_wth(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignalSync>,
+    ) {
+        _ = pyo3_log::try_init();
+
+        let worker_id = self.config.id;
+        log::info!("Started worker-{}", worker_id);
+
+        let (stx, srx) = tokio::sync::watch::channel(false);
+        let mut workers = vec![];
+        crate::workers::serve_wth_inner!(self, handle, callback, event_loop, worker_id, workers, srx);
+
+        let pysig = signal.clone_ref(py);
+        std::thread::spawn(move || {
+            let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+            _ = pyrx.recv();
+            stx.send(true).unwrap();
+            log::info!("Stopping worker-{}", worker_id);
+            while let Some(worker) = workers.pop() {
+                worker.join().unwrap();
+            }
+
+            Python::with_gil(|py| {
+                _ = pysig.get().release(py);
+                drop(pysig);
+            });
+        });
+
+        _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
+    }
+
+    fn _serve_rth_ssl(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignalSync>,
+    ) {
+        _ = pyo3_log::try_init();
+
+        let worker_id = self.config.id;
+        log::info!("Started worker-{}", worker_id);
+
+        let tcp_listener = self.config.tcp_listener();
+        let http_mode = self.config.http_mode.clone();
+        let http_upgrades = self.config.websockets_enabled;
+        let http1_opts = self.config.http1_opts.clone();
+        let http2_opts = self.config.http2_opts.clone();
+        let backpressure = self.config.backpressure;
+        let tls_cfg = self.config.tls_cfg();
+        let callback_wrapper = std::sync::Arc::new(callback);
+
+        let rt = crate::runtime::init_runtime_mt(
+            self.config.threads,
+            self.config.io_blocking_threads,
+            self.config.blocking_threads,
+            std::sync::Arc::new(event_loop.clone().unbind()),
+        );
+        let rth = rt.handler();
+
+        let (stx, mut srx) = tokio::sync::watch::channel(false);
+        rt.inner.spawn(async move {
+            crate::workers::loop_match_tls!(
+                http_mode,
+                http_upgrades,
+                tcp_listener,
+                tls_cfg,
+                srx,
+                backpressure,
+                rth,
+                callback_wrapper,
+                tokio::spawn,
+                hyper_util::rt::TokioExecutor::new,
+                http1_opts,
+                http2_opts,
+                hyper_util::rt::TokioIo::new,
+                handle
+            );
+
+            log::info!("Stopping worker-{}", worker_id);
+
+            Python::with_gil(|_| drop(callback_wrapper));
+        });
+
+        let pysig = signal.clone_ref(py);
+        std::thread::spawn(move || {
+            let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+            _ = pyrx.recv();
+            stx.send(true).unwrap();
+
+            Python::with_gil(|py| {
+                _ = pysig.get().release(py);
+                drop(pysig);
+            });
+        });
+
+        _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
+    }
+
+    fn _serve_wth_ssl(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignalSync>,
+    ) {
+        _ = pyo3_log::try_init();
+
+        let worker_id = self.config.id;
+        log::info!("Started worker-{}", worker_id);
+
+        let (stx, srx) = tokio::sync::watch::channel(false);
+        let mut workers = vec![];
+        crate::workers::serve_wth_ssl_inner!(self, handle, callback, event_loop, worker_id, workers, srx);
+
+        let pysig = signal.clone_ref(py);
+        std::thread::spawn(move || {
+            let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+            _ = pyrx.recv();
+            stx.send(true).unwrap();
+            log::info!("Stopping worker-{}", worker_id);
+            while let Some(worker) = workers.pop() {
+                worker.join().unwrap();
+            }
+
+            Python::with_gil(|py| {
+                _ = pysig.get().release(py);
+                drop(pysig);
+            });
+        });
+
+        _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
+    }
 }
 
 #[pymethods]
@@ -28,7 +229,8 @@ impl WSGIWorker {
             worker_id,
             socket_fd,
             threads=1,
-            blocking_threads=512,
+            io_blocking_threads=512,
+            blocking_threads=1,
             backpressure=128,
             http_mode="1",
             http1_opts=None,
@@ -44,6 +246,7 @@ impl WSGIWorker {
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
+        io_blocking_threads: usize,
         blocking_threads: usize,
         backpressure: usize,
         http_mode: &str,
@@ -59,6 +262,7 @@ impl WSGIWorker {
                 worker_id,
                 socket_fd,
                 threads,
+                io_blocking_threads,
                 blocking_threads,
                 backpressure,
                 http_mode,
@@ -73,17 +277,29 @@ impl WSGIWorker {
         })
     }
 
-    fn serve_rth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignalSync>) {
+    fn serve_rth(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignalSync>,
+    ) {
         match self.config.ssl_enabled {
-            false => self._serve_rth(callback, event_loop, WorkerSignals::Crossbeam(signal)),
-            true => self._serve_rth_ssl(callback, event_loop, WorkerSignals::Crossbeam(signal)),
+            false => self._serve_rth(py, callback, event_loop, signal),
+            true => self._serve_rth_ssl(py, callback, event_loop, signal),
         }
     }
 
-    fn serve_wth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignalSync>) {
+    fn serve_wth(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignalSync>,
+    ) {
         match self.config.ssl_enabled {
-            false => self._serve_wth(callback, event_loop, WorkerSignals::Crossbeam(signal)),
-            true => self._serve_wth_ssl(callback, event_loop, WorkerSignals::Crossbeam(signal)),
+            false => self._serve_wth(py, callback, event_loop, signal),
+            true => self._serve_wth_ssl(py, callback, event_loop, signal),
         }
     }
 }

@@ -5,6 +5,7 @@ from ._types import WebsocketMessage
 from .http import HTTP1Settings, HTTP2Settings
 
 __version__: str
+BUILD_GIL: bool
 
 class RSGIHeaders:
     def __contains__(self, key: str) -> bool: ...

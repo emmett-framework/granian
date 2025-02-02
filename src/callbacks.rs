@@ -31,13 +31,15 @@ pub(crate) struct CallbackScheduler {
 #[cfg(not(PyPy))]
 impl CallbackScheduler {
     #[inline]
-    pub(crate) fn schedule(&self, _py: Python, watcher: &PyObject) {
+    pub(crate) fn schedule<T>(&self, py: Python, watcher: Py<T>) {
         let cbarg = watcher.as_ptr();
         let sched = self.schedule_fn.get().unwrap().as_ptr();
 
         unsafe {
             pyo3::ffi::PyObject_CallOneArg(sched, cbarg);
         }
+
+        watcher.drop_ref(py);
     }
 
     #[inline]
@@ -130,13 +132,15 @@ impl CallbackScheduler {
 #[cfg(PyPy)]
 impl CallbackScheduler {
     #[inline]
-    pub(crate) fn schedule(&self, py: Python, watcher: &PyObject) {
+    pub(crate) fn schedule(&self, py: Python, watcher: Py<T>) {
         let cbarg = (watcher,).into_pyobject(py).unwrap().into_ptr();
         let sched = self.schedule_fn.get().unwrap().as_ptr();
 
         unsafe {
             pyo3::ffi::PyObject_CallObject(sched, cbarg);
         }
+
+        watcher.drop_ref(py);
     }
 
     #[inline]
@@ -508,8 +512,9 @@ impl PyIterAwaitable {
     }
 
     #[inline]
-    pub(crate) fn set_result(&self, py: Python, result: FutureResultToPy) {
-        let _ = self.result.set(result.into_pyobject(py).map(Bound::unbind));
+    pub(crate) fn set_result(pyself: Py<Self>, py: Python, result: FutureResultToPy) {
+        _ = pyself.get().result.set(result.into_pyobject(py).map(Bound::unbind));
+        pyself.drop_ref(py);
     }
 }
 
@@ -524,7 +529,7 @@ impl PyIterAwaitable {
     }
 
     fn __next__(&self, py: Python) -> PyResult<Option<PyObject>> {
-        if let Some(res) = py.allow_threads(|| self.result.get()) {
+        if let Some(res) = self.result.get() {
             return res
                 .as_ref()
                 .map_err(|err| err.clone_ref(py))
@@ -583,18 +588,22 @@ impl PyFutureAwaitable {
             )
             .is_err()
         {
+            pyself.drop_ref(py);
             return;
         }
 
-        let ack = rself.ack.read().unwrap();
-        if let Some((cb, ctx)) = &*ack {
-            let _ = rself.event_loop.clone_ref(py).call_method(
-                py,
-                pyo3::intern!(py, "call_soon_threadsafe"),
-                (cb, pyself.clone_ref(py)),
-                Some(ctx.bind(py)),
-            );
+        {
+            let ack = rself.ack.read().unwrap();
+            if let Some((cb, ctx)) = &*ack {
+                _ = rself.event_loop.clone_ref(py).call_method(
+                    py,
+                    pyo3::intern!(py, "call_soon_threadsafe"),
+                    (cb, pyself.clone_ref(py)),
+                    Some(ctx.bind(py)),
+                );
+            }
         }
+        pyself.drop_ref(py);
     }
 }
 

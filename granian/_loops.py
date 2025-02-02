@@ -77,16 +77,14 @@ def build_asyncio_loop():
 
 @loops.register('uvloop', packages=['uvloop'])
 def build_uv_loop(uvloop):
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    loop = asyncio.new_event_loop()
+    loop = uvloop.new_event_loop()
     asyncio.set_event_loop(loop)
     return loop
 
 
 @loops.register('rloop', packages=['rloop'])
 def build_rloop(rloop):
-    asyncio.set_event_loop_policy(rloop.EventLoopPolicy())
-    loop = asyncio.new_event_loop()
+    loop = rloop.new_event_loop()
     asyncio.set_event_loop(loop)
     return loop
 

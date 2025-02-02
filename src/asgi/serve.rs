@@ -4,7 +4,7 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal, WorkerSignals};
+use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
@@ -30,7 +30,8 @@ impl ASGIWorker {
             worker_id,
             socket_fd,
             threads=1,
-            blocking_threads=512,
+            io_blocking_threads=512,
+            blocking_threads=1,
             backpressure=256,
             http_mode="1",
             http1_opts=None,
@@ -47,6 +48,7 @@ impl ASGIWorker {
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
+        io_blocking_threads: usize,
         blocking_threads: usize,
         backpressure: usize,
         http_mode: &str,
@@ -63,6 +65,7 @@ impl ASGIWorker {
                 worker_id,
                 socket_fd,
                 threads,
+                io_blocking_threads,
                 blocking_threads,
                 backpressure,
                 http_mode,
@@ -79,19 +82,19 @@ impl ASGIWorker {
 
     fn serve_rth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_rth(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, false) => self._serve_rth_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (false, true) => self._serve_rth_ssl(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, true) => self._serve_rth_ssl_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (false, false) => self._serve_rth(callback, event_loop, signal),
+            (true, false) => self._serve_rth_ws(callback, event_loop, signal),
+            (false, true) => self._serve_rth_ssl(callback, event_loop, signal),
+            (true, true) => self._serve_rth_ssl_ws(callback, event_loop, signal),
         }
     }
 
     fn serve_wth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_wth(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, false) => self._serve_wth_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (false, true) => self._serve_wth_ssl(callback, event_loop, WorkerSignals::Tokio(signal)),
-            (true, true) => self._serve_wth_ssl_ws(callback, event_loop, WorkerSignals::Tokio(signal)),
+            (false, false) => self._serve_wth(callback, event_loop, signal),
+            (true, false) => self._serve_wth_ws(callback, event_loop, signal),
+            (false, true) => self._serve_wth_ssl(callback, event_loop, signal),
+            (true, true) => self._serve_wth_ssl_ws(callback, event_loop, signal),
         }
     }
 }

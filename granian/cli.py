@@ -9,7 +9,7 @@ from .constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
-from .server import Granian
+from .server import Server
 
 
 _AnyCallable = Callable[..., Any]
@@ -69,6 +69,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--blocking-threads',
     type=click.IntRange(1),
     help='Number of blocking threads (per worker)',
+)
+@option(
+    '--io-blocking-threads',
+    type=click.IntRange(1),
+    help='Number of I/O blocking threads (per worker)',
 )
 @option(
     '--threading-mode',
@@ -265,6 +270,7 @@ def cli(
     workers: int,
     threads: int,
     blocking_threads: Optional[int],
+    io_blocking_threads: Optional[int],
     threading_mode: ThreadModes,
     loop: Loops,
     task_impl: TaskImpl,
@@ -313,13 +319,14 @@ def cli(
                 print('Unable to parse provided logging config.')
                 raise click.exceptions.Exit(1)
 
-    server = Granian(
+    server = Server(
         app,
         address=host,
         port=port,
         interface=interface,
         workers=workers,
         threads=threads,
+        io_blocking_threads=io_blocking_threads,
         blocking_threads=blocking_threads,
         threading_mode=threading_mode,
         loop=loop,

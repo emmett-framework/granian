@@ -17,6 +17,11 @@ mod workers;
 mod ws;
 mod wsgi;
 
+#[cfg(not(Py_GIL_DISABLED))]
+const BUILD_GIL: bool = true;
+#[cfg(Py_GIL_DISABLED)]
+const BUILD_GIL: bool = false;
+
 pub fn get_granian_version() -> &'static str {
     static GRANIAN_VERSION: OnceLock<String> = OnceLock::new();
 
@@ -26,9 +31,10 @@ pub fn get_granian_version() -> &'static str {
     })
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("__version__", get_granian_version())?;
+    module.add("BUILD_GIL", BUILD_GIL)?;
     module.add_class::<callbacks::CallbackScheduler>()?;
     asgi::init_pymodule(module)?;
     rsgi::init_pymodule(py, module)?;

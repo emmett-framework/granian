@@ -8,6 +8,7 @@ use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{borrow::Cow, sync::Mutex};
 use tokio::sync::{mpsc, oneshot};
 
+use super::utils::py_allow_threads;
 use crate::{
     http::{HTTPResponseBody, HV_SERVER},
     utils::log_application_callable_exception,
@@ -82,14 +83,14 @@ impl WSGIProtocol {
                     },
                     Err(err) => {
                         if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
-                            log_application_callable_exception(&err);
+                            log_application_callable_exception(py, &err);
                         }
                         let _ = body.call_method0(pyo3::intern!(py, "close"));
                         closed = true;
                         None
                     }
                 } {
-                    if py.allow_threads(|| body_tx.blocking_send(Ok(frame))).is_ok() {
+                    if py_allow_threads!(py, { body_tx.blocking_send(Ok(frame)) }).is_ok() {
                         continue;
                     }
                 }
