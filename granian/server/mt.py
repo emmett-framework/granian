@@ -302,6 +302,8 @@ class MTServer(AbstractServer[WorkerThread]):
         target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
         wrap_loader: bool = True,
     ):
+        logger.warning('free-threaded Python support is experimental!')
+
         if self.reload_on_changes:
             logger.error('The changes reloader is not supported on the free-threaded build')
             raise ConfigurationError('reload')

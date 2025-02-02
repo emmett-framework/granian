@@ -457,6 +457,10 @@ class AbstractServer(Generic[WT]):
                     'Number of workers will now fallback to 1.'
                 )
 
+        if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
+            logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
+            raise ConfigurationError('blocking_threads')
+
         if self.websockets:
             if self.interface == Interfaces.WSGI:
                 logger.info('Websockets are not supported on WSGI, ignoring')
