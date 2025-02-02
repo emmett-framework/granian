@@ -79,6 +79,7 @@ class AbstractServer(Generic[WT]):
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         threads: int = 1,
+        io_blocking_threads: Optional[int] = None,
         blocking_threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
@@ -118,6 +119,7 @@ class AbstractServer(Generic[WT]):
         self.interface = interface
         self.workers = max(1, workers)
         self.threads = max(1, threads)
+        self.io_blocking_threads = 512 if io_blocking_threads is None else max(1, io_blocking_threads)
         self.threading_mode = threading_mode
         self.loop = loop
         self.task_impl = task_impl
@@ -128,9 +130,7 @@ class AbstractServer(Generic[WT]):
         self.blocking_threads = (
             blocking_threads
             if blocking_threads is not None
-            else max(
-                1, (self.backpressure if self.interface == Interfaces.WSGI else min(2, multiprocessing.cpu_count()))
-            )
+            else max(1, (multiprocessing.cpu_count() * 2 - 1) if self.interface == Interfaces.WSGI else 1)
         )
         self.http1_settings = http1_settings
         self.http2_settings = http2_settings

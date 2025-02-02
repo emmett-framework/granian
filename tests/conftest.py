@@ -21,6 +21,7 @@ async def _server(interface, port, threading_mode, tls=False):
     kwargs = {
         'interface': interface,
         'port': port,
+        'blocking_threads': 1,
         'threading_mode': threading_mode,
     }
     if tls:

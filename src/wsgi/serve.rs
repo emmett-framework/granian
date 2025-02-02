@@ -34,6 +34,7 @@ impl WSGIWorker {
 
         let rt = crate::runtime::init_runtime_mt(
             self.config.threads,
+            self.config.io_blocking_threads,
             self.config.blocking_threads,
             std::sync::Arc::new(event_loop.clone().unbind()),
         );
@@ -139,6 +140,7 @@ impl WSGIWorker {
 
         let rt = crate::runtime::init_runtime_mt(
             self.config.threads,
+            self.config.io_blocking_threads,
             self.config.blocking_threads,
             std::sync::Arc::new(event_loop.clone().unbind()),
         );
@@ -227,7 +229,8 @@ impl WSGIWorker {
             worker_id,
             socket_fd,
             threads=1,
-            blocking_threads=512,
+            io_blocking_threads=512,
+            blocking_threads=1,
             backpressure=128,
             http_mode="1",
             http1_opts=None,
@@ -243,6 +246,7 @@ impl WSGIWorker {
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
+        io_blocking_threads: usize,
         blocking_threads: usize,
         backpressure: usize,
         http_mode: &str,
@@ -258,6 +262,7 @@ impl WSGIWorker {
                 worker_id,
                 socket_fd,
                 threads,
+                io_blocking_threads,
                 blocking_threads,
                 backpressure,
                 http_mode,

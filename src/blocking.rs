@@ -27,15 +27,15 @@ pub(crate) struct BlockingRunner {
 
 impl BlockingRunner {
     #[cfg(not(Py_GIL_DISABLED))]
-    pub fn new() -> Self {
-        let queue = blocking_thread();
+    pub fn new(threads: usize) -> Self {
+        let queue = blocking_pool(threads);
         Self { queue }
     }
 
     #[cfg(Py_GIL_DISABLED)]
-    pub fn new() -> Self {
+    pub fn new(threads: usize) -> Self {
         let (sigtx, sigrx) = channel::bounded(1);
-        let queue = blocking_thread(sigrx);
+        let queue = blocking_pool(threads, sigrx);
         Self { queue, sig: sigtx }
     }
 
@@ -87,17 +87,24 @@ fn blocking_loop(queue: channel::Receiver<BlockingTask>, sig: channel::Receiver<
 }
 
 #[cfg(not(Py_GIL_DISABLED))]
-fn blocking_thread() -> channel::Sender<BlockingTask> {
+fn blocking_pool(threads: usize) -> channel::Sender<BlockingTask> {
     let (qtx, qrx) = channel::unbounded();
-    thread::spawn(|| blocking_loop(qrx));
+    for _ in 0..threads {
+        let tqrx = qrx.clone();
+        thread::spawn(|| blocking_loop(tqrx));
+    }
 
     qtx
 }
 
 #[cfg(Py_GIL_DISABLED)]
-fn blocking_thread(sig: channel::Receiver<()>) -> channel::Sender<BlockingTask> {
+fn blocking_pool(threads: usize, sig: channel::Receiver<()>) -> channel::Sender<BlockingTask> {
     let (qtx, qrx) = channel::unbounded();
-    thread::spawn(|| blocking_loop(qrx, sig));
+    for _ in 0..threads {
+        let tqrx = qrx.clone();
+        let tsig = sig.clone();
+        thread::spawn(|| blocking_loop(tqrx, tsig));
+    }
 
     qtx
 }

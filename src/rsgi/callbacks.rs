@@ -23,7 +23,7 @@ macro_rules! callback_impl_done_http {
 
 macro_rules! callback_impl_done_ws {
     ($self:expr) => {
-        let _ = $self.proto.get().close(None);
+        $self.proto.get().close(None);
     };
 }
 

@@ -54,6 +54,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
+        io_blocking_threads: Optional[int],
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
@@ -86,6 +87,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             worker_id,
             sfd,
             threads,
+            io_blocking_threads,
             blocking_threads,
             backpressure,
             http_mode,
@@ -108,6 +110,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
+        io_blocking_threads: Optional[int],
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
@@ -147,6 +150,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             worker_id,
             sfd,
             threads,
+            io_blocking_threads,
             blocking_threads,
             backpressure,
             http_mode,
@@ -170,6 +174,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
+        io_blocking_threads: Optional[int],
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
@@ -210,6 +215,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             worker_id,
             sfd,
             threads,
+            io_blocking_threads,
             blocking_threads,
             backpressure,
             http_mode,
@@ -233,6 +239,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         socket: socket.socket,
         loop_impl: Loops,
         threads: int,
+        io_blocking_threads: Optional[int],
         blocking_threads: int,
         backpressure: int,
         threading_mode: ThreadModes,
@@ -261,7 +268,16 @@ class MPServer(AbstractServer[WorkerProcess]):
         shutdown_event = set_sync_signals()
 
         worker = WSGIWorker(
-            worker_id, sfd, threads, blocking_threads, backpressure, http_mode, http1_settings, http2_settings, *ssl_ctx
+            worker_id,
+            sfd,
+            threads,
+            io_blocking_threads,
+            blocking_threads,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            *ssl_ctx,
         )
         serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
         scheduler = _new_cbscheduler(
@@ -281,6 +297,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 socket_loader(),
                 self.loop,
                 self.threads,
+                self.io_blocking_threads,
                 self.blocking_threads,
                 self.backpressure,
                 self.threading_mode,

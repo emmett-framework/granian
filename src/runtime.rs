@@ -50,18 +50,18 @@ pub(crate) struct RuntimeWrapper {
 }
 
 impl RuntimeWrapper {
-    pub fn new(blocking_threads: usize, py_loop: Arc<PyObject>) -> Self {
+    pub fn new(blocking_threads: usize, py_blocking_threads: usize, py_loop: Arc<PyObject>) -> Self {
         Self {
             inner: default_runtime(blocking_threads),
-            br: BlockingRunner::new().into(),
+            br: BlockingRunner::new(py_blocking_threads).into(),
             pr: py_loop,
         }
     }
 
-    pub fn with_runtime(rt: tokio::runtime::Runtime, py_loop: Arc<PyObject>) -> Self {
+    pub fn with_runtime(rt: tokio::runtime::Runtime, py_blocking_threads: usize, py_loop: Arc<PyObject>) -> Self {
         Self {
             inner: rt,
-            br: BlockingRunner::new().into(),
+            br: BlockingRunner::new(py_blocking_threads).into(),
             pr: py_loop,
         }
     }
@@ -134,7 +134,12 @@ fn default_runtime(blocking_threads: usize) -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-pub(crate) fn init_runtime_mt(threads: usize, blocking_threads: usize, py_loop: Arc<PyObject>) -> RuntimeWrapper {
+pub(crate) fn init_runtime_mt(
+    threads: usize,
+    blocking_threads: usize,
+    py_blocking_threads: usize,
+    py_loop: Arc<PyObject>,
+) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         RuntimeBuilder::new_multi_thread()
             .worker_threads(threads)
@@ -142,12 +147,17 @@ pub(crate) fn init_runtime_mt(threads: usize, blocking_threads: usize, py_loop: 
             .enable_all()
             .build()
             .unwrap(),
+        py_blocking_threads,
         py_loop,
     )
 }
 
-pub(crate) fn init_runtime_st(blocking_threads: usize, py_loop: Arc<PyObject>) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_loop)
+pub(crate) fn init_runtime_st(
+    blocking_threads: usize,
+    py_blocking_threads: usize,
+    py_loop: Arc<PyObject>,
+) -> RuntimeWrapper {
+    RuntimeWrapper::new(blocking_threads, py_blocking_threads, py_loop)
 }
 
 // NOTE:

@@ -7,7 +7,7 @@ use itertools::Itertools;
 use percent_encoding::percent_decode_str;
 use pyo3::{
     prelude::*,
-    types::{IntoPyDict, PyBytes, PyDict},
+    types::{PyBytes, PyDict},
 };
 use std::net::SocketAddr;
 use tokio::sync::oneshot;
@@ -16,93 +16,21 @@ use super::{io::WSGIProtocol, types::WSGIBody};
 use crate::{
     callbacks::ArcCBScheduler,
     http::{empty_body, HTTPResponseBody},
-    runtime::RuntimeRef,
+    runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
 };
 
-#[inline]
-fn run_callback(
-    rt: RuntimeRef,
-    tx: oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>,
-    cbs: ArcCBScheduler,
-    mut parts: request::Parts,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
-    scheme: &str,
-    body: body::Incoming,
-) {
-    let (path_raw, query_string) = parts
-        .uri
-        .path_and_query()
-        .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
-    let path = percent_decode_str(path_raw).collect_vec();
-    let version = match parts.version {
-        Version::HTTP_10 => "HTTP/1",
-        Version::HTTP_11 => "HTTP/1.1",
-        Version::HTTP_2 => "HTTP/2",
-        Version::HTTP_3 => "HTTP/3",
-        _ => "HTTP/1",
+macro_rules! environ_set {
+    ($py:expr, $env:expr, $key:expr, $val:expr) => {
+        $env.set_item(pyo3::intern!($py, $key), $val).unwrap()
     };
-    let server = (server_addr.ip().to_string(), server_addr.port().to_string());
-    let client = client_addr.to_string();
-    let content_type = parts.headers.remove(header::CONTENT_TYPE);
-    let content_len = parts.headers.remove(header::CONTENT_LENGTH);
-    let mut headers = Vec::with_capacity(parts.headers.len());
-    for key in parts.headers.keys() {
-        headers.push((
-            format!("HTTP_{}", key.as_str().replace('-', "_").to_uppercase()),
-            parts
-                .headers
-                .get_all(key)
-                .iter()
-                .map(|v| v.to_str().unwrap_or_default())
-                .join(","),
-        ));
-    }
-    if !parts.headers.contains_key(header::HOST) {
-        let host = parts.uri.authority().map_or("", Authority::as_str);
-        headers.push(("HTTP_HOST".to_string(), host.to_string()));
-    }
+}
 
-    let _ = Python::with_gil(|py| -> PyResult<()> {
-        let proto = Py::new(py, WSGIProtocol::new(tx))?;
-        let callback = cbs.get().cb.clone_ref(py);
-        let environ = PyDict::new(py);
-        environ.set_item(pyo3::intern!(py, "SERVER_PROTOCOL"), version)?;
-        environ.set_item(pyo3::intern!(py, "SERVER_NAME"), server.0)?;
-        environ.set_item(pyo3::intern!(py, "SERVER_PORT"), server.1)?;
-        environ.set_item(pyo3::intern!(py, "REMOTE_ADDR"), client)?;
-        environ.set_item(pyo3::intern!(py, "REQUEST_METHOD"), parts.method.as_str())?;
-        environ.set_item(
-            pyo3::intern!(py, "PATH_INFO"),
-            PyBytes::new(py, &path).call_method1(pyo3::intern!(py, "decode"), (pyo3::intern!(py, "latin1"),))?,
-        )?;
-        environ.set_item(pyo3::intern!(py, "QUERY_STRING"), query_string)?;
-        environ.set_item(pyo3::intern!(py, "wsgi.url_scheme"), scheme)?;
-        environ.set_item(pyo3::intern!(py, "wsgi.input"), Py::new(py, WSGIBody::new(rt, body))?)?;
-        if let Some(content_type) = content_type {
-            environ.set_item(
-                pyo3::intern!(py, "CONTENT_TYPE"),
-                content_type.to_str().unwrap_or_default(),
-            )?;
-        }
-        if let Some(content_len) = content_len {
-            environ.set_item(
-                pyo3::intern!(py, "CONTENT_LENGTH"),
-                content_len.to_str().unwrap_or_default(),
-            )?;
-        }
-        environ.update(headers.into_py_dict(py).unwrap().as_mapping())?;
-
-        if let Err(err) = callback.call1(py, (proto.clone_ref(py), environ)) {
-            log_application_callable_exception(py, &err);
-            if let Some(tx) = proto.get().tx() {
-                let _ = tx.send((500, HeaderMap::new(), empty_body()));
-            }
-        }
-
-        Ok(())
-    });
+macro_rules! environ_set_header {
+    ($py:expr, $env:expr, $key:expr, $val:expr) => {
+        $env.set_item(format!("HTTP_{}", $key.as_str().replace('-', "_").to_uppercase()), $val)
+            .unwrap()
+    };
 }
 
 #[inline(always)]
@@ -112,13 +40,93 @@ pub(crate) fn call_http(
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     scheme: &str,
-    req: request::Parts,
+    mut req: request::Parts,
     body: body::Incoming,
 ) -> oneshot::Receiver<(u16, HeaderMap, HTTPResponseBody)> {
-    let scheme: std::sync::Arc<str> = scheme.into();
     let (tx, rx) = oneshot::channel();
-    tokio::task::spawn_blocking(move || {
-        run_callback(rt, tx, cb, req, server_addr, client_addr, &scheme, body);
+    let proto = WSGIProtocol::new(tx);
+    let body_wrapper = WSGIBody::new(rt.clone(), body);
+
+    let scheme: Box<str> = scheme.into();
+    let version = match req.version {
+        Version::HTTP_10 => "HTTP/1",
+        Version::HTTP_11 => "HTTP/1.1",
+        Version::HTTP_2 => "HTTP/2",
+        Version::HTTP_3 => "HTTP/3",
+        _ => "HTTP/1",
+    };
+    let (path, query_string): (Vec<u8>, Box<str>) = req.uri.path_and_query().map_or_else(
+        || (vec![], "".into()),
+        |pq| {
+            (
+                percent_decode_str(pq.path()).collect_vec(),
+                pq.query().unwrap_or("").into(),
+            )
+        },
+    );
+    let server = (server_addr.ip().to_string(), server_addr.port().to_string());
+
+    rt.spawn_blocking(move |py| {
+        let callback = cb.get().cb.clone_ref(py);
+        let proto = Py::new(py, proto).unwrap();
+        let body = Py::new(py, body_wrapper).unwrap();
+
+        let environ = PyDict::new(py);
+        environ_set!(py, environ, "SERVER_PROTOCOL", version);
+        environ_set!(py, environ, "SERVER_NAME", server.0);
+        environ_set!(py, environ, "SERVER_PORT", server.1);
+        environ_set!(py, environ, "REMOTE_ADDR", client_addr.to_string());
+        environ_set!(py, environ, "REQUEST_METHOD", req.method.as_str());
+        environ_set!(
+            py,
+            environ,
+            "PATH_INFO",
+            PyBytes::new(py, &path)
+                .call_method1(pyo3::intern!(py, "decode"), (pyo3::intern!(py, "latin1"),))
+                .unwrap()
+        );
+        environ_set!(py, environ, "QUERY_STRING", &query_string[..]);
+        environ_set!(py, environ, "wsgi.url_scheme", &scheme[..]);
+        environ_set!(py, environ, "wsgi.input", body);
+
+        if let Some(content_type) = req.headers.remove(header::CONTENT_TYPE) {
+            environ_set!(py, environ, "CONTENT_TYPE", content_type.to_str().unwrap_or_default());
+        }
+        if let Some(content_len) = req.headers.remove(header::CONTENT_LENGTH) {
+            environ_set!(py, environ, "CONTENT_LENGTH", content_len.to_str().unwrap_or_default());
+        }
+
+        for key in req.headers.keys() {
+            environ_set_header!(
+                py,
+                environ,
+                key,
+                req.headers
+                    .get_all(key)
+                    .iter()
+                    .map(|v| v.to_str().unwrap_or_default())
+                    .join(",")
+            );
+        }
+        if !req.headers.contains_key(header::HOST) {
+            environ_set!(
+                py,
+                environ,
+                "HTTP_HOST",
+                req.uri.authority().map_or("", Authority::as_str)
+            );
+        }
+
+        if let Err(err) = callback.call1(py, (proto.clone_ref(py), environ)) {
+            log_application_callable_exception(py, &err);
+            if let Some(tx) = proto.get().tx() {
+                let _ = tx.send((500, HeaderMap::new(), empty_body()));
+            }
+        }
+
+        proto.drop_ref(py);
+        callback.drop_ref(py);
     });
+
     rx
 }

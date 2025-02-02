@@ -71,6 +71,11 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='Number of blocking threads (per worker)',
 )
 @option(
+    '--io-blocking-threads',
+    type=click.IntRange(1),
+    help='Number of I/O blocking threads (per worker)',
+)
+@option(
     '--threading-mode',
     type=EnumType(ThreadModes),
     default=ThreadModes.workers,
@@ -265,6 +270,7 @@ def cli(
     workers: int,
     threads: int,
     blocking_threads: Optional[int],
+    io_blocking_threads: Optional[int],
     threading_mode: ThreadModes,
     loop: Loops,
     task_impl: TaskImpl,
@@ -320,6 +326,7 @@ def cli(
         interface=interface,
         workers=workers,
         threads=threads,
+        io_blocking_threads=io_blocking_threads,
         blocking_threads=blocking_threads,
         threading_mode=threading_mode,
         loop=loop,

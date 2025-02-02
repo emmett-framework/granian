@@ -529,7 +529,7 @@ impl PyIterAwaitable {
     }
 
     fn __next__(&self, py: Python) -> PyResult<Option<PyObject>> {
-        if let Some(res) = py.allow_threads(|| self.result.get()) {
+        if let Some(res) = self.result.get() {
             return res
                 .as_ref()
                 .map_err(|err| err.clone_ref(py))

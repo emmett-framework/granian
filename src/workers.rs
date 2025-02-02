@@ -90,6 +90,7 @@ pub(crate) struct WorkerConfig {
     socket_fd: i32,
     pub threads: usize,
     pub blocking_threads: usize,
+    pub io_blocking_threads: usize,
     pub backpressure: usize,
     pub http_mode: String,
     pub http1_opts: HTTP1Config,
@@ -106,6 +107,7 @@ impl WorkerConfig {
         id: i32,
         socket_fd: i32,
         threads: usize,
+        io_blocking_threads: usize,
         blocking_threads: usize,
         backpressure: usize,
         http_mode: &str,
@@ -122,6 +124,7 @@ impl WorkerConfig {
             socket_fd,
             threads,
             blocking_threads,
+            io_blocking_threads,
             backpressure,
             http_mode: http_mode.into(),
             http1_opts,
@@ -604,6 +607,7 @@ macro_rules! serve_rth {
 
             let rt = crate::runtime::init_runtime_mt(
                 self.config.threads,
+                self.config.io_blocking_threads,
                 self.config.blocking_threads,
                 std::sync::Arc::new(event_loop.clone().unbind()),
             );
@@ -665,6 +669,7 @@ macro_rules! serve_rth_ssl {
 
             let rt = crate::runtime::init_runtime_mt(
                 self.config.threads,
+                self.config.io_blocking_threads,
                 self.config.blocking_threads,
                 std::sync::Arc::new(event_loop.clone().unbind()),
             );
@@ -716,6 +721,7 @@ macro_rules! serve_wth_inner {
             let http_upgrades = $self.config.websockets_enabled;
             let http1_opts = $self.config.http1_opts.clone();
             let http2_opts = $self.config.http2_opts.clone();
+            let io_blocking_threads = $self.config.io_blocking_threads.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
             let backpressure = $self.config.backpressure.clone();
             let callback_wrapper = callback_wrapper.clone();
@@ -723,7 +729,7 @@ macro_rules! serve_wth_inner {
             let mut srx = $srx.clone();
 
             $workers.push(std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
+                let rt = crate::runtime::init_runtime_st(io_blocking_threads, blocking_threads, py_loop);
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
 
@@ -754,7 +760,7 @@ macro_rules! serve_wth_inner {
 }
 
 macro_rules! serve_wth {
-    ($func_name: ident, $target:expr) => {
+    ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -770,7 +776,7 @@ macro_rules! serve_wth {
             let mut workers = vec![];
             crate::workers::serve_wth_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
@@ -804,6 +810,7 @@ macro_rules! serve_wth_ssl_inner {
             let http1_opts = $self.config.http1_opts.clone();
             let http2_opts = $self.config.http2_opts.clone();
             let tls_cfg = $self.config.tls_cfg();
+            let io_blocking_threads = $self.config.io_blocking_threads.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
             let backpressure = $self.config.backpressure.clone();
             let callback_wrapper = callback_wrapper.clone();
@@ -811,7 +818,7 @@ macro_rules! serve_wth_ssl_inner {
             let mut srx = $srx.clone();
 
             $workers.push(std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(blocking_threads, py_loop);
+                let rt = crate::runtime::init_runtime_st(io_blocking_threads, blocking_threads, py_loop);
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
 
@@ -841,7 +848,7 @@ macro_rules! serve_wth_ssl_inner {
 }
 
 macro_rules! serve_wth_ssl {
-    ($func_name: ident, $target:expr) => {
+    ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -857,7 +864,7 @@ macro_rules! serve_wth_ssl {
             let mut workers = vec![];
             crate::workers::serve_wth_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
