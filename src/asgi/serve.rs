@@ -80,12 +80,18 @@ impl ASGIWorker {
         })
     }
 
-    fn serve_rth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_rth(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_rth(callback, event_loop, signal),
-            (true, false) => self._serve_rth_ws(callback, event_loop, signal),
-            (false, true) => self._serve_rth_ssl(callback, event_loop, signal),
-            (true, true) => self._serve_rth_ssl_ws(callback, event_loop, signal),
+            (false, false) => self._serve_rth(py, callback, event_loop, signal),
+            (true, false) => self._serve_rth_ws(py, callback, event_loop, signal),
+            (false, true) => self._serve_rth_ssl(py, callback, event_loop, signal),
+            (true, true) => self._serve_rth_ssl_ws(py, callback, event_loop, signal),
         }
     }
 

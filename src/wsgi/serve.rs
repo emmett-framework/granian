@@ -31,13 +31,17 @@ impl WSGIWorker {
         let http2_opts = self.config.http2_opts.clone();
         let backpressure = self.config.backpressure;
         let callback_wrapper = std::sync::Arc::new(callback);
+        let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
-        let rt = crate::runtime::init_runtime_mt(
-            self.config.threads,
-            self.config.io_blocking_threads,
-            self.config.blocking_threads,
-            std::sync::Arc::new(event_loop.clone().unbind()),
-        );
+        let rt = py.allow_threads(|| {
+            let ret = crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.io_blocking_threads,
+                self.config.blocking_threads,
+                rtpyloop,
+            );
+            ret
+        });
         let rth = rt.handler();
 
         let (stx, mut srx) = tokio::sync::watch::channel(false);
@@ -137,13 +141,17 @@ impl WSGIWorker {
         let backpressure = self.config.backpressure;
         let tls_cfg = self.config.tls_cfg();
         let callback_wrapper = std::sync::Arc::new(callback);
+        let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
-        let rt = crate::runtime::init_runtime_mt(
-            self.config.threads,
-            self.config.io_blocking_threads,
-            self.config.blocking_threads,
-            std::sync::Arc::new(event_loop.clone().unbind()),
-        );
+        let rt = py.allow_threads(|| {
+            let ret = crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.io_blocking_threads,
+                self.config.blocking_threads,
+                rtpyloop,
+            );
+            ret
+        });
         let rth = rt.handler();
 
         let (stx, mut srx) = tokio::sync::watch::channel(false);

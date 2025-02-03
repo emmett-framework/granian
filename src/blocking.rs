@@ -74,14 +74,26 @@ fn blocking_loop(queue: channel::Receiver<BlockingTask>) {
 //     });
 // }
 #[cfg(Py_GIL_DISABLED)]
-fn blocking_loop(queue: channel::Receiver<BlockingTask>, sig: channel::Receiver<()>) {
-    Python::with_gil(|py| loop {
-        crossbeam_channel::select! {
-            recv(queue) -> task => match task {
-                Ok(task) => task.run(py),
-                _ => break,
-            },
-            recv(sig) -> _ => break
+fn blocking_loop(
+    queue: channel::Receiver<BlockingTask>,
+    rtx: channel::Sender<()>,
+    mut brd: bus::BusReader<()>,
+    sig: channel::Receiver<()>,
+) {
+    Python::with_gil(|py| {
+        py.allow_threads(|| {
+            _ = rtx.send(());
+            _ = brd.recv();
+        });
+
+        loop {
+            crossbeam_channel::select! {
+                recv(queue) -> task => match task {
+                    Ok(task) => task.run(py),
+                    _ => break,
+                },
+                recv(sig) -> _ => break
+            }
         }
     });
 }
@@ -89,6 +101,7 @@ fn blocking_loop(queue: channel::Receiver<BlockingTask>, sig: channel::Receiver<
 #[cfg(not(Py_GIL_DISABLED))]
 fn blocking_pool(threads: usize) -> channel::Sender<BlockingTask> {
     let (qtx, qrx) = channel::unbounded();
+
     for _ in 0..threads {
         let tqrx = qrx.clone();
         thread::spawn(|| blocking_loop(tqrx));
@@ -100,11 +113,23 @@ fn blocking_pool(threads: usize) -> channel::Sender<BlockingTask> {
 #[cfg(Py_GIL_DISABLED)]
 fn blocking_pool(threads: usize, sig: channel::Receiver<()>) -> channel::Sender<BlockingTask> {
     let (qtx, qrx) = channel::unbounded();
+    let (rtx, rrx) = channel::bounded(threads);
+    let mut btx = bus::Bus::new(1);
+
     for _ in 0..threads {
-        let tqrx = qrx.clone();
         let tsig = sig.clone();
-        thread::spawn(|| blocking_loop(tqrx, tsig));
+        let tqrx = qrx.clone();
+        let trtx = rtx.clone();
+        let tbrx = btx.add_rx();
+        thread::spawn(move || blocking_loop(tqrx, trtx, tbrx, tsig));
     }
+
+    let mut ready = 0;
+    while ready < threads {
+        _ = rrx.recv();
+        ready += 1;
+    }
+    _ = btx.broadcast(());
 
     qtx
 }

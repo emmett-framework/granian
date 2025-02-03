@@ -588,6 +588,7 @@ macro_rules! serve_rth {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
+            py: Python,
             callback: Py<crate::callbacks::CallbackScheduler>,
             event_loop: &Bound<PyAny>,
             signal: Py<WorkerSignal>,
@@ -604,13 +605,17 @@ macro_rules! serve_rth {
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
             let callback_wrapper = std::sync::Arc::new(callback);
+            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
-            let rt = crate::runtime::init_runtime_mt(
-                self.config.threads,
-                self.config.io_blocking_threads,
-                self.config.blocking_threads,
-                std::sync::Arc::new(event_loop.clone().unbind()),
-            );
+            let rt = py.allow_threads(|| {
+                let ret = crate::runtime::init_runtime_mt(
+                    self.config.threads,
+                    self.config.io_blocking_threads,
+                    self.config.blocking_threads,
+                    rtpyloop,
+                );
+                ret
+            });
             let rth = rt.handler();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
@@ -649,6 +654,7 @@ macro_rules! serve_rth_ssl {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
+            py: Python,
             callback: Py<crate::callbacks::CallbackScheduler>,
             event_loop: &Bound<PyAny>,
             signal: Py<WorkerSignal>,
@@ -666,13 +672,17 @@ macro_rules! serve_rth_ssl {
             let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
             let callback_wrapper = std::sync::Arc::new(callback);
+            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
-            let rt = crate::runtime::init_runtime_mt(
-                self.config.threads,
-                self.config.io_blocking_threads,
-                self.config.blocking_threads,
-                std::sync::Arc::new(event_loop.clone().unbind()),
-            );
+            let rt = py.allow_threads(|| {
+                let ret = crate::runtime::init_runtime_mt(
+                    self.config.threads,
+                    self.config.io_blocking_threads,
+                    self.config.blocking_threads,
+                    rtpyloop,
+                );
+                ret
+            });
             let rth = rt.handler();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
