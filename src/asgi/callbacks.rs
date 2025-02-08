@@ -1,9 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::{
-    net::SocketAddr,
-    sync::{Arc, OnceLock},
-};
+use std::{net::SocketAddr, sync::OnceLock};
 use tokio::sync::oneshot;
 
 use super::{
@@ -150,19 +147,19 @@ pub(crate) fn call_http(
 ) -> oneshot::Receiver<HTTPResponse> {
     let (tx, rx) = oneshot::channel();
     let protocol = HTTPProtocol::new(rt.clone(), body, tx);
-    let scheme: Arc<str> = scheme.into();
+    let scheme: Box<str> = scheme.into();
+    scope_native_parts!(
+        req,
+        server_addr,
+        client_addr,
+        path,
+        query_string,
+        version,
+        server,
+        client
+    );
 
     rt.spawn_blocking(move |py| {
-        scope_native_parts!(
-            req,
-            server_addr,
-            client_addr,
-            path,
-            query_string,
-            version,
-            server,
-            client
-        );
         cb.get().schedule(
             py,
             Py::new(
@@ -170,7 +167,7 @@ pub(crate) fn call_http(
                 CallbackWatcherHTTP::new(
                     py,
                     protocol,
-                    build_scope_http(py, &req, version, server, client, &scheme, &path, query_string).unwrap(),
+                    build_scope_http(py, &req, version, server, client, &scheme, &path, &query_string).unwrap(),
                 ),
             )
             .unwrap(),
@@ -193,19 +190,19 @@ pub(crate) fn call_ws(
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
     let (tx, rx) = oneshot::channel();
     let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade);
-    let scheme: Arc<str> = scheme.into();
+    let scheme: Box<str> = scheme.into();
+    scope_native_parts!(
+        req,
+        server_addr,
+        client_addr,
+        path,
+        query_string,
+        version,
+        server,
+        client
+    );
 
     rt.spawn_blocking(move |py| {
-        scope_native_parts!(
-            req,
-            server_addr,
-            client_addr,
-            path,
-            query_string,
-            version,
-            server,
-            client
-        );
         cb.get().schedule(
             py,
             Py::new(
@@ -213,7 +210,7 @@ pub(crate) fn call_ws(
                 CallbackWatcherWebsocket::new(
                     py,
                     protocol,
-                    build_scope_ws(py, &req, version, server, client, &scheme, &path, query_string).unwrap(),
+                    build_scope_ws(py, &req, version, server, client, &scheme, &path, &query_string).unwrap(),
                 ),
             )
             .unwrap(),

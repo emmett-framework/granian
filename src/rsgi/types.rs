@@ -10,7 +10,7 @@ use hyper::{
 use percent_encoding::percent_decode_str;
 use pyo3::types::{PyBytes, PyIterator, PyList, PyString};
 use pyo3::{prelude::*, pybacked::PyBackedStr};
-use std::{borrow::Cow, net::SocketAddr, sync::Arc};
+use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
@@ -104,7 +104,7 @@ macro_rules! rsgi_scope_cls {
         #[pyclass(frozen, module = "granian._granian")]
         pub(crate) struct $name {
             http_version: Version,
-            scheme: Arc<str>,
+            scheme: String,
             method: Method,
             uri: Uri,
             server: SocketAddr,

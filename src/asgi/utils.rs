@@ -13,11 +13,17 @@ static ASGI_EXTENSIONS: GILOnceCell<PyObject> = GILOnceCell::new();
 
 macro_rules! scope_native_parts {
     ($req:expr, $server_addr:expr, $client_addr:expr, $path:ident, $query_string:ident, $version:ident, $server:ident, $client:ident) => {
-        let (path_raw, $query_string) = $req
-            .uri
-            .path_and_query()
-            .map_or_else(|| ("", ""), |pq| (pq.path(), pq.query().unwrap_or("")));
-        let $path = percent_encoding::percent_decode_str(path_raw).decode_utf8_lossy();
+        let ($path, $query_string): (Box<str>, Box<str>) = $req.uri.path_and_query().map_or_else(
+            || ("".into(), "".into()),
+            |pq| {
+                (
+                    percent_encoding::percent_decode_str(pq.path())
+                        .decode_utf8_lossy()
+                        .into(),
+                    pq.query().unwrap_or("").into(),
+                )
+            },
+        );
         let $version = match $req.version {
             hyper::Version::HTTP_10 => "1",
             hyper::Version::HTTP_11 => "1.1",
@@ -27,6 +33,12 @@ macro_rules! scope_native_parts {
         };
         let $server = ($server_addr.ip().to_string(), $server_addr.port().to_string());
         let $client = ($client_addr.ip().to_string(), $client_addr.port().to_string());
+    };
+}
+
+macro_rules! scope_set {
+    ($py:expr, $scope:expr, $key:expr, $val:expr) => {
+        $scope.set_item(pyo3::intern!($py, $key), $val)?
     };
 }
 
@@ -44,8 +56,10 @@ pub(super) fn build_scope<'p>(
 ) -> PyResult<Bound<'p, PyDict>> {
     let scope = PyDict::new(py);
 
-    scope.set_item(
-        pyo3::intern!(py, "asgi"),
+    scope_set!(
+        py,
+        scope,
+        "asgi",
         ASGI_VERSION
             .get_or_try_init(py, || {
                 let rv = PyDict::new(py);
@@ -53,29 +67,28 @@ pub(super) fn build_scope<'p>(
                 rv.set_item("spec_version", "2.3")?;
                 Ok::<PyObject, PyErr>(rv.into())
             })?
-            .bind(py),
-    )?;
-    scope.set_item(
-        pyo3::intern!(py, "extensions"),
+            .bind(py)
+    );
+    scope_set!(
+        py,
+        scope,
+        "extensions",
         ASGI_EXTENSIONS
             .get_or_try_init(py, || {
                 let rv = PyDict::new(py);
                 rv.set_item("http.response.pathsend", PyDict::new(py))?;
                 Ok::<PyObject, PyErr>(rv.into())
             })?
-            .bind(py),
-    )?;
-    scope.set_item(pyo3::intern!(py, "type"), proto)?;
-    scope.set_item(pyo3::intern!(py, "http_version"), version)?;
-    scope.set_item(pyo3::intern!(py, "server"), server)?;
-    scope.set_item(pyo3::intern!(py, "client"), client)?;
-    scope.set_item(pyo3::intern!(py, "scheme"), scheme)?;
-    scope.set_item(pyo3::intern!(py, "path"), path)?;
-    scope.set_item(pyo3::intern!(py, "raw_path"), PyBytes::new(py, path.as_bytes()))?;
-    scope.set_item(
-        pyo3::intern!(py, "query_string"),
-        PyBytes::new(py, query_string.as_bytes()),
-    )?;
+            .bind(py)
+    );
+    scope_set!(py, scope, "type", proto);
+    scope_set!(py, scope, "http_version", version);
+    scope_set!(py, scope, "server", server);
+    scope_set!(py, scope, "client", client);
+    scope_set!(py, scope, "scheme", scheme);
+    scope_set!(py, scope, "path", path);
+    scope_set!(py, scope, "raw_path", PyBytes::new(py, path.as_bytes()));
+    scope_set!(py, scope, "query_string", PyBytes::new(py, query_string.as_bytes()));
 
     let headers = PyList::empty(py);
     for (key, value) in &req.headers {
@@ -88,7 +101,7 @@ pub(super) fn build_scope<'p>(
         let host = req.uri.authority().map_or("", Authority::as_str);
         headers.insert(0, (PyBytes::new(py, b"host"), PyBytes::new(py, host.as_bytes())))?;
     }
-    scope.set_item(pyo3::intern!(py, "headers"), headers)?;
+    scope_set!(py, scope, "headers", headers);
 
     Ok(scope)
 }
@@ -105,7 +118,7 @@ pub(super) fn build_scope_http<'p>(
     query_string: &'p str,
 ) -> PyResult<Bound<'p, PyDict>> {
     let scope = build_scope(py, req, "http", version, server, client, scheme, path, query_string)?;
-    scope.set_item(pyo3::intern!(py, "method"), req.method.as_str())?;
+    scope_set!(py, scope, "method", req.method.as_str());
     Ok(scope)
 }
 
@@ -131,8 +144,10 @@ pub(super) fn build_scope_ws<'p>(
         path,
         query_string,
     )?;
-    scope.set_item(
-        pyo3::intern!(py, "subprotocols"),
+    scope_set!(
+        py,
+        scope,
+        "subprotocols",
         PyList::new(
             py,
             req.headers
@@ -140,8 +155,9 @@ pub(super) fn build_scope_ws<'p>(
                 .iter()
                 .map(|v| PyString::new(py, v.to_str().unwrap()))
                 .collect::<Vec<Bound<PyString>>>(),
-        )?,
-    )?;
+        )
+        .unwrap()
+    );
     Ok(scope)
 }
 

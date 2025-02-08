@@ -119,7 +119,7 @@ pub(crate) fn call_http(
 
         if let Err(err) = callback.call1(py, (proto.clone_ref(py), environ)) {
             log_application_callable_exception(py, &err);
-            if let Some(tx) = proto.get().tx() {
+            if let Some(tx) = proto.borrow(py).tx() {
                 let _ = tx.send((500, HeaderMap::new(), empty_body()));
             }
         }

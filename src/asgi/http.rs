@@ -69,7 +69,7 @@ macro_rules! handle_request_with_ws {
                     Ok((res, ws)) => {
                         let (restx, mut resrx) = mpsc::channel(1);
                         let (parts, _) = req.into_parts();
-                        let scheme: std::sync::Arc<str> = match scheme {
+                        let scheme: Box<str> = match scheme {
                             SCHEME_HTTPS => SCHEME_WSS,
                             _ => SCHEME_WS,
                         }

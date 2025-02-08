@@ -5,7 +5,7 @@ use hyper::{
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
 };
 use pyo3::{prelude::*, pybacked::PyBackedStr};
-use std::{borrow::Cow, sync::Mutex};
+use std::{borrow::Cow, cell::RefCell};
 use tokio::sync::{mpsc, oneshot};
 
 use super::utils::py_allow_threads;
@@ -14,20 +14,20 @@ use crate::{
     utils::log_application_callable_exception,
 };
 
-#[pyclass(frozen)]
+#[pyclass(frozen, unsendable)]
 pub(super) struct WSGIProtocol {
-    tx: Mutex<Option<oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>>>,
+    tx: RefCell<Option<oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>>>,
 }
 
 impl WSGIProtocol {
     pub fn new(tx: oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>) -> Self {
         Self {
-            tx: Mutex::new(Some(tx)),
+            tx: RefCell::new(Some(tx)),
         }
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>> {
-        self.tx.lock().unwrap().take()
+        self.tx.borrow_mut().take()
     }
 }
 
@@ -48,7 +48,7 @@ macro_rules! headers_from_py {
 #[pymethods]
 impl WSGIProtocol {
     fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
-        if let Some(tx) = self.tx.lock().unwrap().take() {
+        if let Some(tx) = self.tx.borrow_mut().take() {
             let data: Box<[u8]> = body.into();
             let txbody = http_body_util::Full::new(body::Bytes::from(data))
                 .map_err(|e| match e {})
@@ -58,7 +58,7 @@ impl WSGIProtocol {
     }
 
     fn response_iter(&self, py: Python, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Bound<PyAny>) {
-        if let Some(tx) = self.tx.lock().unwrap().take() {
+        if let Some(tx) = self.tx.borrow_mut().take() {
             let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
 
             let body_stream = http_body_util::StreamBody::new(
