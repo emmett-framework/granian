@@ -3,7 +3,6 @@ from __future__ import annotations
 import errno
 import multiprocessing
 import os
-import socket
 import ssl
 import sys
 import threading
@@ -159,6 +158,7 @@ class AbstractServer(Generic[WT]):
         self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password)
         self._shd = None
         self._sfd = None
+        self._sso = None
         self.wrks: List[WT] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
@@ -195,28 +195,18 @@ class AbstractServer(Generic[WT]):
     def _spawn_worker(self, idx, target, callback_loader, socket_loader) -> WT:
         raise NotImplementedError
 
-    def _spawn_workers(self, sock, spawn_target, target_loader):
-        def socket_loader():
-            return sock
-
+    def _spawn_workers(self, spawn_target, target_loader):
         for idx in range(self.workers):
-            wrk = self._spawn_worker(
-                idx=idx, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
-            )
+            wrk = self._spawn_worker(idx=idx, target=spawn_target, callback_loader=target_loader)
             wrk.start()
             self.wrks.append(wrk)
 
-    def _respawn_workers(self, workers, sock, spawn_target, target_loader, delay: float = 0):
-        def socket_loader():
-            return sock
-
+    def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):
         for idx in workers:
             self.respawned_wrks[idx] = time.time()
             logger.info(f'Respawning worker-{idx + 1}')
             old_wrk = self.wrks.pop(idx)
-            wrk = self._spawn_worker(
-                idx=idx, target=spawn_target, callback_loader=target_loader, socket_loader=socket_loader
-            )
+            wrk = self._spawn_worker(idx=idx, target=spawn_target, callback_loader=target_loader)
             wrk.start()
             self.wrks.insert(idx, wrk)
             time.sleep(delay)
@@ -310,17 +300,13 @@ class AbstractServer(Generic[WT]):
         self._write_pidfile()
         set_main_signals(self.signal_handler_interrupt, self.signal_handler_reload)
         self._init_shared_socket()
-        sock = socket.socket(fileno=self._sfd)
-        sock.set_inheritable(True)
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
 
-        self._spawn_workers(sock, spawn_target, target_loader)
+        self._spawn_workers(spawn_target, target_loader)
 
         if self.workers_lifetime is not None:
             self._watch_workers_lifetime(self.workers_lifetime)
-
-        return sock
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
@@ -331,15 +317,15 @@ class AbstractServer(Generic[WT]):
         if exit_code:
             sys.exit(exit_code)
 
-    def _reload(self, sock, spawn_target, target_loader):
+    def _reload(self, spawn_target, target_loader):
         logger.info('HUP signal received, gracefully respawning workers..')
         workers = list(range(self.workers))
         self.reload_signal = False
         self.respawned_wrks.clear()
         self.main_loop_interrupt.clear()
-        self._respawn_workers(workers, sock, spawn_target, target_loader, delay=self.respawn_interval)
+        self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
 
-    def _serve_loop(self, sock, spawn_target, target_loader):
+    def _serve_loop(self, spawn_target, target_loader):
         while True:
             self.main_loop_interrupt.wait()
             if self.interrupt_signal:
@@ -358,10 +344,10 @@ class AbstractServer(Generic[WT]):
                 self.interrupt_children.clear()
                 self.respawned_wrks.clear()
                 self.main_loop_interrupt.clear()
-                self._respawn_workers(workers, sock, spawn_target, target_loader)
+                self._respawn_workers(workers, spawn_target, target_loader)
 
             if self.reload_signal:
-                self._reload(sock, spawn_target, target_loader)
+                self._reload(spawn_target, target_loader)
 
             if self.lifetime_signal:
                 self.lifetime_signal = False
@@ -372,9 +358,7 @@ class AbstractServer(Generic[WT]):
                 for worker in list(self.wrks):
                     if (now - worker.birth) >= ttl:
                         logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
-                        self._respawn_workers(
-                            [worker.idx], sock, spawn_target, target_loader, delay=self.respawn_interval
-                        )
+                        self._respawn_workers([worker.idx], spawn_target, target_loader, delay=self.respawn_interval)
                     else:
                         elapsed = now - worker.birth
                         remaining = self.workers_lifetime - elapsed
@@ -383,8 +367,8 @@ class AbstractServer(Generic[WT]):
                 self._watch_workers_lifetime(next_tick)
 
     def _serve(self, spawn_target, target_loader):
-        sock = self.startup(spawn_target, target_loader)
-        self._serve_loop(sock, spawn_target, target_loader)
+        self.startup(spawn_target, target_loader)
+        self._serve_loop(spawn_target, target_loader)
         self.shutdown()
 
     def _serve_with_reloader(self, spawn_target, target_loader):
@@ -406,7 +390,7 @@ class AbstractServer(Generic[WT]):
             ignore_dirs=ignore_dirs, ignore_entity_patterns=ignore_entity_patterns, ignore_paths=ignore_paths
         )
 
-        sock = self.startup(spawn_target, target_loader)
+        self.startup(spawn_target, target_loader)
 
         serve_loop = True
         while serve_loop:
@@ -418,12 +402,12 @@ class AbstractServer(Generic[WT]):
                     for change, file in changes:
                         logger.info(f'{change.raw_str().capitalize()}: {file}')
                     self._stop_workers()
-                    self._spawn_workers(sock, spawn_target, target_loader)
+                    self._spawn_workers(spawn_target, target_loader)
             except StopIteration:
                 pass
 
             if self.reload_signal:
-                self._reload(sock, spawn_target, target_loader)
+                self._reload(spawn_target, target_loader)
             else:
                 serve_loop = False
 

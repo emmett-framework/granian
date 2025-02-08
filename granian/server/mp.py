@@ -51,7 +51,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         process_name: Optional[str],
         callback_loader: Callable[..., Any],
-        socket: socket.socket,
+        sock: socket.socket,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -78,14 +78,13 @@ class MPServer(AbstractServer[WorkerProcess]):
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
         callback = callback_loader()
         shutdown_event = set_loop_signals(loop)
         wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
 
         worker = ASGIWorker(
             worker_id,
-            sfd,
+            sock.fileno(),
             threads,
             io_blocking_threads,
             blocking_threads,
@@ -107,7 +106,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         process_name: Optional[str],
         callback_loader: Callable[..., Any],
-        socket: socket.socket,
+        sock: socket.socket,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -134,7 +133,6 @@ class MPServer(AbstractServer[WorkerProcess]):
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
         callback = callback_loader()
         lifespan_handler = LifespanProtocol(callback)
 
@@ -148,7 +146,7 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         worker = ASGIWorker(
             worker_id,
-            sfd,
+            sock.fileno(),
             threads,
             io_blocking_threads,
             blocking_threads,
@@ -171,7 +169,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         process_name: Optional[str],
         callback_loader: Callable[..., Any],
-        socket: socket.socket,
+        sock: socket.socket,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -198,7 +196,6 @@ class MPServer(AbstractServer[WorkerProcess]):
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
         target = callback_loader()
         callback = getattr(target, '__rsgi__') if hasattr(target, '__rsgi__') else target
         callback_init = (
@@ -213,7 +210,7 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         worker = RSGIWorker(
             worker_id,
-            sfd,
+            sock.fileno(),
             threads,
             io_blocking_threads,
             blocking_threads,
@@ -236,7 +233,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         process_name: Optional[str],
         callback_loader: Callable[..., Any],
-        socket: socket.socket,
+        sock: socket.socket,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -263,13 +260,12 @@ class MPServer(AbstractServer[WorkerProcess]):
         configure_logging(log_level, log_config, log_enabled)
 
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
         callback = callback_loader()
         shutdown_event = set_sync_signals()
 
         worker = WSGIWorker(
             worker_id,
-            sfd,
+            sock.fileno(),
             threads,
             io_blocking_threads,
             blocking_threads,
@@ -285,7 +281,13 @@ class MPServer(AbstractServer[WorkerProcess]):
         )
         serve(scheduler, loop, shutdown_event)
 
-    def _spawn_worker(self, idx, target, callback_loader, socket_loader) -> WorkerProcess:
+    def _init_shared_socket(self):
+        super()._init_shared_socket()
+        sock = socket.socket(fileno=self._sfd)
+        sock.set_inheritable(True)
+        self._sso = sock
+
+    def _spawn_worker(self, idx, target, callback_loader) -> WorkerProcess:
         return WorkerProcess(
             parent=self,
             idx=idx,
@@ -294,7 +296,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 idx + 1,
                 self.process_name,
                 callback_loader,
-                socket_loader(),
+                self._sso,
                 self.loop,
                 self.threads,
                 self.io_blocking_threads,

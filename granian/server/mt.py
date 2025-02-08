@@ -1,4 +1,3 @@
-import socket
 import sys
 import threading
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -63,7 +62,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        socket: socket.socket,
+        sfd: int,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -80,7 +79,6 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: Dict[str, Any],
     ):
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
         wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
 
         worker = ASGIWorker(
@@ -107,7 +105,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        socket: socket.socket,
+        sfd: int,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -124,7 +122,6 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: Dict[str, Any],
     ):
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
 
         lifespan_handler = LifespanProtocol(callback)
         loop.run_until_complete(lifespan_handler.startup())
@@ -159,7 +156,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        socket: socket.socket,
+        sfd: int,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -176,7 +173,6 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: Dict[str, Any],
     ):
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
         callback_init = (
             getattr(callback, '__rsgi_init__') if hasattr(callback, '__rsgi_init__') else lambda *args, **kwargs: None
         )
@@ -212,7 +208,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        socket: socket.socket,
+        sfd: int,
         loop_impl: Loops,
         threads: int,
         io_blocking_threads: Optional[int],
@@ -229,7 +225,6 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: Dict[str, Any],
     ):
         loop = loops.get(loop_impl)
-        sfd = socket.fileno()
 
         worker = WSGIWorker(
             worker_id,
@@ -249,7 +244,7 @@ class MTServer(AbstractServer[WorkerThread]):
         )
         serve(scheduler, loop, shutdown_event)
 
-    def _spawn_worker(self, idx, target, callback_loader, socket_loader) -> WorkerThread:
+    def _spawn_worker(self, idx, target, callback_loader) -> WorkerThread:
         sig = WorkerSignalSync(threading.Event()) if self.interface == Interfaces.WSGI else WorkerSignal()
 
         return WorkerThread(
@@ -260,7 +255,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 idx + 1,
                 sig,
                 callback_loader,
-                socket_loader(),
+                self._sfd,
                 self.loop,
                 self.threads,
                 self.io_blocking_threads,
@@ -289,8 +284,8 @@ class MTServer(AbstractServer[WorkerThread]):
     def _serve(self, spawn_target, target_loader):
         target = target_loader()
         self._check_gil()
-        sock = self.startup(spawn_target, target)
-        self._serve_loop(sock, spawn_target, target)
+        self.startup(spawn_target, target)
+        self._serve_loop(spawn_target, target)
         self.shutdown()
 
     def _serve_with_reloader(self, spawn_target, target_loader):
