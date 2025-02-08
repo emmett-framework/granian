@@ -83,7 +83,7 @@ class AbstractServer(Generic[WT]):
         blocking_threads: Optional[int] = None,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
-        task_impl: TaskImpl = TaskImpl.auto,
+        task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
@@ -483,12 +483,8 @@ class AbstractServer(Generic[WT]):
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
 
-        # FIXME: `rust` impl seems to mem-leak
-        if self.task_impl == TaskImpl.auto:
-            # self.task_impl = TaskImpl.asyncio if anyio is not None else TaskImpl.rust
-            self.task_impl = TaskImpl.asyncio
         if self.task_impl == TaskImpl.rust:
-            logger.warning('Rust task implementation is still experimental and might cause memory leaks!')
+            logger.warning('Rust task implementation is experimental!')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)

@@ -34,13 +34,12 @@ impl WSGIWorker {
         let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
         let rt = py.allow_threads(|| {
-            let ret = crate::runtime::init_runtime_mt(
+            crate::runtime::init_runtime_mt(
                 self.config.threads,
                 self.config.io_blocking_threads,
                 self.config.blocking_threads,
                 rtpyloop,
-            );
-            ret
+            )
         });
         let rth = rt.handler();
 
@@ -144,13 +143,12 @@ impl WSGIWorker {
         let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
         let rt = py.allow_threads(|| {
-            let ret = crate::runtime::init_runtime_mt(
+            crate::runtime::init_runtime_mt(
                 self.config.threads,
                 self.config.io_blocking_threads,
                 self.config.blocking_threads,
                 rtpyloop,
-            );
-            ret
+            )
         });
         let rth = rt.handler();
 

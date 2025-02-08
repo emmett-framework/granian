@@ -32,6 +32,5 @@ class Loops(StrEnum):
 
 
 class TaskImpl(StrEnum):
-    auto = 'auto'
-    rust = 'rust'
     asyncio = 'asyncio'
+    rust = 'rust'
