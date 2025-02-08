@@ -85,7 +85,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--task-impl',
     type=EnumType(TaskImpl),
-    default=TaskImpl.auto,
+    default=TaskImpl.asyncio,
     help='Async task implementation to use',
 )
 @option(
