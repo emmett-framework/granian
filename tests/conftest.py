@@ -16,13 +16,14 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode, tls=False):
+async def _server(interface, port, threading_mode, tls=False, task_impl='asyncio'):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
         'port': port,
         'blocking_threads': 1,
         'threading_mode': threading_mode,
+        'task_impl': task_impl,
     }
     if tls:
         if tls == 'private':
@@ -74,8 +75,8 @@ def server_port():
 
 
 @pytest.fixture(scope='function')
-def asgi_server(server_port):
-    return partial(_server, 'asgi', server_port)
+def asgi_server(server_port, **extras):
+    return partial(_server, 'asgi', server_port, **extras)
 
 
 @pytest.fixture(scope='function')

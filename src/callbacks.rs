@@ -1,6 +1,3 @@
-#[cfg(Py_3_12)]
-use std::cell::RefCell;
-
 use pyo3::{exceptions::PyStopIteration, prelude::*, types::PyDict, IntoPyObjectExt};
 use std::sync::{atomic, Arc, OnceLock, RwLock};
 use tokio::sync::Notify;
@@ -43,61 +40,7 @@ impl CallbackScheduler {
         watcher.drop_ref(py);
     }
 
-    #[cfg(Py_3_12)]
-    #[inline]
-    pub(crate) fn send(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>) {
-        let rself = pyself.get();
-        let rstate = state.borrow(py);
-        let aiotask = rself.aio_task.as_ptr();
-
-        *rstate.futw.borrow_mut() = None;
-
-        unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_tenter.as_ptr(), aiotask);
-        }
-
-        if let Some(res) = unsafe {
-            let mut pres = std::ptr::null_mut::<pyo3::ffi::PyObject>();
-            // FIXME: use PyIter_Send return value once available in PyO3
-            pyo3::ffi::PyIter_Send(rstate.coro.as_ptr(), rself.pynone.as_ptr(), &mut pres);
-            Bound::from_owned_ptr_or_opt(py, pres)
-                .map(|v| {
-                    if v.is_none() {
-                        return None;
-                    }
-                    Some(v)
-                })
-                .unwrap()
-        } {
-            if unsafe {
-                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
-                Bound::from_owned_ptr_or_err(py, vptr)
-                    .map(|v| v.extract::<bool>().unwrap_or(false))
-                    .unwrap_or(false)
-            } {
-                let resp = res.as_ptr();
-                *rstate.futw.borrow_mut() = Some(res.unbind().clone_ref(py));
-                drop(rstate);
-
-                unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
-                    CallbackSchedulerState::schedule(state, py, resp);
-                }
-            } else {
-                drop(rstate);
-                CallbackSchedulerState::reschedule(state, py);
-            }
-        } else {
-            drop(rstate);
-            state.drop_ref(py);
-        }
-
-        unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_texit.as_ptr(), aiotask);
-        }
-    }
-
-    #[cfg(all(not(Py_3_12), Py_3_10))]
+    #[cfg(Py_3_10)]
     #[inline]
     pub(crate) fn send(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>) {
         let rself = pyself.get();
@@ -110,7 +53,7 @@ impl CallbackScheduler {
         if let Some(res) = unsafe {
             let mut pres = std::ptr::null_mut::<pyo3::ffi::PyObject>();
             // FIXME: use PyIter_Send return value once available in PyO3
-            pyo3::ffi::PyIter_Send(state.borrow(py).coro.as_ptr(), rself.pynone.as_ptr(), &mut pres);
+            pyo3::ffi::PyIter_Send(state.get().coro.as_ptr(), rself.pynone.as_ptr(), &mut pres);
             Bound::from_owned_ptr_or_opt(py, pres)
                 .map(|v| {
                     if v.is_none() {
@@ -132,7 +75,7 @@ impl CallbackScheduler {
                     CallbackSchedulerState::schedule(state, py, resp);
                 }
             } else {
-                CallbackSchedulerState::reschedule(state, py);
+                CallbackSchedulerState::reschedule(state);
             }
         } else {
             state.drop_ref(py);
@@ -155,7 +98,7 @@ impl CallbackScheduler {
 
         if let Ok(res) = unsafe {
             let pres = pyo3::ffi::PyObject_CallMethodOneArg(
-                state.borrow(py).coro.as_ptr(),
+                state.get().coro.as_ptr(),
                 rself.pyname_aiosend.as_ptr(),
                 rself.pynone.as_ptr(),
             );
@@ -173,7 +116,7 @@ impl CallbackScheduler {
                     CallbackSchedulerState::schedule(state, py, resp);
                 }
             } else {
-                CallbackSchedulerState::reschedule(state, py);
+                CallbackSchedulerState::reschedule(state);
             }
         } else {
             state.drop_ref(py);
@@ -192,7 +135,7 @@ impl CallbackScheduler {
         unsafe {
             pyo3::ffi::PyObject_CallOneArg(rself.aio_tenter.as_ptr(), aiotask);
             pyo3::ffi::PyObject_CallMethodOneArg(
-                state.borrow(py).coro.as_ptr(),
+                state.get().coro.as_ptr(),
                 rself.pyname_aiothrow.as_ptr(),
                 err.into_ptr(),
             );
@@ -227,7 +170,7 @@ impl CallbackScheduler {
 
         if let Ok(res) = unsafe {
             let res = pyo3::ffi::PyObject_CallMethodObjArgs(
-                state.borrow(py).coro.as_ptr(),
+                state.get().coro.as_ptr(),
                 rself.pyname_aiosend.as_ptr(),
                 rself.pynone.as_ptr(),
                 std::ptr::null_mut::<PyObject>(),
@@ -247,7 +190,7 @@ impl CallbackScheduler {
                     CallbackSchedulerState::schedule(state, py, resp);
                 }
             } else {
-                CallbackSchedulerState::reschedule(state, py);
+                CallbackSchedulerState::reschedule(state);
             }
         } else {
             state.drop_ref(py);
@@ -266,7 +209,7 @@ impl CallbackScheduler {
         unsafe {
             pyo3::ffi::PyObject_CallObject(rself.aio_tenter.as_ptr(), aiotask);
             pyo3::ffi::PyObject_CallMethodObjArgs(
-                state.borrow(py).coro.as_ptr(),
+                state.get().coro.as_ptr(),
                 rself.pyname_aiothrow.as_ptr(),
                 (err,).into_py_any(py).unwrap().into_ptr(),
                 std::ptr::null_mut::<PyObject>(),
@@ -341,15 +284,13 @@ impl CallbackScheduler {
     }
 }
 
-#[pyclass(frozen, freelist = 1024, unsendable, module = "granian._granian")]
+#[pyclass(frozen, freelist = 1024, module = "granian._granian")]
 pub(crate) struct CallbackSchedulerState {
     sched: Py<CallbackScheduler>,
     coro: PyObject,
     ctxd: Py<PyDict>,
     pys_futcb: PyObject,
     pym_schedule: PyObject,
-    #[cfg(Py_3_12)]
-    futw: RefCell<Option<PyObject>>,
 }
 
 impl CallbackSchedulerState {
@@ -371,24 +312,25 @@ impl CallbackSchedulerState {
                 ctxd: ctxd.unbind(),
                 pys_futcb: pyo3::intern!(py, "add_done_callback").into_py_any(py).unwrap(),
                 pym_schedule,
-                #[cfg(Py_3_12)]
-                futw: RefCell::new(None),
             },
         )
         .unwrap()
     }
 
     unsafe fn schedule(pyself: Py<Self>, py: Python, step: *mut pyo3::ffi::PyObject) {
-        let rself = pyself.borrow(py);
+        let rself = pyself.get();
         pyo3::ffi::PyObject_Call(
             pyo3::ffi::PyObject_GetAttr(step, rself.pys_futcb.as_ptr()),
-            pyself.getattr(py, pyo3::intern!(py, "wake")).unwrap().as_ptr(),
+            (pyself.getattr(py, pyo3::intern!(py, "wake")).unwrap(),)
+                .into_py_any(py)
+                .unwrap()
+                .as_ptr(),
             rself.ctxd.as_ptr(),
         );
     }
 
-    fn reschedule(pyself: Py<Self>, py: Python) {
-        let rself = pyself.borrow(py);
+    fn reschedule(pyself: Py<Self>) {
+        let rself = pyself.get();
         unsafe {
             pyo3::ffi::PyObject_Call(rself.pym_schedule.as_ptr(), pyself.as_ptr(), rself.ctxd.as_ptr());
         }
@@ -408,24 +350,6 @@ impl CallbackSchedulerState {
             Ok(_) => CallbackScheduler::send(sched, py, pyself),
             Err(err) => CallbackScheduler::throw(sched, py, pyself, err.into_py_any(py).unwrap()),
         }
-    }
-
-    #[cfg(Py_3_12)]
-    fn cancel(&self, py: Python) -> PyResult<PyObject> {
-        if let Some(v) = self.futw.borrow().as_ref() {
-            return v.call_method0(py, pyo3::intern!(py, "cancel"));
-        }
-        Ok(self.sched.get().pyfalse.clone_ref(py))
-    }
-
-    #[cfg(Py_3_12)]
-    fn cancelling(&self) -> i32 {
-        0
-    }
-
-    #[cfg(Py_3_12)]
-    fn uncancel(&self) -> i32 {
-        0
     }
 }
 

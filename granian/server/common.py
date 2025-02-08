@@ -11,6 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
 
+from .._compat import _PY_312, _PYV
 from .._imports import setproctitle, watchfiles
 from .._internal import load_target
 from .._signals import set_main_signals
@@ -468,7 +469,11 @@ class AbstractServer(Generic[WT]):
                 raise ConfigurationError('workers_lifetime')
 
         if self.task_impl == TaskImpl.rust:
-            logger.warning('Rust task implementation is experimental!')
+            if _PYV >= _PY_312:
+                self.task_impl = TaskImpl.asyncio
+                logger.warning('Rust task implementation is not available on Python >= 3.12, falling back to asyncio')
+            else:
+                logger.warning('Rust task implementation is experimental!')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)
