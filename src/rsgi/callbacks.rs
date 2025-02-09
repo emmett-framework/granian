@@ -50,12 +50,15 @@ pub(crate) struct CallbackWatcherHTTP {
 }
 
 impl CallbackWatcherHTTP {
-    pub fn new(py: Python, proto: HTTPProtocol, scope: HTTPScope) -> Self {
-        Self {
-            proto: Py::new(py, proto).unwrap(),
-            scope: Py::new(py, scope).unwrap(),
-            aio_taskref: OnceLock::new(),
-        }
+    pub fn new(py: Python, proto: HTTPProtocol, scope: HTTPScope) -> PyResult<Py<Self>> {
+        Py::new(
+            py,
+            Self {
+                proto: Py::new(py, proto)?,
+                scope: Py::new(py, scope)?,
+                aio_taskref: OnceLock::new(),
+            },
+        )
     }
 }
 
@@ -84,12 +87,15 @@ pub(crate) struct CallbackWatcherWebsocket {
 }
 
 impl CallbackWatcherWebsocket {
-    pub fn new(py: Python, proto: WebsocketProtocol, scope: WebsocketScope) -> Self {
-        Self {
-            proto: Py::new(py, proto).unwrap(),
-            scope: Py::new(py, scope).unwrap(),
-            aio_taskref: OnceLock::new(),
-        }
+    pub fn new(py: Python, proto: WebsocketProtocol, scope: WebsocketScope) -> PyResult<Py<Self>> {
+        Py::new(
+            py,
+            Self {
+                proto: Py::new(py, proto)?,
+                scope: Py::new(py, scope)?,
+                aio_taskref: OnceLock::new(),
+            },
+        )
     }
 }
 
@@ -119,8 +125,9 @@ pub(crate) fn call_http(
     let protocol = HTTPProtocol::new(rt.clone(), tx, body);
 
     rt.spawn_blocking(move |py| {
-        cb.get()
-            .schedule(py, Py::new(py, CallbackWatcherHTTP::new(py, protocol, scope)).unwrap());
+        if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope) {
+            cb.get().schedule(py, watcher);
+        }
     });
 
     rx
@@ -138,10 +145,9 @@ pub(crate) fn call_ws(
     let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade);
 
     rt.spawn_blocking(move |py| {
-        cb.get().schedule(
-            py,
-            Py::new(py, CallbackWatcherWebsocket::new(py, protocol, scope)).unwrap(),
-        );
+        if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope) {
+            cb.get().schedule(py, watcher);
+        }
     });
 
     rx

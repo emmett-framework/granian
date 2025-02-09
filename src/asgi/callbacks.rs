@@ -5,7 +5,7 @@ use tokio::sync::oneshot;
 
 use super::{
     io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
-    utils::{build_scope_http, build_scope_ws, scope_native_parts},
+    utils::{build_scope_http, build_scope_ws},
 };
 use crate::{
     callbacks::ArcCBScheduler,
@@ -54,12 +54,15 @@ pub(crate) struct CallbackWatcherHTTP {
 }
 
 impl CallbackWatcherHTTP {
-    pub fn new(py: Python, proto: HTTPProtocol, scope: Bound<PyDict>) -> Self {
-        Self {
-            proto: Py::new(py, proto).unwrap(),
-            scope: scope.unbind(),
-            aio_taskref: OnceLock::new(),
-        }
+    pub fn new(py: Python, proto: HTTPProtocol, scope: Bound<PyDict>) -> PyResult<Py<Self>> {
+        Py::new(
+            py,
+            Self {
+                proto: Py::new(py, proto)?,
+                scope: scope.unbind(),
+                aio_taskref: OnceLock::new(),
+            },
+        )
     }
 }
 
@@ -88,12 +91,15 @@ pub(crate) struct CallbackWatcherWebsocket {
 }
 
 impl CallbackWatcherWebsocket {
-    pub fn new(py: Python, proto: WebsocketProtocol, scope: Bound<PyDict>) -> Self {
-        Self {
-            proto: Py::new(py, proto).unwrap(),
-            scope: scope.unbind(),
-            aio_taskref: OnceLock::new(),
-        }
+    pub fn new(py: Python, proto: WebsocketProtocol, scope: Bound<PyDict>) -> PyResult<Py<Self>> {
+        Py::new(
+            py,
+            Self {
+                proto: Py::new(py, proto)?,
+                scope: scope.unbind(),
+                aio_taskref: OnceLock::new(),
+            },
+        )
     }
 }
 
@@ -148,30 +154,13 @@ pub(crate) fn call_http(
     let (tx, rx) = oneshot::channel();
     let protocol = HTTPProtocol::new(rt.clone(), body, tx);
     let scheme: Box<str> = scheme.into();
-    scope_native_parts!(
-        req,
-        server_addr,
-        client_addr,
-        path,
-        query_string,
-        version,
-        server,
-        client
-    );
 
     rt.spawn_blocking(move |py| {
-        cb.get().schedule(
-            py,
-            Py::new(
-                py,
-                CallbackWatcherHTTP::new(
-                    py,
-                    protocol,
-                    build_scope_http(py, &req, version, server, client, &scheme, &path, &query_string).unwrap(),
-                ),
-            )
-            .unwrap(),
-        );
+        if let Ok(scope) = build_scope_http(py, req, server_addr, client_addr, &scheme) {
+            if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope) {
+                cb.get().schedule(py, watcher);
+            }
+        }
     });
 
     rx
@@ -191,30 +180,13 @@ pub(crate) fn call_ws(
     let (tx, rx) = oneshot::channel();
     let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade);
     let scheme: Box<str> = scheme.into();
-    scope_native_parts!(
-        req,
-        server_addr,
-        client_addr,
-        path,
-        query_string,
-        version,
-        server,
-        client
-    );
 
     rt.spawn_blocking(move |py| {
-        cb.get().schedule(
-            py,
-            Py::new(
-                py,
-                CallbackWatcherWebsocket::new(
-                    py,
-                    protocol,
-                    build_scope_ws(py, &req, version, server, client, &scheme, &path, &query_string).unwrap(),
-                ),
-            )
-            .unwrap(),
-        );
+        if let Ok(scope) = build_scope_ws(py, req, server_addr, client_addr, &scheme) {
+            if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope) {
+                cb.get().schedule(py, watcher);
+            }
+        }
     });
 
     rx

@@ -112,6 +112,7 @@ impl Runtime for RuntimeRef {
         self.inner.spawn(fut)
     }
 
+    #[inline]
     fn spawn_blocking<F>(&self, task: F)
     where
         F: FnOnce(Python) + Send + 'static,

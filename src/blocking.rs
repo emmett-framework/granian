@@ -7,6 +7,7 @@ pub(crate) struct BlockingTask {
 }
 
 impl BlockingTask {
+    #[inline]
     pub fn new<T>(inner: T) -> BlockingTask
     where
         T: FnOnce(Python) + Send + 'static,
@@ -14,6 +15,7 @@ impl BlockingTask {
         Self { inner: Box::new(inner) }
     }
 
+    #[inline(always)]
     pub fn run(self, py: Python) {
         (self.inner)(py);
     }
@@ -39,6 +41,7 @@ impl BlockingRunner {
         Self { queue, sig: sigtx }
     }
 
+    #[inline]
     pub fn run<T>(&self, task: T) -> Result<(), channel::SendError<BlockingTask>>
     where
         T: FnOnce(Python) + Send + 'static,
