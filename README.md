@@ -24,7 +24,9 @@ You can install Granian using pip:
 
     $ pip install granian
 
-Create an ASGI application in your `main.py`:
+### ASGI
+
+Create an application in your `main.py`:
 
 ```python
 async def app(scope, receive, send):
@@ -43,11 +45,13 @@ async def app(scope, receive, send):
     })
 ```
 
-and serve it:
+and serve it using Granian CLI:
 
     $ granian --interface asgi main:app
 
-You can also create an app using the [RSGI](https://github.com/emmett-framework/granian/blob/master/docs/spec/RSGI.md) specification:
+### RSGI
+
+Create an application your `main.py`:
 
 ```python
 async def app(scope, proto):
@@ -62,15 +66,29 @@ async def app(scope, proto):
     )
 ```
 
-and serve it using:
+and serve it using Granian CLI:
 
     $ granian --interface rsgi main:app
+
+### WSGI
+
+Create an application your `main.py`:
+
+```python
+def app(environ, start_response):
+    start_response('200 OK', [('content-type', 'text/plain')])
+    return [b"Hello, world!"]
+```
+
+and serve it using Granian CLI:
+
+    $ granian --interface wsgi main:app
 
 ## Options
 
 You can check all the options provided by Granian with the `--help` command:
 
-```shell
+```
 $ granian --help
 Usage: granian [OPTIONS] APP
 
@@ -95,15 +113,23 @@ Options:
   --blocking-threads INTEGER RANGE
                                   Number of blocking threads (per worker)
                                   [env var: GRANIAN_BLOCKING_THREADS; x>=1]
+  --blocking-threads-idle-timeout INTEGER RANGE
+                                  The maximum amount of time in seconds an
+                                  idle blocking thread will be kept alive
+                                  [env var:
+                                  GRANIAN_BLOCKING_THREADS_IDLE_TIMEOUT;
+                                  default: 30; 10<=x<=600]
+  --io-blocking-threads INTEGER RANGE
+                                  Number of I/O blocking threads (per worker)
+                                  [env var: GRANIAN_IO_BLOCKING_THREADS; x>=1]
   --threading-mode [runtime|workers]
                                   Threading mode to use  [env var:
                                   GRANIAN_THREADING_MODE; default: (workers)]
   --loop [auto|asyncio|rloop|uvloop]
                                   Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
-  --task-impl [auto|rust|asyncio]
-                                  Async task implementation to use  [env var:
-                                  GRANIAN_TASK_IMPL; default: (auto)]
+  --task-impl [asyncio|rust]      Async task implementation to use  [env var:
+                                  GRANIAN_TASK_IMPL; default: (asyncio)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
                                   backlog (globally)  [env var:
                                   GRANIAN_BACKLOG; default: 1024; x>=128]
@@ -268,15 +294,28 @@ Granian offers different options to configure the number of processes and thread
 
 - **workers**: the total number of processes holding a dedicated Python interpreter that will run the application
 - **threads**: the number of Rust threads per worker that will perform network I/O
-- **blocking threads**: the number of Rust threads per worker involved in blocking operations. The main role of these threads is to deal with blocking I/O – like opening files – but on synchronous protocols like WSGI these threads will also be responsible of interacting with the application code.
+- **blocking threads**: the number of threads per worker interacting with the Python interpreter
+- **I/O blocking threads**: the number of Rust threads per worker involved in blocking operations. The main role of these threads is to deal with blocking I/O – like file system operations.
 
 In general, Granian will try its best to automatically pick proper values for the threading configuration, leaving to you the responsibility to choose the number of workers you need.    
 There is no *golden rule* here, as these numbers will vastly depend both on your application behavior and the deployment target, but we can list some suggestions:
 - matching the amount of CPU cores for the workers is generally the best starting point; on containerized environments like docker or k8s is best to have 1 worker per container though and scale your containers using the relevant orchestrator;
-- the default number of threads is fine for the vast majority of applications out there; you might want to increase this number for applications dealing with several concurrently opened websockets; 
-- the default number of blocking threads should work properly with the majority of applications; in synchronous protocols like WSGI this will also impact the number of concurrent requests you can handle, but you should use the `backpressure` configuration parameter to control it and set a lower number of blocking threads only if your application has a very low (1ms order) average response time;
+- the default number of threads and I/O blocking threads is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets, and lowering the second only if you serve the same few files to a lot of connections;
+
+In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will be also holding the GIL for the vast majority of the time, and thus fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount time of inactivity specified with the relevant setting.    
+In general, and unless you have a very specific use-case to do so (for example, if your application have an average millisecond response, a very limited amount of blocking threads usually delivers better throughput) you should avoid to tune this threadpool size and instead configure a backpressure value that suits your needs. In that regards, please check the next section.
 
 Also, you should generally avoid to configure workers and threads based on numbers of other servers, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
+
+### Backpressure
+
+Since Granian runs a separated Rust runtime aside of your application that will handle I/O and "push tasks" to the Python interpreter, a mechanism to avoid pushing more work that what Python can actually do is provided: backpressure.
+
+Backpressure in Granian operates at the single worker's connections accept loop, practically interrupting the loop in case too many requests are waiting to be processed down the line. You can think of it as _a secondary backlog_, handled by Granian itself in addition to the network stack one provided by the OS kernel (and configured with apposite parameter).
+
+While on asynchronous protocols, the default value for the backpressure should work fine for the vast majority of applications, as _work_ will be handled and suspended by the AsyncIO event loop, on synchronous protocols there's no way to predict the amount of interrupts (and thus GIL releases) your application would do on a single request, and thus you should configure a value that makes sense in your environment. For example, if your WSGI application never does I/O within a request-reponse flow, then you can't really go beyond serial, and thus any backpressure value above 2 wouldn't probably make any difference, as all the requests will just be waiting to acquire the GIL in order to be processed. On the other hand, if your application makes external network requests within the standard request-response flow, a large backpressure can help, as during the time spent on those code paths you can still process the other requests. Another example would be if your applications communicate with a database, and you have a limited amount of connections that can be opened to that database: in this case setting the backpressure to that value would definitely be the best option.
+
+In general, think of backpressure as the maximum amount of concurrency you want to handle (per worker) in your application, after which Granian will halt and wait before pushing more work.
 
 ### Threading mode
 
@@ -285,6 +324,35 @@ Granian offers two different threading paradigms, due to the fact the inner Rust
 Given you specify N threads with the relevant option, in **workers** threading mode Granian will spawn N single-threaded Rust runtimes, while in **runtime** threading mode Granian will spawn a single multi-threaded runtime with N threads.
 
 Benchmarks suggests **workers** mode to be more efficient with a small amount of processes, while **runtime** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
+
+## Free-threaded Python
+
+> **Warning:** free-threaded Python support is still experimental and highly discouraged in *production environments*.
+
+Since version 1.8 Granian supports free-threaded Python. While the installation process remains the same, as wheels for the free-threaded version are published separately, here we list some key differences from the GIL version.
+
+- Workers are threads instead of separated processes, so there will always be a single Python interpreter running
+- The application is thus loaded a single time and shared between workers
+- In asynchronous protocols like ASGI and RSGI each worker runs its own AsyncIO event loop like the GIL version, but the loop will run in the worker thread instead of the Python main thread
+
+> **Note:** if for any reason the GIL gets enabled on the free-threaded build, Granian will refuse to start. This means you can't use the free-threaded build on GIL enabled interpreters.
+
+## Customising asyncio event loop initialization
+
+As soon as you run Granian directly from Python instead of its CLI, you can customise the default event loop initialisation policy by overwriting the `auto` policy. Let's say, for instance, you want to use the selector event loop on Windows:
+
+```python
+import asyncio
+from granian import Granian, loops
+
+@loops.register('auto')
+def build_loop():
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    return asyncio.new_event_loop()
+
+
+Granian(...).serve()
+```
 
 ## Project status
 
