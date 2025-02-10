@@ -284,7 +284,7 @@ impl CallbackScheduler {
     }
 }
 
-#[pyclass(frozen, freelist = 1024, module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct CallbackSchedulerState {
     sched: Py<CallbackScheduler>,
     coro: PyObject,
@@ -353,7 +353,12 @@ impl CallbackSchedulerState {
     }
 }
 
-#[pyclass(frozen, module = "granian._granian")]
+// see https://github.com/PyO3/pyo3/issues/4894 - freelist is currently unsound with GIL disabled
+#[cfg_attr(
+    not(Py_GIL_DISABLED),
+    pyclass(frozen, freelist = 64, module = "granian._granian")
+)]
+#[cfg_attr(Py_GIL_DISABLED, pyclass(frozen, module = "granian._granian"))]
 pub(crate) struct PyEmptyAwaitable;
 
 #[pymethods]

@@ -21,6 +21,7 @@ async def _server(interface, port, threading_mode, tls=False, task_impl='asyncio
     kwargs = {
         'interface': interface,
         'port': port,
+        'loop': 'asyncio',
         'blocking_threads': 1,
         'threading_mode': threading_mode,
         'task_impl': task_impl,
@@ -53,7 +54,9 @@ async def _server(interface, port, threading_mode, tls=False, task_impl='asyncio
             break
 
         proc.terminate()
-        proc.join()
+        proc.join(timeout=2)
+        if proc.is_alive():
+            proc.kill()
         spawn_failures += 1
 
     if not succeeded:
@@ -63,7 +66,9 @@ async def _server(interface, port, threading_mode, tls=False, task_impl='asyncio
         yield port
     finally:
         proc.terminate()
-        proc.join()
+        proc.join(timeout=2)
+        if proc.is_alive():
+            proc.kill()
 
 
 @pytest.fixture(scope='function')
