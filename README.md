@@ -288,9 +288,9 @@ The following atoms are available for use:
 | scheme | Request scheme |
 | protocol | HTTP protocol version |
 
-### Processes and threads
+### Workers and threads
 
-Granian offers different options to configure the number of processes and threads to be run, in particular:
+Granian offers different options to configure the number of workers and threads to be run, in particular:
 
 - **workers**: the total number of processes holding a dedicated Python interpreter that will run the application
 - **threads**: the number of Rust threads per worker that will perform network I/O
@@ -302,18 +302,18 @@ There is no *golden rule* here, as these numbers will vastly depend both on your
 - matching the amount of CPU cores for the workers is generally the best starting point; on containerized environments like docker or k8s is best to have 1 worker per container though and scale your containers using the relevant orchestrator;
 - the default number of threads and I/O blocking threads is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets, and lowering the second only if you serve the same few files to a lot of connections;
 
-In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will be also holding the GIL for the vast majority of the time, and thus fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount time of inactivity specified with the relevant setting.    
-In general, and unless you have a very specific use-case to do so (for example, if your application have an average millisecond response, a very limited amount of blocking threads usually delivers better throughput) you should avoid to tune this threadpool size and instead configure a backpressure value that suits your needs. In that regards, please check the next section.
+In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will also be the one holding the GIL for the vast majority of the time, and thus the value is fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount of inactivity time specified with the relevant setting.    
+In general, and unless you have a very specific use-case to do so (for example, if your application have an average millisecond response, a very limited amount of blocking threads usually delivers better throughput) you should avoid to tune this threadpool size and configure a backpressure value that suits your needs instead. In that regards, please check the next section.
 
-Also, you should generally avoid to configure workers and threads based on numbers of other servers, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
+Also, you should generally avoid to configure workers and threads based on numbers suggested for other servers, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
 
 ### Backpressure
 
-Since Granian runs a separated Rust runtime aside of your application that will handle I/O and "push tasks" to the Python interpreter, a mechanism to avoid pushing more work that what Python can actually do is provided: backpressure.
+Since Granian runs a separated Rust runtime aside of your application that will handle I/O and "send work" to the Python interpreter, a mechanism to avoid pushing more work that what the Python interpreter can actually do is provided: backpressure.
 
 Backpressure in Granian operates at the single worker's connections accept loop, practically interrupting the loop in case too many requests are waiting to be processed down the line. You can think of it as _a secondary backlog_, handled by Granian itself in addition to the network stack one provided by the OS kernel (and configured with apposite parameter).
 
-While on asynchronous protocols, the default value for the backpressure should work fine for the vast majority of applications, as _work_ will be handled and suspended by the AsyncIO event loop, on synchronous protocols there's no way to predict the amount of interrupts (and thus GIL releases) your application would do on a single request, and thus you should configure a value that makes sense in your environment. For example, if your WSGI application never does I/O within a request-reponse flow, then you can't really go beyond serial, and thus any backpressure value above 2 wouldn't probably make any difference, as all the requests will just be waiting to acquire the GIL in order to be processed. On the other hand, if your application makes external network requests within the standard request-response flow, a large backpressure can help, as during the time spent on those code paths you can still process the other requests. Another example would be if your applications communicate with a database, and you have a limited amount of connections that can be opened to that database: in this case setting the backpressure to that value would definitely be the best option.
+While on asynchronous protocols, the default value for the backpressure should work fine for the vast majority of applications, as _work_ will be handled and suspended by the AsyncIO event loop, on synchronous protocols there's no way to predict the amount of interrupts (and thus GIL releases) your application would do on a single request, and thus you should configure a value that makes sense in your environment. For example, if your WSGI application never does I/O within a request-reponse flow, then you can't really go beyond serial, and thus any backpressure value above 2 wouldn't probably make any difference, as all the requests will just be waiting to acquire the GIL in order to be processed. On the other hand, if your application makes external network requests within the standard request-response flow, a large backpressure can help, as during the time spent on those code paths you can still process other requests. Another example would be if your application communicate with a database, and you have a limited amount of connections that can be opened to that database: in this case setting the backpressure to that value would definitely be the best option.
 
 In general, think of backpressure as the maximum amount of concurrency you want to handle (per worker) in your application, after which Granian will halt and wait before pushing more work.
 
@@ -336,6 +336,9 @@ Since version 1.8 Granian supports free-threaded Python. While the installation 
 - In asynchronous protocols like ASGI and RSGI each worker runs its own AsyncIO event loop like the GIL version, but the loop will run in the worker thread instead of the Python main thread
 
 > **Note:** if for any reason the GIL gets enabled on the free-threaded build, Granian will refuse to start. This means you can't use the free-threaded build on GIL enabled interpreters.
+
+While for asynchronous protocols nothing really changes in terms of workers and threads configuration, as the scaling will be still driven by the number of AsyncIO event loops running (so the same rules for GIL workers apply), on synchronous protocols like WSGI every GIL-related limitation is theoretically absent.    
+While the general rules in terms of I/O-bound vs CPU-bound load still apply, at the time being there's not enough data to make suggestions in terms of workers and threads tuning in the free-threaded Python land, and thus you will need to experiment with those values depending on your specific workload.
 
 ## Customising asyncio event loop initialization
 
