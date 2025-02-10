@@ -38,6 +38,7 @@ impl WSGIWorker {
                 self.config.threads,
                 self.config.io_blocking_threads,
                 self.config.blocking_threads,
+                self.config.blocking_threads_idle_timeout,
                 rtpyloop,
             )
         });
@@ -147,6 +148,7 @@ impl WSGIWorker {
                 self.config.threads,
                 self.config.io_blocking_threads,
                 self.config.blocking_threads,
+                self.config.blocking_threads_idle_timeout,
                 rtpyloop,
             )
         });
@@ -237,6 +239,7 @@ impl WSGIWorker {
             threads=1,
             io_blocking_threads=512,
             blocking_threads=1,
+            blocking_threads_idle_timeout=30,
             backpressure=128,
             http_mode="1",
             http1_opts=None,
@@ -254,6 +257,7 @@ impl WSGIWorker {
         threads: usize,
         io_blocking_threads: usize,
         blocking_threads: usize,
+        blocking_threads_idle_timeout: u64,
         backpressure: usize,
         http_mode: &str,
         http1_opts: Option<PyObject>,
@@ -270,6 +274,7 @@ impl WSGIWorker {
                 threads,
                 io_blocking_threads,
                 blocking_threads,
+                blocking_threads_idle_timeout,
                 backpressure,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,

@@ -81,6 +81,7 @@ class AbstractServer(Generic[WT]):
         threads: int = 1,
         io_blocking_threads: Optional[int] = None,
         blocking_threads: Optional[int] = None,
+        blocking_threads_idle_timeout: int = 30,
         threading_mode: ThreadModes = ThreadModes.workers,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
@@ -130,8 +131,9 @@ class AbstractServer(Generic[WT]):
         self.blocking_threads = (
             blocking_threads
             if blocking_threads is not None
-            else max(1, (multiprocessing.cpu_count() * 2 - 1) if self.interface == Interfaces.WSGI else 1)
+            else max(1, (self.backpressure // 2) if self.interface == Interfaces.WSGI else 1)
         )
+        self.blocking_threads_idle_timeout = blocking_threads_idle_timeout
         self.http1_settings = http1_settings
         self.http2_settings = http2_settings
         self.log_enabled = log_enabled
@@ -467,6 +469,25 @@ class AbstractServer(Generic[WT]):
             if self.workers_lifetime < 60:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
+
+        if self.blocking_threads_idle_timeout < 10 or self.blocking_threads_idle_timeout > 600:
+            logger.error('Blocking threads idle timeout must be between 10 and 600 seconds')
+            raise ConfigurationError('blocking_threads_idle_timeout')
+
+        cpus = multiprocessing.cpu_count()
+        if self.workers > cpus:
+            logger.warning(
+                'Configured number of workers appears to be higher than the amount of CPU cores available. '
+                'Mind that such value might actually decrease the overall throughput of the server. '
+                f'Consider using {cpus} workers and tune threads configuration instead'
+            )
+
+        if self.threads > cpus:
+            logger.warning(
+                'Configured number of Rust threads appears to be too high given the amount of CPU cores available. '
+                'Mind that Rust threads are not involved in Python code execution, and they almost never be the '
+                'limiting factor in scaling. Consider configuring the amount of blocking threads instead'
+            )
 
         if self.task_impl == TaskImpl.rust:
             if _PYV >= _PY_312:

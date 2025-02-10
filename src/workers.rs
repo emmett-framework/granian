@@ -89,8 +89,9 @@ pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
-    pub blocking_threads: usize,
     pub io_blocking_threads: usize,
+    pub blocking_threads: usize,
+    pub blocking_threads_idle_timeout: u64,
     pub backpressure: usize,
     pub http_mode: String,
     pub http1_opts: HTTP1Config,
@@ -109,6 +110,7 @@ impl WorkerConfig {
         threads: usize,
         io_blocking_threads: usize,
         blocking_threads: usize,
+        blocking_threads_idle_timeout: u64,
         backpressure: usize,
         http_mode: &str,
         http1_opts: HTTP1Config,
@@ -123,8 +125,9 @@ impl WorkerConfig {
             id,
             socket_fd,
             threads,
-            blocking_threads,
             io_blocking_threads,
+            blocking_threads,
+            blocking_threads_idle_timeout,
             backpressure,
             http_mode: http_mode.into(),
             http1_opts,
@@ -612,6 +615,7 @@ macro_rules! serve_rth {
                     self.config.threads,
                     self.config.io_blocking_threads,
                     self.config.blocking_threads,
+                    self.config.blocking_threads_idle_timeout,
                     rtpyloop,
                 );
                 ret
@@ -679,6 +683,7 @@ macro_rules! serve_rth_ssl {
                     self.config.threads,
                     self.config.io_blocking_threads,
                     self.config.blocking_threads,
+                    self.config.blocking_threads_idle_timeout,
                     rtpyloop,
                 );
                 ret
@@ -733,13 +738,19 @@ macro_rules! serve_wth_inner {
             let http2_opts = $self.config.http2_opts.clone();
             let io_blocking_threads = $self.config.io_blocking_threads.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
+            let blocking_threads_idle_timeout = $self.config.blocking_threads_idle_timeout.clone();
             let backpressure = $self.config.backpressure.clone();
             let callback_wrapper = callback_wrapper.clone();
             let py_loop = py_loop.clone();
             let mut srx = $srx.clone();
 
             $workers.push(std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(io_blocking_threads, blocking_threads, py_loop);
+                let rt = crate::runtime::init_runtime_st(
+                    io_blocking_threads,
+                    blocking_threads,
+                    blocking_threads_idle_timeout,
+                    py_loop,
+                );
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
 
@@ -786,7 +797,7 @@ macro_rules! serve_wth {
             let mut workers = vec![];
             crate::workers::serve_wth_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
@@ -822,13 +833,19 @@ macro_rules! serve_wth_ssl_inner {
             let tls_cfg = $self.config.tls_cfg();
             let io_blocking_threads = $self.config.io_blocking_threads.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
+            let blocking_threads_idle_timeout = $self.config.blocking_threads_idle_timeout.clone();
             let backpressure = $self.config.backpressure.clone();
             let callback_wrapper = callback_wrapper.clone();
             let py_loop = py_loop.clone();
             let mut srx = $srx.clone();
 
             $workers.push(std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(io_blocking_threads, blocking_threads, py_loop);
+                let rt = crate::runtime::init_runtime_st(
+                    io_blocking_threads,
+                    blocking_threads,
+                    blocking_threads_idle_timeout,
+                    py_loop,
+                );
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
 
@@ -874,7 +891,7 @@ macro_rules! serve_wth_ssl {
             let mut workers = vec![];
             crate::workers::serve_wth_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 1, std::sync::Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;

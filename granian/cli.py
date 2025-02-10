@@ -71,6 +71,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='Number of blocking threads (per worker)',
 )
 @option(
+    '--blocking-threads-idle-timeout',
+    type=click.IntRange(10, 600),
+    default=30,
+    help='The maximum amount of time in seconds an idle blocking thread will be kept alive',
+)
+@option(
     '--io-blocking-threads',
     type=click.IntRange(1),
     help='Number of I/O blocking threads (per worker)',
@@ -270,6 +276,7 @@ def cli(
     workers: int,
     threads: int,
     blocking_threads: Optional[int],
+    blocking_threads_idle_timeout: int,
     io_blocking_threads: Optional[int],
     threading_mode: ThreadModes,
     loop: Loops,
@@ -328,6 +335,7 @@ def cli(
         threads=threads,
         io_blocking_threads=io_blocking_threads,
         blocking_threads=blocking_threads,
+        blocking_threads_idle_timeout=blocking_threads_idle_timeout,
         threading_mode=threading_mode,
         loop=loop,
         task_impl=task_impl,

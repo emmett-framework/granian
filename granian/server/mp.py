@@ -14,6 +14,7 @@ from .common import (
     HTTP1Settings,
     HTTP2Settings,
     HTTPModes,
+    Interfaces,
     LogLevels,
     Loops,
     TaskImpl,
@@ -56,6 +57,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         threads: int,
         io_blocking_threads: Optional[int],
         blocking_threads: int,
+        blocking_threads_idle_timeout: int,
         backpressure: int,
         threading_mode: ThreadModes,
         task_impl: TaskImpl,
@@ -88,6 +90,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             threads,
             io_blocking_threads,
             blocking_threads,
+            blocking_threads_idle_timeout,
             backpressure,
             http_mode,
             http1_settings,
@@ -111,6 +114,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         threads: int,
         io_blocking_threads: Optional[int],
         blocking_threads: int,
+        blocking_threads_idle_timeout: int,
         backpressure: int,
         threading_mode: ThreadModes,
         task_impl: TaskImpl,
@@ -150,6 +154,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             threads,
             io_blocking_threads,
             blocking_threads,
+            blocking_threads_idle_timeout,
             backpressure,
             http_mode,
             http1_settings,
@@ -174,6 +179,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         threads: int,
         io_blocking_threads: Optional[int],
         blocking_threads: int,
+        blocking_threads_idle_timeout: int,
         backpressure: int,
         threading_mode: ThreadModes,
         task_impl: TaskImpl,
@@ -214,6 +220,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             threads,
             io_blocking_threads,
             blocking_threads,
+            blocking_threads_idle_timeout,
             backpressure,
             http_mode,
             http1_settings,
@@ -238,6 +245,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         threads: int,
         io_blocking_threads: Optional[int],
         blocking_threads: int,
+        blocking_threads_idle_timeout: int,
         backpressure: int,
         threading_mode: ThreadModes,
         task_impl: TaskImpl,
@@ -269,6 +277,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             threads,
             io_blocking_threads,
             blocking_threads,
+            blocking_threads_idle_timeout,
             backpressure,
             http_mode,
             http1_settings,
@@ -301,6 +310,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 self.threads,
                 self.io_blocking_threads,
                 self.blocking_threads,
+                self.blocking_threads_idle_timeout,
                 self.backpressure,
                 self.threading_mode,
                 self.task_impl,
@@ -316,3 +326,21 @@ class MPServer(AbstractServer[WorkerProcess]):
                 {'url_path_prefix': self.url_path_prefix},
             ),
         )
+
+    def serve(
+        self,
+        spawn_target: Optional[Callable[..., None]] = None,
+        target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
+        wrap_loader: bool = True,
+    ):
+        if self.interface == Interfaces.WSGI:
+            if self.blocking_threads > (multiprocessing.cpu_count() * 2 + 1):
+                logger.warning(
+                    f'Configuration allow to spawn up to {self.blocking_threads} Python threads, '
+                    'which appears to be quite high compared to the amount of CPU cores available. '
+                    'Considering reviewing your configuration and use `backpressure` to limit the amount '
+                    'of concurrency on the Python interpreter. '
+                    'If this is intended, you can ignore this message'
+                )
+
+        super().serve(spawn_target, target_loader, wrap_loader)

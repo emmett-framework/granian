@@ -50,31 +50,34 @@ pub(crate) struct RuntimeWrapper {
 }
 
 impl RuntimeWrapper {
-    pub fn new(blocking_threads: usize, py_blocking_threads: usize, py_loop: Arc<PyObject>) -> Self {
+    pub fn new(
+        blocking_threads: usize,
+        py_blocking_threads: usize,
+        py_blocking_timeout: u64,
+        py_loop: Arc<PyObject>,
+    ) -> Self {
         Self {
             inner: default_runtime(blocking_threads),
-            br: BlockingRunner::new(py_blocking_threads).into(),
+            br: BlockingRunner::new(py_blocking_threads, py_blocking_timeout).into(),
             pr: py_loop,
         }
     }
 
-    pub fn with_runtime(rt: tokio::runtime::Runtime, py_blocking_threads: usize, py_loop: Arc<PyObject>) -> Self {
+    pub fn with_runtime(
+        rt: tokio::runtime::Runtime,
+        py_blocking_threads: usize,
+        py_blocking_timeout: u64,
+        py_loop: Arc<PyObject>,
+    ) -> Self {
         Self {
             inner: rt,
-            br: BlockingRunner::new(py_blocking_threads).into(),
+            br: BlockingRunner::new(py_blocking_threads, py_blocking_timeout).into(),
             pr: py_loop,
         }
     }
 
     pub fn handler(&self) -> RuntimeRef {
         RuntimeRef::new(self.inner.handle().clone(), self.br.clone(), self.pr.clone())
-    }
-}
-
-#[cfg(Py_GIL_DISABLED)]
-impl Drop for RuntimeWrapper {
-    fn drop(&mut self) {
-        self.br.shutdown();
     }
 }
 
@@ -139,6 +142,7 @@ pub(crate) fn init_runtime_mt(
     threads: usize,
     blocking_threads: usize,
     py_blocking_threads: usize,
+    py_blocking_timeout: u64,
     py_loop: Arc<PyObject>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
@@ -149,6 +153,7 @@ pub(crate) fn init_runtime_mt(
             .build()
             .unwrap(),
         py_blocking_threads,
+        py_blocking_timeout,
         py_loop,
     )
 }
@@ -156,9 +161,10 @@ pub(crate) fn init_runtime_mt(
 pub(crate) fn init_runtime_st(
     blocking_threads: usize,
     py_blocking_threads: usize,
+    py_blocking_timeout: u64,
     py_loop: Arc<PyObject>,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_blocking_threads, py_loop)
+    RuntimeWrapper::new(blocking_threads, py_blocking_threads, py_blocking_timeout, py_loop)
 }
 
 // NOTE:
