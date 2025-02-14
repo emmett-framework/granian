@@ -22,6 +22,7 @@ pub(crate) struct CallbackScheduler {
     #[cfg(any(not(Py_3_10), PyPy))]
     pyname_aiosend: PyObject,
     pyname_aiothrow: PyObject,
+    pyname_futcb: PyObject,
     pynone: PyObject,
     pyfalse: PyObject,
 }
@@ -42,18 +43,17 @@ impl CallbackScheduler {
 
     #[cfg(Py_3_10)]
     #[inline]
-    pub(crate) fn send(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>) {
-        let rself = pyself.get();
-        let aiotask = rself.aio_task.as_ptr();
+    fn send(&self, py: Python, state: Arc<CallbackSchedulerState>) {
+        let aiotask = self.aio_task.as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_tenter.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
         }
 
         if let Some(res) = unsafe {
             let mut pres = std::ptr::null_mut::<pyo3::ffi::PyObject>();
             // FIXME: use PyIter_Send return value once available in PyO3
-            pyo3::ffi::PyIter_Send(state.get().coro.as_ptr(), rself.pynone.as_ptr(), &mut pres);
+            pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &mut pres);
             Bound::from_owned_ptr_or_opt(py, pres)
                 .map(|v| {
                     if v.is_none() {
@@ -64,86 +64,74 @@ impl CallbackScheduler {
                 .unwrap()
         } {
             if unsafe {
-                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
+                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), self.pyname_aioblock.as_ptr());
                 Bound::from_owned_ptr_or_err(py, vptr)
                     .map(|v| v.extract::<bool>().unwrap_or(false))
                     .unwrap_or(false)
             } {
                 let resp = res.as_ptr();
                 unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
-                    CallbackSchedulerState::schedule(state, py, resp);
+                    pyo3::ffi::PyObject_SetAttr(resp, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
+                    CallbackSchedulerState::add_waker(state, py, resp, self.pyname_futcb.as_ptr());
                 }
             } else {
-                CallbackSchedulerState::reschedule(state);
+                CallbackSchedulerState::reschedule(state, py, self.pym_lcs.as_ptr());
             }
-        } else {
-            state.drop_ref(py);
         }
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_texit.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallOneArg(self.aio_texit.as_ptr(), aiotask);
         }
     }
 
     #[cfg(not(Py_3_10))]
     #[inline]
-    pub(crate) fn send(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>) {
-        let rself = pyself.get();
-        let aiotask = rself.aio_task.as_ptr();
+    fn send(&self, py: Python, state: Arc<CallbackSchedulerState>) {
+        let aiotask = self.aio_task.as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_tenter.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
         }
 
         if let Ok(res) = unsafe {
             let pres = pyo3::ffi::PyObject_CallMethodOneArg(
-                state.get().coro.as_ptr(),
-                rself.pyname_aiosend.as_ptr(),
-                rself.pynone.as_ptr(),
+                state.coro.as_ptr(),
+                self.pyname_aiosend.as_ptr(),
+                self.pynone.as_ptr(),
             );
             Bound::from_owned_ptr_or_err(py, pres)
         } {
             if unsafe {
-                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
+                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), self.pyname_aioblock.as_ptr());
                 Bound::from_owned_ptr_or_err(py, vptr)
                     .map(|v| v.extract::<bool>().unwrap_or(false))
                     .unwrap_or(false)
             } {
                 let resp = res.as_ptr();
                 unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
-                    CallbackSchedulerState::schedule(state, py, resp);
+                    pyo3::ffi::PyObject_SetAttr(resp, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
+                    CallbackSchedulerState::add_waker(state, py, resp, self.pyname_futcb.as_ptr());
                 }
             } else {
-                CallbackSchedulerState::reschedule(state);
+                CallbackSchedulerState::reschedule(state, py, self.pym_lcs.as_ptr());
             }
-        } else {
-            state.drop_ref(py);
         }
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_texit.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallOneArg(self.aio_texit.as_ptr(), aiotask);
         }
     }
 
     #[inline]
-    pub(crate) fn throw(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>, err: PyObject) {
-        let rself = pyself.get();
-        let aiotask = rself.aio_task.as_ptr();
+    fn throw(&self, state: Arc<CallbackSchedulerState>, err: PyObject) {
+        let aiotask = self.aio_task.as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_tenter.as_ptr(), aiotask);
-            pyo3::ffi::PyObject_CallMethodOneArg(
-                state.get().coro.as_ptr(),
-                rself.pyname_aiothrow.as_ptr(),
-                err.into_ptr(),
-            );
+            pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallMethodOneArg(state.coro.as_ptr(), self.pyname_aiothrow.as_ptr(), err.into_ptr());
             pyo3::ffi::PyErr_Clear();
-            pyo3::ffi::PyObject_CallOneArg(rself.aio_texit.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallOneArg(self.aio_texit.as_ptr(), aiotask);
         }
-
-        state.drop_ref(py);
     }
 }
 
@@ -160,25 +148,24 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    pub(crate) fn send(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>) {
-        let rself = pyself.get();
-        let aiotask = rself.aio_task.as_ptr();
+    fn send(&self, py: Python, state: Arc<CallbackSchedulerState>) {
+        let aiotask = self.aio_task.as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallObject(rself.aio_tenter.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallObject(self.aio_tenter.as_ptr(), aiotask);
         }
 
         if let Ok(res) = unsafe {
             let res = pyo3::ffi::PyObject_CallMethodObjArgs(
-                state.get().coro.as_ptr(),
-                rself.pyname_aiosend.as_ptr(),
-                rself.pynone.as_ptr(),
+                state.coro.as_ptr(),
+                self.pyname_aiosend.as_ptr(),
+                self.pynone.as_ptr(),
                 std::ptr::null_mut::<PyObject>(),
             );
             Bound::from_owned_ptr_or_err(py, res)
         } {
             if unsafe {
-                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), rself.pyname_aioblock.as_ptr());
+                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), self.pyname_aioblock.as_ptr());
                 Bound::from_owned_ptr_or_err(py, vptr)
                     .map(|v| v.extract::<bool>().unwrap_or(false))
                     .unwrap_or(false)
@@ -186,39 +173,34 @@ impl CallbackScheduler {
                 let resp = res.as_ptr();
 
                 unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, rself.pyname_aioblock.as_ptr(), rself.pyfalse.as_ptr());
-                    CallbackSchedulerState::schedule(state, py, resp);
+                    pyo3::ffi::PyObject_SetAttr(resp, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
+                    CallbackSchedulerState::add_waker(state, py, resp, self.pyname_futcb.as_ptr());
                 }
             } else {
-                CallbackSchedulerState::reschedule(state);
+                CallbackSchedulerState::reschedule(state, py, self.pym_lcs.as_ptr());
             }
-        } else {
-            state.drop_ref(py);
         }
 
         unsafe {
-            pyo3::ffi::PyObject_CallObject(rself.aio_texit.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallObject(self.aio_texit.as_ptr(), aiotask);
         }
     }
 
     #[inline]
-    pub(crate) fn throw(pyself: Py<Self>, py: Python, state: Py<CallbackSchedulerState>, err: PyObject) {
-        let rself = pyself.get();
-        let aiotask = rself.aio_task.as_ptr();
+    fn throw(&self, state: Arc<CallbackSchedulerState>, err: PyObject) {
+        let aiotask = self.aio_task.as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallObject(rself.aio_tenter.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallObject(self.aio_tenter.as_ptr(), aiotask);
             pyo3::ffi::PyObject_CallMethodObjArgs(
-                state.get().coro.as_ptr(),
-                rself.pyname_aiothrow.as_ptr(),
+                state.coro.as_ptr(),
+                self.pyname_aiothrow.as_ptr(),
                 (err,).into_py_any(py).unwrap().into_ptr(),
                 std::ptr::null_mut::<PyObject>(),
             );
             pyo3::ffi::PyErr_Clear();
-            pyo3::ffi::PyObject_CallObject(rself.aio_texit.as_ptr(), aiotask);
+            pyo3::ffi::PyObject_CallObject(self.aio_texit.as_ptr(), aiotask);
         }
-
-        state.drop_ref(py);
     }
 }
 
@@ -254,6 +236,7 @@ impl CallbackScheduler {
             #[cfg(any(not(Py_3_10), PyPy))]
             pyname_aiosend: pyo3::intern!(py, "send").into_py_any(py).unwrap(),
             pyname_aiothrow: pyo3::intern!(py, "throw").into_py_any(py).unwrap(),
+            pyname_futcb: pyo3::intern!(py, "add_done_callback").into_py_any(py).unwrap(),
         }
     }
 
@@ -264,19 +247,17 @@ impl CallbackScheduler {
 
     fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
         let ctx = copy_context(py);
-        let state = CallbackSchedulerState::new(
-            py,
-            pyself.clone_ref(py),
+        let state = Arc::new(CallbackSchedulerState {
+            sched: pyself.clone_ref(py),
             coro,
-            ctx.clone_ref(py),
-            pyself.get().pym_lcs.clone_ref(py),
-        );
+            ctx: ctx.clone_ref(py),
+        });
 
         unsafe {
             pyo3::ffi::PyContext_Enter(ctx.as_ptr());
         }
 
-        CallbackScheduler::send(pyself, py, state);
+        pyself.get().send(py, state);
 
         unsafe {
             pyo3::ffi::PyContext_Exit(ctx.as_ptr());
@@ -284,80 +265,71 @@ impl CallbackScheduler {
     }
 }
 
-#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct CallbackSchedulerState {
     sched: Py<CallbackScheduler>,
     coro: PyObject,
-    ctxd: Py<PyDict>,
-    pys_futcb: PyObject,
-    pym_schedule: PyObject,
+    ctx: PyObject,
 }
 
 impl CallbackSchedulerState {
-    fn new(
-        py: Python,
-        sched: Py<CallbackScheduler>,
-        coro: PyObject,
-        ctx: PyObject,
-        pym_schedule: PyObject,
-    ) -> Py<Self> {
+    unsafe fn add_waker(self: Arc<Self>, py: Python, fut: *mut pyo3::ffi::PyObject, fut_cbm: *mut pyo3::ffi::PyObject) {
+        let waker = Py::new(py, CallbackSchedulerWaker { state: self.clone() }).unwrap();
         let ctxd = PyDict::new(py);
-        ctxd.set_item(pyo3::intern!(py, "context"), ctx).unwrap();
+        ctxd.set_item(pyo3::intern!(py, "context"), self.ctx.clone_ref(py))
+            .unwrap();
 
-        Py::new(
-            py,
-            Self {
-                sched,
-                coro,
-                ctxd: ctxd.unbind(),
-                pys_futcb: pyo3::intern!(py, "add_done_callback").into_py_any(py).unwrap(),
-                pym_schedule,
-            },
-        )
-        .unwrap()
-    }
-
-    unsafe fn schedule(pyself: Py<Self>, py: Python, step: *mut pyo3::ffi::PyObject) {
-        let rself = pyself.get();
         pyo3::ffi::PyObject_Call(
-            pyo3::ffi::PyObject_GetAttr(step, rself.pys_futcb.as_ptr()),
-            (pyself.getattr(py, pyo3::intern!(py, "wake")).unwrap(),)
-                .into_py_any(py)
-                .unwrap()
-                .as_ptr(),
-            rself.ctxd.as_ptr(),
+            pyo3::ffi::PyObject_GetAttr(fut, fut_cbm),
+            (waker,).into_py_any(py).unwrap().as_ptr(),
+            ctxd.as_ptr(),
         );
     }
 
-    fn reschedule(pyself: Py<Self>) {
-        let rself = pyself.get();
+    fn reschedule(self: Arc<Self>, py: Python, loop_m: *mut pyo3::ffi::PyObject) {
+        let step = Py::new(py, CallbackSchedulerStep { state: self.clone() }).unwrap();
+        let ctxd = PyDict::new(py);
+        ctxd.set_item(pyo3::intern!(py, "context"), self.ctx.clone_ref(py))
+            .unwrap();
+
         unsafe {
-            pyo3::ffi::PyObject_Call(rself.pym_schedule.as_ptr(), pyself.as_ptr(), rself.ctxd.as_ptr());
+            pyo3::ffi::PyObject_Call(loop_m, (step,).into_py_any(py).unwrap().as_ptr(), ctxd.as_ptr());
         }
     }
 }
 
-#[pymethods]
-impl CallbackSchedulerState {
-    fn __call__(pyself: Py<Self>, py: Python) {
-        let sched = pyself.borrow(py).sched.clone_ref(py);
-        CallbackScheduler::send(sched, py, pyself);
-    }
+#[pyclass(frozen, module = "granian._granian")]
+struct CallbackSchedulerWaker {
+    state: Arc<CallbackSchedulerState>,
+}
 
-    fn wake(pyself: Py<Self>, py: Python, fut: PyObject) {
-        let sched = pyself.borrow(py).sched.clone_ref(py);
+#[pymethods]
+impl CallbackSchedulerWaker {
+    fn __call__(&self, py: Python, fut: PyObject) {
         match fut.call_method0(py, pyo3::intern!(py, "result")) {
-            Ok(_) => CallbackScheduler::send(sched, py, pyself),
-            Err(err) => CallbackScheduler::throw(sched, py, pyself, err.into_py_any(py).unwrap()),
+            Ok(_) => self.state.sched.get().send(py, self.state.clone()),
+            Err(err) => self
+                .state
+                .sched
+                .get()
+                .throw(self.state.clone(), err.into_py_any(py).unwrap()),
         }
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian")]
+struct CallbackSchedulerStep {
+    state: Arc<CallbackSchedulerState>,
+}
+
+#[pymethods]
+impl CallbackSchedulerStep {
+    fn __call__(&self, py: Python) {
+        self.state.sched.get().send(py, self.state.clone());
     }
 }
 
 // see https://github.com/PyO3/pyo3/issues/4894 - freelist is currently unsound with GIL disabled
-#[cfg_attr(
-    not(Py_GIL_DISABLED),
-    pyclass(frozen, freelist = 64, module = "granian._granian")
-)]
+#[cfg_attr(not(Py_GIL_DISABLED), pyclass(frozen, freelist = 64, module = "granian._granian"))]
 #[cfg_attr(Py_GIL_DISABLED, pyclass(frozen, module = "granian._granian"))]
 pub(crate) struct PyEmptyAwaitable;
 
