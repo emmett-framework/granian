@@ -123,7 +123,7 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    fn throw(&self, state: Arc<CallbackSchedulerState>, err: PyObject) {
+    fn throw(&self, _py: Python, state: Arc<CallbackSchedulerState>, err: PyObject) {
         let aiotask = self.aio_task.as_ptr();
 
         unsafe {
@@ -187,7 +187,7 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    fn throw(&self, state: Arc<CallbackSchedulerState>, err: PyObject) {
+    fn throw(&self, py: Python, state: Arc<CallbackSchedulerState>, err: PyObject) {
         let aiotask = self.aio_task.as_ptr();
 
         unsafe {
@@ -311,7 +311,7 @@ impl CallbackSchedulerWaker {
                 .state
                 .sched
                 .get()
-                .throw(self.state.clone(), err.into_py_any(py).unwrap()),
+                .throw(py, self.state.clone(), err.into_py_any(py).unwrap()),
         }
     }
 }

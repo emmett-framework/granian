@@ -7,14 +7,12 @@ on:
       - master
 
 env:
-  PYTHON_VERSION: 3.12
+  UV_PYTHON: 3.12
 
 jobs:
   lint:
     runs-on: ubuntu-latest
 
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/setup-uv@v5
