@@ -4,7 +4,7 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{serve_rth, serve_rth_ssl, serve_wth, serve_wth_ssl, WorkerConfig, WorkerSignal};
+use crate::workers::{serve_mtr, serve_mtr_ssl, serve_str, serve_str_ssl, WorkerConfig, WorkerSignal};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
@@ -12,14 +12,14 @@ pub struct ASGIWorker {
 }
 
 impl ASGIWorker {
-    serve_rth!(_serve_rth, handle);
-    serve_rth!(_serve_rth_ws, handle_ws);
-    serve_wth!(_serve_wth, handle);
-    serve_wth!(_serve_wth_ws, handle_ws);
-    serve_rth_ssl!(_serve_rth_ssl, handle);
-    serve_rth_ssl!(_serve_rth_ssl_ws, handle_ws);
-    serve_wth_ssl!(_serve_wth_ssl, handle);
-    serve_wth_ssl!(_serve_wth_ssl_ws, handle_ws);
+    serve_mtr!(_serve_mtr, handle);
+    serve_mtr!(_serve_mtr_ws, handle_ws);
+    serve_str!(_serve_str, handle);
+    serve_str!(_serve_str_ws, handle_ws);
+    serve_mtr_ssl!(_serve_mtr_ssl, handle);
+    serve_mtr_ssl!(_serve_mtr_ssl_ws, handle_ws);
+    serve_str_ssl!(_serve_str_ssl, handle);
+    serve_str_ssl!(_serve_str_ssl_ws, handle_ws);
 }
 
 #[pymethods]
@@ -30,9 +30,9 @@ impl ASGIWorker {
             worker_id,
             socket_fd,
             threads=1,
-            io_blocking_threads=512,
-            blocking_threads=1,
-            blocking_threads_idle_timeout=30,
+            blocking_threads=512,
+            py_threads=1,
+            py_threads_idle_timeout=30,
             backpressure=256,
             http_mode="1",
             http1_opts=None,
@@ -49,9 +49,9 @@ impl ASGIWorker {
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
-        io_blocking_threads: usize,
         blocking_threads: usize,
-        blocking_threads_idle_timeout: u64,
+        py_threads: usize,
+        py_threads_idle_timeout: u64,
         backpressure: usize,
         http_mode: &str,
         http1_opts: Option<PyObject>,
@@ -67,9 +67,9 @@ impl ASGIWorker {
                 worker_id,
                 socket_fd,
                 threads,
-                io_blocking_threads,
                 blocking_threads,
-                blocking_threads_idle_timeout,
+                py_threads,
+                py_threads_idle_timeout,
                 backpressure,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,
@@ -83,7 +83,7 @@ impl ASGIWorker {
         })
     }
 
-    fn serve_rth(
+    fn serve_mtr(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -91,19 +91,19 @@ impl ASGIWorker {
         signal: Py<WorkerSignal>,
     ) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_rth(py, callback, event_loop, signal),
-            (true, false) => self._serve_rth_ws(py, callback, event_loop, signal),
-            (false, true) => self._serve_rth_ssl(py, callback, event_loop, signal),
-            (true, true) => self._serve_rth_ssl_ws(py, callback, event_loop, signal),
+            (false, false) => self._serve_mtr(py, callback, event_loop, signal),
+            (true, false) => self._serve_mtr_ws(py, callback, event_loop, signal),
+            (false, true) => self._serve_mtr_ssl(py, callback, event_loop, signal),
+            (true, true) => self._serve_mtr_ssl_ws(py, callback, event_loop, signal),
         }
     }
 
-    fn serve_wth(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         match (self.config.websockets_enabled, self.config.ssl_enabled) {
-            (false, false) => self._serve_wth(callback, event_loop, signal),
-            (true, false) => self._serve_wth_ws(callback, event_loop, signal),
-            (false, true) => self._serve_wth_ssl(callback, event_loop, signal),
-            (true, true) => self._serve_wth_ssl_ws(callback, event_loop, signal),
+            (false, false) => self._serve_str(callback, event_loop, signal),
+            (true, false) => self._serve_str_ws(callback, event_loop, signal),
+            (false, true) => self._serve_str_ssl(callback, event_loop, signal),
+            (true, true) => self._serve_str_ssl_ws(callback, event_loop, signal),
         }
     }
 }

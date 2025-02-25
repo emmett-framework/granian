@@ -44,7 +44,7 @@ reload = [
     'watchfiles~=1.0',
 ]
 rloop = [
-    'rloop; sys_platform != "win32"',
+    'rloop~=0.1; sys_platform != "win32"',
 ]
 uvloop = [
     'uvloop>=0.18.0; sys_platform != "win32" and platform_python_implementation == "CPython"',

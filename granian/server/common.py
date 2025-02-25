@@ -15,7 +15,7 @@ from .._compat import _PY_312, _PYV
 from .._imports import setproctitle, watchfiles
 from .._internal import load_target
 from .._signals import set_main_signals
-from ..constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
+from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
@@ -78,11 +78,11 @@ class AbstractServer(Generic[WT]):
         port: int = 8000,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
-        threads: int = 1,
-        io_blocking_threads: Optional[int] = None,
         blocking_threads: Optional[int] = None,
         blocking_threads_idle_timeout: int = 30,
-        threading_mode: ThreadModes = ThreadModes.workers,
+        runtime_threads: int = 1,
+        runtime_blocking_threads: Optional[int] = None,
+        runtime_mode: RuntimeModes = RuntimeModes.st,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
@@ -119,9 +119,9 @@ class AbstractServer(Generic[WT]):
         self.bind_port = port
         self.interface = interface
         self.workers = max(1, workers)
-        self.threads = max(1, threads)
-        self.io_blocking_threads = 512 if io_blocking_threads is None else max(1, io_blocking_threads)
-        self.threading_mode = threading_mode
+        self.runtime_threads = max(1, runtime_threads)
+        self.runtime_blocking_threads = 512 if runtime_blocking_threads is None else max(1, runtime_blocking_threads)
+        self.runtime_mode = runtime_mode
         self.loop = loop
         self.task_impl = task_impl
         self.http = http
@@ -481,8 +481,7 @@ class AbstractServer(Generic[WT]):
                 'Mind that such value might actually decrease the overall throughput of the server. '
                 f'Consider using {cpus} workers and tune threads configuration instead'
             )
-
-        if self.threads > cpus:
+        if self.runtime_threads > cpus:
             logger.warning(
                 'Configured number of Rust threads appears to be too high given the amount of CPU cores available. '
                 'Mind that Rust threads are not involved in Python code execution, and they almost never be the '

@@ -12,7 +12,7 @@ pub struct WSGIWorker {
 }
 
 impl WSGIWorker {
-    fn _serve_rth(
+    fn _serve_mtr(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -36,9 +36,9 @@ impl WSGIWorker {
         let rt = py.allow_threads(|| {
             crate::runtime::init_runtime_mt(
                 self.config.threads,
-                self.config.io_blocking_threads,
                 self.config.blocking_threads,
-                self.config.blocking_threads_idle_timeout,
+                self.config.py_threads,
+                self.config.py_threads_idle_timeout,
                 rtpyloop,
             )
         });
@@ -86,7 +86,7 @@ impl WSGIWorker {
         _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
     }
 
-    fn _serve_wth(
+    fn _serve_str(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -100,7 +100,7 @@ impl WSGIWorker {
 
         let (stx, srx) = tokio::sync::watch::channel(false);
         let mut workers = vec![];
-        crate::workers::serve_wth_inner!(self, handle, callback, event_loop, worker_id, workers, srx);
+        crate::workers::serve_str_inner!(self, handle, callback, event_loop, worker_id, workers, srx);
 
         let pysig = signal.clone_ref(py);
         std::thread::spawn(move || {
@@ -121,7 +121,7 @@ impl WSGIWorker {
         _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
     }
 
-    fn _serve_rth_ssl(
+    fn _serve_mtr_ssl(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -146,9 +146,9 @@ impl WSGIWorker {
         let rt = py.allow_threads(|| {
             crate::runtime::init_runtime_mt(
                 self.config.threads,
-                self.config.io_blocking_threads,
                 self.config.blocking_threads,
-                self.config.blocking_threads_idle_timeout,
+                self.config.py_threads,
+                self.config.py_threads_idle_timeout,
                 rtpyloop,
             )
         });
@@ -193,7 +193,7 @@ impl WSGIWorker {
         _ = signal.get().qs.call_method0(py, pyo3::intern!(py, "wait"));
     }
 
-    fn _serve_wth_ssl(
+    fn _serve_str_ssl(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -207,7 +207,7 @@ impl WSGIWorker {
 
         let (stx, srx) = tokio::sync::watch::channel(false);
         let mut workers = vec![];
-        crate::workers::serve_wth_ssl_inner!(self, handle, callback, event_loop, worker_id, workers, srx);
+        crate::workers::serve_str_ssl_inner!(self, handle, callback, event_loop, worker_id, workers, srx);
 
         let pysig = signal.clone_ref(py);
         std::thread::spawn(move || {
@@ -237,9 +237,9 @@ impl WSGIWorker {
             worker_id,
             socket_fd,
             threads=1,
-            io_blocking_threads=512,
-            blocking_threads=1,
-            blocking_threads_idle_timeout=30,
+            blocking_threads=512,
+            py_threads=1,
+            py_threads_idle_timeout=30,
             backpressure=128,
             http_mode="1",
             http1_opts=None,
@@ -255,9 +255,9 @@ impl WSGIWorker {
         worker_id: i32,
         socket_fd: i32,
         threads: usize,
-        io_blocking_threads: usize,
         blocking_threads: usize,
-        blocking_threads_idle_timeout: u64,
+        py_threads: usize,
+        py_threads_idle_timeout: u64,
         backpressure: usize,
         http_mode: &str,
         http1_opts: Option<PyObject>,
@@ -272,9 +272,9 @@ impl WSGIWorker {
                 worker_id,
                 socket_fd,
                 threads,
-                io_blocking_threads,
                 blocking_threads,
-                blocking_threads_idle_timeout,
+                py_threads,
+                py_threads_idle_timeout,
                 backpressure,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,
@@ -288,7 +288,7 @@ impl WSGIWorker {
         })
     }
 
-    fn serve_rth(
+    fn serve_mtr(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -296,12 +296,12 @@ impl WSGIWorker {
         signal: Py<WorkerSignalSync>,
     ) {
         match self.config.ssl_enabled {
-            false => self._serve_rth(py, callback, event_loop, signal),
-            true => self._serve_rth_ssl(py, callback, event_loop, signal),
+            false => self._serve_mtr(py, callback, event_loop, signal),
+            true => self._serve_mtr_ssl(py, callback, event_loop, signal),
         }
     }
 
-    fn serve_wth(
+    fn serve_str(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -309,8 +309,8 @@ impl WSGIWorker {
         signal: Py<WorkerSignalSync>,
     ) {
         match self.config.ssl_enabled {
-            false => self._serve_wth(py, callback, event_loop, signal),
-            true => self._serve_wth_ssl(py, callback, event_loop, signal),
+            false => self._serve_str(py, callback, event_loop, signal),
+            true => self._serve_str_ssl(py, callback, event_loop, signal),
         }
     }
 }

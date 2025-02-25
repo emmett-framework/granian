@@ -16,14 +16,14 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, port, threading_mode, tls=False, task_impl='asyncio'):
+async def _server(interface, port, runtime_mode, tls=False, task_impl='asyncio'):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
         'port': port,
         'loop': 'asyncio',
         'blocking_threads': 1,
-        'threading_mode': threading_mode,
+        'runtime_mode': runtime_mode,
         'task_impl': task_impl,
     }
     if tls:

@@ -17,20 +17,20 @@ APPS = {
     'asgi': (
         'granian --interface asgi --log-level warning --backlog 2048 '
         '{wsmode}--http {http} '
-        '--workers {procs} --threads {threads}{bthreads} '
-        '--threading-mode {thmode} {app}.asgi:app'
+        '--workers {procs} --runtime-threads {threads}{bthreads} '
+        '--runtime-mode {thmode} {app}.asgi:app'
     ),
     'rsgi': (
         'granian --interface rsgi --log-level warning --backlog 2048 '
         '{wsmode}--http {http} '
-        '--workers {procs} --threads {threads}{bthreads} '
-        '--threading-mode {thmode} {app}.rsgi:app'
+        '--workers {procs} --runtime-threads {threads}{bthreads} '
+        '--runtime-mode {thmode} {app}.rsgi:app'
     ),
     'wsgi': (
         'granian --interface wsgi --log-level warning --backlog 2048 '
         '{wsmode}--http {http} '
-        '--workers {procs} --threads {threads}{bthreads} '
-        '--threading-mode {thmode} app.wsgi:app'
+        '--workers {procs} --runtime-threads {threads}{bthreads} '
+        '--runtime-mode {thmode} app.wsgi:app'
     ),
     'uvicorn_h11': (
         'uvicorn --interface asgi3 --no-access-log --log-level warning --http h11 --workers {procs} {app}.asgi:app'
@@ -59,7 +59,7 @@ def app(name, procs=None, threads=None, bthreads=None, thmode=None, http='1', ws
     procs = procs or 1
     threads = threads or 1
     bthreads = f' --blocking-threads {bthreads}' if bthreads else ''
-    thmode = thmode or 'workers'
+    thmode = thmode or 'st'
     wsmode = '--no-ws ' if not ws else ''
     exc_prefix = os.environ.get('BENCHMARK_EXC_PREFIX')
     proc_cmd = APPS[name].format(
@@ -191,8 +191,8 @@ def concurrencies():
         results[interface] = {}
         for np in nperm:
             for nt in [1, 2, 4]:
-                for threading_mode in ['workers', 'runtime']:
-                    key = f'P{np} T{nt} {threading_mode[0]}th'
+                for threading_mode in ['st', 'mt']:
+                    key = f'P{np} T{nt} {threading_mode.upper()}'
                     with app(interface, np, nt, bthreads=1, thmode=threading_mode):
                         print(f'Bench concurrencies - [{interface}] {threading_mode} {np}:{nt}')
                         results[interface][key] = {

@@ -89,9 +89,9 @@ pub(crate) struct WorkerConfig {
     pub id: i32,
     socket_fd: i32,
     pub threads: usize,
-    pub io_blocking_threads: usize,
     pub blocking_threads: usize,
-    pub blocking_threads_idle_timeout: u64,
+    pub py_threads: usize,
+    pub py_threads_idle_timeout: u64,
     pub backpressure: usize,
     pub http_mode: String,
     pub http1_opts: HTTP1Config,
@@ -108,9 +108,9 @@ impl WorkerConfig {
         id: i32,
         socket_fd: i32,
         threads: usize,
-        io_blocking_threads: usize,
         blocking_threads: usize,
-        blocking_threads_idle_timeout: u64,
+        py_threads: usize,
+        py_threads_idle_timeout: u64,
         backpressure: usize,
         http_mode: &str,
         http1_opts: HTTP1Config,
@@ -125,9 +125,9 @@ impl WorkerConfig {
             id,
             socket_fd,
             threads,
-            io_blocking_threads,
             blocking_threads,
-            blocking_threads_idle_timeout,
+            py_threads,
+            py_threads_idle_timeout,
             backpressure,
             http_mode: http_mode.into(),
             http1_opts,
@@ -587,7 +587,7 @@ macro_rules! loop_match_tls {
     };
 }
 
-macro_rules! serve_rth {
+macro_rules! serve_mtr {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
@@ -613,9 +613,9 @@ macro_rules! serve_rth {
             let rt = py.allow_threads(|| {
                 let ret = crate::runtime::init_runtime_mt(
                     self.config.threads,
-                    self.config.io_blocking_threads,
                     self.config.blocking_threads,
-                    self.config.blocking_threads_idle_timeout,
+                    self.config.py_threads,
+                    self.config.py_threads_idle_timeout,
                     rtpyloop,
                 );
                 ret
@@ -654,7 +654,7 @@ macro_rules! serve_rth {
     };
 }
 
-macro_rules! serve_rth_ssl {
+macro_rules! serve_mtr_ssl {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
@@ -681,9 +681,9 @@ macro_rules! serve_rth_ssl {
             let rt = py.allow_threads(|| {
                 let ret = crate::runtime::init_runtime_mt(
                     self.config.threads,
-                    self.config.io_blocking_threads,
                     self.config.blocking_threads,
-                    self.config.blocking_threads_idle_timeout,
+                    self.config.py_threads,
+                    self.config.py_threads_idle_timeout,
                     rtpyloop,
                 );
                 ret
@@ -723,7 +723,7 @@ macro_rules! serve_rth_ssl {
     };
 }
 
-macro_rules! serve_wth_inner {
+macro_rules! serve_str_inner {
     ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
         let callback_wrapper = std::sync::Arc::new($callback);
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
@@ -736,21 +736,17 @@ macro_rules! serve_wth_inner {
             let http_upgrades = $self.config.websockets_enabled;
             let http1_opts = $self.config.http1_opts.clone();
             let http2_opts = $self.config.http2_opts.clone();
-            let io_blocking_threads = $self.config.io_blocking_threads.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
-            let blocking_threads_idle_timeout = $self.config.blocking_threads_idle_timeout.clone();
+            let py_threads = $self.config.py_threads.clone();
+            let py_threads_idle_timeout = $self.config.py_threads_idle_timeout.clone();
             let backpressure = $self.config.backpressure.clone();
             let callback_wrapper = callback_wrapper.clone();
             let py_loop = py_loop.clone();
             let mut srx = $srx.clone();
 
             $workers.push(std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(
-                    io_blocking_threads,
-                    blocking_threads,
-                    blocking_threads_idle_timeout,
-                    py_loop,
-                );
+                let rt =
+                    crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
 
@@ -780,7 +776,7 @@ macro_rules! serve_wth_inner {
     };
 }
 
-macro_rules! serve_wth {
+macro_rules! serve_str {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
@@ -795,7 +791,7 @@ macro_rules! serve_wth {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_wth_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -817,7 +813,7 @@ macro_rules! serve_wth {
     };
 }
 
-macro_rules! serve_wth_ssl_inner {
+macro_rules! serve_str_ssl_inner {
     ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
         let callback_wrapper = std::sync::Arc::new($callback);
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
@@ -831,21 +827,17 @@ macro_rules! serve_wth_ssl_inner {
             let http1_opts = $self.config.http1_opts.clone();
             let http2_opts = $self.config.http2_opts.clone();
             let tls_cfg = $self.config.tls_cfg();
-            let io_blocking_threads = $self.config.io_blocking_threads.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
-            let blocking_threads_idle_timeout = $self.config.blocking_threads_idle_timeout.clone();
+            let py_threads = $self.config.py_threads.clone();
+            let py_threads_idle_timeout = $self.config.py_threads_idle_timeout.clone();
             let backpressure = $self.config.backpressure.clone();
             let callback_wrapper = callback_wrapper.clone();
             let py_loop = py_loop.clone();
             let mut srx = $srx.clone();
 
             $workers.push(std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(
-                    io_blocking_threads,
-                    blocking_threads,
-                    blocking_threads_idle_timeout,
-                    py_loop,
-                );
+                let rt =
+                    crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
 
@@ -874,7 +866,7 @@ macro_rules! serve_wth_ssl_inner {
     };
 }
 
-macro_rules! serve_wth_ssl {
+macro_rules! serve_str_ssl {
     ($func_name:ident, $target:expr) => {
         fn $func_name(
             &self,
@@ -889,7 +881,7 @@ macro_rules! serve_wth_ssl {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_wth_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -920,12 +912,12 @@ pub(crate) use handle_connection_loop;
 pub(crate) use handle_connection_loop_tls;
 pub(crate) use loop_match;
 pub(crate) use loop_match_tls;
-pub(crate) use serve_rth;
-pub(crate) use serve_rth_ssl;
-pub(crate) use serve_wth;
-pub(crate) use serve_wth_inner;
-pub(crate) use serve_wth_ssl;
-pub(crate) use serve_wth_ssl_inner;
+pub(crate) use serve_mtr;
+pub(crate) use serve_mtr_ssl;
+pub(crate) use serve_str;
+pub(crate) use serve_str_inner;
+pub(crate) use serve_str_ssl;
+pub(crate) use serve_str_ssl_inner;
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<WorkerSignal>()?;
