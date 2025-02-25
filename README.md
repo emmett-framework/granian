@@ -332,7 +332,7 @@ Benchmarks suggests **st** mode to be more efficient with a small amount of proc
 
 > **Warning:** free-threaded Python support is still experimental and highly discouraged in *production environments*.
 
-Since version 1.8 Granian supports free-threaded Python. While the installation process remains the same, as wheels for the free-threaded version are published separately, here we list some key differences from the GIL version.
+Since version 2.0 Granian supports free-threaded Python. While the installation process remains the same, as wheels for the free-threaded version are published separately, here we list some key differences from the GIL version.
 
 - Workers are threads instead of separated processes, so there will always be a single Python interpreter running
 - The application is thus loaded a single time and shared between workers
