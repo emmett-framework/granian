@@ -19,9 +19,9 @@ class HTTPModes(StrEnum):
     http2 = '2'
 
 
-class ThreadModes(StrEnum):
-    runtime = 'runtime'
-    workers = 'workers'
+class RuntimeModes(StrEnum):
+    mt = 'mt'
+    st = 'st'
 
 
 class Loops(StrEnum):

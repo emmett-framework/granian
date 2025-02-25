@@ -6,9 +6,9 @@ import pytest
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
-@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_scope(rsgi_server, threading_mode):
-    async with rsgi_server(threading_mode) as port:
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_scope(rsgi_server, runtime_mode):
+    async with rsgi_server(runtime_mode) as port:
         res = httpx.get(f'http://localhost:{port}/info?test=true')
 
     assert res.status_code == 200
@@ -27,9 +27,9 @@ async def test_scope(rsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_body(rsgi_server, threading_mode):
-    async with rsgi_server(threading_mode) as port:
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_body(rsgi_server, runtime_mode):
+    async with rsgi_server(runtime_mode) as port:
         res = httpx.post(f'http://localhost:{port}/echo', content='test')
 
     assert res.status_code == 200
@@ -38,10 +38,10 @@ async def test_body(rsgi_server, threading_mode):
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(not bool(os.getenv('PGO_RUN')), reason='not PGO build')
-@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_body_large(rsgi_server, threading_mode):
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_body_large(rsgi_server, runtime_mode):
     data = ''.join([f'{idx}test'.zfill(8) for idx in range(0, 5000)])
-    async with rsgi_server(threading_mode) as port:
+    async with rsgi_server(runtime_mode) as port:
         res = httpx.post(f'http://localhost:{port}/echo', content=data)
 
     assert res.status_code == 200
@@ -49,10 +49,10 @@ async def test_body_large(rsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_body_stream_req(rsgi_server, threading_mode):
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_body_stream_req(rsgi_server, runtime_mode):
     data = ''.join([f'{idx}test'.zfill(8) for idx in range(0, 5000)])
-    async with rsgi_server(threading_mode) as port:
+    async with rsgi_server(runtime_mode) as port:
         res = httpx.post(f'http://localhost:{port}/echos', content=data)
 
     assert res.status_code == 200
@@ -60,9 +60,9 @@ async def test_body_stream_req(rsgi_server, threading_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_body_stream_res(rsgi_server, threading_mode):
-    async with rsgi_server(threading_mode) as port:
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_body_stream_res(rsgi_server, runtime_mode):
+    async with rsgi_server(runtime_mode) as port:
         res = httpx.get(f'http://localhost:{port}/stream')
 
     assert res.status_code == 200
@@ -71,9 +71,9 @@ async def test_body_stream_res(rsgi_server, threading_mode):
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
-@pytest.mark.parametrize('threading_mode', ['runtime', 'workers'])
-async def test_app_error(rsgi_server, threading_mode):
-    async with rsgi_server(threading_mode) as port:
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_app_error(rsgi_server, runtime_mode):
+    async with rsgi_server(runtime_mode) as port:
         res = httpx.get(f'http://localhost:{port}/err_app')
 
     assert res.status_code == 500

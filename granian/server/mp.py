@@ -17,8 +17,8 @@ from .common import (
     Interfaces,
     LogLevels,
     Loops,
+    RuntimeModes,
     TaskImpl,
-    ThreadModes,
     configure_logging,
     logger,
     setproctitle,
@@ -54,12 +54,12 @@ class MPServer(AbstractServer[WorkerProcess]):
         callback_loader: Callable[..., Any],
         sock: socket.socket,
         loop_impl: Loops,
-        threads: int,
-        io_blocking_threads: Optional[int],
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: Optional[int],
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        threading_mode: ThreadModes,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -87,8 +87,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = ASGIWorker(
             worker_id,
             sock.fileno(),
-            threads,
-            io_blocking_threads,
+            runtime_threads,
+            runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
             backpressure,
@@ -98,7 +98,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             websockets,
             *ssl_ctx,
         )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
         scheduler = _new_cbscheduler(
             loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
         )
@@ -111,12 +111,12 @@ class MPServer(AbstractServer[WorkerProcess]):
         callback_loader: Callable[..., Any],
         sock: socket.socket,
         loop_impl: Loops,
-        threads: int,
-        io_blocking_threads: Optional[int],
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: Optional[int],
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        threading_mode: ThreadModes,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -151,8 +151,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = ASGIWorker(
             worker_id,
             sock.fileno(),
-            threads,
-            io_blocking_threads,
+            runtime_threads,
+            runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
             backpressure,
@@ -162,7 +162,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             websockets,
             *ssl_ctx,
         )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
         scheduler = _new_cbscheduler(
             loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
         )
@@ -176,12 +176,12 @@ class MPServer(AbstractServer[WorkerProcess]):
         callback_loader: Callable[..., Any],
         sock: socket.socket,
         loop_impl: Loops,
-        threads: int,
-        io_blocking_threads: Optional[int],
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: Optional[int],
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        threading_mode: ThreadModes,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -217,8 +217,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = RSGIWorker(
             worker_id,
             sock.fileno(),
-            threads,
-            io_blocking_threads,
+            runtime_threads,
+            runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
             backpressure,
@@ -228,7 +228,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             websockets,
             *ssl_ctx,
         )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
         scheduler = _new_cbscheduler(
             loop, _future_watcher_wrapper(callback), impl_asyncio=task_impl == TaskImpl.asyncio
         )
@@ -242,12 +242,12 @@ class MPServer(AbstractServer[WorkerProcess]):
         callback_loader: Callable[..., Any],
         sock: socket.socket,
         loop_impl: Loops,
-        threads: int,
-        io_blocking_threads: Optional[int],
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: Optional[int],
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        threading_mode: ThreadModes,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: Optional[HTTP1Settings],
@@ -274,8 +274,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = WSGIWorker(
             worker_id,
             sock.fileno(),
-            threads,
-            io_blocking_threads,
+            runtime_threads,
+            runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
             backpressure,
@@ -284,7 +284,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             http2_settings,
             *ssl_ctx,
         )
-        serve = getattr(worker, {ThreadModes.runtime: 'serve_rth', ThreadModes.workers: 'serve_wth'}[threading_mode])
+        serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
         scheduler = _new_cbscheduler(
             loop, _wsgi_call_wrap(callback, scope_opts, log_access_fmt), impl_asyncio=task_impl == TaskImpl.asyncio
         )
@@ -307,12 +307,12 @@ class MPServer(AbstractServer[WorkerProcess]):
                 callback_loader,
                 self._sso,
                 self.loop,
-                self.threads,
-                self.io_blocking_threads,
+                self.runtime_mode,
+                self.runtime_threads,
+                self.runtime_blocking_threads,
                 self.blocking_threads,
                 self.blocking_threads_idle_timeout,
                 self.backpressure,
-                self.threading_mode,
                 self.task_impl,
                 self.http,
                 self.http1_settings,
@@ -340,7 +340,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                     'which appears to be quite high compared to the amount of CPU cores available. '
                     'Considering reviewing your configuration and use `backpressure` to limit the amount '
                     'of concurrency on the Python interpreter. '
-                    'If this is intended, you can ignore this message'
+                    'If this is intended, you can safely ignore this message.'
                 )
 
         super().serve(spawn_target, target_loader, wrap_loader)

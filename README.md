@@ -108,8 +108,6 @@ Options:
                                   GRANIAN_WEBSOCKETS; default: (enabled)]
   --workers INTEGER RANGE         Number of worker processes  [env var:
                                   GRANIAN_WORKERS; default: 1; x>=1]
-  --threads INTEGER RANGE         Number of threads (per worker)  [env var:
-                                  GRANIAN_THREADS; default: 1; x>=1]
   --blocking-threads INTEGER RANGE
                                   Number of blocking threads (per worker)
                                   [env var: GRANIAN_BLOCKING_THREADS; x>=1]
@@ -119,12 +117,17 @@ Options:
                                   [env var:
                                   GRANIAN_BLOCKING_THREADS_IDLE_TIMEOUT;
                                   default: 30; 10<=x<=600]
-  --io-blocking-threads INTEGER RANGE
-                                  Number of I/O blocking threads (per worker)
-                                  [env var: GRANIAN_IO_BLOCKING_THREADS; x>=1]
-  --threading-mode [runtime|workers]
-                                  Threading mode to use  [env var:
-                                  GRANIAN_THREADING_MODE; default: (workers)]
+  --runtime-threads INTEGER RANGE
+                                  Number of runtime threads (per worker)  [env
+                                  var: GRANIAN_RUNTIME_THREADS; default: 1;
+                                  x>=1]
+  --runtime-blocking-threads INTEGER RANGE
+                                  Number of runtime I/O blocking threads (per
+                                  worker)  [env var:
+                                  GRANIAN_RUNTIME_BLOCKING_THREADS; x>=1]
+  --runtime-mode [mt|st]          Runtime mode to use (single/multi threaded)
+                                  [env var: GRANIAN_RUNTIME_MODE; default:
+                                  (st)]
   --loop [auto|asyncio|rloop|uvloop]
                                   Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
@@ -293,14 +296,14 @@ The following atoms are available for use:
 Granian offers different options to configure the number of workers and threads to be run, in particular:
 
 - **workers**: the total number of processes holding a dedicated Python interpreter that will run the application
-- **threads**: the number of Rust threads per worker that will perform network I/O
 - **blocking threads**: the number of threads per worker interacting with the Python interpreter
-- **I/O blocking threads**: the number of Rust threads per worker involved in blocking operations. The main role of these threads is to deal with blocking I/O – like file system operations.
+- **runtime threads**: the number of Rust threads per worker that will perform network I/O
+- **runtime blocking threads**: the number of Rust threads per worker involved in blocking operations. The main role of these threads is dealing with blocking I/O – like file system operations.
 
 In general, Granian will try its best to automatically pick proper values for the threading configuration, leaving to you the responsibility to choose the number of workers you need.    
 There is no *golden rule* here, as these numbers will vastly depend both on your application behavior and the deployment target, but we can list some suggestions:
 - matching the amount of CPU cores for the workers is generally the best starting point; on containerized environments like docker or k8s is best to have 1 worker per container though and scale your containers using the relevant orchestrator;
-- the default number of threads and I/O blocking threads is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets, and lowering the second only if you serve the same few files to a lot of connections;
+- the default number of runtime threads and runtime blocking threads is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets, and lowering the second only if you serve the same few files to a lot of connections;
 
 In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will also be the one holding the GIL for the vast majority of the time, and thus the value is fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount of inactivity time specified with the relevant setting.    
 In general, and unless you have a very specific use-case to do so (for example, if your application have an average millisecond response, a very limited amount of blocking threads usually delivers better throughput) you should avoid to tune this threadpool size and configure a backpressure value that suits your needs instead. In that regards, please check the next section.
@@ -317,13 +320,13 @@ While on asynchronous protocols, the default value for the backpressure should w
 
 In general, think of backpressure as the maximum amount of concurrency you want to handle (per worker) in your application, after which Granian will halt and wait before pushing more work.
 
-### Threading mode
+### Runtime mode
 
-Granian offers two different threading paradigms, due to the fact the inner Rust runtime can be multi-threaded – in opposition to what happens in Python event-loop which can only run as a single thread.
+Granian offers two different runtime threading paradigms, due to the fact the runtime can be multi-threaded – in opposition to what happens in Python event-loop which can only run as a single thread.
 
-Given you specify N threads with the relevant option, in **workers** threading mode Granian will spawn N single-threaded Rust runtimes, while in **runtime** threading mode Granian will spawn a single multi-threaded runtime with N threads.
+Given you specify N threads with the relevant option, in **st** mode Granian will spawn N single-threaded Rust runtimes, while in **mt** mode Granian will spawn a single multi-threaded runtime with N threads.
 
-Benchmarks suggests **workers** mode to be more efficient with a small amount of processes, while **runtime** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
+Benchmarks suggests **st** mode to be more efficient with a small amount of processes, while **mt** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
 
 ## Free-threaded Python
 

@@ -52,26 +52,26 @@ pub(crate) struct RuntimeWrapper {
 impl RuntimeWrapper {
     pub fn new(
         blocking_threads: usize,
-        py_blocking_threads: usize,
-        py_blocking_timeout: u64,
+        py_threads: usize,
+        py_threads_idle_timeout: u64,
         py_loop: Arc<PyObject>,
     ) -> Self {
         Self {
             inner: default_runtime(blocking_threads),
-            br: BlockingRunner::new(py_blocking_threads, py_blocking_timeout).into(),
+            br: BlockingRunner::new(py_threads, py_threads_idle_timeout).into(),
             pr: py_loop,
         }
     }
 
     pub fn with_runtime(
         rt: tokio::runtime::Runtime,
-        py_blocking_threads: usize,
-        py_blocking_timeout: u64,
+        py_threads: usize,
+        py_threads_idle_timeout: u64,
         py_loop: Arc<PyObject>,
     ) -> Self {
         Self {
             inner: rt,
-            br: BlockingRunner::new(py_blocking_threads, py_blocking_timeout).into(),
+            br: BlockingRunner::new(py_threads, py_threads_idle_timeout).into(),
             pr: py_loop,
         }
     }
@@ -141,8 +141,8 @@ fn default_runtime(blocking_threads: usize) -> tokio::runtime::Runtime {
 pub(crate) fn init_runtime_mt(
     threads: usize,
     blocking_threads: usize,
-    py_blocking_threads: usize,
-    py_blocking_timeout: u64,
+    py_threads: usize,
+    py_threads_idle_timeout: u64,
     py_loop: Arc<PyObject>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
@@ -152,19 +152,19 @@ pub(crate) fn init_runtime_mt(
             .enable_all()
             .build()
             .unwrap(),
-        py_blocking_threads,
-        py_blocking_timeout,
+        py_threads,
+        py_threads_idle_timeout,
         py_loop,
     )
 }
 
 pub(crate) fn init_runtime_st(
     blocking_threads: usize,
-    py_blocking_threads: usize,
-    py_blocking_timeout: u64,
+    py_threads: usize,
+    py_threads_idle_timeout: u64,
     py_loop: Arc<PyObject>,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_blocking_threads, py_blocking_timeout, py_loop)
+    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop)
 }
 
 // NOTE:

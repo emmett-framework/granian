@@ -5,7 +5,7 @@ from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 import click
 
-from .constants import HTTPModes, Interfaces, Loops, TaskImpl, ThreadModes
+from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
@@ -64,7 +64,6 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
 @option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling')
 @option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
-@option('--threads', type=click.IntRange(1), default=1, help='Number of threads (per worker)')
 @option(
     '--blocking-threads',
     type=click.IntRange(1),
@@ -76,16 +75,17 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     default=30,
     help='The maximum amount of time in seconds an idle blocking thread will be kept alive',
 )
+@option('--runtime-threads', type=click.IntRange(1), default=1, help='Number of runtime threads (per worker)')
 @option(
-    '--io-blocking-threads',
+    '--runtime-blocking-threads',
     type=click.IntRange(1),
-    help='Number of I/O blocking threads (per worker)',
+    help='Number of runtime I/O blocking threads (per worker)',
 )
 @option(
-    '--threading-mode',
-    type=EnumType(ThreadModes),
-    default=ThreadModes.workers,
-    help='Threading mode to use',
+    '--runtime-mode',
+    type=EnumType(RuntimeModes),
+    default=RuntimeModes.st,
+    help='Runtime mode to use (single/multi threaded)',
 )
 @option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
 @option(
@@ -274,11 +274,11 @@ def cli(
     http: HTTPModes,
     websockets: bool,
     workers: int,
-    threads: int,
     blocking_threads: Optional[int],
     blocking_threads_idle_timeout: int,
-    io_blocking_threads: Optional[int],
-    threading_mode: ThreadModes,
+    runtime_threads: int,
+    runtime_blocking_threads: Optional[int],
+    runtime_mode: RuntimeModes,
     loop: Loops,
     task_impl: TaskImpl,
     backlog: int,
@@ -332,11 +332,11 @@ def cli(
         port=port,
         interface=interface,
         workers=workers,
-        threads=threads,
-        io_blocking_threads=io_blocking_threads,
         blocking_threads=blocking_threads,
         blocking_threads_idle_timeout=blocking_threads_idle_timeout,
-        threading_mode=threading_mode,
+        runtime_threads=runtime_threads,
+        runtime_blocking_threads=runtime_blocking_threads,
+        runtime_mode=runtime_mode,
         loop=loop,
         task_impl=task_impl,
         http=http,
