@@ -6,7 +6,7 @@ on:
       - v*.*.*
 
 env:
-  PY_ALL: 3.9 3.10 3.11 3.12 3.13 3.13t pypy3.9 pypy3.10
+  PY_ALL: 3.9 3.10 3.11 3.12 3.13 3.13t pypy3.9 pypy3.10 pypy3.11
 
 jobs:
   sdist:
@@ -38,7 +38,7 @@ jobs:
           - os: ubuntu
             platform: linux
             target: x86_64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10 pypy3.11
           - os: ubuntu
             platform: linux
             target: x86_64
@@ -48,7 +48,7 @@ jobs:
             platform: linux
             target: aarch64
             container: messense/manylinux_2_24-cross:aarch64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10 pypy3.11
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -67,14 +67,14 @@ jobs:
             allocator: mimalloc
           - os: macos
             target: x86_64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10 pypy3.11
           - os: macos
             target: x86_64
             interpreter: 3.13t
             allocator: mimalloc
           - os: macos
             target: aarch64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10 pypy3.11
           - os: macos
             target: aarch64
             interpreter: 3.13t
