@@ -110,7 +110,13 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--http1-buffer-size',
     type=click.IntRange(8192),
     default=HTTP1Settings.max_buffer_size,
-    help='Set the maximum buffer size for HTTP/1 connections',
+    help='Sets the maximum buffer size for HTTP/1 connections',
+)
+@option(
+    '--http1-header-read-timeout',
+    type=click.IntRange(1, 60_000),
+    default=HTTP1Settings.header_read_timeout,
+    help='Sets a timeout (in milliseconds) to read headers',
 )
 @option(
     '--http1-keep-alive/--no-http1-keep-alive',
@@ -129,49 +135,49 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--http2-initial-connection-window-size',
-    type=int,
+    type=click.IntRange(1024),
     default=HTTP2Settings.initial_connection_window_size,
     help='Sets the max connection-level flow control for HTTP2',
 )
 @option(
     '--http2-initial-stream-window-size',
-    type=int,
+    type=click.IntRange(1024),
     default=HTTP2Settings.initial_stream_window_size,
     help='Sets the `SETTINGS_INITIAL_WINDOW_SIZE` option for HTTP2 stream-level flow control',
 )
 @option(
     '--http2-keep-alive-interval',
-    type=int,
+    type=click.IntRange(1, 60_000),
     default=HTTP2Settings.keep_alive_interval,
-    help='Sets an interval for HTTP2 Ping frames should be sent to keep a connection alive',
+    help='Sets an interval (in milliseconds) for HTTP2 Ping frames should be sent to keep a connection alive',
 )
 @option(
     '--http2-keep-alive-timeout',
-    type=int,
+    type=click.IntRange(1),
     default=HTTP2Settings.keep_alive_timeout,
-    help='Sets a timeout for receiving an acknowledgement of the HTTP2 keep-alive ping',
+    help='Sets a timeout (in seconds) for receiving an acknowledgement of the HTTP2 keep-alive ping',
 )
 @option(
     '--http2-max-concurrent-streams',
-    type=int,
+    type=click.IntRange(10),
     default=HTTP2Settings.max_concurrent_streams,
     help='Sets the SETTINGS_MAX_CONCURRENT_STREAMS option for HTTP2 connections',
 )
 @option(
     '--http2-max-frame-size',
-    type=int,
+    type=click.IntRange(1024),
     default=HTTP2Settings.max_frame_size,
     help='Sets the maximum frame size to use for HTTP2',
 )
 @option(
     '--http2-max-headers-size',
-    type=int,
+    type=click.IntRange(1),
     default=HTTP2Settings.max_headers_size,
     help='Sets the max size of received header frames',
 )
 @option(
     '--http2-max-send-buffer-size',
-    type=int,
+    type=click.IntRange(1024),
     default=HTTP2Settings.max_send_buffer_size,
     help='Set the maximum write buffer size for each HTTP/2 stream',
 )
@@ -284,6 +290,7 @@ def cli(
     backlog: int,
     backpressure: Optional[int],
     http1_buffer_size: int,
+    http1_header_read_timeout: int,
     http1_keep_alive: bool,
     http1_pipeline_flush: bool,
     http2_adaptive_window: bool,
@@ -344,7 +351,10 @@ def cli(
         backlog=backlog,
         backpressure=backpressure,
         http1_settings=HTTP1Settings(
-            keep_alive=http1_keep_alive, max_buffer_size=http1_buffer_size, pipeline_flush=http1_pipeline_flush
+            header_read_timeout=http1_header_read_timeout,
+            keep_alive=http1_keep_alive,
+            max_buffer_size=http1_buffer_size,
+            pipeline_flush=http1_pipeline_flush,
         ),
         http2_settings=HTTP2Settings(
             adaptive_window=http2_adaptive_window,

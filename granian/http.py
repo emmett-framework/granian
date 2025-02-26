@@ -4,6 +4,7 @@ from typing import Optional
 
 @dataclass
 class HTTP1Settings:
+    header_read_timeout: int = 30_000
     keep_alive: bool = True
     max_buffer_size: int = 8192 + 4096 * 100
     pipeline_flush: bool = False
