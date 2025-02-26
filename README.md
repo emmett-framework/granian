@@ -141,10 +141,15 @@ Options:
                                   GRANIAN_BACKPRESSURE; default:
                                   (backlog/workers); x>=1]
   --http1-buffer-size INTEGER RANGE
-                                  Set the maximum buffer size for HTTP/1
+                                  Sets the maximum buffer size for HTTP/1
                                   connections  [env var:
                                   GRANIAN_HTTP1_BUFFER_SIZE; default: 417792;
                                   x>=8192]
+  --http1-header-read-timeout INTEGER RANGE
+                                  Sets a timeout (in milliseconds) to read
+                                  headers  [env var:
+                                  GRANIAN_HTTP1_HEADER_READ_TIMEOUT; default:
+                                  30000; 1<=x<=60000]
   --http1-keep-alive / --no-http1-keep-alive
                                   Enables or disables HTTP/1 keep-alive  [env
                                   var: GRANIAN_HTTP1_KEEP_ALIVE; default:
@@ -159,42 +164,46 @@ Options:
                                   for HTTP2  [env var:
                                   GRANIAN_HTTP2_ADAPTIVE_WINDOW; default:
                                   (disabled)]
-  --http2-initial-connection-window-size INTEGER
+  --http2-initial-connection-window-size INTEGER RANGE
                                   Sets the max connection-level flow control
                                   for HTTP2  [env var: GRANIAN_HTTP2_INITIAL_C
-                                  ONNECTION_WINDOW_SIZE; default: 1048576]
-  --http2-initial-stream-window-size INTEGER
+                                  ONNECTION_WINDOW_SIZE; default: 1048576;
+                                  x>=1024]
+  --http2-initial-stream-window-size INTEGER RANGE
                                   Sets the `SETTINGS_INITIAL_WINDOW_SIZE`
                                   option for HTTP2 stream-level flow control
                                   [env var:
                                   GRANIAN_HTTP2_INITIAL_STREAM_WINDOW_SIZE;
-                                  default: 1048576]
-  --http2-keep-alive-interval INTEGER
-                                  Sets an interval for HTTP2 Ping frames
-                                  should be sent to keep a connection alive
-                                  [env var: GRANIAN_HTTP2_KEEP_ALIVE_INTERVAL]
-  --http2-keep-alive-timeout INTEGER
-                                  Sets a timeout for receiving an
+                                  default: 1048576; x>=1024]
+  --http2-keep-alive-interval INTEGER RANGE
+                                  Sets an interval (in milliseconds) for HTTP2
+                                  Ping frames should be sent to keep a
+                                  connection alive  [env var:
+                                  GRANIAN_HTTP2_KEEP_ALIVE_INTERVAL;
+                                  1<=x<=60000]
+  --http2-keep-alive-timeout INTEGER RANGE
+                                  Sets a timeout (in seconds) for receiving an
                                   acknowledgement of the HTTP2 keep-alive ping
                                   [env var: GRANIAN_HTTP2_KEEP_ALIVE_TIMEOUT;
-                                  default: 20]
-  --http2-max-concurrent-streams INTEGER
+                                  default: 20; x>=1]
+  --http2-max-concurrent-streams INTEGER RANGE
                                   Sets the SETTINGS_MAX_CONCURRENT_STREAMS
                                   option for HTTP2 connections  [env var:
                                   GRANIAN_HTTP2_MAX_CONCURRENT_STREAMS;
-                                  default: 200]
-  --http2-max-frame-size INTEGER  Sets the maximum frame size to use for HTTP2
+                                  default: 200; x>=10]
+  --http2-max-frame-size INTEGER RANGE
+                                  Sets the maximum frame size to use for HTTP2
                                   [env var: GRANIAN_HTTP2_MAX_FRAME_SIZE;
-                                  default: 16384]
-  --http2-max-headers-size INTEGER
+                                  default: 16384; x>=1024]
+  --http2-max-headers-size INTEGER RANGE
                                   Sets the max size of received header frames
                                   [env var: GRANIAN_HTTP2_MAX_HEADERS_SIZE;
-                                  default: 16777216]
-  --http2-max-send-buffer-size INTEGER
+                                  default: 16777216; x>=1]
+  --http2-max-send-buffer-size INTEGER RANGE
                                   Set the maximum write buffer size for each
                                   HTTP/2 stream  [env var:
                                   GRANIAN_HTTP2_MAX_SEND_BUFFER_SIZE; default:
-                                  409600]
+                                  409600; x>=1024]
   --log / --no-log                Enable logging  [env var:
                                   GRANIAN_LOG_ENABLED; default: (enabled)]
   --log-level [critical|error|warning|warn|info|debug|notset]

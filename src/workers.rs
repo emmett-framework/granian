@@ -67,6 +67,7 @@ impl WorkerSignalSync {
 
 #[derive(Clone)]
 pub(crate) struct HTTP1Config {
+    pub header_read_timeout: core::time::Duration,
     pub keep_alive: bool,
     pub max_buffer_size: usize,
     pub pipeline_flush: bool,
@@ -275,11 +276,14 @@ macro_rules! handle_connection_http1 {
             $spawner(async move {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let mut conn = hyper::server::conn::http1::Builder::new();
-                conn.keep_alive($http_opts.keep_alive);
-                conn.max_buf_size($http_opts.max_buffer_size);
-                conn.pipeline_flush($http_opts.pipeline_flush);
-                let _ = conn.serve_connection($stream_wrapper(stream), svc).await;
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .timer(crate::io::TokioTimer::new())
+                    .header_read_timeout($http_opts.header_read_timeout)
+                    .keep_alive($http_opts.keep_alive)
+                    .max_buf_size($http_opts.max_buffer_size)
+                    .pipeline_flush($http_opts.pipeline_flush)
+                    .serve_connection($stream_wrapper(stream), svc)
+                    .await;
                 drop(permit);
             });
         }
@@ -294,11 +298,12 @@ macro_rules! handle_connection_http1_upgrades {
             $spawner(async move {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let mut conn = hyper::server::conn::http1::Builder::new();
-                conn.keep_alive($http_opts.keep_alive);
-                conn.max_buf_size($http_opts.max_buffer_size);
-                conn.pipeline_flush($http_opts.pipeline_flush);
-                let _ = conn
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .timer(crate::io::TokioTimer::new())
+                    .header_read_timeout($http_opts.header_read_timeout)
+                    .keep_alive($http_opts.keep_alive)
+                    .max_buf_size($http_opts.max_buffer_size)
+                    .pipeline_flush($http_opts.pipeline_flush)
                     .serve_connection($stream_wrapper(stream), svc)
                     .with_upgrades()
                     .await;
@@ -316,17 +321,19 @@ macro_rules! handle_connection_http2 {
             $spawner(async move {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let mut conn = hyper::server::conn::http2::Builder::new($executor_builder());
-                conn.adaptive_window($http_opts.adaptive_window);
-                conn.initial_connection_window_size($http_opts.initial_connection_window_size);
-                conn.initial_stream_window_size($http_opts.initial_stream_window_size);
-                conn.keep_alive_interval($http_opts.keep_alive_interval);
-                conn.keep_alive_timeout($http_opts.keep_alive_timeout);
-                conn.max_concurrent_streams($http_opts.max_concurrent_streams);
-                conn.max_frame_size($http_opts.max_frame_size);
-                conn.max_header_list_size($http_opts.max_headers_size);
-                conn.max_send_buf_size($http_opts.max_send_buffer_size);
-                let _ = conn.serve_connection($stream_wrapper(stream), svc).await;
+                let _ = hyper::server::conn::http2::Builder::new($executor_builder())
+                    .timer(crate::io::TokioTimer::new())
+                    .adaptive_window($http_opts.adaptive_window)
+                    .initial_connection_window_size($http_opts.initial_connection_window_size)
+                    .initial_stream_window_size($http_opts.initial_stream_window_size)
+                    .keep_alive_interval($http_opts.keep_alive_interval)
+                    .keep_alive_timeout($http_opts.keep_alive_timeout)
+                    .max_concurrent_streams($http_opts.max_concurrent_streams)
+                    .max_frame_size($http_opts.max_frame_size)
+                    .max_header_list_size($http_opts.max_headers_size)
+                    .max_send_buf_size($http_opts.max_send_buffer_size)
+                    .serve_connection($stream_wrapper(stream), svc)
+                    .await;
                 drop(permit);
             });
         }
@@ -342,20 +349,23 @@ macro_rules! handle_connection_httpa {
                 let svc =
                     crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
                 let mut conn = hyper_util::server::conn::auto::Builder::new($executor_builder());
-                conn.http1().keep_alive($http1_opts.keep_alive);
-                conn.http1().max_buf_size($http1_opts.max_buffer_size);
-                conn.http1().pipeline_flush($http1_opts.pipeline_flush);
-                conn.http2().adaptive_window($http2_opts.adaptive_window);
+                conn.http1()
+                    .timer(crate::io::TokioTimer::new())
+                    .header_read_timeout($http1_opts.header_read_timeout)
+                    .keep_alive($http1_opts.keep_alive)
+                    .max_buf_size($http1_opts.max_buffer_size)
+                    .pipeline_flush($http1_opts.pipeline_flush);
                 conn.http2()
-                    .initial_connection_window_size($http2_opts.initial_connection_window_size);
-                conn.http2()
-                    .initial_stream_window_size($http2_opts.initial_stream_window_size);
-                conn.http2().keep_alive_interval($http2_opts.keep_alive_interval);
-                conn.http2().keep_alive_timeout($http2_opts.keep_alive_timeout);
-                conn.http2().max_concurrent_streams($http2_opts.max_concurrent_streams);
-                conn.http2().max_frame_size($http2_opts.max_frame_size);
-                conn.http2().max_header_list_size($http2_opts.max_headers_size);
-                conn.http2().max_send_buf_size($http2_opts.max_send_buffer_size);
+                    .timer(crate::io::TokioTimer::new())
+                    .adaptive_window($http2_opts.adaptive_window)
+                    .initial_connection_window_size($http2_opts.initial_connection_window_size)
+                    .initial_stream_window_size($http2_opts.initial_stream_window_size)
+                    .keep_alive_interval($http2_opts.keep_alive_interval)
+                    .keep_alive_timeout($http2_opts.keep_alive_timeout)
+                    .max_concurrent_streams($http2_opts.max_concurrent_streams)
+                    .max_frame_size($http2_opts.max_frame_size)
+                    .max_header_list_size($http2_opts.max_headers_size)
+                    .max_send_buf_size($http2_opts.max_send_buffer_size);
                 let _ = conn.$conn_method($stream_wrapper(stream), svc).await;
                 drop(permit);
             });

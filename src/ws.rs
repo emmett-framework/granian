@@ -4,7 +4,7 @@ use hyper::{
     http::response::Builder,
     Request, Response, StatusCode,
 };
-use pin_project::pin_project;
+use pin_project_lite::pin_project;
 use std::{
     future::Future,
     pin::Pin,
@@ -28,12 +28,13 @@ pub(crate) type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrad
 pub(crate) type WSRxStream = futures::stream::SplitStream<WSStream>;
 pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, Message>;
 
-#[pin_project]
-#[derive(Debug)]
-pub struct HyperWebsocket {
-    #[pin]
-    inner: hyper::upgrade::OnUpgrade,
-    config: Option<WebSocketConfig>,
+pin_project! {
+    #[derive(Debug)]
+    pub struct HyperWebsocket {
+        #[pin]
+        inner: hyper::upgrade::OnUpgrade,
+        config: Option<WebSocketConfig>,
+    }
 }
 
 impl Future for HyperWebsocket {
