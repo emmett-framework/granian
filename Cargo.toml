@@ -49,7 +49,7 @@ pyo3 = { version = "=0.23", features = ["anyhow", "extension-module", "generate-
 pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
 socket2 = { version = "0.5", features = ["all"] }
-tls-listener = { version = "=0.10", features = ["rustls-ring"] }
+tls-listener = { version = "=0.11", features = ["rustls-ring"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.26"
