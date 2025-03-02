@@ -778,6 +778,8 @@ macro_rules! serve_str_inner {
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
+
+                    Python::with_gil(|_| drop(callback_wrapper));
                 });
 
                 Python::with_gil(|_| drop(rt));
@@ -870,7 +872,11 @@ macro_rules! serve_str_ssl_inner {
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
+
+                    Python::with_gil(|_| drop(callback_wrapper));
                 });
+
+                Python::with_gil(|_| drop(rt));
             }));
         }
     };
@@ -913,6 +919,102 @@ macro_rules! serve_str_ssl {
     };
 }
 
+macro_rules! serve_fut {
+    ($func_name:ident, $target:expr) => {
+        fn $func_name<'p>(
+            &self,
+            callback: Py<crate::callbacks::CallbackScheduler>,
+            event_loop: &Bound<'p, PyAny>,
+            signal: Py<WorkerSignal>,
+        ) -> Bound<'p, PyAny> {
+            _ = pyo3_log::try_init();
+
+            let worker_id = self.config.id;
+            log::info!("Started worker-{}", worker_id);
+
+            let (stx, srx) = tokio::sync::watch::channel(false);
+            let mut workers = vec![];
+            crate::workers::serve_str_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+
+            let ret = event_loop.call_method0("create_future").unwrap();
+            let pyfut = ret.clone().unbind();
+            let pyloop = event_loop.clone().unbind();
+
+            std::thread::spawn(move || {
+                let rt = crate::runtime::init_runtime_st(1, 0, 0, std::sync::Arc::new(pyloop));
+                let local = tokio::task::LocalSet::new();
+
+                let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
+                crate::runtime::block_on_local(&rt, local, async move {
+                    let _ = pyrx.changed().await;
+                    stx.send(true).unwrap();
+                    log::info!("Stopping worker-{}", worker_id);
+                    while let Some(worker) = workers.pop() {
+                        worker.join().unwrap();
+                    }
+                });
+
+                Python::with_gil(|py| {
+                    _ = pyfut.call_method1(py, "set_result", (py.None(),));
+                    drop(pyfut);
+                    drop(signal);
+                    drop(rt);
+                });
+            });
+
+            ret
+        }
+    };
+}
+
+macro_rules! serve_fut_ssl {
+    ($func_name:ident, $target:expr) => {
+        fn $func_name<'p>(
+            &self,
+            callback: Py<crate::callbacks::CallbackScheduler>,
+            event_loop: &Bound<'p, PyAny>,
+            signal: Py<WorkerSignal>,
+        ) -> Bound<'p, PyAny> {
+            _ = pyo3_log::try_init();
+
+            let worker_id = self.config.id;
+            log::info!("Started worker-{}", worker_id);
+
+            let (stx, srx) = tokio::sync::watch::channel(false);
+            let mut workers = vec![];
+            crate::workers::serve_str_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+
+            let ret = event_loop.call_method0("create_future").unwrap();
+            let pyfut = ret.clone().unbind();
+            let pyloop = event_loop.clone().unbind();
+
+            std::thread::spawn(move || {
+                let rt = crate::runtime::init_runtime_st(1, 0, 0, std::sync::Arc::new(pyloop));
+                let local = tokio::task::LocalSet::new();
+
+                let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
+                crate::runtime::block_on_local(&rt, local, async move {
+                    let _ = pyrx.changed().await;
+                    stx.send(true).unwrap();
+                    log::info!("Stopping worker-{}", worker_id);
+                    while let Some(worker) = workers.pop() {
+                        worker.join().unwrap();
+                    }
+                });
+
+                Python::with_gil(|py| {
+                    _ = pyfut.call_method1(py, "set_result", (py.None(),));
+                    drop(pyfut);
+                    drop(signal);
+                    drop(rt);
+                });
+            });
+
+            ret
+        }
+    };
+}
+
 pub(crate) use build_service;
 pub(crate) use handle_connection_http1;
 pub(crate) use handle_connection_http1_upgrades;
@@ -922,6 +1024,8 @@ pub(crate) use handle_connection_loop;
 pub(crate) use handle_connection_loop_tls;
 pub(crate) use loop_match;
 pub(crate) use loop_match_tls;
+pub(crate) use serve_fut;
+pub(crate) use serve_fut_ssl;
 pub(crate) use serve_mtr;
 pub(crate) use serve_mtr_ssl;
 pub(crate) use serve_str;

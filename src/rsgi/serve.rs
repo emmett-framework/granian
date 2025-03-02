@@ -4,7 +4,9 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::workers::{serve_mtr, serve_mtr_ssl, serve_str, serve_str_ssl, WorkerConfig, WorkerSignal};
+use crate::workers::{
+    serve_fut, serve_fut_ssl, serve_mtr, serve_mtr_ssl, serve_str, serve_str_ssl, WorkerConfig, WorkerSignal,
+};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct RSGIWorker {
@@ -16,10 +18,14 @@ impl RSGIWorker {
     serve_mtr!(_serve_mtr_ws, handle_ws);
     serve_str!(_serve_str, handle);
     serve_str!(_serve_str_ws, handle_ws);
+    serve_fut!(_serve_fut, handle);
+    serve_fut!(_serve_fut_ws, handle_ws);
     serve_mtr_ssl!(_serve_mtr_ssl, handle);
     serve_mtr_ssl!(_serve_mtr_ssl_ws, handle_ws);
     serve_str_ssl!(_serve_str_ssl, handle);
     serve_str_ssl!(_serve_str_ssl_ws, handle_ws);
+    serve_fut_ssl!(_serve_fut_ssl, handle);
+    serve_fut_ssl!(_serve_fut_ssl_ws, handle_ws);
 }
 
 #[pymethods]
@@ -104,6 +110,20 @@ impl RSGIWorker {
             (true, false) => self._serve_str_ws(callback, event_loop, signal),
             (false, true) => self._serve_str_ssl(callback, event_loop, signal),
             (true, true) => self._serve_str_ssl_ws(callback, event_loop, signal),
+        }
+    }
+
+    fn serve_async<'p>(
+        &self,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<'p, PyAny>,
+        signal: Py<WorkerSignal>,
+    ) -> Bound<'p, PyAny> {
+        match (self.config.websockets_enabled, self.config.ssl_enabled) {
+            (false, false) => self._serve_fut(callback, event_loop, signal),
+            (true, false) => self._serve_fut_ws(callback, event_loop, signal),
+            (false, true) => self._serve_fut_ssl(callback, event_loop, signal),
+            (true, true) => self._serve_fut_ssl_ws(callback, event_loop, signal),
         }
     }
 }
