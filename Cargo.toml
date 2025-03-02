@@ -71,9 +71,4 @@ incremental = false
 lto = "fat"
 opt-level = 3
 panic = "abort"
-strip = true
-
-[profile.profiling]
-inherits = "release"
-debug = true
-strip = false
+strip = "debuginfo"
