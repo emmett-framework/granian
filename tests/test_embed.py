@@ -3,6 +3,7 @@ import asyncio
 import httpx
 import pytest
 
+from granian._granian import BUILD_GIL
 from granian.server.embed import Server as EmbeddedGranian
 
 
@@ -20,6 +21,7 @@ def embed_server(server_port):
     return EmbeddedGranian(app, port=server_port)
 
 
+@pytest.mark.skipif(not BUILD_GIL, reason='free-threaded Python')
 def test_embed_server(loop, server_port, embed_server):
     data = {}
 
