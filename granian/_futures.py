@@ -73,8 +73,11 @@ class _CBSchedulerAIO(_BaseCBScheduler):
 
 
 def _new_cbscheduler(loop, cb, impl_asyncio=False):
-    _cls = _CBSchedulerAIO if impl_asyncio else _CBScheduler
-    return _cls(loop, cb, _CBSchedulerTask(), partial(_aio_taskenter, loop), partial(_aio_taskleave, loop))
+    if impl_asyncio:
+        _cls, _task = _CBSchedulerAIO, None
+    else:
+        _cls, _task = _CBScheduler, _CBSchedulerTask()
+    return _cls(loop, cb, _task, partial(_aio_taskenter, loop), partial(_aio_taskleave, loop))
 
 
 def _cbsched_schedule(loop, ctx, run, cb):
