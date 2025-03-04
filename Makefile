@@ -5,7 +5,7 @@ pysources = granian tests
 build-dev:
 	@rm -f granian/*.so
 	uv sync --group all
-	maturin develop
+	maturin develop --uv
 
 .PHONY: format
 format:

@@ -1,7 +1,6 @@
 from .._granian import BUILD_GIL
+from .mp import MPServer as MPServer
+from .mt import MTServer as MTServer
 
 
-if BUILD_GIL:
-    from .mp import MPServer as Server
-else:
-    from .mt import MTServer as Server  # noqa: F401
+Server = MPServer if BUILD_GIL else MTServer
