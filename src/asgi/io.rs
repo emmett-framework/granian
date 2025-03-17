@@ -469,19 +469,16 @@ fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<u16, Unsuppo
 #[inline(always)]
 fn adapt_headers(py: Python, message: &Bound<PyDict>) -> HeaderMap {
     let mut ret = HeaderMap::new();
-    ret.insert(HK_SERVER, HV_SERVER);
-    match message.get_item(pyo3::intern!(py, "headers")) {
-        Ok(Some(item)) => {
-            let accum: Vec<Vec<PyBackedBytes>> = item.extract().unwrap_or(Vec::new());
-            for tup in &accum {
-                if let (Ok(key), Ok(val)) = (HeaderName::from_bytes(&tup[0]), HeaderValue::from_bytes(&tup[1])) {
-                    ret.append(key, val);
-                }
+    if let Ok(Some(item)) = message.get_item(pyo3::intern!(py, "headers")) {
+        let accum: Vec<Vec<PyBackedBytes>> = item.extract().unwrap_or(Vec::new());
+        for tup in &accum {
+            if let (Ok(key), Ok(val)) = (HeaderName::from_bytes(&tup[0]), HeaderValue::from_bytes(&tup[1])) {
+                ret.append(key, val);
             }
-            ret
         }
-        _ => ret,
     }
+    ret.entry(HK_SERVER).or_insert(HV_SERVER);
+    ret
 }
 
 #[inline(always)]
