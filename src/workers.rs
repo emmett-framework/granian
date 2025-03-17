@@ -631,6 +631,7 @@ macro_rules! serve_mtr {
                 ret
             });
             let rth = rt.handler();
+            let tasks = tokio_util::task::TaskTracker::new();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
@@ -642,7 +643,7 @@ macro_rules! serve_mtr {
                     backpressure,
                     rth,
                     callback_wrapper,
-                    tokio::spawn,
+                    |task| tasks.spawn(task),
                     hyper_util::rt::TokioExecutor::new,
                     http1_opts,
                     http2_opts,
@@ -651,6 +652,9 @@ macro_rules! serve_mtr {
                 );
 
                 log::info!("Stopping worker-{}", worker_id);
+
+                tasks.close();
+                tasks.wait().await;
 
                 Python::with_gil(|_| drop(callback_wrapper));
                 Ok(())
@@ -699,6 +703,7 @@ macro_rules! serve_mtr_ssl {
                 ret
             });
             let rth = rt.handler();
+            let tasks = tokio_util::task::TaskTracker::new();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
@@ -711,7 +716,7 @@ macro_rules! serve_mtr_ssl {
                     backpressure,
                     rth,
                     callback_wrapper,
-                    tokio::spawn,
+                    |task| tasks.spawn(task),
                     hyper_util::rt::TokioExecutor::new,
                     http1_opts,
                     http2_opts,
@@ -720,6 +725,9 @@ macro_rules! serve_mtr_ssl {
                 );
 
                 log::info!("Stopping worker-{}", worker_id);
+
+                tasks.close();
+                tasks.wait().await;
 
                 Python::with_gil(|_| drop(callback_wrapper));
                 Ok(())
@@ -759,6 +767,7 @@ macro_rules! serve_str_inner {
                     crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
+                let tasks = tokio_util::task::TaskTracker::new();
 
                 crate::runtime::block_on_local(&rt, local, async move {
                     crate::workers::loop_match!(
@@ -769,7 +778,7 @@ macro_rules! serve_str_inner {
                         backpressure,
                         rth,
                         callback_wrapper,
-                        tokio::task::spawn_local,
+                        |task| tasks.spawn_local(task),
                         crate::workers::WorkerExecutor::new,
                         http1_opts,
                         http2_opts,
@@ -778,6 +787,9 @@ macro_rules! serve_str_inner {
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
+
+                    tasks.close();
+                    tasks.wait().await;
 
                     Python::with_gil(|_| drop(callback_wrapper));
                 });
@@ -852,6 +864,7 @@ macro_rules! serve_str_ssl_inner {
                     crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
                 let rth = rt.handler();
                 let local = tokio::task::LocalSet::new();
+                let tasks = tokio_util::task::TaskTracker::new();
 
                 crate::runtime::block_on_local(&rt, local, async move {
                     crate::workers::loop_match_tls!(
@@ -863,7 +876,7 @@ macro_rules! serve_str_ssl_inner {
                         backpressure,
                         rth,
                         callback_wrapper,
-                        tokio::task::spawn_local,
+                        |task| tasks.spawn_local(task),
                         crate::workers::WorkerExecutor::new,
                         http1_opts,
                         http2_opts,
@@ -872,6 +885,9 @@ macro_rules! serve_str_ssl_inner {
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
+
+                    tasks.close();
+                    tasks.wait().await;
 
                     Python::with_gil(|_| drop(callback_wrapper));
                 });

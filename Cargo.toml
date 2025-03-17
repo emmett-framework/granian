@@ -53,7 +53,7 @@ tls-listener = { version = "=0.11", features = ["rustls-ring"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.26"
-tokio-util = { version = "0.7", features = ["codec"] }
+tokio-util = { version = "0.7", features = ["codec", "rt"] }
 
 [target.'cfg(not(any(target_env = "musl", target_os = "freebsd", target_os = "openbsd", target_os = "windows")))'.dependencies]
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"] }

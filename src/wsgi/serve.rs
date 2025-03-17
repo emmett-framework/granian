@@ -43,6 +43,7 @@ impl WSGIWorker {
             )
         });
         let rth = rt.handler();
+        let tasks = tokio_util::task::TaskTracker::new();
 
         let (stx, mut srx) = tokio::sync::watch::channel(false);
         let main_loop = rt.inner.spawn(async move {
@@ -54,7 +55,7 @@ impl WSGIWorker {
                 backpressure,
                 rth,
                 callback_wrapper,
-                tokio::spawn,
+                |task| tasks.spawn(task),
                 hyper_util::rt::TokioExecutor::new,
                 http1_opts,
                 http2_opts,
@@ -63,6 +64,9 @@ impl WSGIWorker {
             );
 
             log::info!("Stopping worker-{}", worker_id);
+
+            tasks.close();
+            tasks.wait().await;
 
             Python::with_gil(|_| drop(callback_wrapper));
         });
@@ -153,6 +157,7 @@ impl WSGIWorker {
             )
         });
         let rth = rt.handler();
+        let tasks = tokio_util::task::TaskTracker::new();
 
         let (stx, mut srx) = tokio::sync::watch::channel(false);
         rt.inner.spawn(async move {
@@ -165,7 +170,7 @@ impl WSGIWorker {
                 backpressure,
                 rth,
                 callback_wrapper,
-                tokio::spawn,
+                |task| tasks.spawn(task),
                 hyper_util::rt::TokioExecutor::new,
                 http1_opts,
                 http2_opts,
@@ -174,6 +179,9 @@ impl WSGIWorker {
             );
 
             log::info!("Stopping worker-{}", worker_id);
+
+            tasks.close();
+            tasks.wait().await;
 
             Python::with_gil(|_| drop(callback_wrapper));
         });
