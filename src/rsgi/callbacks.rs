@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
-use std::sync::OnceLock;
-use tokio::sync::oneshot;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::{oneshot, Notify};
 
 use super::{
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
@@ -118,11 +118,12 @@ impl CallbackWatcherWebsocket {
 pub(crate) fn call_http(
     cb: ArcCBScheduler,
     rt: RuntimeRef,
+    disconnect_guard: Arc<Notify>,
     body: hyper::body::Incoming,
     scope: HTTPScope,
 ) -> oneshot::Receiver<PyResponse> {
     let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt.clone(), tx, body);
+    let protocol = HTTPProtocol::new(rt.clone(), tx, body, disconnect_guard);
 
     rt.spawn_blocking(move |py| {
         if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope) {

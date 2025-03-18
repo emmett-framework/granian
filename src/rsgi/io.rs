@@ -4,9 +4,9 @@ use hyper::body;
 use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{
     borrow::Cow,
-    sync::{Arc, Mutex, RwLock},
+    sync::{atomic, Arc, Mutex, RwLock},
 };
-use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
+use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    runtime::{future_into_py_futlike, RuntimeRef},
+    runtime::{empty_future_into_py, future_into_py_futlike, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -63,17 +63,26 @@ impl RSGIHTTPStreamTransport {
 pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<PyResponse>>>,
+    disconnect_guard: Arc<Notify>,
     body: Mutex<Option<body::Incoming>>,
     body_stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
+    disconnected: Arc<atomic::AtomicBool>,
 }
 
 impl RSGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, tx: oneshot::Sender<PyResponse>, body: body::Incoming) -> Self {
+    pub fn new(
+        rt: RuntimeRef,
+        tx: oneshot::Sender<PyResponse>,
+        body: body::Incoming,
+        disconnect_guard: Arc<Notify>,
+    ) -> Self {
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
+            disconnect_guard,
             body: Mutex::new(Some(body)),
             body_stream: Arc::new(AsyncMutex::new(None)),
+            disconnected: Arc::new(atomic::AtomicBool::new(false)),
         }
     }
 
@@ -110,6 +119,7 @@ impl RSGIHTTPProtocol {
         if self.body_stream.blocking_lock().is_none() {
             return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
         }
+
         let body_stream = self.body_stream.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             let guard = &mut *body_stream.lock().await;
@@ -121,38 +131,52 @@ impl RSGIHTTPProtocol {
                     FutureResultToPy::Bytes(chunk)
                 }
                 _ => {
-                    let _ = guard.take();
+                    _ = guard.take();
                     FutureResultToPy::Bytes(body::Bytes::new())
                 }
             }
         })
     }
 
+    fn client_disconnect<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        if self.disconnected.load(atomic::Ordering::Acquire) {
+            return empty_future_into_py(py);
+        }
+
+        let guard = self.disconnect_guard.clone();
+        let state = self.disconnected.clone();
+        future_into_py_futlike(self.rt.clone(), py, async move {
+            guard.notified().await;
+            state.store(true, atomic::Ordering::Release);
+            FutureResultToPy::None
+        })
+    }
+
     #[pyo3(signature = (status=200, headers=vec![]))]
     fn response_empty(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
+            _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
     fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
+            _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
     fn response_str(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
+            _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status, headers, file))]
     fn response_file(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
+            _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
     }
 
@@ -168,7 +192,7 @@ impl RSGIHTTPProtocol {
             let body_stream = http_body_util::StreamBody::new(
                 tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
             );
-            let _ = tx.send(PyResponse::Body(PyResponseBody::new(
+            _ = tx.send(PyResponse::Body(PyResponseBody::new(
                 status,
                 headers,
                 BodyExt::boxed(BodyExt::map_err(body_stream, std::convert::Into::into)),
