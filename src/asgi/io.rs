@@ -93,18 +93,18 @@ impl ASGIHTTPProtocol {
         body: Box<[u8]>,
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
-        let flow_hld = self.flow_tx_waiter.clone();
+        let guard = self.flow_tx_waiter.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             match tx.send(Ok(body.into())).await {
                 Ok(()) => {
                     if close {
-                        flow_hld.notify_one();
+                        guard.notify_one();
                     }
                 }
                 Err(err) => {
                     log::warn!("ASGI transport error: {:?}", err);
-                    flow_hld.notify_one();
+                    guard.notify_one();
                 }
             }
             FutureResultToPy::None
@@ -127,23 +127,23 @@ impl ASGIHTTPProtocol {
         }
 
         if self.flow_rx_exhausted.load(atomic::Ordering::Acquire) {
-            let flow_hld = self.flow_tx_waiter.clone();
-            let flow_dgr = self.disconnect_guard.clone();
-            let flow_dsr = self.flow_rx_closed.clone();
+            let guard_tx = self.flow_tx_waiter.clone();
+            let guard_disconnect = self.disconnect_guard.clone();
+            let disconnected = self.flow_rx_closed.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 tokio::select! {
-                    () = flow_hld.notified() => {},
-                    () = flow_dgr.notified() => flow_dsr.store(true, atomic::Ordering::Release),
+                    () = guard_tx.notified() => {},
+                    () = guard_disconnect.notified() => disconnected.store(true, atomic::Ordering::Release),
                 }
                 FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
             });
         }
 
         let body_ref = self.request_body.clone();
-        let flow_ref = self.flow_rx_exhausted.clone();
-        let flow_hld = self.flow_tx_waiter.clone();
-        let flow_dgr = self.disconnect_guard.clone();
-        let flow_dsr = self.flow_rx_closed.clone();
+        let guard_tx = self.flow_tx_waiter.clone();
+        let guard_disconnect = self.disconnect_guard.clone();
+        let exhausted = self.flow_rx_exhausted.clone();
+        let disconnected = self.flow_rx_closed.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut bodym = body_ref.lock().await;
             let body = &mut *bodym;
@@ -158,19 +158,19 @@ impl ASGIHTTPProtocol {
                     Some(Err(_)) => None,
                     _ => Some(body::Bytes::new()),
                 },
-                () = flow_dgr.notified() => {
-                    flow_dsr.store(true, atomic::Ordering::Release);
+                () = guard_disconnect.notified() => {
+                    disconnected.store(true, atomic::Ordering::Release);
                     None
                 }
             };
             if !more_body {
-                flow_ref.store(true, atomic::Ordering::Release);
+                exhausted.store(true, atomic::Ordering::Release);
             }
 
             match chunk {
                 Some(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((data, more_body))),
                 _ => {
-                    flow_hld.notify_one();
+                    guard_tx.notify_one();
                     FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
                 }
             }
