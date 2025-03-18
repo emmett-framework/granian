@@ -1,7 +1,4 @@
-#[cfg(windows)]
-use pyo3::IntoPyObjectExt;
-
-use pyo3::prelude::*;
+use pyo3::{prelude::*, IntoPyObjectExt};
 use std::{
     future::Future,
     sync::{Arc, Mutex},
@@ -17,8 +14,7 @@ use super::callbacks::PyFutureAwaitable;
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
 use super::blocking::BlockingRunner;
-use super::callbacks::PyEmptyAwaitable;
-use super::callbacks::PyIterAwaitable;
+use super::callbacks::{PyEmptyAwaitable, PyErrAwaitable, PyIterAwaitable};
 use super::conversion::FutureResultToPy;
 
 pub trait JoinError {
@@ -167,12 +163,22 @@ pub(crate) fn init_runtime_st(
     RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop)
 }
 
+#[inline(always)]
+pub(crate) fn empty_future_into_py(py: Python) -> PyResult<Bound<PyAny>> {
+    PyEmptyAwaitable.into_bound_py_any(py)
+}
+
+#[inline(always)]
+pub(crate) fn err_future_into_py(py: Python, err: PyResult<()>) -> PyResult<Bound<PyAny>> {
+    PyErrAwaitable::new(err).into_bound_py_any(py)
+}
+
 // NOTE:
 //  `future_into_py_iter` relies on what CPython refers as "bare yield".
 //  This is generally ~55% faster than `pyo3_asyncio.future_into_py` implementation.
 //  It consumes more cpu-cycles than `future_into_py_futlike`,
 //  but for "quick" operations it's something like 12% faster.
-#[allow(unused_must_use)]
+#[allow(dead_code, unused_must_use)]
 pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
 where
     R: Runtime + ContextExt + Clone,
@@ -263,12 +269,6 @@ where
     });
 
     Ok(py_fut.into_bound(py))
-}
-
-#[allow(clippy::unnecessary_wraps)]
-#[inline(always)]
-pub(crate) fn empty_future_into_py(py: Python) -> PyResult<Bound<PyAny>> {
-    Ok(PyEmptyAwaitable.into_pyobject(py)?.into_any())
 }
 
 #[allow(unused_must_use)]
