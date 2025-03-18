@@ -48,38 +48,25 @@ impl CallbackScheduler {
 
         unsafe {
             pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
-        }
 
-        if let Some(res) = unsafe {
             let mut pres = std::ptr::null_mut::<pyo3::ffi::PyObject>();
-            // FIXME: use PyIter_Send return value once available in PyO3
-            pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &mut pres);
-            Bound::from_owned_ptr_or_opt(py, pres)
-                .map(|v| {
-                    if v.is_none() {
-                        return None;
-                    }
-                    Some(v)
-                })
-                .unwrap()
-        } {
-            if unsafe {
-                let vptr = pyo3::ffi::PyObject_GetAttr(res.as_ptr(), self.pyname_aioblock.as_ptr());
-                Bound::from_owned_ptr_or_err(py, vptr)
-                    .map(|v| v.extract::<bool>().unwrap_or(false))
-                    .unwrap_or(false)
-            } {
-                let resp = res.as_ptr();
-                unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
-                    CallbackSchedulerState::add_waker(state, py, resp, self.pyname_futcb.as_ptr());
-                }
-            } else {
-                CallbackSchedulerState::reschedule(state, py, self.pym_lcs.as_ptr());
-            }
-        }
+            let gres = pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &mut pres);
 
-        unsafe {
+            if gres == pyo3::ffi::PySendResult::PYGEN_NEXT {
+                if pres == self.pynone.as_ptr() {
+                    CallbackSchedulerState::reschedule(state, py, self.pym_lcs.as_ptr());
+                } else {
+                    let vptr = pyo3::ffi::PyObject_GetAttr(pres, self.pyname_aioblock.as_ptr());
+                    if Bound::from_owned_ptr_or_err(py, vptr)
+                        .map(|v| v.extract::<bool>().unwrap_or(false))
+                        .unwrap_or(false)
+                    {
+                        pyo3::ffi::PyObject_SetAttr(pres, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
+                        CallbackSchedulerState::add_waker(state, py, pres, self.pyname_futcb.as_ptr());
+                    }
+                }
+            }
+
             pyo3::ffi::PyObject_CallOneArg(self.aio_texit.as_ptr(), aiotask);
         }
     }

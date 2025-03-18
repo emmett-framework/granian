@@ -45,8 +45,8 @@ pem = "=3.0"
 percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
 pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
-pyo3 = { version = "=0.23", features = ["anyhow", "extension-module", "generate-import-lib"] }
-pyo3-log = "=0.12"
+pyo3 = { version = "=0.24", features = ["anyhow", "extension-module", "generate-import-lib"] }
+pyo3-log = { version = "=0.12", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-024" }
 rustls-pemfile = "2.2"
 socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.11", features = ["rustls-ring"] }
@@ -59,7 +59,7 @@ tokio-util = { version = "0.7", features = ["codec", "rt"] }
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"] }
 
 [build-dependencies]
-pyo3-build-config = "=0.23"
+pyo3-build-config = "=0.24"
 
 [features]
 mimalloc = ["dep:mimalloc"]
