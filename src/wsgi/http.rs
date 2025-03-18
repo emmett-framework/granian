@@ -1,5 +1,6 @@
 use hyper::Response;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::Notify;
 
 use super::callbacks::call_http;
 use crate::{
@@ -19,6 +20,7 @@ fn build_response(status: u16, pyheaders: hyper::HeaderMap, body: HTTPResponseBo
 #[inline]
 pub(crate) async fn handle(
     rt: RuntimeRef,
+    _disconnect_guard: Arc<Notify>,
     callback: ArcCBScheduler,
     server_addr: SocketAddr,
     client_addr: SocketAddr,

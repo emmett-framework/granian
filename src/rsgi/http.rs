@@ -1,8 +1,8 @@
 use futures::sink::SinkExt;
 use http_body_util::BodyExt;
 use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder, StatusCode};
-use std::net::SocketAddr;
-use tokio::sync::mpsc;
+use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::{mpsc, Notify};
 
 use super::{
     callbacks::{call_http, call_ws},
@@ -47,6 +47,7 @@ macro_rules! handle_request {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
+            _disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
             server_addr: SocketAddr,
             client_addr: SocketAddr,
@@ -65,6 +66,7 @@ macro_rules! handle_request_with_ws {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
+            _disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
             server_addr: SocketAddr,
             client_addr: SocketAddr,

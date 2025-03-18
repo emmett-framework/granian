@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::{
     fs::File,
-    sync::{mpsc, oneshot, Mutex as AsyncMutex},
+    sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify},
 };
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::io::ReaderStream;
@@ -25,7 +25,9 @@ use super::{
 use crate::{
     conversion::FutureResultToPy,
     http::{response_404, HTTPResponse, HTTPResponseBody, HV_SERVER},
-    runtime::{empty_future_into_py, err_future_into_py, future_into_py_futlike, Runtime, RuntimeRef},
+    runtime::{
+        done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike, Runtime, RuntimeRef,
+    },
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -37,27 +39,36 @@ static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<HTTPResponse>>>,
+    disconnect_guard: Arc<Notify>,
     request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
     body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
+    flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<tokio::sync::Notify>,
     sent_response_code: Arc<atomic::AtomicU16>,
 }
 
 impl ASGIHTTPProtocol {
-    pub fn new(rt: RuntimeRef, body: hyper::body::Incoming, tx: oneshot::Sender<HTTPResponse>) -> Self {
+    pub fn new(
+        rt: RuntimeRef,
+        body: hyper::body::Incoming,
+        tx: oneshot::Sender<HTTPResponse>,
+        disconnect_guard: Arc<Notify>,
+    ) -> Self {
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
+            disconnect_guard,
             request_body: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
             response_started: false.into(),
             response_chunked: false.into(),
             response_intent: Mutex::new(None),
             body_tx: Mutex::new(None),
             flow_rx_exhausted: Arc::new(atomic::AtomicBool::new(false)),
+            flow_rx_closed: Arc::new(atomic::AtomicBool::new(false)),
             flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
             sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
         }
@@ -108,10 +119,22 @@ impl ASGIHTTPProtocol {
 #[pymethods]
 impl ASGIHTTPProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        if self.flow_rx_closed.load(atomic::Ordering::Acquire) {
+            return done_future_into_py(
+                py,
+                super::conversion::message_into_py(py, ASGIMessageType::HTTPDisconnect).map(Bound::unbind),
+            );
+        }
+
         if self.flow_rx_exhausted.load(atomic::Ordering::Acquire) {
             let flow_hld = self.flow_tx_waiter.clone();
+            let flow_dgr = self.disconnect_guard.clone();
+            let flow_dsr = self.flow_rx_closed.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
-                let () = flow_hld.notified().await;
+                tokio::select! {
+                    () = flow_hld.notified() => {},
+                    () = flow_dgr.notified() => flow_dsr.store(true, atomic::Ordering::Release),
+                }
                 FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
             });
         }
@@ -119,24 +142,33 @@ impl ASGIHTTPProtocol {
         let body_ref = self.request_body.clone();
         let flow_ref = self.flow_rx_exhausted.clone();
         let flow_hld = self.flow_tx_waiter.clone();
+        let flow_dgr = self.disconnect_guard.clone();
+        let flow_dsr = self.flow_rx_closed.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut bodym = body_ref.lock().await;
             let body = &mut *bodym;
             let mut more_body = false;
-            let chunk = match body.next().await {
-                Some(Ok(buf)) => {
-                    more_body = true;
-                    Ok(buf.into_data().unwrap_or_default())
+
+            let chunk = tokio::select! {
+                frame = body.next() => match frame {
+                    Some(Ok(buf)) => {
+                        more_body = true;
+                        Some(buf.into_data().unwrap_or_default())
+                    }
+                    Some(Err(_)) => None,
+                    _ => Some(body::Bytes::new()),
+                },
+                () = flow_dgr.notified() => {
+                    flow_dsr.store(true, atomic::Ordering::Release);
+                    None
                 }
-                Some(Err(err)) => Err(err),
-                _ => Ok(body::Bytes::new()),
             };
             if !more_body {
                 flow_ref.store(true, atomic::Ordering::Release);
             }
 
             match chunk {
-                Ok(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((data, more_body))),
+                Some(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((data, more_body))),
                 _ => {
                     flow_hld.notify_one();
                     FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
