@@ -108,7 +108,7 @@ impl ASGIHTTPProtocol {
 #[pymethods]
 impl ASGIHTTPProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        if self.flow_rx_exhausted.load(atomic::Ordering::Relaxed) {
+        if self.flow_rx_exhausted.load(atomic::Ordering::Acquire) {
             let flow_hld = self.flow_tx_waiter.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 let () = flow_hld.notified().await;
@@ -132,7 +132,7 @@ impl ASGIHTTPProtocol {
                 _ => Ok(body::Bytes::new()),
             };
             if !more_body {
-                flow_ref.store(true, atomic::Ordering::Relaxed);
+                flow_ref.store(true, atomic::Ordering::Release);
             }
 
             match chunk {
@@ -323,7 +323,7 @@ impl ASGIWebsocketProtocol {
                             let (tx, rx) = stream.split();
                             *wtx = Some(tx);
                             *wrx = Some(rx);
-                            accepted.store(true, atomic::Ordering::Relaxed);
+                            accepted.store(true, atomic::Ordering::Release);
                             return FutureResultToPy::None;
                         }
                     }
@@ -343,7 +343,7 @@ impl ASGIWebsocketProtocol {
                 match ws.send(data).await {
                     Ok(()) => return FutureResultToPy::None,
                     _ => {
-                        if closed.load(atomic::Ordering::Relaxed) {
+                        if closed.load(atomic::Ordering::Acquire) {
                             log::info!("Attempted to write to a closed websocket");
                             return FutureResultToPy::None;
                         }
@@ -362,7 +362,7 @@ impl ASGIWebsocketProtocol {
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
-                closed.store(true, atomic::Ordering::Relaxed);
+                closed.store(true, atomic::Ordering::Release);
                 WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
                     .close()
                     .await;
@@ -398,7 +398,7 @@ impl ASGIWebsocketProtocol {
         let transport = self.ws_rx.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            let accepted = accepted.load(atomic::Ordering::Relaxed);
+            let accepted = accepted.load(atomic::Ordering::Acquire);
             if !accepted {
                 return FutureResultToPy::ASGIMessage(ASGIMessageType::WSConnect);
             }
@@ -408,7 +408,7 @@ impl ASGIWebsocketProtocol {
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => continue,
                         Ok(message @ Message::Close(_)) => {
-                            closed.store(true, atomic::Ordering::Relaxed);
+                            closed.store(true, atomic::Ordering::Release);
                             return FutureResultToPy::ASGIWSMessage(message);
                         }
                         Ok(message) => return FutureResultToPy::ASGIWSMessage(message),
