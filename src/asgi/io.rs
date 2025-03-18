@@ -25,7 +25,7 @@ use super::{
 use crate::{
     conversion::FutureResultToPy,
     http::{response_404, HTTPResponse, HTTPResponseBody, HV_SERVER},
-    runtime::{empty_future_into_py, future_into_py_futlike, future_into_py_iter, Runtime, RuntimeRef},
+    runtime::{empty_future_into_py, err_future_into_py, future_into_py_futlike, Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -360,7 +360,7 @@ impl ASGIWebsocketProtocol {
         let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
 
-        future_into_py_iter(self.rt.clone(), py, async move {
+        future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
                 closed.store(true, atomic::Ordering::Relaxed);
                 WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
@@ -425,7 +425,7 @@ impl ASGIWebsocketProtocol {
             Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
             Ok(ASGIMessageType::WSClose) => self.close(py),
             Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
-            _ => future_into_py_iter::<_, _>(self.rt.clone(), py, async { FutureResultToPy::Err(error_message!()) }),
+            _ => err_future_into_py(py, error_message!()),
         }
     }
 }
