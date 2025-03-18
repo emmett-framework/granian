@@ -34,13 +34,13 @@ impl WSGIProtocol {
 macro_rules! headers_from_py {
     ($headers:expr) => {{
         let mut headers = HeaderMap::with_capacity($headers.len() + 3);
-        headers.insert(HK_SERVER, HV_SERVER);
         for (key, value) in $headers {
             headers.append(
                 HeaderName::from_bytes(key.as_bytes()).unwrap(),
                 HeaderValue::from_str(&value).unwrap(),
             );
         }
+        headers.entry(HK_SERVER).or_insert(HV_SERVER);
         headers
     }};
 }
