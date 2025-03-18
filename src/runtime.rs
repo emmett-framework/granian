@@ -1,6 +1,3 @@
-#[cfg(windows)]
-use pyo3::IntoPyObjectExt;
-
 use pyo3::{prelude::*, IntoPyObjectExt};
 use std::{
     future::Future,
