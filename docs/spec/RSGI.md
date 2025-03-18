@@ -1,6 +1,6 @@
 # RSGI Specification
 
-**Version:** 1.4
+**Version:** 1.5
 
 ## Abstract
 
@@ -165,10 +165,11 @@ And here are descriptions for the upper attributes:
 
 #### HTTP protocol interface
 
-HTTP protocol object implements two awaitable methods to receive the request body, and five different methods to send data, in particular:
+HTTP protocol object implements two awaitable methods to receive the request body, five different methods to send data, and one awaitable method to wait for client disconnection, in particular:
 
 - `__call__` to receive the entire body in `bytes` format
 - `__aiter__` to receive the body in `bytes` chunks
+- `client_disconnect` to watch for client disconnection
 - `response_empty` to send back an empty response
 - `response_str` to send back a response with a `str` body
 - `response_bytes` to send back a response with `bytes` body
@@ -180,6 +181,7 @@ All the upper-mentioned response methods accepts an integer `status` parameter, 
 ```
 coroutine __call__() -> body
 asynciterator __aiter__() -> body chunks
+coroutine client_disconnect()
 function response_empty(status, headers)
 function response_str(status, headers, body)
 function response_bytes(status, headers, body)
@@ -196,6 +198,10 @@ The `response_stream` method will return a *transport object*, which implements 
 coroutine send_bytes(bytes)
 coroutine send_str(str)
 ```
+
+The `client_disconnect` method will return a future that resolve ones the client has disconnected.
+
+> **Note:** as HTTP supports keep-alived connections, the lifecycle of the client connection might not be the same of the single request. This is why the RSGI specification doesn't imply `client_disconnect` should resolve in case a client sends multiple requests within the same connection, and thus the protocol delegates to the application the responsibility to cancel the disconnection watcher once the response is sent.
 
 ### Websocket protocol
 

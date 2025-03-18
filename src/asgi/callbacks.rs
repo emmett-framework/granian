@@ -1,7 +1,10 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::{net::SocketAddr, sync::OnceLock};
-use tokio::sync::oneshot;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, OnceLock},
+};
+use tokio::sync::{oneshot, Notify};
 
 use super::{
     io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
@@ -145,6 +148,7 @@ impl CallbackWatcherWebsocket {
 pub(crate) fn call_http(
     cb: ArcCBScheduler,
     rt: RuntimeRef,
+    disconnect_guard: Arc<Notify>,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     scheme: &str,
@@ -152,7 +156,7 @@ pub(crate) fn call_http(
     body: hyper::body::Incoming,
 ) -> oneshot::Receiver<HTTPResponse> {
     let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt.clone(), body, tx);
+    let protocol = HTTPProtocol::new(rt.clone(), body, tx, disconnect_guard);
     let scheme: Box<str> = scheme.into();
 
     rt.spawn_blocking(move |py| {

@@ -16,7 +16,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::http::{empty_body, response_404, HTTPResponseBody, HV_SERVER};
 
-const RSGI_PROTO_VERSION: &str = "1.4";
+const RSGI_PROTO_VERSION: &str = "1.5";
 
 #[pyclass(frozen, module = "granian._granian")]
 #[derive(Clone)]

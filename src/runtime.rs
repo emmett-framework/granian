@@ -14,7 +14,7 @@ use super::callbacks::PyFutureAwaitable;
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
 use super::blocking::BlockingRunner;
-use super::callbacks::{PyEmptyAwaitable, PyErrAwaitable, PyIterAwaitable};
+use super::callbacks::{PyDoneAwaitable, PyEmptyAwaitable, PyErrAwaitable, PyIterAwaitable};
 use super::conversion::FutureResultToPy;
 
 pub trait JoinError {
@@ -166,6 +166,11 @@ pub(crate) fn init_runtime_st(
 #[inline(always)]
 pub(crate) fn empty_future_into_py(py: Python) -> PyResult<Bound<PyAny>> {
     PyEmptyAwaitable.into_bound_py_any(py)
+}
+
+#[inline(always)]
+pub(crate) fn done_future_into_py(py: Python, result: PyResult<PyObject>) -> PyResult<Bound<PyAny>> {
+    PyDoneAwaitable::new(result).into_bound_py_any(py)
 }
 
 #[inline(always)]

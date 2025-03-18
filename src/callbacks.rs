@@ -334,6 +334,35 @@ impl PyEmptyAwaitable {
 }
 
 #[pyclass(frozen, module = "granian._granian")]
+pub(crate) struct PyDoneAwaitable {
+    result: PyResult<PyObject>,
+}
+
+impl PyDoneAwaitable {
+    pub(crate) fn new(result: PyResult<PyObject>) -> Self {
+        Self { result }
+    }
+}
+
+#[pymethods]
+impl PyDoneAwaitable {
+    fn __await__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __iter__(pyself: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        pyself
+    }
+
+    fn __next__(&self, py: Python) -> PyResult<PyObject> {
+        self.result
+            .as_ref()
+            .map(|v| v.clone_ref(py))
+            .map_err(|v| v.clone_ref(py))
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct PyErrAwaitable {
     result: PyResult<()>,
 }

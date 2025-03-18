@@ -202,13 +202,25 @@ where
 }
 
 macro_rules! build_service {
-    ($local_addr:expr, $remote_addr:expr, $callback_wrapper:expr, $rt:expr, $target:expr, $proto:expr) => {
+    ($local_addr:expr, $remote_addr:expr, $callback_wrapper:expr, $rt:expr, $disconnect_guard:expr, $target:expr, $proto:expr) => {
         hyper::service::service_fn(move |request: crate::http::HTTPRequest| {
             let callback_wrapper = $callback_wrapper.clone();
             let rth = $rt.clone();
+            let disconnect_guard = $disconnect_guard.clone();
 
             async move {
-                Ok::<_, anyhow::Error>($target(rth, callback_wrapper, $local_addr, $remote_addr, request, $proto).await)
+                Ok::<_, anyhow::Error>(
+                    $target(
+                        rth,
+                        disconnect_guard,
+                        callback_wrapper,
+                        $local_addr,
+                        $remote_addr,
+                        request,
+                        $proto,
+                    )
+                    .await,
+                )
             }
         })
     };
@@ -274,9 +286,18 @@ macro_rules! handle_connection_http1 {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
-                let svc =
-                    crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let _ = hyper::server::conn::http1::Builder::new()
+                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+                let disconnect_tx = disconnect_guard.clone();
+                let svc = crate::workers::build_service!(
+                    local_addr,
+                    remote_addr,
+                    callback_wrapper,
+                    rth,
+                    disconnect_guard,
+                    $target,
+                    $proto
+                );
+                _ = hyper::server::conn::http1::Builder::new()
                     .timer(crate::io::TokioTimer::new())
                     .header_read_timeout($http_opts.header_read_timeout)
                     .keep_alive($http_opts.keep_alive)
@@ -284,6 +305,7 @@ macro_rules! handle_connection_http1 {
                     .pipeline_flush($http_opts.pipeline_flush)
                     .serve_connection($stream_wrapper(stream), svc)
                     .await;
+                disconnect_tx.notify_one();
                 drop(permit);
             });
         }
@@ -296,9 +318,18 @@ macro_rules! handle_connection_http1_upgrades {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
-                let svc =
-                    crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let _ = hyper::server::conn::http1::Builder::new()
+                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+                let disconnect_tx = disconnect_guard.clone();
+                let svc = crate::workers::build_service!(
+                    local_addr,
+                    remote_addr,
+                    callback_wrapper,
+                    rth,
+                    disconnect_guard,
+                    $target,
+                    $proto
+                );
+                _ = hyper::server::conn::http1::Builder::new()
                     .timer(crate::io::TokioTimer::new())
                     .header_read_timeout($http_opts.header_read_timeout)
                     .keep_alive($http_opts.keep_alive)
@@ -307,6 +338,7 @@ macro_rules! handle_connection_http1_upgrades {
                     .serve_connection($stream_wrapper(stream), svc)
                     .with_upgrades()
                     .await;
+                disconnect_tx.notify_one();
                 drop(permit);
             });
         }
@@ -319,9 +351,18 @@ macro_rules! handle_connection_http2 {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
-                let svc =
-                    crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
-                let _ = hyper::server::conn::http2::Builder::new($executor_builder())
+                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+                let disconnect_tx = disconnect_guard.clone();
+                let svc = crate::workers::build_service!(
+                    local_addr,
+                    remote_addr,
+                    callback_wrapper,
+                    rth,
+                    disconnect_guard,
+                    $target,
+                    $proto
+                );
+                _ = hyper::server::conn::http2::Builder::new($executor_builder())
                     .timer(crate::io::TokioTimer::new())
                     .adaptive_window($http_opts.adaptive_window)
                     .initial_connection_window_size($http_opts.initial_connection_window_size)
@@ -334,6 +375,7 @@ macro_rules! handle_connection_http2 {
                     .max_send_buf_size($http_opts.max_send_buffer_size)
                     .serve_connection($stream_wrapper(stream), svc)
                     .await;
+                disconnect_tx.notify_one();
                 drop(permit);
             });
         }
@@ -346,8 +388,17 @@ macro_rules! handle_connection_httpa {
             let rth = $rth.clone();
             let callback_wrapper = $callback.clone();
             $spawner(async move {
-                let svc =
-                    crate::workers::build_service!(local_addr, remote_addr, callback_wrapper, rth, $target, $proto);
+                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+                let disconnect_tx = disconnect_guard.clone();
+                let svc = crate::workers::build_service!(
+                    local_addr,
+                    remote_addr,
+                    callback_wrapper,
+                    rth,
+                    disconnect_guard,
+                    $target,
+                    $proto
+                );
                 let mut conn = hyper_util::server::conn::auto::Builder::new($executor_builder());
                 conn.http1()
                     .timer(crate::io::TokioTimer::new())
@@ -366,7 +417,8 @@ macro_rules! handle_connection_httpa {
                     .max_frame_size($http2_opts.max_frame_size)
                     .max_header_list_size($http2_opts.max_headers_size)
                     .max_send_buf_size($http2_opts.max_send_buffer_size);
-                let _ = conn.$conn_method($stream_wrapper(stream), svc).await;
+                _ = conn.$conn_method($stream_wrapper(stream), svc).await;
+                disconnect_tx.notify_one();
                 drop(permit);
             });
         }
