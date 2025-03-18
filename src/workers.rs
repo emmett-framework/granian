@@ -957,7 +957,8 @@ macro_rules! serve_fut {
             let pyloop = event_loop.clone().unbind();
 
             std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(1, 0, 0, std::sync::Arc::new(pyloop));
+                let pyloop = std::sync::Arc::new(pyloop);
+                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop.clone());
                 let local = tokio::task::LocalSet::new();
 
                 let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -971,8 +972,14 @@ macro_rules! serve_fut {
                 });
 
                 Python::with_gil(|py| {
-                    _ = pyfut.call_method1(py, "set_result", (py.None(),));
+                    let cb = pyfut.getattr(py, "set_result").unwrap();
+                    _ = pyloop.call_method1(
+                        py,
+                        "call_soon_threadsafe",
+                        (crate::callbacks::PyFutureResultSetter, cb, py.None()),
+                    );
                     drop(pyfut);
+                    drop(pyloop);
                     drop(signal);
                     drop(rt);
                 });
@@ -1005,7 +1012,8 @@ macro_rules! serve_fut_ssl {
             let pyloop = event_loop.clone().unbind();
 
             std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(1, 0, 0, std::sync::Arc::new(pyloop));
+                let pyloop = std::sync::Arc::new(pyloop);
+                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop.clone());
                 let local = tokio::task::LocalSet::new();
 
                 let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -1019,8 +1027,14 @@ macro_rules! serve_fut_ssl {
                 });
 
                 Python::with_gil(|py| {
-                    _ = pyfut.call_method1(py, "set_result", (py.None(),));
+                    let cb = pyfut.getattr(py, "set_result").unwrap();
+                    _ = pyloop.call_method1(
+                        py,
+                        "call_soon_threadsafe",
+                        (crate::callbacks::PyFutureResultSetter, cb, py.None()),
+                    );
                     drop(pyfut);
+                    drop(pyloop);
                     drop(signal);
                     drop(rt);
                 });

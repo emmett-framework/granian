@@ -344,7 +344,7 @@ class Server(AbstractServer[AsyncWorker]):
         target = target_loader()
         self.startup(spawn_target, target)
         await self._serve_loop(spawn_target, target)
-        self.shutdown()
+        await self.shutdown()
 
     async def serve(self, spawn_target: Optional[Callable[..., None]] = None):
         def target_loader(*args, **kwargs):
