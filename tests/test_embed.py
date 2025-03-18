@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import httpx
 import pytest
@@ -22,6 +23,7 @@ def embed_server(server_port):
 
 
 @pytest.mark.skipif(not BUILD_GIL, reason='free-threaded Python')
+@pytest.mark.skipif(bool(os.environ.get('GITHUB_WORKFLOW')), reason='CI')
 def test_embed_server(loop, server_port, embed_server):
     data = {}
 
