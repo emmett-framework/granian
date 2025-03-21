@@ -46,7 +46,7 @@ class AbstractWorker:
         if not self.interrupt_by_parent:
             logger.error(f'Unexpected exit from worker-{self.idx + 1}')
             self.parent.interrupt_children.append(self.idx)
-            if not self.parent.reload_on_changes:
+            if not self.parent.reload_on_changes and not self.parent.reload_ignore_worker_failure:
                 self.parent.main_loop_interrupt.set()
 
     def _watch(self):
@@ -112,6 +112,7 @@ class AbstractServer(Generic[WT]):
         reload_ignore_patterns: Optional[Sequence[str]] = None,
         reload_ignore_paths: Optional[Sequence[Path]] = None,
         reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
+        reload_ignore_worker_failure: bool = False,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
     ):
@@ -154,6 +155,7 @@ class AbstractServer(Generic[WT]):
         self.reload_ignore_dirs = reload_ignore_dirs or ()
         self.reload_ignore_patterns = reload_ignore_patterns or ()
         self.reload_filter = reload_filter
+        self.reload_ignore_worker_failure = reload_ignore_worker_failure
         self.process_name = process_name
         self.pid_file = pid_file
 

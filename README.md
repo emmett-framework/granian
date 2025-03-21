@@ -255,6 +255,10 @@ Options:
                                   Extends the default list of directories to
                                   ignore in watchfiles' default filter  [env
                                   var: GRANIAN_RELOAD_IGNORE_DIRS]
+  --reload-ignore-worker-failure / --no-reload-ignore-worker-failure
+                                  Ignore worker failures when auto reload is
+                                  enabled [env var: GRANIAN_RELOAD_IGNORE_WORK
+                                  ER_FAILURE; default: (disabled)]
   --reload-ignore-patterns TEXT   File/directory name patterns (regex) to
                                   ignore changes for. Extends the default list
                                   of patterns to ignore in watchfiles' default
