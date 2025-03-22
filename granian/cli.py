@@ -263,6 +263,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     multiple=True,
 )
 @option(
+    '--reload-delay',
+    type=click.IntRange(0, 5000),
+    help='The number of milliseconds to wait before reloading',
+    default=50,
+)
+@option(
     '--process-name',
     help='Set a custom name for processes (requires granian[pname] extra)',
 )
@@ -321,6 +327,7 @@ def cli(
     reload_ignore_dirs: Optional[List[str]],
     reload_ignore_patterns: Optional[List[str]],
     reload_ignore_paths: Optional[List[pathlib.Path]],
+    reload_delay: int,
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
 ) -> None:
@@ -386,6 +393,7 @@ def cli(
         reload_ignore_paths=reload_ignore_paths,
         reload_ignore_dirs=reload_ignore_dirs,
         reload_ignore_patterns=reload_ignore_patterns,
+        reload_delay=reload_delay,
         process_name=process_name,
         pid_file=pid_file,
     )
