@@ -113,6 +113,7 @@ class AbstractServer(Generic[WT]):
         reload_ignore_patterns: Optional[Sequence[str]] = None,
         reload_ignore_paths: Optional[Sequence[Path]] = None,
         reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
+        reload_delay: int = 0,
         reload_ignore_worker_failure: bool = False,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
@@ -156,6 +157,7 @@ class AbstractServer(Generic[WT]):
         self.reload_ignore_dirs = reload_ignore_dirs or ()
         self.reload_ignore_patterns = reload_ignore_patterns or ()
         self.reload_filter = reload_filter
+        self.reload_delay = reload_delay
         self.reload_ignore_worker_failure = reload_ignore_worker_failure
         self.process_name = process_name
         self.pid_file = pid_file
@@ -403,7 +405,10 @@ class AbstractServer(Generic[WT]):
         while serve_loop:
             try:
                 for changes in watchfiles.watch(
-                    *self.reload_paths, watch_filter=reload_filter, stop_event=self.main_loop_interrupt
+                    *self.reload_paths,
+                    watch_filter=reload_filter,
+                    stop_event=self.main_loop_interrupt,
+                    step=self.reload_delay,
                 ):
                     logger.info('Changes detected, reloading workers..')
                     for change, file in changes:

@@ -263,6 +263,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     multiple=True,
 )
 @option(
+    '--reload-delay',
+    type=click.IntRange(0, 5000),
+    help='The number of milliseconds to wait before reloading',
+    default=50,
+)
+@option(
     '--reload-ignore-worker-failure/--no-reload-ignore-worker-failure',
     default=False,
     help='Ignore worker failures when auto reload is enabled',
@@ -326,6 +332,7 @@ def cli(
     reload_ignore_dirs: Optional[List[str]],
     reload_ignore_patterns: Optional[List[str]],
     reload_ignore_paths: Optional[List[pathlib.Path]],
+    reload_delay: int,
     reload_ignore_worker_failure: bool,
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
@@ -392,6 +399,7 @@ def cli(
         reload_ignore_paths=reload_ignore_paths,
         reload_ignore_dirs=reload_ignore_dirs,
         reload_ignore_patterns=reload_ignore_patterns,
+        reload_delay=reload_delay,
         reload_ignore_worker_failure=reload_ignore_worker_failure,
         process_name=process_name,
         pid_file=pid_file,

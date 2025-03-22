@@ -260,6 +260,9 @@ Options:
                                   of patterns to ignore in watchfiles' default
                                   filter  [env var:
                                   GRANIAN_RELOAD_IGNORE_PATTERNS]
+  --reload-delay INTEGER RANGE    The number of milliseconds to wait before
+                                  reloading.  [env var: GRANIAN_RELOAD_DELAY;
+                                  default: (50)]
   --reload-ignore-paths PATH      Absolute paths to ignore changes for  [env
                                   var: GRANIAN_RELOAD_IGNORE_PATHS]
   --reload-ignore-worker-failure / --no-reload-ignore-worker-failure
