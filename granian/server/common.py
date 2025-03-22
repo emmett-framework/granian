@@ -113,7 +113,7 @@ class AbstractServer(Generic[WT]):
         reload_ignore_patterns: Optional[Sequence[str]] = None,
         reload_ignore_paths: Optional[Sequence[Path]] = None,
         reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
-        reload_delay: int = 0,
+        reload_delay: int = 50,
         reload_ignore_worker_failure: bool = False,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
