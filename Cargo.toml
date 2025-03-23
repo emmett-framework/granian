@@ -46,7 +46,7 @@ percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
 pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.24", features = ["anyhow", "extension-module", "generate-import-lib"] }
-pyo3-log = { version = "=0.12", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-024" }
+pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
 socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.11", features = ["rustls-ring"] }
