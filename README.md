@@ -262,6 +262,10 @@ Options:
                                   GRANIAN_RELOAD_IGNORE_PATTERNS]
   --reload-ignore-paths PATH      Absolute paths to ignore changes for  [env
                                   var: GRANIAN_RELOAD_IGNORE_PATHS]
+  --reload-tick INTEGER RANGE     The tick frequency (in milliseconds) the
+                                  reloader watch for changes  [env var:
+                                  GRANIAN_RELOAD_TICK; default: 50;
+                                  50<=x<=5000]
   --reload-ignore-worker-failure / --no-reload-ignore-worker-failure
                                   Ignore worker failures when auto reload is
                                   enabled  [env var:
