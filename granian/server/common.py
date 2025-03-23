@@ -45,9 +45,10 @@ class AbstractWorker:
         self.inner.join()
         if not self.interrupt_by_parent:
             logger.error(f'Unexpected exit from worker-{self.idx + 1}')
+            if self.parent.reload_on_changes and self.parent.reload_ignore_worker_failure:
+                return
             self.parent.interrupt_children.append(self.idx)
-            if not self.parent.reload_on_changes and not self.parent.reload_ignore_worker_failure:
-                self.parent.main_loop_interrupt.set()
+            self.parent.main_loop_interrupt.set()
 
     def _watch(self):
         watcher = threading.Thread(target=self._watcher)
