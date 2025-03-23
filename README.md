@@ -262,6 +262,11 @@ Options:
                                   GRANIAN_RELOAD_IGNORE_PATTERNS]
   --reload-ignore-paths PATH      Absolute paths to ignore changes for  [env
                                   var: GRANIAN_RELOAD_IGNORE_PATHS]
+  --reload-ignore-worker-failure / --no-reload-ignore-worker-failure
+                                  Ignore worker failures when auto reload is
+                                  enabled  [env var:
+                                  GRANIAN_RELOAD_IGNORE_WORKER_FAILURE;
+                                  default: (disabled)]
   --process-name TEXT             Set a custom name for processes (requires
                                   granian[pname] extra)  [env var:
                                   GRANIAN_PROCESS_NAME]
