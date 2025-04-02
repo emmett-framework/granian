@@ -20,15 +20,9 @@ macro_rules! scope_set {
 
 macro_rules! build_scope_common {
     ($py:expr, $scope:ident, $req:expr, $server:expr, $client:expr, $scheme:expr, $proto:expr) => {
-        let (path, query_string) = $req.uri.path_and_query().map_or_else(
-            || ("".into(), ""),
-            |pq| {
-                (
-                    percent_encoding::percent_decode_str(pq.path()).decode_utf8_lossy(),
-                    pq.query().unwrap_or(""),
-                )
-            },
-        );
+        let raw_path = $req.uri.path();
+        let query_string = $req.uri.query().unwrap_or("");
+        let path = percent_encoding::percent_decode_str(raw_path).decode_utf8_lossy();
         let $scope = PyDict::new($py);
 
         scope_set!(
@@ -83,7 +77,7 @@ macro_rules! build_scope_common {
         );
         scope_set!($py, $scope, "scheme", $scheme);
         scope_set!($py, $scope, "path", &path);
-        scope_set!($py, $scope, "raw_path", PyBytes::new($py, path.as_bytes()));
+        scope_set!($py, $scope, "raw_path", PyBytes::new($py, raw_path.as_bytes()));
         scope_set!($py, $scope, "query_string", PyBytes::new($py, query_string.as_bytes()));
 
         let headers = PyList::empty($py);
