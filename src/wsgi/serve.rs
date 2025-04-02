@@ -22,7 +22,7 @@ impl WSGIWorker {
         _ = pyo3_log::try_init();
 
         let worker_id = self.config.id;
-        log::info!("Started worker-{}", worker_id);
+        log::info!("Started worker-{worker_id}");
 
         let tcp_listener = self.config.tcp_listener();
         let http_mode = self.config.http_mode.clone();
@@ -63,7 +63,7 @@ impl WSGIWorker {
                 handle
             );
 
-            log::info!("Stopping worker-{}", worker_id);
+            log::info!("Stopping worker-{worker_id}");
 
             tasks.close();
             tasks.wait().await;
@@ -100,7 +100,7 @@ impl WSGIWorker {
         _ = pyo3_log::try_init();
 
         let worker_id = self.config.id;
-        log::info!("Started worker-{}", worker_id);
+        log::info!("Started worker-{worker_id}");
 
         let (stx, srx) = tokio::sync::watch::channel(false);
         let mut workers = vec![];
@@ -111,7 +111,7 @@ impl WSGIWorker {
             let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
             _ = pyrx.recv();
             stx.send(true).unwrap();
-            log::info!("Stopping worker-{}", worker_id);
+            log::info!("Stopping worker-{worker_id}");
             while let Some(worker) = workers.pop() {
                 worker.join().unwrap();
             }
@@ -135,7 +135,7 @@ impl WSGIWorker {
         _ = pyo3_log::try_init();
 
         let worker_id = self.config.id;
-        log::info!("Started worker-{}", worker_id);
+        log::info!("Started worker-{worker_id}");
 
         let tcp_listener = self.config.tcp_listener();
         let http_mode = self.config.http_mode.clone();
@@ -178,7 +178,7 @@ impl WSGIWorker {
                 handle
             );
 
-            log::info!("Stopping worker-{}", worker_id);
+            log::info!("Stopping worker-{worker_id}");
 
             tasks.close();
             tasks.wait().await;
@@ -211,7 +211,7 @@ impl WSGIWorker {
         _ = pyo3_log::try_init();
 
         let worker_id = self.config.id;
-        log::info!("Started worker-{}", worker_id);
+        log::info!("Started worker-{worker_id}");
 
         let (stx, srx) = tokio::sync::watch::channel(false);
         let mut workers = vec![];
@@ -222,7 +222,7 @@ impl WSGIWorker {
             let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
             _ = pyrx.recv();
             stx.send(true).unwrap();
-            log::info!("Stopping worker-{}", worker_id);
+            log::info!("Stopping worker-{worker_id}");
             while let Some(worker) = workers.pop() {
                 worker.join().unwrap();
             }

@@ -103,7 +103,7 @@ impl ASGIHTTPProtocol {
                     }
                 }
                 Err(err) => {
-                    log::warn!("ASGI transport error: {:?}", err);
+                    log::warn!("ASGI transport error: {err:?}");
                     guard.notify_one();
                 }
             }
@@ -295,7 +295,7 @@ impl WebsocketDetachedTransport {
     pub async fn close(&mut self) {
         if let Some(mut tx) = self.tx.take() {
             if let Err(err) = tx.close().await {
-                log::info!("Failed to close websocket with error {:?}", err);
+                log::info!("Failed to close websocket with error {err:?}");
             }
         }
         drop(self.rx.take());

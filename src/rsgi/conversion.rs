@@ -19,7 +19,7 @@ pub(crate) fn ws_message_into_py(py: Python, message: Message) -> PyResult<Bound
         }
         Message::Close(_) => WebsocketInboundCloseMessage::new().into_bound_py_any(py),
         v => {
-            log::warn!("Unsupported websocket message received {:?}", v);
+            log::warn!("Unsupported websocket message received {v:?}");
             error_proto!()
         }
     }

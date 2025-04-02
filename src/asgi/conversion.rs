@@ -55,7 +55,7 @@ pub(crate) fn ws_message_into_py(py: Python, message: Message) -> PyResult<Bound
             Ok(dict.into_any())
         }
         v => {
-            log::warn!("Unsupported websocket message received {:?}", v);
+            log::warn!("Unsupported websocket message received {v:?}");
             error_flow!()
         }
     }
