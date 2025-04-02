@@ -442,6 +442,7 @@ pub(crate) struct PyFutureAwaitable {
     result: OnceLock<PyResult<PyObject>>,
     event_loop: PyObject,
     cancel_tx: Arc<Notify>,
+    cancel_msg: OnceLock<PyObject>,
     py_block: atomic::AtomicBool,
     ack: RwLock<Option<(PyObject, Py<pyo3::types::PyDict>)>>,
 }
@@ -453,6 +454,7 @@ impl PyFutureAwaitable {
             result: OnceLock::new(),
             event_loop,
             cancel_tx: Arc::new(Notify::new()),
+            cancel_msg: OnceLock::new(),
             py_block: true.into(),
             ack: RwLock::new(None),
         }
@@ -575,6 +577,9 @@ impl PyFutureAwaitable {
             return false;
         }
 
+        if let Some(cancel_msg) = msg {
+            _ = pyself.cancel_msg.set(cancel_msg);
+        }
         pyself.cancel_tx.notify_one();
 
         let ack = pyself.ack.read().unwrap();
@@ -608,7 +613,12 @@ impl PyFutureAwaitable {
                 .map_err(|err| err.clone_ref(py));
         }
         if state == PyFutureAwaitableState::Cancelled as u8 {
-            return Err(pyo3::exceptions::asyncio::CancelledError::new_err("Future cancelled."));
+            let msg = self
+                .cancel_msg
+                .get()
+                .unwrap_or(&"Future cancelled.".into_py_any(py).unwrap())
+                .clone_ref(py);
+            return Err(pyo3::exceptions::asyncio::CancelledError::new_err(msg));
         }
         Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
             "Result is not ready.",
@@ -628,7 +638,12 @@ impl PyFutureAwaitable {
                 .map_err(|err| err.clone_ref(py));
         }
         if state == PyFutureAwaitableState::Cancelled as u8 {
-            return Err(pyo3::exceptions::asyncio::CancelledError::new_err("Future cancelled."));
+            let msg = self
+                .cancel_msg
+                .get()
+                .unwrap_or(&"Future cancelled.".into_py_any(py).unwrap())
+                .clone_ref(py);
+            return Err(pyo3::exceptions::asyncio::CancelledError::new_err(msg));
         }
         Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
             "Exception is not set.",
