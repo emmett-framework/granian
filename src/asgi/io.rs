@@ -44,7 +44,7 @@ pub(crate) struct ASGIHTTPProtocol {
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
-    body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes, anyhow::Error>>>>,
+    body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes>>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<tokio::sync::Notify>,
@@ -89,7 +89,7 @@ impl ASGIHTTPProtocol {
     fn send_body<'p>(
         &self,
         py: Python<'p>,
-        tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
+        tx: mpsc::Sender<Result<body::Bytes>>,
         body: Box<[u8]>,
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
@@ -211,7 +211,7 @@ impl ASGIHTTPProtocol {
                     (true, true, false) => {
                         self.response_chunked.store(true, atomic::Ordering::Relaxed);
                         let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
-                        let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
+                        let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes>>(1);
                         let body_stream = http_body_util::StreamBody::new(
                             tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
                         );
@@ -470,7 +470,7 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
             match message_type {
                 "http.response.start" => Ok(ASGIMessageType::HTTPResponseStart((
                     adapt_status_code(py, message)?,
-                    adapt_headers(py, message),
+                    adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
                 ))),
                 "http.response.body" => Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message))),
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
@@ -499,18 +499,22 @@ fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<u16, Unsuppo
 }
 
 #[inline(always)]
-fn adapt_headers(py: Python, message: &Bound<PyDict>) -> HeaderMap {
+fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
     let mut ret = HeaderMap::new();
-    if let Ok(Some(item)) = message.get_item(pyo3::intern!(py, "headers")) {
-        let accum: Vec<Vec<PyBackedBytes>> = item.extract().unwrap_or(Vec::new());
-        for tup in &accum {
-            if let (Ok(key), Ok(val)) = (HeaderName::from_bytes(&tup[0]), HeaderValue::from_bytes(&tup[1])) {
-                ret.append(key, val);
-            }
+    for headers_item in message
+        .get_item(pyo3::intern!(py, "headers"))?
+        .ok_or(UnsupportedASGIMessage)?
+        .try_iter()?
+        .flatten()
+    {
+        let htup = headers_item.extract::<Vec<PyBackedBytes>>()?;
+        if htup.len() != 2 {
+            return error_message!();
         }
+        ret.append(HeaderName::from_bytes(&htup[0])?, HeaderValue::from_bytes(&htup[1])?);
     }
     ret.entry(HK_SERVER).or_insert(HV_SERVER);
-    ret
+    Ok(ret)
 }
 
 #[inline(always)]
