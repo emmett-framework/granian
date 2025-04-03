@@ -336,11 +336,11 @@ class MPServer(AbstractServer[WorkerProcess]):
         if self.interface == Interfaces.WSGI:
             if self.blocking_threads > (multiprocessing.cpu_count() * 2 + 1):
                 logger.warning(
-                    f'Configuration allow to spawn up to {self.blocking_threads} Python threads, '
-                    'which appears to be quite high compared to the amount of CPU cores available. '
-                    'Considering reviewing your configuration and use `backpressure` to limit the amount '
-                    'of concurrency on the Python interpreter. '
-                    'If this is intended, you can safely ignore this message.'
+                    f'Configuration allows spawning up to {self.blocking_threads} Python threads, '
+                    'which seems quite high compared to the number of CPU cores available. '
+                    'Consider reviewing your configuration and using `backpressure` to limit '
+                    'the concurrency on the Python interpreter. '
+                    'If this configuration is intentional, you can safely ignore this message.'
                 )
 
         super().serve(spawn_target, target_loader, wrap_loader)
