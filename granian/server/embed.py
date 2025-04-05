@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -7,7 +8,7 @@ from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
-from ..rsgi import _callback_wrapper as _rsgi_call_wrap
+from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
 from .common import (
     _PY_312,
     _PYV,
@@ -30,6 +31,15 @@ class AsyncWorker(AbstractWorker):
         self._task = None
         self._wtask = None
         super().__init__(parent, idx, target, args)
+
+    @staticmethod
+    def wrap_target(target):
+        @wraps(target)
+        def wrapped(worker_id, sig, callback, sock, *args, **kwargs):
+            loop = asyncio.get_event_loop()
+            return target(worker_id, sig, callback, sock, loop, *args, **kwargs)
+
+        return wrapped
 
     def _spawn(self, target, args):
         self._task = self._loop.create_task(target(*args))
@@ -143,7 +153,7 @@ class Server(AbstractServer[AsyncWorker]):
                 idx + 1,
                 sig,
                 callback_loader,
-                self._sfd,
+                (self._ssp, self._sfd),
                 self.runtime_threads,
                 self.runtime_blocking_threads,
                 self.blocking_threads,
@@ -162,11 +172,13 @@ class Server(AbstractServer[AsyncWorker]):
         )
 
     @staticmethod
+    @AsyncWorker.wrap_target
     async def _spawn_asgi_worker(
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        sfd: int,
+        sock: Any,
+        loop: Any,
         runtime_threads: int,
         runtime_blocking_threads: Optional[int],
         blocking_threads: int,
@@ -181,12 +193,11 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        loop = asyncio.get_event_loop()
-        wcallback = _asgi_call_wrap(callback, scope_opts, {}, log_access_fmt)
+        wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
 
         worker = ASGIWorker(
             worker_id,
-            sfd,
+            sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -198,17 +209,17 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             *ssl_ctx,
         )
-        scheduler = _new_cbscheduler(
-            loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
+        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         await worker.serve_async(scheduler, loop, shutdown_event)
 
     @staticmethod
+    @AsyncWorker.wrap_target
     async def _spawn_asgi_lifespan_worker(
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        sfd: int,
+        sock: Any,
+        loop: Any,
         runtime_threads: int,
         runtime_blocking_threads: Optional[int],
         blocking_threads: int,
@@ -223,19 +234,19 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        loop = asyncio.get_event_loop()
-
         lifespan_handler = LifespanProtocol(callback)
+        wcallback = _future_watcher_wrapper(
+            _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
+        )
+
         await lifespan_handler.startup()
         if lifespan_handler.interrupt:
             logger.error('ASGI lifespan startup failed', exc_info=lifespan_handler.exc)
             raise FatalError('ASGI lifespan startup')
 
-        wcallback = _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
-
         worker = ASGIWorker(
             worker_id,
-            sfd,
+            sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -247,18 +258,18 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             *ssl_ctx,
         )
-        scheduler = _new_cbscheduler(
-            loop, _future_watcher_wrapper(wcallback), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
+        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         await worker.serve_async(scheduler, loop, shutdown_event)
         await lifespan_handler.shutdown()
 
     @staticmethod
+    @AsyncWorker.wrap_target
     async def _spawn_rsgi_worker(
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
-        sfd: int,
+        sock: Any,
+        loop: Any,
         runtime_threads: int,
         runtime_blocking_threads: Optional[int],
         blocking_threads: int,
@@ -273,20 +284,13 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
     ):
-        loop = asyncio.get_event_loop()
-        callback_init = (
-            getattr(callback, '__rsgi_init__') if hasattr(callback, '__rsgi_init__') else lambda *args, **kwargs: None
-        )
-        callback_del = (
-            getattr(callback, '__rsgi_del__') if hasattr(callback, '__rsgi_del__') else lambda *args, **kwargs: None
-        )
-        callback = getattr(callback, '__rsgi__') if hasattr(callback, '__rsgi__') else callback
-        callback = _rsgi_call_wrap(callback, log_access_fmt)
+        callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
+        wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
         callback_init(loop)
 
         worker = RSGIWorker(
             worker_id,
-            sfd,
+            sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -298,9 +302,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             *ssl_ctx,
         )
-        scheduler = _new_cbscheduler(
-            loop, _future_watcher_wrapper(callback), impl_asyncio=task_impl == TaskImpl.asyncio
-        )
+        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         await worker.serve_async(scheduler, loop, shutdown_event)
         callback_del(loop)
 

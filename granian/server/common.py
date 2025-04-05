@@ -19,7 +19,7 @@ from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
-from ..net import SocketHolder
+from ..net import SocketSpec
 
 
 WT = TypeVar('WT')
@@ -168,9 +168,9 @@ class AbstractServer(Generic[WT]):
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
         self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password)
+        self._ssp = None
         self._shd = None
         self._sfd = None
-        self._sso = None
         self.wrks: List[WT] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
@@ -193,8 +193,9 @@ class AbstractServer(Generic[WT]):
         self.ssl_ctx = (True, str(cert.resolve()), str(key.resolve()), password)
 
     def _init_shared_socket(self):
-        self._shd = SocketHolder.from_address(self.bind_addr, self.bind_port, self.backlog)
-        self._sfd = self._shd.get_fd()
+        self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
+        self._shd = self._ssp.share()
+        self._sfd = self._shd.get_fd() if self._shd is not None else None
 
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True
