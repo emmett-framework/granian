@@ -380,8 +380,8 @@ impl ASGIWebsocketProtocol {
                             return FutureResultToPy::None;
                         }
                     }
-                };
-            };
+                }
+            }
             FutureResultToPy::Err(error_flow!())
         })
     }
@@ -438,7 +438,7 @@ impl ASGIWebsocketProtocol {
             if let Some(ws) = &mut *(transport.lock().await) {
                 while let Some(recv) = ws.next().await {
                     match recv {
-                        Ok(Message::Ping(_) | Message::Pong(_)) => continue,
+                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message @ Message::Close(_)) => {
                             closed.store(true, atomic::Ordering::Release);
                             return FutureResultToPy::ASGIWSMessage(message);

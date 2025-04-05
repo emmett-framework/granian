@@ -88,7 +88,7 @@ pub(crate) struct HTTP2Config {
 
 pub(crate) struct WorkerConfig {
     pub id: i32,
-    socket_fd: i32,
+    sock: (Py<crate::tcp::ListenerSpec>, Option<i32>),
     pub threads: usize,
     pub blocking_threads: usize,
     pub py_threads: usize,
@@ -107,7 +107,7 @@ pub(crate) struct WorkerConfig {
 impl WorkerConfig {
     pub fn new(
         id: i32,
-        socket_fd: i32,
+        sock: (Py<crate::tcp::ListenerSpec>, Option<i32>),
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,
@@ -124,7 +124,7 @@ impl WorkerConfig {
     ) -> Self {
         Self {
             id,
-            socket_fd,
+            sock,
             threads,
             blocking_threads,
             py_threads,
@@ -143,15 +143,19 @@ impl WorkerConfig {
 
     #[cfg(unix)]
     pub fn tcp_listener(&self) -> TcpListener {
-        let listener = unsafe { TcpListener::from_raw_fd(self.socket_fd) };
-        let _ = listener.set_nonblocking(true);
+        let listener = if let Some(fd) = self.sock.1 {
+            unsafe { TcpListener::from_raw_fd(fd) }
+        } else {
+            self.sock.0.get().as_listener().unwrap()
+        };
+        _ = listener.set_nonblocking(true);
         listener
     }
 
     #[cfg(windows)]
     pub fn tcp_listener(&self) -> TcpListener {
-        let listener = unsafe { TcpListener::from_raw_socket(self.socket_fd as u64) };
-        let _ = listener.set_nonblocking(true);
+        let listener = unsafe { TcpListener::from_raw_socket(self.sock.1.unwrap() as u64) };
+        _ = listener.set_nonblocking(true);
         listener
     }
 

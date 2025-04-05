@@ -4,6 +4,7 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
+use crate::tcp::ListenerSpec;
 use crate::workers::{
     serve_fut, serve_fut_ssl, serve_mtr, serve_mtr_ssl, serve_str, serve_str_ssl, WorkerConfig, WorkerSignal,
 };
@@ -34,7 +35,7 @@ impl ASGIWorker {
     #[pyo3(
         signature = (
             worker_id,
-            socket_fd,
+            sock,
             threads=1,
             blocking_threads=512,
             py_threads=1,
@@ -53,7 +54,7 @@ impl ASGIWorker {
     fn new(
         py: Python,
         worker_id: i32,
-        socket_fd: i32,
+        sock: (Py<ListenerSpec>, Option<i32>),
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,
@@ -71,7 +72,7 @@ impl ASGIWorker {
         Ok(Self {
             config: WorkerConfig::new(
                 worker_id,
-                socket_fd,
+                sock,
                 threads,
                 blocking_threads,
                 py_threads,

@@ -229,7 +229,7 @@ impl RSGIWebsocketTransport {
             if let Ok(mut stream) = transport.try_lock() {
                 while let Some(recv) = stream.next().await {
                     match recv {
-                        Ok(Message::Ping(_) | Message::Pong(_)) => continue,
+                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message) => return FutureResultToPy::RSGIWSMessage(message),
                         _ => break,
                     }

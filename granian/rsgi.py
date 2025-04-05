@@ -77,6 +77,15 @@ class _LoggingProto:
         return self.inner.response_stream(status, headers)
 
 
+def _callbacks_from_target(target):
+    callback = getattr(target, '__rsgi__') if hasattr(target, '__rsgi__') else target
+    callback_init = (
+        getattr(target, '__rsgi_init__') if hasattr(target, '__rsgi_init__') else lambda *args, **kwargs: None
+    )
+    callback_del = getattr(target, '__rsgi_del__') if hasattr(target, '__rsgi_del__') else lambda *args, **kwargs: None
+    return callback, callback_init, callback_del
+
+
 def _callback_wrapper(callback, access_log_fmt=False):
     async def _http_logger(scope, proto):
         t = time.time()
