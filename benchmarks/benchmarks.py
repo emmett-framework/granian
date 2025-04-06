@@ -16,13 +16,13 @@ WS_CONCURRENCIES = [(8, 20_000), (16, 10_000), (32, 5000), (64, 2500)]
 APPS = {
     'asgi': (
         'granian --interface asgi --log-level warning --backlog 2048 '
-        '{wsmode}--http {http} '
+        '{wsmode}--http {http} --loop {loop} --task-impl {timpl} '
         '--workers {procs} --runtime-threads {threads}{bthreads} '
         '--runtime-mode {thmode} {app}.asgi:app'
     ),
     'rsgi': (
         'granian --interface rsgi --log-level warning --backlog 2048 '
-        '{wsmode}--http {http} '
+        '{wsmode}--http {http} --loop {loop} --task-impl {timpl} '
         '--workers {procs} --runtime-threads {threads}{bthreads} '
         '--runtime-mode {thmode} {app}.rsgi:app'
     ),
@@ -55,10 +55,22 @@ APPS = {
 
 
 @contextmanager
-def app(name, procs=None, threads=None, bthreads=None, thmode=None, http='1', ws=False, app_path='app'):
+def app(
+    name,
+    procs=None,
+    threads=None,
+    bthreads=None,
+    thmode=None,
+    loop='uvloop',
+    timpl='asyncio',
+    http='1',
+    ws=False,
+    app_path='app',
+):
     procs = procs or 1
     threads = threads or 1
-    bthreads = f' --blocking-threads {bthreads}' if bthreads else ''
+    bthreads_flag = 'blocking-threads' if name == 'wsgi' else 'runtime-blocking-threads'
+    bthreads = f' --{bthreads_flag} {bthreads}' if bthreads else ''
     thmode = thmode or 'st'
     wsmode = '--no-ws ' if not ws else ''
     exc_prefix = os.environ.get('BENCHMARK_EXC_PREFIX')
@@ -68,6 +80,8 @@ def app(name, procs=None, threads=None, bthreads=None, thmode=None, http='1', ws
         threads=threads,
         bthreads=bthreads,
         thmode=thmode,
+        loop=loop,
+        timpl=timpl,
         http=http,
         wsmode=wsmode,
     )
@@ -79,7 +93,7 @@ def app(name, procs=None, threads=None, bthreads=None, thmode=None, http='1', ws
     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
-def wrk(duration, concurrency, endpoint, post=False, h2=False):
+def wrk(duration, concurrency, endpoint, post=None, h2=False):
     cmd_parts = [
         'rewrk',
         f'-c {concurrency}',
@@ -91,11 +105,13 @@ def wrk(duration, concurrency, endpoint, post=False, h2=False):
     else:
         cmd_parts.append('-H "Connection: Keep-Alive"')
         cmd_parts.append('-H "Keep-Alive: timeout=60\'"')
+    post_body = ''
     if post:
+        post_body = 'x' * post
         cmd_parts.append('-m post')
         cmd_parts.append('-H "Content-Type: text/plain; charset=utf-8"')
-        cmd_parts.append('-H "Content-Length: 4"')
-        cmd_parts.append('-b "test"')
+        cmd_parts.append(f'-H "Content-Length: {post}"')
+        cmd_parts.append(f'-b "{post_body}"')
     cmd_parts.append(f'-h http://127.0.0.1:8000/{endpoint}')
     try:
         proc = subprocess.run(  # noqa: S602
@@ -130,11 +146,7 @@ def wsb(concurrency, msgs):
             shell=True,
             check=True,
             capture_output=True,
-            env={
-                'BENCHMARK_CONCURRENCY': str(concurrency),
-                'BENCHMARK_MSGNO': str(msgs),
-                **env
-            }
+            env={'BENCHMARK_CONCURRENCY': str(concurrency), 'BENCHMARK_MSGNO': str(msgs), **env},
         )
         return json.loads(proc.stdout.decode('utf8'))
     except Exception as e:
@@ -206,7 +218,7 @@ def concurrencies():
 
 def rsgi_body_type():
     results = {}
-    benches = {'bytes small': 'b', 'str small': 's', 'bytes big': 'bb', 'str big': 'ss'}
+    benches = {'bytes 10B': 'b10', 'str 10B': 's10', 'bytes 100KB': 'b100k', 'str 100KB': 's100k'}
     for title, route in benches.items():
         with app('rsgi'):
             results[title] = benchmark(route)
@@ -215,18 +227,22 @@ def rsgi_body_type():
 
 def interfaces():
     results = {}
-    benches = {'bytes': ('b', {}), 'str': ('s', {}), 'echo': ('echo', {'post': True})}
+    benches = {
+        'get 1KB': ('b1k', {}, {'bthreads': 1}),
+        'echo 1KB': ('echo', {'post': 1024}, {'bthreads': 1}),
+        'echo 100KB (iter)': ('echoi', {'post': 100 * 1024}, {}),
+    }
     for interface in ['rsgi', 'asgi', 'wsgi']:
         for key, bench_data in benches.items():
-            route, opts = bench_data
-            with app(interface, bthreads=1):
+            route, opts, run_opts = bench_data
+            with app(interface, **run_opts):
                 results[f'{interface.upper()} {key}'] = benchmark(route, **opts)
     return results
 
 
 def http2():
     results = {}
-    benches = {'[GET]': ('b', {}), '[POST]': ('echo', {'post': True})}
+    benches = {'get 1KB': ('b1k', {}), 'echo 1KB': ('echo', {'post': 1024})}
     for http2 in [False, True]:
         for key, bench_data in benches.items():
             route, opts = bench_data
@@ -246,9 +262,35 @@ def files():
     return results
 
 
+def loops():
+    results = {'asgi': {}, 'rsgi': {}}
+    for interface in ['asgi', 'rsgi']:
+        with app(interface, loop='asyncio'):
+            results[interface]['asyncio get 10KB'] = benchmark('b10k')
+            results[interface]['asyncio echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
+        with app(interface, loop='rloop'):
+            results[interface]['rloop get 10KB'] = benchmark('b10k')
+            results[interface]['rloop echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
+        with app(interface, loop='uvloop'):
+            results[interface]['uvloop get 10KB'] = benchmark('b10k')
+            results[interface]['uvloop echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
+    return results
+
+
+def task_impl():
+    results = {}
+    with app('asgi', loop='asyncio', task_impl='asyncio'):
+        results['asyncio get 10KB'] = benchmark('b10k')
+        results['asyncio echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
+    with app('asgi', loop='asyncio', task_impl='rust'):
+        results['rust get 10KB'] = benchmark('b10k')
+        results['rust echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
+    return results
+
+
 def vs_asgi():
     results = {}
-    benches = {'[GET]': ('b', {}), '[POST]': ('echo', {'post': True})}
+    benches = {'get 10KB': ('b10k', {}), 'echo 10KB (iter)': ('echoi', {'post': 10 * 1024})}
     for fw in ['granian_asgi', 'uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
         for key, bench_data in benches.items():
             route, opts = bench_data
@@ -261,7 +303,7 @@ def vs_asgi():
 
 def vs_wsgi():
     results = {}
-    benches = {'[GET]': ('b', {}), '[POST]': ('echo', {'post': True})}
+    benches = {'get 1KB': ('b1k', {}), 'echo 1KB': ('echo', {'post': 1024})}
     for fw in ['granian_wsgi', 'gunicorn_gthread', 'gunicorn_gevent', 'uwsgi']:
         for key, bench_data in benches.items():
             route, opts = bench_data
@@ -274,7 +316,7 @@ def vs_wsgi():
 
 def vs_http2():
     results = {}
-    benches = {'[GET]': ('b', {}), '[POST]': ('echo', {'post': True})}
+    benches = {'get 10KB': ('b10k', {}), 'echo 10KB (iter)': ('echoi', {'post': 10 * 1024})}
     for fw in ['granian_asgi', 'hypercorn']:
         for key, bench_data in benches.items():
             route, opts = bench_data
@@ -344,6 +386,8 @@ def run():
         'interfaces': interfaces,
         'http2': http2,
         'files': files,
+        'loops': loops,
+        'task_impl': task_impl,
         'concurrencies': concurrencies,
         'vs_asgi': vs_asgi,
         'vs_wsgi': vs_wsgi,
@@ -356,6 +400,9 @@ def run():
     if 'base' in inp_benchmarks:
         inp_benchmarks.remove('base')
         inp_benchmarks.extend(['rsgi_body', 'interfaces', 'http2', 'files'])
+    if 'asyncio' in inp_benchmarks:
+        inp_benchmarks.remove('asyncio')
+        inp_benchmarks.extend(['loops', 'task_impl'])
     if 'vs' in inp_benchmarks:
         inp_benchmarks.remove('vs')
         inp_benchmarks.extend(['vs_asgi', 'vs_wsgi', 'vs_http2', 'vs_files', 'vs_io'])
