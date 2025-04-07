@@ -4,34 +4,50 @@ import sys
 
 
 HEADERS = [('content-type', 'text/plain; charset=utf-8')]
-HEADERS_MEDIA = [('content-type', 'image/png'), ('content-length', '95')]
+HEADERS_MEDIA = [('content-type', 'image/jpeg'), ('content-length', '50486')]
 
-BODY_BYTES_SHORT = b'Test'
-BODY_BYTES_LONG = b'Test' * 20_000
-BODY_STR_SHORT = 'Test'
-BODY_STR_LONG = 'Test' * 20_000
+BODY_BYTES = {
+    10: b'x' * 10,
+    1000: b'x' * 1024,
+    10_000: b'x' * 1024 * 10,
+    100_000: b'x' * 1024 * 100,
+}
+BODY_STR = {
+    10: 'x' * 10,
+    1000: 'x' * 1024,
+    10_000: 'x' * 1024 * 10,
+    100_000: 'x' * 1024 * 100,
+}
 
-MEDIA_PATH = str(pathlib.Path(__file__).parent.parent / 'files' / 'media.png')
-
-
-async def b_short(scope, proto):
-    proto.response_bytes(200, HEADERS, BODY_BYTES_SHORT)
-
-
-async def b_long(scope, proto):
-    proto.response_bytes(200, HEADERS, BODY_BYTES_LONG)
-
-
-async def s_short(scope, proto):
-    proto.response_str(200, HEADERS, BODY_STR_SHORT)
+MEDIA_PATH = str(pathlib.Path(__file__).parent / 'assets' / 'media.jpg')
 
 
-async def s_long(scope, proto):
-    proto.response_str(200, HEADERS, BODY_STR_LONG)
+def b_builder(size):
+    body = BODY_BYTES[size]
+
+    async def route(scope, proto):
+        proto.response_bytes(200, HEADERS, body)
+
+    return route
+
+
+def s_builder(size):
+    body = BODY_STR[size]
+
+    async def route(scope, proto):
+        proto.response_str(200, HEADERS, body)
+
+    return route
 
 
 async def echo(scope, proto):
     proto.response_bytes(200, HEADERS, await proto())
+
+
+async def echo_iter(scope, proto):
+    trx = proto.response_stream(200, HEADERS)
+    async for chunk in proto:
+        await trx.send_bytes(chunk)
 
 
 async def file(scope, proto):
@@ -43,7 +59,7 @@ def io_builder(wait):
 
     async def io(scope, proto):
         await asyncio.sleep(wait)
-        proto.response_bytes(200, HEADERS, BODY_BYTES_SHORT)
+        proto.response_bytes(200, HEADERS, BODY_BYTES[10])
 
     return io
 
@@ -53,11 +69,16 @@ async def handle_404(scope, proto):
 
 
 routes = {
-    '/b': b_short,
-    '/bb': b_long,
-    '/s': s_short,
-    '/ss': s_long,
+    '/b10': b_builder(10),
+    '/b1k': b_builder(1000),
+    '/b10k': b_builder(10_000),
+    '/b100k': b_builder(100_000),
+    '/s10': s_builder(10),
+    '/s1k': s_builder(1000),
+    '/s10k': s_builder(10_000),
+    '/s100k': s_builder(100_000),
     '/echo': echo,
+    '/echoi': echo_iter,
     '/fp': file,
     '/io10': io_builder(10),
     '/io100': io_builder(100),

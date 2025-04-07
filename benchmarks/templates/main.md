@@ -24,7 +24,7 @@ Granian version: {{ =data.granian }}
 ### Other benchmarks
 
 - [Versus 3rd party servers](./vs.md)
-- [Concurrency](./concurrency.md)
+- [AsyncIO-specific benchmarks](./asyncio.md)
 - [Python versions](./pyver.md)
 
 ### 3rd party benchmarks

@@ -69,7 +69,7 @@ def get_run_results(path, fw):
         try:
             with urllib.request.urlopen(TFB_URL + f'{path}/{fw}/{bench}/raw.txt') as res:  # noqa: S310
                 rv[bench] = extract_run_data(res.read().decode('utf-8'))
-        except Exception:  # noqa: S110
+        except Exception:
             pass
     return rv
 

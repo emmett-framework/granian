@@ -3,35 +3,36 @@ import time
 
 HEADERS = [('content-type', 'text/plain; charset=utf-8')]
 
-BODY_BYTES_SHORT = b'Test'
-BODY_BYTES_LONG = b'Test' * 20_000
-BODY_STR_SHORT = 'Test'
-BODY_STR_LONG = 'Test' * 20_000
+BODY_BYTES = {
+    10: b'x' * 10,
+    1000: b'x' * 1024,
+    10_000: b'x' * 1024 * 10,
+    100_000: b'x' * 1024 * 100,
+}
 
 
-def b_short(environ, proto):
-    proto('200 OK', HEADERS)
-    return [BODY_BYTES_SHORT]
+def b_builder(size):
+    body = BODY_BYTES[size]
 
+    def route(environ, proto):
+        proto('200 OK', HEADERS)
+        return [body]
 
-def b_long(environ, proto):
-    proto('200 OK', HEADERS)
-    return [BODY_BYTES_LONG]
-
-
-def s_short(environ, proto):
-    proto('200 OK', HEADERS)
-    return [BODY_STR_SHORT.encode('utf8')]
-
-
-def s_long(environ, proto):
-    proto('200 OK', HEADERS)
-    return [BODY_STR_LONG.encode('utf8')]
+    return route
 
 
 def echo(environ, proto):
     proto('200 OK', HEADERS)
     return [environ['wsgi.input'].read()]
+
+
+def echo_iter(environ, proto):
+    proto('200 OK', HEADERS)
+    while True:
+        data = environ['wsgi.input'].read(1024 * 16)
+        if not data:
+            break
+        yield data
 
 
 def io_builder(wait):
@@ -40,7 +41,7 @@ def io_builder(wait):
     def io(environ, proto):
         proto('200 OK', HEADERS)
         time.sleep(wait)
-        return [BODY_BYTES_SHORT]
+        return [BODY_BYTES[10]]
 
     return io
 
@@ -51,11 +52,12 @@ def handle_404(environ, proto):
 
 
 routes = {
-    '/b': b_short,
-    '/bb': b_long,
-    '/s': s_short,
-    '/ss': s_long,
+    '/b10': b_builder(10),
+    '/b1k': b_builder(1000),
+    '/b10k': b_builder(10_000),
+    '/b100k': b_builder(100_000),
     '/echo': echo,
+    '/echoi': echo_iter,
     '/io10': io_builder(10),
     '/io100': io_builder(100),
 }

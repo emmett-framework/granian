@@ -1,5 +1,5 @@
 ## HTTP/2
 
-Comparison between Granian HTTP versions on RSGI using 4bytes plain text response.
+Comparison between Granian HTTP versions on RSGI using plain text responses.
 
 {{ include './_table.tpl' }}

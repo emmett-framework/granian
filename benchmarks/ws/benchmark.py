@@ -53,7 +53,7 @@ async def client(idx, messages, ready_signal):
 
         _task_recv, _task_send = (
             asyncio.create_task(_client_recv(ws, len(messages) * CONCURRENCY)),
-            asyncio.create_task(_client_send(ws, messages))
+            asyncio.create_task(_client_send(ws, messages)),
         )
         t_start = time.time()
         recv_data, send_data = await asyncio.gather(_task_recv, _task_send)
@@ -100,7 +100,12 @@ def build_results(data):
         send_avg, send_max, send_min = sum(send_timings) / len(send_timings), max(send_timings), min(send_timings)
         tot_avg, tot_max, tot_min = sum(tot_timings) / len(tot_timings), max(tot_timings), min(tot_timings)
         sum_avg, sum_max, sum_min = sum(sum_timings) / len(sum_timings), max(sum_timings), min(sum_timings)
-        th_recv, th_send, th_all, th_sum = sum(recv_throughput), sum(send_throughput), sum(tot_throughput), sum(sum_throughput)
+        th_recv, th_send, th_all, th_sum = (
+            sum(recv_throughput),
+            sum(send_throughput),
+            sum(tot_throughput),
+            sum(sum_throughput),
+        )
         res = {
             'timings': {
                 'recv': {'avg': recv_avg, 'max': recv_max, 'min': recv_min},
@@ -113,7 +118,7 @@ def build_results(data):
                 'send': th_send,
                 'all': th_all,
                 'sum': th_sum,
-            }
+            },
         }
         rv.append(res)
     return rv
