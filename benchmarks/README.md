@@ -2,74 +2,70 @@
 
 
 
-Run at: Thu 30 Jan 2025, 02:28    
+Run at: Mon 07 Apr 2025, 11:16    
 Environment: AMD Ryzen 7 5700X @ Ubuntu 24.04 (CPUs: 16)    
-Python version: 3.11    
-Granian version: 1.7.6
+Python version: 3.12    
+Granian version: 2.2.2
 
 *Note: unless otherwise specified, all benchmarks are run with 1 server worker and 1 thread.*
 
 ## RSGI response types
 
-RSGI plain text response comparison using protocol `response_str` and `response_bytes`.    
-The "small" response is 4 bytes, the "big" one is 80kbytes.
+RSGI plain text response comparison using protocol `response_str` and `response_bytes`.
 
 | Type | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| bytes small (c256) | 909712 | 91109 | 2.807ms | 15.337ms |
-| str small (c256) | 901597 | 90315 | 2.832ms | 15.639ms |
-| bytes big (c128) | 494866 | 49503 | 2.583ms | 14.92ms |
-| str big (c128) | 445717 | 44596 | 2.867ms | 18.307ms |
+| bytes 10B (c256) | 806925 | 80834 | 3.163ms | 20.017ms |
+| str 10B (c256) | 804130 | 80658 | 3.167ms | 23.669ms |
+| bytes 100KB (c128) | 560652 | 56089 | 2.277ms | 23.43ms |
+| str 100KB (c128) | 561556 | 56194 | 2.275ms | 21.173ms |
 
 
 ## Interfaces
 
-Comparison between Granian application protocols using 4bytes plain text response.    
-Bytes and string response are reported for every protocol just to report the difference with RSGI protocol.    
-ASGI and WSGI responses are always returned as bytes by the application.    
-The "echo" request is a 4bytes POST request responding with the same body.
+Comparison between Granian application protocols using plain text responses.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI bytes (c256) | 900062 | 90119 | 2.838ms | 12.855ms |
-| RSGI str (c256) | 881674 | 88317 | 2.896ms | 15.554ms |
-| RSGI echo (c256) | 627527 | 62848 | 4.068ms | 19.695ms |
-| ASGI bytes (c128) | 748186 | 74841 | 1.709ms | 13.994ms |
-| ASGI str (c128) | 750228 | 75069 | 1.703ms | 14.18ms |
-| ASGI echo (c64) | 503022 | 50302 | 1.271ms | 2.575ms |
-| WSGI bytes (c256) | 642563 | 64367 | 3.973ms | 15.454ms |
-| WSGI str (c64) | 629022 | 62904 | 1.016ms | 2.361ms |
-| WSGI echo (c256) | 581620 | 58241 | 4.391ms | 13.409ms |
+| RSGI get 1KB (c256) | 799584 | 80187 | 3.18ms | 47.318ms |
+| RSGI echo 1KB (c128) | 584744 | 58493 | 2.184ms | 15.204ms |
+| RSGI echo 100KB (iter) (c64) | 221484 | 22150 | 2.881ms | 10.076ms |
+| ASGI get 1KB (c128) | 631672 | 63234 | 2.021ms | 28.119ms |
+| ASGI echo 1KB (c128) | 442589 | 44308 | 2.885ms | 27.757ms |
+| ASGI echo 100KB (iter) (c64) | 223092 | 22308 | 2.864ms | 9.759ms |
+| WSGI get 1KB (c64) | 641386 | 64139 | 0.997ms | 1.851ms |
+| WSGI echo 1KB (c128) | 585696 | 58609 | 2.182ms | 9.507ms |
+| WSGI echo 100KB (iter) (c64) | 87939 | 8794 | 7.26ms | 25.514ms |
 
 
 ## HTTP/2
 
-Comparison between Granian HTTP versions on RSGI using 4bytes plain text response.
+Comparison between Granian HTTP versions on RSGI using plain text responses.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| HTTP/1 [GET] (c256) | 897954 | 89939 | 2.843ms | 14.539ms |
-| HTTP/1 [POST] (c128) | 647934 | 64831 | 1.972ms | 12.859ms |
-| HTTP/2 [GET] (c256) | 874234 | 87629 | 2.918ms | 46.195ms |
-| HTTP/2 [POST] (c128) | 634648 | 63508 | 2.012ms | 12.346ms |
+| HTTP/1 get 1KB (c256) | 792805 | 79408 | 3.22ms | 23.79ms |
+| HTTP/1 echo 1KB (c128) | 569464 | 57017 | 2.237ms | 21.665ms |
+| HTTP/2 get 1KB (c256) | 692572 | 69408 | 3.684ms | 61.474ms |
+| HTTP/2 echo 1KB (c512) | 123226 | 12391 | 41.168ms | 111.67ms |
 
 
 ## File responses
 
-Comparison between Granian application protocols using 95bytes image.    
+Comparison between Granian application protocols using ~50KB image.    
 WSGI is not part of the benchmark since the protocol doesn't implement anything different from returning the file's contents directly.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI (c256) | 748074 | 74903 | 3.411ms | 25.448ms |
-| ASGI (c64) | 328688 | 32870 | 1.945ms | 2.515ms |
-| ASGI pathsend (c512) | 631845 | 63485 | 8.052ms | 69.429ms |
+| RSGI (c128) | 117451 | 11759 | 10.862ms | 31.353ms |
+| ASGI (c128) | 220389 | 22070 | 5.789ms | 32.804ms |
+| ASGI pathsend (c512) | 293847 | 29509 | 17.279ms | 127.314ms |
 
 
 ### Other benchmarks
 
 - [Versus 3rd party servers](./vs.md)
-- [Concurrency](./concurrency.md)
+- [AsyncIO-specific benchmarks](./asyncio.md)
 - [Python versions](./pyver.md)
 
 ### 3rd party benchmarks

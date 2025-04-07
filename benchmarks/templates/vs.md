@@ -33,7 +33,7 @@ Granian version: {{ =data.granian }}
 
 ### Long I/O
 
-Plain text 4 bytes response comparison simulating *long* I/O waits (10ms and 100ms).
+Plain text response comparison simulating *long* I/O waits (10ms and 100ms).
 
 {{ _data = data.results["vs_io"] }}
 {{ include './_vs_table.tpl' }}

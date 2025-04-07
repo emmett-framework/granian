@@ -254,9 +254,9 @@ def http2():
 
 def files():
     results = {}
-    with app('rsgi', bthreads=1):
+    with app('rsgi'):
         results['RSGI'] = benchmark('fp')
-    with app('asgi', bthreads=1):
+    with app('asgi'):
         results['ASGI'] = benchmark('fb')
         results['ASGI pathsend'] = benchmark('fp')
     return results
@@ -279,10 +279,10 @@ def loops():
 
 def task_impl():
     results = {}
-    with app('asgi', loop='asyncio', task_impl='asyncio'):
+    with app('asgi', loop='asyncio', timpl='asyncio'):
         results['asyncio get 10KB'] = benchmark('b10k')
         results['asyncio echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
-    with app('asgi', loop='asyncio', task_impl='rust'):
+    with app('asgi', loop='asyncio', timpl='rust'):
         results['rust get 10KB'] = benchmark('b10k')
         results['rust echo 10KB (iter)'] = benchmark('echoi', post=10 * 1024)
     return results
@@ -329,7 +329,7 @@ def vs_http2():
 
 def vs_files():
     results = {}
-    with app('asgi', bthreads=1):
+    with app('asgi'):
         results['Granian (pathsend)'] = benchmark('fp')
     for fw in ['uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
         title = ' '.join(item.title() for item in fw.split('_'))
