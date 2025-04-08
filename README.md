@@ -1,3 +1,11 @@
+![PyPI - Version](https://img.shields.io/pypi/v/granian)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/granian)
+[![Build Status](https://github.com/emmett-framework/granian/actions/workflows/build.yml/badge.svg)](https://github.com/emmett-framework/granian/actions)
+![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/emmett-framework/granian/master/pyproject.toml)
+![PyPI - License](https://img.shields.io/pypi/l/granian)
+
+---
+
 # Granian
 
 A Rust HTTP server for Python applications built on top of the [Hyper crate](https://github.com/hyperium/hyper).
@@ -382,8 +390,11 @@ Granian(...).serve()
 
 Granian is currently under active development.
 
-Granian is compatible with Python 3.9 and above versions.
+[![GitHub issues](https://img.shields.io/github/issues/emmett-framework/granian.svg)](https://github.com/emmett-framework/granian/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/emmett-framework/granian.svg)](https://github.com/emmett-framework/granian/pulls)
+
+Granian is compatible with CPython 3.9+ and PyPy 3.9+.
 
 ## License
 
-Granian is released under the BSD License.
+Granian is released under the [BSD License](https://opensource.org/license/BSD-3-clause).
