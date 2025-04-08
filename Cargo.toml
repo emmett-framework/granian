@@ -40,7 +40,7 @@ hyper = { version = "=1.6", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 itertools = "0.14"
 log = "0.4"
-mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls"], optional = true }
+mimalloc = { version = "0.1.46", default-features = false, features = ["local_dynamic_tls"], optional = true }
 pem = "=3.0"
 percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
@@ -50,7 +50,7 @@ pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
 socket2 = { version = "0.5", features = ["all"] }
 tls-listener = { version = "=0.11", features = ["rustls-ring"] }
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.44", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.26"
 tokio-util = { version = "0.7", features = ["codec", "rt"] }
