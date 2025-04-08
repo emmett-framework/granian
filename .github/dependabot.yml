@@ -1,4 +1,5 @@
-# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#package-ecosystem-
+# https://docs.github.com/en/code-security/supply-chain-security/keeping-your-dependencies-updated-automatically/configuration-options-for-dependency-updates#package-ecosystem
+
 version: 2
 updates:
   # Enable updates for Github Actions
@@ -13,10 +14,4 @@ updates:
     target-branch: "master"
     directory: "/"
     schedule:
-      interval: "weekly"
-  # Enable updates for Python (pyproject.toml)
-  - package-ecosystem: "pip"
-    target-branch: "master"
-    directory: "/"
-    schedule:
-      interval: "weekly"
+      interval: "monthly"
