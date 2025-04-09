@@ -94,7 +94,7 @@ impl ASGIHTTPProtocol {
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
         let guard = self.flow_tx_waiter.clone();
-
+        let disconnected = self.flow_rx_closed.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             match tx.send(Ok(body.into())).await {
                 Ok(()) => {
@@ -103,7 +103,9 @@ impl ASGIHTTPProtocol {
                     }
                 }
                 Err(err) => {
-                    log::warn!("ASGI transport error: {err:?}");
+                    if !disconnected.load(atomic::Ordering::Acquire) {
+                        log::info!("ASGI transport error: {err:?}");
+                    }
                     guard.notify_one();
                 }
             }
