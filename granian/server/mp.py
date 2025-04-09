@@ -274,10 +274,10 @@ class MPServer(AbstractServer[WorkerProcess]):
             sock.set_inheritable(True)
             self._sso = sock
 
-    def _stop_workers(self):
-        super()._stop_workers()
+    def _unlink_pidfile(self):
         if self._sso is not None:
             self._sso.detach()
+        super()._unlink_pidfile()
 
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerProcess:
         return WorkerProcess(
