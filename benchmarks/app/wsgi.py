@@ -29,7 +29,7 @@ def echo(environ, proto):
 def echo_iter(environ, proto):
     proto('200 OK', HEADERS)
     while True:
-        data = environ['wsgi.input'].read(1024 * 16)
+        data = environ['wsgi.input'].read(1024 * 4)
         if not data:
             break
         yield data

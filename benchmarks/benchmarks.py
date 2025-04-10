@@ -303,7 +303,7 @@ def vs_asgi():
 
 def vs_wsgi():
     results = {}
-    benches = {'get 1KB': ('b1k', {}), 'echo 1KB': ('echo', {'post': 1024})}
+    benches = {'get 10KB': ('b10k', {}), 'echo 10KB (iter)': ('echoi', {'post': 10 * 1024})}
     for fw in ['granian_wsgi', 'gunicorn_gthread', 'gunicorn_gevent', 'uwsgi']:
         for key, bench_data in benches.items():
             route, opts = bench_data
