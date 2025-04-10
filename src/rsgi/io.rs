@@ -1,4 +1,4 @@
-use futures::{sink::SinkExt, StreamExt, TryStreamExt};
+use futures::{sink::SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use hyper::body;
 use pyo3::{prelude::*, pybacked::PyBackedStr};
@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    runtime::{empty_future_into_py, future_into_py_futlike, RuntimeRef},
+    runtime::{empty_future_into_py, err_future_into_py, future_into_py_futlike, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -23,39 +23,32 @@ pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<WSTxStream>);
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
-    rt: RuntimeRef,
-    tx: mpsc::Sender<Result<body::Bytes, anyhow::Error>>,
+    tx: mpsc::UnboundedSender<body::Bytes>,
 }
 
 impl RSGIHTTPStreamTransport {
-    pub fn new(rt: RuntimeRef, transport: mpsc::Sender<Result<body::Bytes, anyhow::Error>>) -> Self {
-        Self { rt, tx: transport }
+    pub fn new(transport: mpsc::UnboundedSender<body::Bytes>) -> Self {
+        Self { tx: transport }
     }
 }
 
+// NOTE: the interface doesn't need to be async anymore.
+//       This would be a breaking change though; probably requires a major version bump in RSGI
 #[pymethods]
 impl RSGIHTTPStreamTransport {
     fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
-        let transport = self.tx.clone();
-        let bdata: Box<[u8]> = data.into();
-
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            match transport.send(Ok(body::Bytes::from(bdata))).await {
-                Ok(()) => FutureResultToPy::None,
-                _ => FutureResultToPy::Err(error_stream!()),
-            }
-        })
+        let bdata = body::Bytes::from(std::convert::Into::<Box<[u8]>>::into(data));
+        match self.tx.send(bdata) {
+            Ok(()) => empty_future_into_py(py),
+            _ => err_future_into_py(py, error_stream!()),
+        }
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
-        let transport = self.tx.clone();
-
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            match transport.send(Ok(body::Bytes::from(data))).await {
-                Ok(()) => FutureResultToPy::None,
-                _ => FutureResultToPy::Err(error_stream!()),
-            }
-        })
+        match self.tx.send(body::Bytes::from(data)) {
+            Ok(()) => empty_future_into_py(py),
+            _ => err_future_into_py(py, error_stream!()),
+        }
     }
 }
 
@@ -162,7 +155,11 @@ impl RSGIHTTPProtocol {
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
     fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(status, headers, body)));
+            _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(
+                status,
+                headers,
+                body.into(),
+            )));
         }
     }
 
@@ -188,16 +185,18 @@ impl RSGIHTTPProtocol {
         headers: Vec<(PyBackedStr, PyBackedStr)>,
     ) -> PyResult<Bound<'p, RSGIHTTPStreamTransport>> {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
+            let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
             let body_stream = http_body_util::StreamBody::new(
-                tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
+                tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                    .map(body::Frame::data)
+                    .map(Result::Ok),
             );
             _ = tx.send(PyResponse::Body(PyResponseBody::new(
                 status,
                 headers,
-                BodyExt::boxed(BodyExt::map_err(body_stream, std::convert::Into::into)),
+                BodyExt::boxed(body_stream),
             )));
-            let trx = Py::new(py, RSGIHTTPStreamTransport::new(self.rt.clone(), body_tx))?;
+            let trx = Py::new(py, RSGIHTTPStreamTransport::new(body_tx))?;
             return Ok(trx.into_bound(py));
         }
         error_proto!()

@@ -247,13 +247,12 @@ impl PyResponseBody {
         }
     }
 
-    pub fn from_bytes(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) -> Self {
-        let rbody: Box<[u8]> = body.into();
+    pub fn from_bytes(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Box<[u8]>) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
-            body: http_body_util::Full::new(Bytes::from(rbody))
-                .map_err(|e| match e {})
+            body: http_body_util::Full::new(Bytes::from(body))
+                .map_err(std::convert::Into::into)
                 .boxed(),
         }
     }
@@ -263,7 +262,7 @@ impl PyResponseBody {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
             body: http_body_util::Full::new(Bytes::from(body))
-                .map_err(|e| match e {})
+                .map_err(std::convert::Into::into)
                 .boxed(),
         }
     }
