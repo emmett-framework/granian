@@ -4,9 +4,9 @@
 
 ## AsyncIO-specific benchmarks
 
-Run at: Mon 07 Apr 2025, 13:16    
+Run at: Thu 10 Apr 2025, 19:04    
 Environment: AMD Ryzen 7 5700X @ Ubuntu 24.04 (CPUs: 16)    
-Granian version: 2.2.2
+Granian version: 2.2.4
 
 *Note: unless otherwise specified, all benchmarks are run with 1 server worker and 1 thread.*
 
@@ -16,18 +16,18 @@ Comparison between different AsyncIO event loops on async protocols.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| ASGI asyncio get 10KB (c256) | 431465 | 43243 | 5.907ms | 42.3ms |
-| ASGI asyncio echo 10KB (iter) (c256) | 127656 | 12793 | 19.907ms | 69.41ms |
-| ASGI rloop get 10KB (c512) | 484289 | 48610 | 10.51ms | 65.384ms |
-| ASGI rloop echo 10KB (iter) (c256) | 179718 | 18005 | 14.184ms | 39.284ms |
-| ASGI uvloop get 10KB (c128) | 618541 | 61895 | 2.065ms | 28.91ms |
-| ASGI uvloop echo 10KB (iter) (c64) | 285624 | 28564 | 2.237ms | 4.203ms |
-| RSGI asyncio get 10KB (c256) | 543225 | 54441 | 4.695ms | 50.486ms |
-| RSGI asyncio echo 10KB (iter) (c256) | 114263 | 11449 | 22.31ms | 36.879ms |
-| RSGI rloop get 10KB (c512) | 593758 | 59688 | 8.559ms | 43.597ms |
-| RSGI rloop echo 10KB (iter) (c256) | 168903 | 16951 | 15.071ms | 33.323ms |
-| RSGI uvloop get 10KB (c256) | 759411 | 76069 | 3.354ms | 45.669ms |
-| RSGI uvloop echo 10KB (iter) (c256) | 286322 | 28697 | 8.908ms | 25.108ms |
+| ASGI asyncio get 10KB (c256) | 432435 | 43321 | 5.9ms | 26.207ms |
+| ASGI asyncio echo 10KB (iter) (c512) | 158995 | 15973 | 31.966ms | 87.138ms |
+| ASGI rloop get 10KB (c128) | 483499 | 48389 | 2.641ms | 28.655ms |
+| ASGI rloop echo 10KB (iter) (c256) | 212595 | 21321 | 11.978ms | 35.009ms |
+| ASGI uvloop get 10KB (c128) | 603891 | 60473 | 2.113ms | 30.854ms |
+| ASGI uvloop echo 10KB (iter) (c64) | 324471 | 32449 | 1.969ms | 3.866ms |
+| RSGI asyncio get 10KB (c256) | 549522 | 55109 | 4.637ms | 33.726ms |
+| RSGI asyncio echo 10KB (iter) (c512) | 177656 | 17833 | 28.608ms | 67.882ms |
+| RSGI rloop get 10KB (c256) | 581998 | 58367 | 4.379ms | 30.82ms |
+| RSGI rloop echo 10KB (iter) (c128) | 244822 | 24520 | 5.206ms | 29.96ms |
+| RSGI uvloop get 10KB (c256) | 761961 | 76397 | 3.346ms | 28.591ms |
+| RSGI uvloop echo 10KB (iter) (c128) | 390977 | 39117 | 3.269ms | 25.955ms |
 
 ### Task implementation
 
@@ -35,15 +35,15 @@ Comparison between Granian Rust AsyncIO task implementation and stdlib one on AS
 
 | Python version | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- | --- |
-| 3.9 | asyncio get 10KB (c256) | 756676 | 75900 | 3.369ms | 27.574ms |
-| 3.9 | asyncio echo 10KB (iter) (c128) | 217436 | 21754 | 5.875ms | 17.743ms |
-| 3.9 | rust get 10KB (c128) | 1072243 | 107352 | 1.189ms | 19.734ms |
-| 3.9 | rust echo 10KB (iter) (c128) | 188148 | 18839 | 6.781ms | 520.774ms |
-| 3.10 | asyncio get 10KB (c256) | 791125 | 79194 | 3.223ms | 36.63ms |
-| 3.10 | asyncio echo 10KB (iter) (c128) | 223315 | 22356 | 5.715ms | 30.507ms |
-| 3.10 | rust get 10KB (c256) | 1108450 | 111057 | 2.303ms | 18.399ms |
-| 3.10 | rust echo 10KB (iter) (c128) | 200026 | 20011 | 6.386ms | 461.701ms |
-| 3.11 | asyncio get 10KB (c256) | 440289 | 44182 | 5.784ms | 28.179ms |
-| 3.11 | asyncio echo 10KB (iter) (c256) | 131785 | 13210 | 19.315ms | 63.406ms |
-| 3.11 | rust get 10KB (c256) | 528502 | 53046 | 4.816ms | 31.307ms |
-| 3.11 | rust echo 10KB (iter) (c512) | 125139 | 12569 | 40.602ms | 520.916ms |
+| 3.9 | asyncio get 10KB (c256) | 761286 | 76376 | 3.348ms | 21.288ms |
+| 3.9 | asyncio echo 10KB (iter) (c256) | 292569 | 29333 | 8.711ms | 33.948ms |
+| 3.9 | rust get 10KB (c128) | 1035338 | 103646 | 1.233ms | 22.507ms |
+| 3.9 | rust echo 10KB (iter) (c256) | 259011 | 25960 | 9.843ms | 646.772ms |
+| 3.10 | asyncio get 10KB (c128) | 790364 | 79112 | 1.615ms | 29.36ms |
+| 3.10 | asyncio echo 10KB (iter) (c128) | 285253 | 28561 | 4.473ms | 29.524ms |
+| 3.10 | rust get 10KB (c256) | 1107680 | 111084 | 2.302ms | 27.872ms |
+| 3.10 | rust echo 10KB (iter) (c128) | 255740 | 25596 | 4.985ms | 448.22ms |
+| 3.11 | asyncio get 10KB (c256) | 446617 | 44780 | 5.708ms | 51.82ms |
+| 3.11 | asyncio echo 10KB (iter) (c512) | 159907 | 16082 | 31.724ms | 63.638ms |
+| 3.11 | rust get 10KB (c256) | 516154 | 51735 | 4.942ms | 30.622ms |
+| 3.11 | rust echo 10KB (iter) (c256) | 153283 | 15371 | 16.18ms | 365.296ms |

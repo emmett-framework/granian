@@ -4,10 +4,10 @@
 
 ## VS 3rd party comparison
 
-Run at: Mon 07 Apr 2025, 11:38    
+Run at: Thu 10 Apr 2025, 17:25    
 Environment: AMD Ryzen 7 5700X @ Ubuntu 24.04 (CPUs: 16)    
 Python version: 3.12    
-Granian version: 2.2.2
+Granian version: 2.2.4
 
 *Note: unless otherwise specified, all benchmarks are run with 1 server worker and 1 thread.*
 
@@ -15,70 +15,70 @@ Granian version: 2.2.2
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Asgi get 10KB (c128) | 609514 | 61005 | 2.095ms | 27.85ms |
-| Granian Asgi echo 10KB (iter) (c64) | 274220 | 27425 | 2.328ms | 4.363ms |
-| Uvicorn H11 get 10KB (c64) | 95438 | 9543 | 6.698ms | 18.401ms |
-| Uvicorn H11 echo 10KB (iter) (c64) | 82258 | 8226 | 7.766ms | 19.364ms |
-| Uvicorn Httptools get 10KB (c128) | 394122 | 39459 | 3.237ms | 16.513ms |
-| Uvicorn Httptools echo 10KB (iter) (c128) | 344028 | 34435 | 3.708ms | 16.547ms |
-| Hypercorn get 10KB (c128) | 65468 | 6552 | 19.464ms | 21.873ms |
-| Hypercorn echo 10KB (iter) (c128) | 57517 | 5755 | 22.177ms | 36.325ms |
+| Granian Asgi get 10KB (c128) | 609397 | 60968 | 2.098ms | 16.515ms |
+| Granian Asgi echo 10KB (iter) (c128) | 335117 | 33559 | 3.801ms | 24.72ms |
+| Uvicorn H11 get 10KB (c64) | 96825 | 9682 | 6.602ms | 16.267ms |
+| Uvicorn H11 echo 10KB (iter) (c64) | 82267 | 8227 | 7.766ms | 19.165ms |
+| Uvicorn Httptools get 10KB (c128) | 397163 | 39768 | 3.214ms | 15.434ms |
+| Uvicorn Httptools echo 10KB (iter) (c64) | 345364 | 34540 | 1.848ms | 3.746ms |
+| Hypercorn get 10KB (c128) | 64487 | 6453 | 19.795ms | 157.371ms |
+| Hypercorn echo 10KB (iter) (c128) | 57951 | 5804 | 21.992ms | 229.892ms |
 
 
 ### WSGI
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Wsgi get 1KB (c64) | 636830 | 63688 | 1.003ms | 1.667ms |
-| Granian Wsgi echo 1KB (c64) | 586027 | 58610 | 1.089ms | 1.843ms |
-| Gunicorn Gthread get 1KB (c64) | 62499 | 6251 | 10.208ms | 27.621ms |
-| Gunicorn Gthread echo 1KB (c64) | 57357 | 5736 | 11.132ms | 27.106ms |
-| Gunicorn Gevent get 1KB (c64) | 94284 | 9429 | 3.429ms | 6260.77ms |
-| Gunicorn Gevent echo 1KB (c64) | 86794 | 8680 | 4.747ms | 6163.71ms |
-| Uwsgi get 1KB (c64) | 168173 | 16820 | 3.794ms | 7.358ms |
-| Uwsgi echo 1KB (c128) | 162186 | 16231 | 7.804ms | 2085.755ms |
+| Granian Wsgi get 10KB (c64) | 630338 | 63040 | 1.013ms | 2.242ms |
+| Granian Wsgi echo 10KB (iter) (c128) | 470982 | 47125 | 2.712ms | 27.978ms |
+| Gunicorn Gthread get 10KB (c64) | 61475 | 6148 | 10.382ms | 26.972ms |
+| Gunicorn Gthread echo 10KB (iter) (c64) | 46615 | 4662 | 13.701ms | 26.975ms |
+| Gunicorn Gevent get 10KB (c64) | 93307 | 9331 | 5.748ms | 6256.879ms |
+| Gunicorn Gevent echo 10KB (iter) (c64) | 62167 | 6217 | 4.655ms | 7646.817ms |
+| Uwsgi get 10KB (c128) | 169540 | 16980 | 7.467ms | 2094.377ms |
+| Uwsgi echo 10KB (iter) (c64) | 191900 | 19193 | 3.325ms | 5.855ms |
 
 
 ### HTTP/2
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Asgi get 10KB (c256) | 598504 | 60017 | 4.26ms | 66.409ms |
-| Granian Asgi echo 10KB (iter) (c512) | 120238 | 12083 | 42.177ms | 116.207ms |
-| Hypercorn get 10KB (c128) | 40883 | 4095 | 31.164ms | 355.431ms |
-| Hypercorn echo 10KB (iter) (c128) | 31726 | 3174 | 40.164ms | 71.249ms |
+| Granian Asgi get 10KB (c128) | 597891 | 59847 | 2.134ms | 34.144ms |
+| Granian Asgi echo 10KB (iter) (c512) | 121287 | 12197 | 41.762ms | 151.463ms |
+| Hypercorn get 10KB (c128) | 41220 | 4127 | 30.917ms | 450.366ms |
+| Hypercorn echo 10KB (iter) (c128) | 31542 | 3157 | 40.395ms | 80.894ms |
 
 
 ### ASGI file responses
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian (pathsend) (c512) | 284344 | 28540 | 17.831ms | 235.013ms |
-| Uvicorn H11 (c128) | 93916 | 9403 | 13.58ms | 299.406ms |
-| Uvicorn Httptools (c64) | 154439 | 15444 | 4.136ms | 9.93ms |
-| Hypercorn (c128) | 64703 | 6476 | 19.721ms | 189.995ms |
+| Granian (pathsend) (c512) | 292803 | 29421 | 17.333ms | 136.095ms |
+| Uvicorn H11 (c64) | 95223 | 9522 | 6.711ms | 18.542ms |
+| Uvicorn Httptools (c128) | 209835 | 20992 | 6.089ms | 17.017ms |
+| Hypercorn (c128) | 65394 | 6545 | 19.497ms | 22.547ms |
 
 
 ### Long I/O
 
-Plain text 4 bytes response comparison simulating *long* I/O waits (10ms and 100ms).
+Plain text response comparison simulating *long* I/O waits (10ms and 100ms).
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Rsgi 10ms (c512) | 359814 | 36097 | 14.151ms | 65.856ms |
-| Granian Rsgi 100ms (c512) | 49825 | 4999 | 101.882ms | 118.535ms |
-| Granian Asgi 10ms (c512) | 335905 | 33777 | 15.123ms | 63.396ms |
-| Granian Asgi 100ms (c512) | 49840 | 5006 | 101.43ms | 105.255ms |
-| Granian Wsgi 10ms (c256) | 206612 | 20714 | 12.32ms | 41.963ms |
-| Granian Wsgi 100ms (c512) | 50688 | 5083 | 100.192ms | 107.739ms |
-| Uvicorn Httptools 10ms (c512) | 307387 | 30850 | 16.557ms | 64.484ms |
-| Uvicorn Httptools 100ms (c512) | 50371 | 5052 | 100.719ms | 112.446ms |
-| Hypercorn 10ms (c128) | 64640 | 6472 | 19.711ms | 22.199ms |
-| Hypercorn 100ms (c128) | 65091 | 6515 | 19.602ms | 193.631ms |
-| Gunicorn Gevent 10ms (c128) | 85109 | 8518 | 14.997ms | 26.545ms |
-| Gunicorn Gevent 100ms (c512) | 50277 | 5047 | 100.941ms | 138.139ms |
-| Uwsgi 10ms (c128) | 164358 | 16459 | 7.676ms | 1670.195ms |
-| Uwsgi 100ms (c512) | 162038 | 16299 | 20.571ms | 6870.561ms |
+| Granian Rsgi 10ms (c512) | 331681 | 33343 | 15.315ms | 101.842ms |
+| Granian Rsgi 100ms (c512) | 50207 | 5038 | 101.056ms | 114.274ms |
+| Granian Asgi 10ms (c512) | 349233 | 35065 | 14.57ms | 63.257ms |
+| Granian Asgi 100ms (c512) | 49966 | 5014 | 101.438ms | 104.839ms |
+| Granian Wsgi 10ms (c256) | 207727 | 20806 | 12.279ms | 27.688ms |
+| Granian Wsgi 100ms (c512) | 50678 | 5087 | 100.265ms | 115.06ms |
+| Uvicorn Httptools 10ms (c512) | 308433 | 30942 | 16.507ms | 212.446ms |
+| Uvicorn Httptools 100ms (c512) | 50332 | 5048 | 100.755ms | 108.27ms |
+| Hypercorn 10ms (c128) | 65436 | 6549 | 19.504ms | 166.867ms |
+| Hypercorn 100ms (c128) | 64620 | 6467 | 19.746ms | 162.069ms |
+| Gunicorn Gevent 10ms (c128) | 85982 | 8602 | 14.856ms | 25.559ms |
+| Gunicorn Gevent 100ms (c512) | 50265 | 5049 | 100.867ms | 141.459ms |
+| Uwsgi 10ms (c256) | 164989 | 16549 | 10.354ms | 6686.564ms |
+| Uwsgi 100ms (c128) | 164603 | 16478 | 7.666ms | 2065.555ms |
 
 
 ### Websockets
@@ -87,16 +87,16 @@ Websocket broadcasting comparison with concurrent clients sending a predefined a
 
 | Clients | Server | Send throughput | Receive throughput | Combined throughput |
 | --- | --- | --- | --- | --- |
-| 8 | Granian Rsgi | 1029991 | 202749 | 228093 |
-| 8 | Granian Asgi | 1023277 | 195250 | 219657 |
-| 8 | Uvicorn H11 | 627414 | 124792 | 140391 |
-| 8 | Hypercorn | 568923 | 90745 | 102088 |
-| 16 | Granian Rsgi | 1932155 | 222312 | 236207 |
-| 16 | Granian Asgi | 1951899 | 217395 | 230982 |
-| 16 | Uvicorn H11 | 1236645 | 129593 | 137693 |
-| 16 | Hypercorn | 1202992 | 96312 | 102332 |
-| 32 | Granian Rsgi | 3522612 | 223784 | 230777 |
-| 32 | Granian Asgi | 3458683 | 220858 | 227760 |
+| 8 | Granian Rsgi | 1068470 | 202026 | 227279 |
+| 8 | Granian Asgi | 983804 | 196307 | 220845 |
+| 8 | Uvicorn H11 | 613566 | 124879 | 140489 |
+| 8 | Hypercorn | 573682 | 91837 | 103316 |
+| 16 | Granian Rsgi | 1961358 | 221428 | 235267 |
+| 16 | Granian Asgi | 1935900 | 217683 | 231288 |
+| 16 | Uvicorn H11 | 1257534 | 129144 | 137216 |
+| 16 | Hypercorn | 1255036 | 98422 | 104573 |
+| 32 | Granian Rsgi | 3556441 | 225597 | 232647 |
+| 32 | Granian Asgi | 3420651 | 222222 | 229166 |
 | 32 | Uvicorn H11 | N/A | N/A | N/A |
 | 32 | Hypercorn | N/A | N/A | N/A |
 
