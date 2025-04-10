@@ -1,4 +1,4 @@
-use futures::TryStreamExt;
+use futures::StreamExt;
 use http_body_util::BodyExt;
 use hyper::{
     body,
@@ -8,7 +8,6 @@ use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{borrow::Cow, sync::Mutex};
 use tokio::sync::{mpsc, oneshot};
 
-use super::utils::py_allow_threads;
 use crate::{
     http::{HTTPResponseBody, HV_SERVER},
     utils::log_application_callable_exception,
@@ -61,12 +60,14 @@ impl WSGIProtocol {
 
     fn response_iter(&self, py: Python, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Bound<PyAny>) {
         if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
-            let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes, anyhow::Error>>(1);
+            let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
 
             let body_stream = http_body_util::StreamBody::new(
-                tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
+                tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                    .map(body::Frame::data)
+                    .map(Result::Ok),
             );
-            let txbody = BodyExt::boxed(BodyExt::map_err(body_stream, std::convert::Into::into));
+            let txbody = BodyExt::boxed(body_stream);
             let _ = tx.send((status, headers_from_py!(headers), txbody));
 
             let mut closed = false;
@@ -92,7 +93,7 @@ impl WSGIProtocol {
                         None
                     }
                 } {
-                    if py_allow_threads!(py, { body_tx.blocking_send(Ok(frame)) }).is_ok() {
+                    if body_tx.send(frame).is_ok() {
                         continue;
                     }
                 }

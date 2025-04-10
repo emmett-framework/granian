@@ -44,7 +44,7 @@ pub(crate) struct ASGIHTTPProtocol {
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
-    body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes>>>>,
+    body_tx: Mutex<Option<mpsc::UnboundedSender<body::Bytes>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<tokio::sync::Notify>,
@@ -89,28 +89,25 @@ impl ASGIHTTPProtocol {
     fn send_body<'p>(
         &self,
         py: Python<'p>,
-        tx: mpsc::Sender<Result<body::Bytes>>,
+        tx: &mpsc::UnboundedSender<body::Bytes>,
         body: Box<[u8]>,
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
-        let guard = self.flow_tx_waiter.clone();
-        let disconnected = self.flow_rx_closed.clone();
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            match tx.send(Ok(body.into())).await {
-                Ok(()) => {
-                    if close {
-                        guard.notify_one();
-                    }
-                }
-                Err(err) => {
-                    if !disconnected.load(atomic::Ordering::Acquire) {
-                        log::info!("ASGI transport error: {err:?}");
-                    }
-                    guard.notify_one();
+        match tx.send(body.into()) {
+            Ok(()) => {
+                if close {
+                    self.flow_tx_waiter.notify_one();
                 }
             }
-            FutureResultToPy::None
-        })
+            Err(err) => {
+                if !self.flow_rx_closed.load(atomic::Ordering::Acquire) {
+                    log::info!("ASGI transport error: {err:?}");
+                }
+                self.flow_tx_waiter.notify_one();
+            }
+        }
+
+        empty_future_into_py(py)
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<HTTPResponse>> {
@@ -204,7 +201,7 @@ impl ASGIHTTPProtocol {
                             status,
                             headers,
                             http_body_util::Full::new(body::Bytes::from(body))
-                                .map_err(|e| match e {})
+                                .map_err(std::convert::Into::into)
                                 .boxed(),
                         );
                         self.flow_tx_waiter.notify_one();
@@ -213,24 +210,23 @@ impl ASGIHTTPProtocol {
                     (true, true, false) => {
                         self.response_chunked.store(true, atomic::Ordering::Relaxed);
                         let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
-                        let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes>>(1);
+                        let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
                         let body_stream = http_body_util::StreamBody::new(
-                            tokio_stream::wrappers::ReceiverStream::new(body_rx).map_ok(body::Frame::data),
+                            tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                                .map(body::Frame::data)
+                                .map(Result::Ok),
                         );
                         *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                         self.send_response(status, headers, BodyExt::boxed(body_stream));
-                        self.send_body(py, body_tx, body, false)
+                        self.send_body(py, &body_tx, body, false)
                     }
                     (true, true, true) => match &*self.body_tx.lock().unwrap() {
-                        Some(tx) => {
-                            let tx = tx.clone();
-                            self.send_body(py, tx, body, false)
-                        }
+                        Some(tx) => self.send_body(py, tx, body, false),
                         _ => error_flow!(),
                     },
                     (true, false, true) => match self.body_tx.lock().unwrap().take() {
                         Some(tx) => match body.is_empty() {
-                            false => self.send_body(py, tx, body, true),
+                            false => self.send_body(py, &tx, body, true),
                             true => {
                                 self.flow_tx_waiter.notify_one();
                                 empty_future_into_py(py)
