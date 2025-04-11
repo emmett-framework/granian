@@ -254,9 +254,9 @@ def http2():
 
 def files():
     results = {}
-    with app('rsgi'):
+    with app('rsgi', bthreads=1):
         results['RSGI'] = benchmark('fp')
-    with app('asgi'):
+    with app('asgi', bthreads=1):
         results['ASGI'] = benchmark('fb')
         results['ASGI pathsend'] = benchmark('fp')
     return results
@@ -329,7 +329,7 @@ def vs_http2():
 
 def vs_files():
     results = {}
-    with app('asgi'):
+    with app('asgi', bthreads=1):
         results['Granian (pathsend)'] = benchmark('fp')
     for fw in ['uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
         title = ' '.join(item.title() for item in fw.split('_'))

@@ -289,7 +289,7 @@ impl PyResponseFile {
     pub async fn to_response(self) -> hyper::Response<HTTPResponseBody> {
         match File::open(&self.file_path).await {
             Ok(file) => {
-                let stream = ReaderStream::new(file);
+                let stream = ReaderStream::with_capacity(file, 131_072);
                 let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
                 let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
                 *res.status_mut() = self.status;

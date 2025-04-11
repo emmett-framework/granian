@@ -249,7 +249,7 @@ impl ASGIHTTPProtocol {
                     self.rt.spawn(async move {
                         let res = match File::open(&file_path).await {
                             Ok(file) => {
-                                let stream = ReaderStream::new(file);
+                                let stream = ReaderStream::with_capacity(file, 131_072);
                                 let stream_body = http_body_util::StreamBody::new(stream.map_ok(body::Frame::data));
                                 let mut res =
                                     Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
