@@ -63,7 +63,7 @@ fn build_wsgi<'p>(
     );
     environ_set!(py, environ, "SERVER_NAME", server_addr.ip().to_string());
     environ_set!(py, environ, "SERVER_PORT", server_addr.port().to_string());
-    environ_set!(py, environ, "REMOTE_ADDR", client_addr.to_string());
+    environ_set!(py, environ, "REMOTE_ADDR", client_addr.ip().to_string());
     environ_set!(py, environ, "REQUEST_METHOD", req.method.as_str());
     environ_set!(
         py,
