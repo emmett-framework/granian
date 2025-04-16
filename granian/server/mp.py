@@ -52,9 +52,9 @@ class WorkerProcess(AbstractWorker):
 
             configure_logging(log_level, log_config, log_enabled)
 
-            callback = callback_loader()
             sock = (sock[0], sock[1].fileno() if sock[1] is not None else sock[1])
             loop = loops.get(loop_impl)
+            callback = callback_loader()
             return target(worker_id, callback, sock, loop, *args, **kwargs)
 
         return wrapped
