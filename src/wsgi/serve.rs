@@ -6,7 +6,7 @@ use super::http::handle;
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::tcp::ListenerSpec;
-use crate::workers::{WorkerCTXBase, WorkerCTXFiles, WorkerConfig, WorkerSignalSync};
+use crate::workers::{WorkerConfig, WorkerSignalSync};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct WSGIWorker {
@@ -14,7 +14,7 @@ pub struct WSGIWorker {
 }
 
 macro_rules! serve_mtr {
-    ($func_name:ident, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -28,9 +28,9 @@ macro_rules! serve_mtr {
             log::info!("Started worker-{}", worker_id);
 
             let tcp_listener = self.config.tcp_listener();
-            let http_mode = self.config.http_mode.clone();
-            let http_upgrades = self.config.websockets_enabled;
+            #[allow(unused_variables)]
             let http1_opts = self.config.http1_opts.clone();
+            #[allow(unused_variables)]
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
 
@@ -50,13 +50,13 @@ macro_rules! serve_mtr {
             let (stx, mut srx) = tokio::sync::watch::channel(false);
 
             let main_loop = rt.inner.spawn(async move {
-                crate::workers::gen_accept_loop!(
+                crate::workers::gen_accept!(
                     plain
+                    $http_mode
+                    $conn_method,
                     ctx,
                     handle,
                     $svc,
-                    http_mode,
-                    http_upgrades,
                     tcp_listener,
                     srx,
                     backpressure,
@@ -98,7 +98,7 @@ macro_rules! serve_mtr {
 }
 
 macro_rules! serve_mtr_ssl {
-    ($func_name:ident, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -112,9 +112,9 @@ macro_rules! serve_mtr_ssl {
             log::info!("Started worker-{}", worker_id);
 
             let tcp_listener = self.config.tcp_listener();
-            let http_mode = self.config.http_mode.clone();
-            let http_upgrades = self.config.websockets_enabled;
+            #[allow(unused_variables)]
             let http1_opts = self.config.http1_opts.clone();
+            #[allow(unused_variables)]
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
@@ -135,14 +135,14 @@ macro_rules! serve_mtr_ssl {
             let (stx, mut srx) = tokio::sync::watch::channel(false);
 
             let main_loop = rt.inner.spawn(async move {
-                crate::workers::gen_accept_loop!(
+                crate::workers::gen_accept!(
                     tls
+                    $http_mode
+                    $conn_method,
                     tls_cfg,
                     ctx,
                     handle,
                     $svc,
-                    http_mode,
-                    http_upgrades,
                     tcp_listener,
                     srx,
                     backpressure,
@@ -184,7 +184,7 @@ macro_rules! serve_mtr_ssl {
 }
 
 macro_rules! serve_str {
-    ($func_name:ident, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -199,7 +199,19 @@ macro_rules! serve_str {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_inner!(self, handle, $ctx, $svc, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_inner!(
+                $http_mode,
+                $conn_method,
+                handle,
+                $ctx,
+                $svc,
+                self,
+                callback,
+                event_loop,
+                worker_id,
+                workers,
+                srx
+            );
 
             let pysig = signal.clone_ref(py);
             std::thread::spawn(move || {
@@ -223,7 +235,7 @@ macro_rules! serve_str {
 }
 
 macro_rules! serve_str_ssl {
-    ($func_name:ident, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -239,7 +251,17 @@ macro_rules! serve_str_ssl {
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
             crate::workers::serve_str_ssl_inner!(
-                self, handle, $ctx, $svc, callback, event_loop, worker_id, workers, srx
+                $http_mode,
+                $conn_method,
+                handle,
+                $ctx,
+                $svc,
+                self,
+                callback,
+                event_loop,
+                worker_id,
+                workers,
+                srx
             );
 
             let pysig = signal.clone_ref(py);
@@ -264,14 +286,286 @@ macro_rules! serve_str_ssl {
 }
 
 impl WSGIWorker {
-    serve_mtr!(_serve_mtr, WorkerCTXBase, service_app);
-    serve_mtr!(_serve_mtr_files, WorkerCTXFiles, service_files);
-    serve_str!(_serve_str, WorkerCTXBase, service_app);
-    serve_str!(_serve_str_files, WorkerCTXFiles, service_files);
-    serve_mtr_ssl!(_serve_mtr_ssl, WorkerCTXBase, service_app);
-    serve_mtr_ssl!(_serve_mtr_ssl_files, WorkerCTXFiles, service_files);
-    serve_str_ssl!(_serve_str_ssl, WorkerCTXBase, service_app);
-    serve_str_ssl!(_serve_str_ssl_files, WorkerCTXFiles, service_files);
+    serve_mtr!(
+        _serve_mtr_http_plain_auto_base,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_auto_file,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_autou_base,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_autou_file,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_1_base,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_1_file,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_1u_base,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_1u_file,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_2_base,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr!(
+        _serve_mtr_http_plain_2_file,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_auto_base,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_auto_file,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_autou_base,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_autou_file,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_1_base,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_1_file,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_1u_base,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_1u_file,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_2_base,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_mtr_ssl!(
+        _serve_mtr_http_tls_2_file,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str!(
+        _serve_str_http_plain_auto_base,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str!(
+        _serve_str_http_plain_auto_file,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str!(
+        _serve_str_http_plain_autou_base,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str!(
+        _serve_str_http_plain_autou_file,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str!(
+        _serve_str_http_plain_1_base,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str!(
+        _serve_str_http_plain_1_file,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str!(
+        _serve_str_http_plain_1u_base,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str!(
+        _serve_str_http_plain_1u_file,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str!(
+        _serve_str_http_plain_2_base,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str!(
+        _serve_str_http_plain_2_file,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_auto_base,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_auto_file,
+        auto,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_autou_base,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_autou_file,
+        auto,
+        serve_connection_with_upgrades,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_1_base,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_1_file,
+        1,
+        connection_builder_h1,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_1u_base,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_1u_file,
+        1,
+        connection_builder_h1u,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_2_base,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXBase,
+        service_app
+    );
+    serve_str_ssl!(
+        _serve_str_http_tls_2_file,
+        2,
+        serve_connection,
+        crate::workers::WorkerCTXFiles,
+        service_files
+    );
 }
 
 #[pymethods]
@@ -343,11 +637,24 @@ impl WSGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignalSync>,
     ) {
-        match (self.config.ssl_enabled, self.config.static_files.is_none()) {
-            (false, true) => self._serve_mtr(py, callback, event_loop, signal),
-            (true, true) => self._serve_mtr_ssl(py, callback, event_loop, signal),
-            (false, false) => self._serve_mtr_files(py, callback, event_loop, signal),
-            (true, false) => self._serve_mtr_ssl_files(py, callback, event_loop, signal),
+        match (
+            &self.config.http_mode[..],
+            self.config.ssl_enabled,
+            self.config.static_files.is_some(),
+        ) {
+            ("auto", false, false) => self._serve_mtr_http_plain_auto_base(py, callback, event_loop, signal),
+            ("auto", false, true) => self._serve_mtr_http_plain_auto_file(py, callback, event_loop, signal),
+            ("auto", true, false) => self._serve_mtr_http_tls_auto_base(py, callback, event_loop, signal),
+            ("auto", true, true) => self._serve_mtr_http_tls_auto_file(py, callback, event_loop, signal),
+            ("1", false, false) => self._serve_mtr_http_plain_1_base(py, callback, event_loop, signal),
+            ("1", false, true) => self._serve_mtr_http_plain_1_file(py, callback, event_loop, signal),
+            ("1", true, false) => self._serve_mtr_http_tls_1_base(py, callback, event_loop, signal),
+            ("1", true, true) => self._serve_mtr_http_tls_1_file(py, callback, event_loop, signal),
+            ("2", false, false) => self._serve_mtr_http_plain_2_base(py, callback, event_loop, signal),
+            ("2", false, true) => self._serve_mtr_http_plain_2_file(py, callback, event_loop, signal),
+            ("2", true, false) => self._serve_mtr_http_tls_2_base(py, callback, event_loop, signal),
+            ("2", true, true) => self._serve_mtr_http_tls_2_file(py, callback, event_loop, signal),
+            _ => unreachable!(),
         }
     }
 
@@ -358,11 +665,24 @@ impl WSGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignalSync>,
     ) {
-        match (self.config.ssl_enabled, self.config.static_files.is_none()) {
-            (false, true) => self._serve_str(py, callback, event_loop, signal),
-            (true, true) => self._serve_str_ssl(py, callback, event_loop, signal),
-            (false, false) => self._serve_str_files(py, callback, event_loop, signal),
-            (true, false) => self._serve_str_ssl_files(py, callback, event_loop, signal),
+        match (
+            &self.config.http_mode[..],
+            self.config.ssl_enabled,
+            self.config.static_files.is_some(),
+        ) {
+            ("auto", false, false) => self._serve_str_http_plain_auto_base(py, callback, event_loop, signal),
+            ("auto", false, true) => self._serve_str_http_plain_auto_file(py, callback, event_loop, signal),
+            ("auto", true, false) => self._serve_str_http_tls_auto_base(py, callback, event_loop, signal),
+            ("auto", true, true) => self._serve_str_http_tls_auto_file(py, callback, event_loop, signal),
+            ("1", false, false) => self._serve_str_http_plain_1_base(py, callback, event_loop, signal),
+            ("1", false, true) => self._serve_str_http_plain_1_file(py, callback, event_loop, signal),
+            ("1", true, false) => self._serve_str_http_tls_1_base(py, callback, event_loop, signal),
+            ("1", true, true) => self._serve_str_http_tls_1_file(py, callback, event_loop, signal),
+            ("2", false, false) => self._serve_str_http_plain_2_base(py, callback, event_loop, signal),
+            ("2", false, true) => self._serve_str_http_plain_2_file(py, callback, event_loop, signal),
+            ("2", true, false) => self._serve_str_http_tls_2_base(py, callback, event_loop, signal),
+            ("2", true, true) => self._serve_str_http_tls_2_file(py, callback, event_loop, signal),
+            _ => unreachable!(),
         }
     }
 }

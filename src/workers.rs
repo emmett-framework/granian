@@ -384,7 +384,7 @@ macro_rules! connection_handler {
                     .max_frame_size($http2_opts.max_frame_size)
                     .max_header_list_size($http2_opts.max_headers_size)
                     .max_send_buf_size($http2_opts.max_send_buffer_size);
-                // TODO: is stream wrapper always hyper_util::rt::TokioIo::new?
+
                 _ = conn.$conn_method(hyper_util::rt::TokioIo::new(stream), svc).await;
 
                 disconnect_tx.notify_one();
@@ -420,7 +420,6 @@ macro_rules! connection_handler {
                     proto
                 );
 
-                // TODO: is stream wrapper always hyper_util::rt::TokioIo::new?
                 _ = crate::workers::$conn_method!($http_opts, hyper_util::rt::TokioIo::new(stream), svc).await;
 
                 disconnect_tx.notify_one();
@@ -481,19 +480,18 @@ macro_rules! connection_handler {
 macro_rules! accept_loop {
     (
         plain
-        $tcp_listener:expr,
+        $listener:expr,
+        $listener_cfg:expr,
         $pysig:expr,
         $backpressure:expr,
-        // $wrk:expr,
         $handler:expr
     ) => {{
-        let tcp_listener = tokio::net::TcpListener::from_std($tcp_listener).unwrap();
+        let tcp_listener = tokio::net::TcpListener::from_std($listener).unwrap();
         let local_addr = tcp_listener.local_addr().unwrap();
         let mut accept_loop = true;
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
 
         while accept_loop {
-            // let ctx = $wrk.clone();
             let semaphore = semaphore.clone();
             tokio::select! {
                 (permit, Ok((stream, remote_addr))) = async {
@@ -511,19 +509,17 @@ macro_rules! accept_loop {
 
     (
         tls
-        $tls_config:expr,
-        $tcp_listener:expr,
+        $listener:expr,
+        $listener_cfg:expr,
         $pysig:expr,
         $backpressure:expr,
-        // $wrk:expr,
         $handler:expr
     ) => {{
-        let (mut tls_listener, local_addr) = crate::tls::tls_listener($tls_config.into(), $tcp_listener).unwrap();
+        let (mut tls_listener, local_addr) = crate::tls::tls_listener($listener_cfg.into(), $listener).unwrap();
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
         let mut accept_loop = true;
 
         while accept_loop {
-            // let ctx = $wrk.clone();
             let semaphore = semaphore.clone();
             tokio::select! {
                 (permit, accept) = async {
@@ -547,14 +543,14 @@ macro_rules! accept_loop {
     }};
 }
 
-macro_rules! gen_accept_loop {
+macro_rules! gen_accept {
     (
         plain
+        auto
+        $conn_method:ident,
         $ctx:expr,
         $target:expr,
         $svc:ident,
-        $http_mode:expr,
-        $http_upgrades:expr,
         $tcp_listener:expr,
         $pyrx:expr,
         $backpressure:expr,
@@ -565,109 +561,108 @@ macro_rules! gen_accept_loop {
         $http2_opts:expr,
         $http2_stream_wrapper:expr
     ) => {
-        match (&$http_mode[..], $http_upgrades) {
-            ("auto", true) => crate::workers::accept_loop!(
-                plain
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                // $wrk,
-                crate::workers::connection_handler!(
-                    auto
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    $executor,
-                    serve_connection_with_upgrades,
-                    $http1_opts,
-                    $http2_opts
-                )
-            ),
-            ("auto", false) => crate::workers::accept_loop!(
-                plain
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                // $wrk,
-                crate::workers::connection_handler!(
-                    auto
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    $executor,
-                    serve_connection,
-                    $http1_opts,
-                    $http2_opts
-                )
-            ),
-            ("1", true) => crate::workers::accept_loop!(
-                plain
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                // $wrk,
-                crate::workers::connection_handler!(
-                    1
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    connection_builder_h1u,
-                    $http1_opts
-                )
-            ),
-            ("1", false) => crate::workers::accept_loop!(
-                plain
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                // $wrk,
-                crate::workers::connection_handler!(
-                    1
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    connection_builder_h1,
-                    $http1_opts
-                )
-            ),
-            ("2", _) => crate::workers::accept_loop!(
-                plain
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                // $wrk,
-                crate::workers::connection_handler!(
-                    2
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    $executor,
-                    $http2_stream_wrapper,
-                    $http2_opts
-                )
-            ),
-            _ => unreachable!()
-        }
+        crate::workers::accept_loop!(
+            plain
+            $tcp_listener,
+            (),
+            $pyrx,
+            $backpressure,
+            crate::workers::connection_handler!(
+                auto
+                $ctx,
+                $target,
+                $svc,
+                $rt,
+                $spawner,
+                $executor,
+                $conn_method,
+                $http1_opts,
+                $http2_opts
+            )
+        )
+    };
+
+    (
+        plain
+        1
+        $conn_method:ident,
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $tcp_listener:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr
+    ) => {
+        crate::workers::accept_loop!(
+            plain
+            $tcp_listener,
+            (),
+            $pyrx,
+            $backpressure,
+            crate::workers::connection_handler!(
+                1
+                $ctx,
+                $target,
+                $svc,
+                $rt,
+                $spawner,
+                $conn_method,
+                $http1_opts
+            )
+        )
+    };
+
+    (
+        plain
+        2
+        $conn_method:ident,
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $tcp_listener:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr
+    ) => {
+        crate::workers::accept_loop!(
+            plain
+            $tcp_listener,
+            (),
+            $pyrx,
+            $backpressure,
+            crate::workers::connection_handler!(
+                2
+                $ctx,
+                $target,
+                $svc,
+                $rt,
+                $spawner,
+                $executor,
+                $http2_stream_wrapper,
+                $http2_opts
+            )
+        )
     };
 
     (
         tls
+        auto
+        $conn_method:ident,
         $tls_config:expr,
         $ctx:expr,
         $target:expr,
         $svc:ident,
-        $http_mode:expr,
-        $http_upgrades:expr,
         $tcp_listener:expr,
         $pyrx:expr,
         $backpressure:expr,
@@ -678,104 +673,105 @@ macro_rules! gen_accept_loop {
         $http2_opts:expr,
         $http2_stream_wrapper:expr
     ) => {
-        match (&$http_mode[..], $http_upgrades) {
-            ("auto", true) => crate::workers::accept_loop!(
-                tls
-                $tls_config,
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                crate::workers::connection_handler!(
-                    auto
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    $executor,
-                    serve_connection_with_upgrades,
-                    $http1_opts,
-                    $http2_opts
-                )
-            ),
-            ("auto", false) => crate::workers::accept_loop!(
-                tls
-                $tls_config,
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                crate::workers::connection_handler!(
-                    auto
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    $executor,
-                    serve_connection,
-                    $http1_opts,
-                    $http2_opts
-                )
-            ),
-            ("1", true) => crate::workers::accept_loop!(
-                tls
-                $tls_config,
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                crate::workers::connection_handler!(
-                    1
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    connection_builder_h1u,
-                    $http1_opts
-                )
-            ),
-            ("1", false) => crate::workers::accept_loop!(
-                tls
-                $tls_config,
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                crate::workers::connection_handler!(
-                    1
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    connection_builder_h1,
-                    $http1_opts
-                )
-            ),
-            ("2", _) => crate::workers::accept_loop!(
-                tls
-                $tls_config,
-                $tcp_listener,
-                $pyrx,
-                $backpressure,
-                crate::workers::connection_handler!(
-                    2
-                    $ctx,
-                    $target,
-                    $svc,
-                    $rt,
-                    $spawner,
-                    $executor,
-                    $http2_stream_wrapper,
-                    $http2_opts
-                )
-            ),
-            _ => unreachable!()
-        }
+        crate::workers::accept_loop!(
+            tls
+            $tcp_listener,
+            $tls_config,
+            $pyrx,
+            $backpressure,
+            crate::workers::connection_handler!(
+                auto
+                $ctx,
+                $target,
+                $svc,
+                $rt,
+                $spawner,
+                $executor,
+                $conn_method,
+                $http1_opts,
+                $http2_opts
+            )
+        )
+    };
+
+    (
+        tls
+        1
+        $conn_method:ident,
+        $tls_config:expr,
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $tcp_listener:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr
+    ) => {
+        crate::workers::accept_loop!(
+            tls
+            $tcp_listener,
+            $tls_config,
+            $pyrx,
+            $backpressure,
+            crate::workers::connection_handler!(
+                1
+                $ctx,
+                $target,
+                $svc,
+                $rt,
+                $spawner,
+                $conn_method,
+                $http1_opts
+            )
+        )
+    };
+
+    (
+        tls
+        2
+        $conn_method:ident,
+        $tls_config:expr,
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $tcp_listener:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr
+    ) => {
+        crate::workers::accept_loop!(
+            tls
+            $tcp_listener,
+            $tls_config,
+            $pyrx,
+            $backpressure,
+            crate::workers::connection_handler!(
+                2
+                $ctx,
+                $target,
+                $svc,
+                $rt,
+                $spawner,
+                $executor,
+                $http2_stream_wrapper,
+                $http2_opts
+            )
+        )
     };
 }
 
 macro_rules! serve_mtr {
-    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -789,9 +785,9 @@ macro_rules! serve_mtr {
             log::info!("Started worker-{}", worker_id);
 
             let tcp_listener = self.config.tcp_listener();
-            let http_mode = self.config.http_mode.clone();
-            let http_upgrades = self.config.websockets_enabled;
+            #[allow(unused_variables)]
             let http1_opts = self.config.http1_opts.clone();
+            #[allow(unused_variables)]
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
 
@@ -811,13 +807,13 @@ macro_rules! serve_mtr {
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
-                crate::workers::gen_accept_loop!(
+                crate::workers::gen_accept!(
                     plain
+                    $http_mode
+                    $conn_method,
                     ctx,
                     $target,
                     $svc,
-                    http_mode,
-                    http_upgrades,
                     tcp_listener,
                     srx,
                     backpressure,
@@ -847,7 +843,7 @@ macro_rules! serve_mtr {
 }
 
 macro_rules! serve_mtr_ssl {
-    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -861,9 +857,9 @@ macro_rules! serve_mtr_ssl {
             log::info!("Started worker-{}", worker_id);
 
             let tcp_listener = self.config.tcp_listener();
-            let http_mode = self.config.http_mode.clone();
-            let http_upgrades = self.config.websockets_enabled;
+            #[allow(unused_variables)]
             let http1_opts = self.config.http1_opts.clone();
+            #[allow(unused_variables)]
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
@@ -884,14 +880,14 @@ macro_rules! serve_mtr_ssl {
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
-                crate::workers::gen_accept_loop!(
+                crate::workers::gen_accept!(
                     tls
+                    $http_mode
+                    $conn_method,
                     tls_cfg,
                     ctx,
                     $target,
                     $svc,
-                    http_mode,
-                    http_upgrades,
                     tcp_listener,
                     srx,
                     backpressure,
@@ -921,7 +917,7 @@ macro_rules! serve_mtr_ssl {
 }
 
 macro_rules! serve_str_inner {
-    ($self:expr, $target:expr, $ctx:ty, $svc:ident, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
+    ($http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident, $self:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
         let ctxw: Box<dyn crate::workers::WorkerCTX<CTX=$ctx>> = Box::new(crate::workers::Worker::new(<$ctx>::new($callback, $self.config.static_files.clone())));
         let ctx = ctxw.get_ctx();
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
@@ -930,9 +926,9 @@ macro_rules! serve_str_inner {
             log::info!("Started worker-{} runtime-{}", $wid, thread_id + 1);
 
             let tcp_listener = $self.config.tcp_listener();
-            let http_mode = $self.config.http_mode.clone();
-            let http_upgrades = $self.config.websockets_enabled;
+            #[allow(unused_variables)]
             let http1_opts = $self.config.http1_opts.clone();
+            #[allow(unused_variables)]
             let http2_opts = $self.config.http2_opts.clone();
             let blocking_threads = $self.config.blocking_threads.clone();
             let py_threads = $self.config.py_threads.clone();
@@ -950,13 +946,13 @@ macro_rules! serve_str_inner {
                 let tasks = tokio_util::task::TaskTracker::new();
 
                 crate::runtime::block_on_local(&rt, local, async move {
-                    crate::workers::gen_accept_loop!(
+                    crate::workers::gen_accept!(
                         plain
+                        $http_mode
+                        $conn_method,
                         ctx,
                         $target,
                         $svc,
-                        http_mode,
-                        http_upgrades,
                         tcp_listener,
                         srx,
                         backpressure,
@@ -983,7 +979,7 @@ macro_rules! serve_str_inner {
 }
 
 macro_rules! serve_str {
-    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -997,7 +993,19 @@ macro_rules! serve_str {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_inner!(self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_inner!(
+                $http_mode,
+                $conn_method,
+                $target,
+                $ctx,
+                $svc,
+                self,
+                callback,
+                event_loop,
+                worker_id,
+                workers,
+                srx
+            );
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -1020,7 +1028,7 @@ macro_rules! serve_str {
 }
 
 macro_rules! serve_str_ssl_inner {
-    ($self:expr, $target:expr, $ctx:ty, $svc:ident, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
+    ($http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident, $self:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
         let ctxw: Box<dyn crate::workers::WorkerCTX<CTX=$ctx>> = Box::new(crate::workers::Worker::new(<$ctx>::new($callback, $self.config.static_files.clone())));
         let ctx = ctxw.get_ctx();
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
@@ -1029,9 +1037,9 @@ macro_rules! serve_str_ssl_inner {
             log::info!("Started worker-{} runtime-{}", $wid, thread_id + 1);
 
             let tcp_listener = $self.config.tcp_listener();
-            let http_mode = $self.config.http_mode.clone();
-            let http_upgrades = $self.config.websockets_enabled;
+            #[allow(unused_variables)]
             let http1_opts = $self.config.http1_opts.clone();
+            #[allow(unused_variables)]
             let http2_opts = $self.config.http2_opts.clone();
             let tls_cfg = $self.config.tls_cfg();
             let blocking_threads = $self.config.blocking_threads.clone();
@@ -1050,14 +1058,14 @@ macro_rules! serve_str_ssl_inner {
                 let tasks = tokio_util::task::TaskTracker::new();
 
                 crate::runtime::block_on_local(&rt, local, async move {
-                    crate::workers::gen_accept_loop!(
+                    crate::workers::gen_accept!(
                         tls
+                        $http_mode
+                        $conn_method,
                         tls_cfg,
                         ctx,
                         $target,
                         $svc,
-                        http_mode,
-                        http_upgrades,
                         tcp_listener,
                         srx,
                         backpressure,
@@ -1084,7 +1092,7 @@ macro_rules! serve_str_ssl_inner {
 }
 
 macro_rules! serve_str_ssl {
-    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -1099,7 +1107,17 @@ macro_rules! serve_str_ssl {
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
             crate::workers::serve_str_ssl_inner!(
-                self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx
+                $http_mode,
+                $conn_method,
+                $target,
+                $ctx,
+                $svc,
+                self,
+                callback,
+                event_loop,
+                worker_id,
+                workers,
+                srx
             );
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
@@ -1123,7 +1141,7 @@ macro_rules! serve_str_ssl {
 }
 
 macro_rules! serve_fut {
-    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name<'p>(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -1137,7 +1155,19 @@ macro_rules! serve_fut {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_inner!(self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_inner!(
+                $http_mode,
+                $conn_method,
+                $target,
+                $ctx,
+                $svc,
+                self,
+                callback,
+                event_loop,
+                worker_id,
+                workers,
+                srx
+            );
 
             let ret = event_loop.call_method0("create_future").unwrap();
             let pyfut = ret.clone().unbind();
@@ -1178,7 +1208,7 @@ macro_rules! serve_fut {
 }
 
 macro_rules! serve_fut_ssl {
-    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
+    ($func_name:ident, $http_mode:tt, $conn_method:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name<'p>(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -1193,7 +1223,17 @@ macro_rules! serve_fut_ssl {
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
             crate::workers::serve_str_ssl_inner!(
-                self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx
+                $http_mode,
+                $conn_method,
+                $target,
+                $ctx,
+                $svc,
+                self,
+                callback,
+                event_loop,
+                worker_id,
+                workers,
+                srx
             );
 
             let ret = event_loop.call_method0("create_future").unwrap();
@@ -1234,12 +1274,791 @@ macro_rules! serve_fut_ssl {
     };
 }
 
+macro_rules! gen_serve_methods {
+    ($target:expr) => {
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_auto_base,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_auto_file,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_1_base,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_1_file,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_2_base,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_http_plain_2_file,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_auto_base,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_auto_file,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_1_base,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_1_file,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_2_base,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_http_tls_2_file,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_auto_base,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_auto_file,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_1_base,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_1_file,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_2_base,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_http_plain_2_file,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_auto_base,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_auto_file,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_1_base,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_1_file,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_2_base,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_http_tls_2_file,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_auto_base,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_auto_file,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_1_base,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_1_file,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_2_base,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_http_plain_2_file,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_auto_base,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_auto_file,
+            auto,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_1_base,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_1_file,
+            1,
+            connection_builder_h1,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_2_base,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_http_tls_2_file,
+            2,
+            serve_connection,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+    };
+
+    (ws $target:expr) => {
+        crate::workers::serve_mtr!(
+            _serve_mtr_ws_plain_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_ws_plain_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_ws_plain_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr!(
+            _serve_mtr_ws_plain_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_ws_tls_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_ws_tls_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_ws_tls_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_mtr_ssl!(
+            _serve_mtr_ws_tls_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_ws_plain_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_ws_plain_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str!(
+            _serve_str_ws_plain_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str!(
+            _serve_str_ws_plain_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_ws_tls_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_ws_tls_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_ws_tls_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_str_ssl!(
+            _serve_str_ws_tls_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_ws_plain_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_ws_plain_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_ws_plain_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut!(
+            _serve_fut_ws_plain_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_ws_tls_autou_base,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_ws_tls_autou_file,
+            auto,
+            serve_connection_with_upgrades,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_ws_tls_1u_base,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXBase,
+            service_app
+        );
+        crate::workers::serve_fut_ssl!(
+            _serve_fut_ws_tls_1u_file,
+            1,
+            connection_builder_h1u,
+            $target,
+            crate::workers::WorkerCTXFiles,
+            service_files
+        );
+    };
+}
+
+macro_rules! gen_serve_match {
+    (mtr $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr) => {
+        match (
+            &$self.config.http_mode[..],
+            $self.config.ssl_enabled,
+            $self.config.websockets_enabled,
+            $self.config.static_files.is_some(),
+        ) {
+            ("auto", false, false, false) => {
+                $self._serve_mtr_http_plain_auto_base($py, $callback, $event_loop, $signal)
+            }
+            ("auto", false, false, true) => $self._serve_mtr_http_plain_auto_file($py, $callback, $event_loop, $signal),
+            ("auto", false, true, false) => $self._serve_mtr_ws_plain_autou_base($py, $callback, $event_loop, $signal),
+            ("auto", false, true, true) => $self._serve_mtr_ws_plain_autou_file($py, $callback, $event_loop, $signal),
+            ("auto", true, false, false) => $self._serve_mtr_http_tls_auto_base($py, $callback, $event_loop, $signal),
+            ("auto", true, false, true) => $self._serve_mtr_http_tls_auto_file($py, $callback, $event_loop, $signal),
+            ("auto", true, true, false) => $self._serve_mtr_ws_tls_autou_base($py, $callback, $event_loop, $signal),
+            ("auto", true, true, true) => $self._serve_mtr_ws_tls_autou_file($py, $callback, $event_loop, $signal),
+            ("1", false, false, false) => $self._serve_mtr_http_plain_1_base($py, $callback, $event_loop, $signal),
+            ("1", false, false, true) => $self._serve_mtr_http_plain_1_file($py, $callback, $event_loop, $signal),
+            ("1", false, true, false) => $self._serve_mtr_ws_plain_1u_base($py, $callback, $event_loop, $signal),
+            ("1", false, true, true) => $self._serve_mtr_ws_plain_1u_file($py, $callback, $event_loop, $signal),
+            ("1", true, false, false) => $self._serve_mtr_http_tls_1_base($py, $callback, $event_loop, $signal),
+            ("1", true, false, true) => $self._serve_mtr_http_tls_1_file($py, $callback, $event_loop, $signal),
+            ("1", true, true, false) => $self._serve_mtr_ws_tls_1u_base($py, $callback, $event_loop, $signal),
+            ("1", true, true, true) => $self._serve_mtr_ws_tls_1u_file($py, $callback, $event_loop, $signal),
+            ("2", false, _, false) => $self._serve_mtr_http_plain_2_base($py, $callback, $event_loop, $signal),
+            ("2", false, _, true) => $self._serve_mtr_http_plain_2_file($py, $callback, $event_loop, $signal),
+            ("2", true, _, false) => $self._serve_mtr_http_tls_2_base($py, $callback, $event_loop, $signal),
+            ("2", true, _, true) => $self._serve_mtr_http_tls_2_file($py, $callback, $event_loop, $signal),
+            _ => unreachable!(),
+        }
+    };
+
+    (str $self:expr, $callback:expr, $event_loop:expr, $signal:expr) => {
+        match (
+            &$self.config.http_mode[..],
+            $self.config.ssl_enabled,
+            $self.config.websockets_enabled,
+            $self.config.static_files.is_some(),
+        ) {
+            ("auto", false, false, false) => $self._serve_str_http_plain_auto_base($callback, $event_loop, $signal),
+            ("auto", false, false, true) => $self._serve_str_http_plain_auto_file($callback, $event_loop, $signal),
+            ("auto", false, true, false) => $self._serve_str_ws_plain_autou_base($callback, $event_loop, $signal),
+            ("auto", false, true, true) => $self._serve_str_ws_plain_autou_file($callback, $event_loop, $signal),
+            ("auto", true, false, false) => $self._serve_str_http_tls_auto_base($callback, $event_loop, $signal),
+            ("auto", true, false, true) => $self._serve_str_http_tls_auto_file($callback, $event_loop, $signal),
+            ("auto", true, true, false) => $self._serve_str_ws_tls_autou_base($callback, $event_loop, $signal),
+            ("auto", true, true, true) => $self._serve_str_ws_tls_autou_file($callback, $event_loop, $signal),
+            ("1", false, false, false) => $self._serve_str_http_plain_1_base($callback, $event_loop, $signal),
+            ("1", false, false, true) => $self._serve_str_http_plain_1_file($callback, $event_loop, $signal),
+            ("1", false, true, false) => $self._serve_str_ws_plain_1u_base($callback, $event_loop, $signal),
+            ("1", false, true, true) => $self._serve_str_ws_plain_1u_file($callback, $event_loop, $signal),
+            ("1", true, false, false) => $self._serve_str_http_tls_1_base($callback, $event_loop, $signal),
+            ("1", true, false, true) => $self._serve_str_http_tls_1_file($callback, $event_loop, $signal),
+            ("1", true, true, false) => $self._serve_str_ws_tls_1u_base($callback, $event_loop, $signal),
+            ("1", true, true, true) => $self._serve_str_ws_tls_1u_file($callback, $event_loop, $signal),
+            ("2", false, _, false) => $self._serve_str_http_plain_2_base($callback, $event_loop, $signal),
+            ("2", false, _, true) => $self._serve_str_http_plain_2_file($callback, $event_loop, $signal),
+            ("2", true, _, false) => $self._serve_str_http_tls_2_base($callback, $event_loop, $signal),
+            ("2", true, _, true) => $self._serve_str_http_tls_2_file($callback, $event_loop, $signal),
+            _ => unreachable!(),
+        }
+    };
+
+    (fut $self:expr, $callback:expr, $event_loop:expr, $signal:expr) => {
+        match (
+            &$self.config.http_mode[..],
+            $self.config.ssl_enabled,
+            $self.config.websockets_enabled,
+            $self.config.static_files.is_some(),
+        ) {
+            ("auto", false, false, false) => $self._serve_fut_http_plain_auto_base($callback, $event_loop, $signal),
+            ("auto", false, false, true) => $self._serve_fut_http_plain_auto_file($callback, $event_loop, $signal),
+            ("auto", false, true, false) => $self._serve_fut_ws_plain_autou_base($callback, $event_loop, $signal),
+            ("auto", false, true, true) => $self._serve_fut_ws_plain_autou_file($callback, $event_loop, $signal),
+            ("auto", true, false, false) => $self._serve_fut_http_tls_auto_base($callback, $event_loop, $signal),
+            ("auto", true, false, true) => $self._serve_fut_http_tls_auto_file($callback, $event_loop, $signal),
+            ("auto", true, true, false) => $self._serve_fut_ws_tls_autou_base($callback, $event_loop, $signal),
+            ("auto", true, true, true) => $self._serve_fut_ws_tls_autou_file($callback, $event_loop, $signal),
+            ("1", false, false, false) => $self._serve_fut_http_plain_1_base($callback, $event_loop, $signal),
+            ("1", false, false, true) => $self._serve_fut_http_plain_1_file($callback, $event_loop, $signal),
+            ("1", false, true, false) => $self._serve_fut_ws_plain_1u_base($callback, $event_loop, $signal),
+            ("1", false, true, true) => $self._serve_fut_ws_plain_1u_file($callback, $event_loop, $signal),
+            ("1", true, false, false) => $self._serve_fut_http_tls_1_base($callback, $event_loop, $signal),
+            ("1", true, false, true) => $self._serve_fut_http_tls_1_file($callback, $event_loop, $signal),
+            ("1", true, true, false) => $self._serve_fut_ws_tls_1u_base($callback, $event_loop, $signal),
+            ("1", true, true, true) => $self._serve_fut_ws_tls_1u_file($callback, $event_loop, $signal),
+            ("2", false, _, false) => $self._serve_fut_http_plain_2_base($callback, $event_loop, $signal),
+            ("2", false, _, true) => $self._serve_fut_http_plain_2_file($callback, $event_loop, $signal),
+            ("2", true, _, false) => $self._serve_fut_http_tls_2_base($callback, $event_loop, $signal),
+            ("2", true, _, true) => $self._serve_fut_http_tls_2_file($callback, $event_loop, $signal),
+            _ => unreachable!(),
+        }
+    };
+}
+
 pub(crate) use accept_loop;
 pub(crate) use build_service_fn;
 pub(crate) use connection_builder_h1;
 pub(crate) use connection_builder_h1u;
 pub(crate) use connection_handler;
-pub(crate) use gen_accept_loop;
+pub(crate) use gen_accept;
+pub(crate) use gen_serve_match;
+pub(crate) use gen_serve_methods;
 pub(crate) use serve_fut;
 pub(crate) use serve_fut_ssl;
 pub(crate) use serve_mtr;

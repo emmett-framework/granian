@@ -10,6 +10,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::http::{response_404, HTTPResponse, HV_SERVER};
 
+#[inline(always)]
 pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<String> {
     if let Some(file_path) = uri_path.strip_prefix(prefix) {
         let fpath = format!("{mount_point}{file_path}");
