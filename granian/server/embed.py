@@ -112,6 +112,9 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_key_password: Optional[str] = None,
         url_path_prefix: Optional[str] = None,
         factory: bool = False,
+        static_path_route: str = '/static',
+        static_path_mount: Optional[Path] = None,
+        static_path_expires: int = 86400,
     ):
         super().__init__(
             target=target,
@@ -139,6 +142,9 @@ class Server(AbstractServer[AsyncWorker]):
             ssl_key_password=ssl_key_password,
             url_path_prefix=url_path_prefix,
             factory=factory,
+            static_path_route=static_path_route,
+            static_path_mount=static_path_mount,
+            static_path_expires=static_path_expires,
         )
         self.main_loop_interrupt = asyncio.Event()
 
@@ -164,6 +170,7 @@ class Server(AbstractServer[AsyncWorker]):
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
+                self.static_path,
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
@@ -189,6 +196,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -207,6 +215,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
+            static_path,
             *ssl_ctx,
         )
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -230,6 +239,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -256,6 +266,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
+            static_path,
             *ssl_ctx,
         )
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -280,6 +291,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -300,6 +312,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
+            static_path,
             *ssl_ctx,
         )
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)

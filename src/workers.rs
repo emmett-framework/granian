@@ -98,6 +98,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
+    pub static_files: Option<(String, String, String)>,
     pub ssl_enabled: bool,
     ssl_cert: Option<String>,
     ssl_key: Option<String>,
@@ -117,6 +118,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
+        static_files: Option<(String, String, String)>,
         ssl_enabled: bool,
         ssl_cert: Option<&str>,
         ssl_key: Option<&str>,
@@ -134,6 +136,7 @@ impl WorkerConfig {
             http1_opts,
             http2_opts,
             websockets_enabled,
+            static_files,
             ssl_enabled,
             ssl_cert: ssl_cert.map(std::convert::Into::into),
             ssl_key: ssl_key.map(std::convert::Into::into),
@@ -176,16 +179,62 @@ impl WorkerConfig {
     }
 }
 
-// pub(crate) struct Worker<R>
-// where R: Future<Output=Response<Body>> + Send
-// {
-//     config: WorkerConfig,
-//     handler: fn(
-//         crate::callbacks::CallbackWrapper,
-//         SocketAddr,
-//         Request<Body>
-//     ) -> R
-// }
+pub(crate) trait WorkerCTX {
+    type CTX;
+
+    fn get_ctx(&self) -> std::sync::Arc<Self::CTX>;
+}
+
+pub(crate) struct WorkerCTXBase {
+    pub callback: crate::callbacks::ArcCBScheduler,
+}
+
+impl WorkerCTXBase {
+    pub fn new(callback: crate::callbacks::PyCBScheduler, _files: Option<(String, String, String)>) -> Self {
+        Self {
+            callback: std::sync::Arc::new(callback),
+        }
+    }
+}
+
+pub(crate) struct WorkerCTXFiles {
+    pub callback: crate::callbacks::ArcCBScheduler,
+    pub static_prefix: String,
+    pub static_mount: String,
+    pub static_expires: String,
+}
+
+impl WorkerCTXFiles {
+    pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, String)>) -> Self {
+        let (static_prefix, static_mount, static_expires) = files.unwrap();
+        Self {
+            callback: std::sync::Arc::new(callback),
+            static_prefix,
+            static_mount,
+            static_expires,
+        }
+    }
+}
+
+pub(crate) struct Worker<C> {
+    ctx: std::sync::Arc<C>,
+}
+
+impl<C> Worker<C> {
+    pub fn new(ctx: C) -> Self {
+        Self {
+            ctx: std::sync::Arc::new(ctx),
+        }
+    }
+}
+
+impl<C> WorkerCTX for Worker<C> {
+    type CTX = C;
+
+    fn get_ctx(&self) -> std::sync::Arc<Self::CTX> {
+        self.ctx.clone()
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct WorkerExecutor;
@@ -205,205 +254,119 @@ where
     }
 }
 
-macro_rules! build_service {
-    ($local_addr:expr, $remote_addr:expr, $callback_wrapper:expr, $rt:expr, $disconnect_guard:expr, $target:expr, $proto:expr) => {
-        hyper::service::service_fn(move |request: crate::http::HTTPRequest| {
-            let callback_wrapper = $callback_wrapper.clone();
-            let rth = $rt.clone();
-            let disconnect_guard = $disconnect_guard.clone();
+macro_rules! service_app {
+    ($target:expr, $rt:expr, $ctx:expr, $disconnect_guard:expr, $local_addr:expr, $remote_addr:expr, $proto:expr, $request:expr) => {{
+        let rt = $rt.clone();
+        let callback = $ctx.callback.clone();
+        let disconnect_guard = $disconnect_guard.clone();
 
-            async move {
-                Ok::<_, anyhow::Error>(
-                    $target(
-                        rth,
-                        disconnect_guard,
-                        callback_wrapper,
-                        $local_addr,
-                        $remote_addr,
-                        request,
-                        $proto,
-                    )
-                    .await,
+        async move {
+            Ok::<_, anyhow::Error>(
+                $target(
+                    rt,
+                    disconnect_guard,
+                    callback,
+                    $local_addr,
+                    $remote_addr,
+                    $request,
+                    $proto,
                 )
-            }
+                .await,
+            )
+        }
+    }};
+}
+
+macro_rules! service_files {
+    ($target:expr, $rt:expr, $ctx:expr, $disconnect_guard:expr, $local_addr:expr, $remote_addr:expr, $proto:expr, $request:expr) => {{
+        if let Some(path) =
+            crate::files::match_static_file($request.uri().path(), &$ctx.static_prefix, &$ctx.static_mount)
+        {
+            let expires = $ctx.static_expires.clone();
+            return async move { Ok::<_, anyhow::Error>(crate::files::serve_static_file(path, expires).await) }.boxed();
+        }
+
+        crate::workers::service_app!(
+            $target,
+            $rt,
+            $ctx,
+            $disconnect_guard,
+            $local_addr,
+            $remote_addr,
+            $proto,
+            $request
+        )
+        .boxed()
+    }};
+}
+
+macro_rules! build_service_fn {
+    ($builder:ident, $target:expr, $rt:expr, $ctx:expr, $disconnect_guard:expr, $local_addr:expr, $remote_addr:expr, $proto:expr) => {
+        hyper::service::service_fn(move |request: crate::http::HTTPRequest| {
+            crate::workers::$builder!(
+                $target,
+                $rt,
+                $ctx,
+                $disconnect_guard,
+                $local_addr,
+                $remote_addr,
+                $proto,
+                request
+            )
         })
     };
 }
 
-macro_rules! handle_connection_loop {
-    ($tcp_listener:expr, $quit_signal:expr, $backpressure:expr, $inner:expr) => {
-        let tcp_listener = tokio::net::TcpListener::from_std($tcp_listener).unwrap();
-        let local_addr = tcp_listener.local_addr().unwrap();
-        let mut accept_loop = true;
-        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
-
-        while accept_loop {
-            let semaphore = semaphore.clone();
-            tokio::select! {
-                (permit, Ok((stream, remote_addr))) = async {
-                    let permit = semaphore.acquire_owned().await.unwrap();
-                    (permit, tcp_listener.accept().await)
-                } => {
-                    $inner(local_addr, remote_addr, stream, permit)
-                },
-                _ = $quit_signal => {
-                    accept_loop = false;
-                }
-            }
-        }
+macro_rules! connection_builder_h1 {
+    ($opts:expr, $stream:expr, $svc:expr) => {
+        hyper::server::conn::http1::Builder::new()
+            .timer(crate::io::TokioTimer::new())
+            .header_read_timeout($opts.header_read_timeout)
+            .keep_alive($opts.keep_alive)
+            .max_buf_size($opts.max_buffer_size)
+            .pipeline_flush($opts.pipeline_flush)
+            .serve_connection($stream, $svc)
     };
 }
 
-macro_rules! handle_connection_loop_tls {
-    ($tcp_listener:expr, $tls_config:expr, $quit_signal:expr, $backpressure:expr, $inner:expr) => {
-        let (mut tls_listener, local_addr) = crate::tls::tls_listener($tls_config.into(), $tcp_listener).unwrap();
-        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
-        let mut accept_loop = true;
-
-        while accept_loop {
-            let semaphore = semaphore.clone();
-            tokio::select! {
-                (permit, accept) = async {
-                    let permit = semaphore.acquire_owned().await.unwrap();
-                    (permit, tls_listener.accept().await)
-                } => {
-                    match accept {
-                        Ok((stream, remote_addr)) => {
-                            $inner(local_addr, remote_addr, stream, permit)
-                        },
-                        Err(err) => {
-                            log::info!("TLS handshake failed with {:?}", err);
-                        }
-                    }
-                },
-                _ = $quit_signal => {
-                    accept_loop = false;
-                }
-            }
-        }
+macro_rules! connection_builder_h1u {
+    ($opts:expr, $stream:expr, $svc:expr) => {
+        crate::workers::connection_builder_h1!($opts, $stream, $svc).with_upgrades()
     };
 }
 
-macro_rules! handle_connection_http1 {
-    ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream, permit| {
-            let rth = $rth.clone();
-            let callback_wrapper = $callback.clone();
+macro_rules! connection_handler {
+    (
+        auto
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $conn_method:ident,
+        $http1_opts:expr,
+        $http2_opts:expr
+    ) => {
+        |local_addr, remote_addr, stream, permit, proto| {
+            let rt = $rt.clone();
+            let ctx = $ctx.clone();
+
             $spawner(async move {
                 let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
                 let disconnect_tx = disconnect_guard.clone();
-                let svc = crate::workers::build_service!(
+                let svc = crate::workers::build_service_fn!(
+                    $svc,
+                    $target,
+                    rt,
+                    ctx,
+                    disconnect_guard,
                     local_addr,
                     remote_addr,
-                    callback_wrapper,
-                    rth,
-                    disconnect_guard,
-                    $target,
-                    $proto
+                    proto
                 );
-                _ = hyper::server::conn::http1::Builder::new()
-                    .timer(crate::io::TokioTimer::new())
-                    .header_read_timeout($http_opts.header_read_timeout)
-                    .keep_alive($http_opts.keep_alive)
-                    .max_buf_size($http_opts.max_buffer_size)
-                    .pipeline_flush($http_opts.pipeline_flush)
-                    .serve_connection($stream_wrapper(stream), svc)
-                    .await;
-                disconnect_tx.notify_one();
-                drop(permit);
-            });
-        }
-    };
-}
 
-macro_rules! handle_connection_http1_upgrades {
-    ($rth:expr, $callback:expr, $spawner:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream, permit| {
-            let rth = $rth.clone();
-            let callback_wrapper = $callback.clone();
-            $spawner(async move {
-                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
-                let disconnect_tx = disconnect_guard.clone();
-                let svc = crate::workers::build_service!(
-                    local_addr,
-                    remote_addr,
-                    callback_wrapper,
-                    rth,
-                    disconnect_guard,
-                    $target,
-                    $proto
-                );
-                _ = hyper::server::conn::http1::Builder::new()
-                    .timer(crate::io::TokioTimer::new())
-                    .header_read_timeout($http_opts.header_read_timeout)
-                    .keep_alive($http_opts.keep_alive)
-                    .max_buf_size($http_opts.max_buffer_size)
-                    .pipeline_flush($http_opts.pipeline_flush)
-                    .serve_connection($stream_wrapper(stream), svc)
-                    .with_upgrades()
-                    .await;
-                disconnect_tx.notify_one();
-                drop(permit);
-            });
-        }
-    };
-}
-
-macro_rules! handle_connection_http2 {
-    ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $stream_wrapper:expr, $proto:expr, $http_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream, permit| {
-            let rth = $rth.clone();
-            let callback_wrapper = $callback.clone();
-            $spawner(async move {
-                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
-                let disconnect_tx = disconnect_guard.clone();
-                let svc = crate::workers::build_service!(
-                    local_addr,
-                    remote_addr,
-                    callback_wrapper,
-                    rth,
-                    disconnect_guard,
-                    $target,
-                    $proto
-                );
-                _ = hyper::server::conn::http2::Builder::new($executor_builder())
-                    .timer(crate::io::TokioTimer::new())
-                    .adaptive_window($http_opts.adaptive_window)
-                    .initial_connection_window_size($http_opts.initial_connection_window_size)
-                    .initial_stream_window_size($http_opts.initial_stream_window_size)
-                    .keep_alive_interval($http_opts.keep_alive_interval)
-                    .keep_alive_timeout($http_opts.keep_alive_timeout)
-                    .max_concurrent_streams($http_opts.max_concurrent_streams)
-                    .max_frame_size($http_opts.max_frame_size)
-                    .max_header_list_size($http_opts.max_headers_size)
-                    .max_send_buf_size($http_opts.max_send_buffer_size)
-                    .serve_connection($stream_wrapper(stream), svc)
-                    .await;
-                disconnect_tx.notify_one();
-                drop(permit);
-            });
-        }
-    };
-}
-
-macro_rules! handle_connection_httpa {
-    ($rth:expr, $callback:expr, $spawner:expr, $executor_builder:expr, $conn_method:ident, $stream_wrapper:expr, $proto:expr, $http1_opts:expr, $http2_opts:expr, $target:expr) => {
-        |local_addr, remote_addr, stream, permit| {
-            let rth = $rth.clone();
-            let callback_wrapper = $callback.clone();
-            $spawner(async move {
-                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
-                let disconnect_tx = disconnect_guard.clone();
-                let svc = crate::workers::build_service!(
-                    local_addr,
-                    remote_addr,
-                    callback_wrapper,
-                    rth,
-                    disconnect_guard,
-                    $target,
-                    $proto
-                );
-                let mut conn = hyper_util::server::conn::auto::Builder::new($executor_builder());
+                let mut conn = hyper_util::server::conn::auto::Builder::new($executor());
                 conn.http1()
                     .timer(crate::io::TokioTimer::new())
                     .header_read_timeout($http1_opts.header_read_timeout)
@@ -421,7 +384,93 @@ macro_rules! handle_connection_httpa {
                     .max_frame_size($http2_opts.max_frame_size)
                     .max_header_list_size($http2_opts.max_headers_size)
                     .max_send_buf_size($http2_opts.max_send_buffer_size);
-                _ = conn.$conn_method($stream_wrapper(stream), svc).await;
+                // TODO: is stream wrapper always hyper_util::rt::TokioIo::new?
+                _ = conn.$conn_method(hyper_util::rt::TokioIo::new(stream), svc).await;
+
+                disconnect_tx.notify_one();
+                drop(permit);
+            });
+        }
+    };
+    (
+        1
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $rt:expr,
+        $spawner:expr,
+        $conn_method:ident,
+        $http_opts:expr
+    ) => {
+        |local_addr, remote_addr, stream, permit, proto| {
+            let rt = $rt.clone();
+            let ctx = $ctx.clone();
+
+            $spawner(async move {
+                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+                let disconnect_tx = disconnect_guard.clone();
+                let svc = crate::workers::build_service_fn!(
+                    $svc,
+                    $target,
+                    rt,
+                    ctx,
+                    disconnect_guard,
+                    local_addr,
+                    remote_addr,
+                    proto
+                );
+
+                // TODO: is stream wrapper always hyper_util::rt::TokioIo::new?
+                _ = crate::workers::$conn_method!($http_opts, hyper_util::rt::TokioIo::new(stream), svc).await;
+
+                disconnect_tx.notify_one();
+                drop(permit);
+            });
+        }
+    };
+    (
+        2
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $stream_wrapper:expr,
+        $http_opts:expr
+    ) => {
+        |local_addr, remote_addr, stream, permit, proto| {
+            let rt = $rt.clone();
+            let ctx = $ctx.clone();
+
+            $spawner(async move {
+                let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+                let disconnect_tx = disconnect_guard.clone();
+                let svc = crate::workers::build_service_fn!(
+                    $svc,
+                    $target,
+                    rt,
+                    ctx,
+                    disconnect_guard,
+                    local_addr,
+                    remote_addr,
+                    proto
+                );
+
+                _ = hyper::server::conn::http2::Builder::new($executor())
+                    .timer(crate::io::TokioTimer::new())
+                    .adaptive_window($http_opts.adaptive_window)
+                    .initial_connection_window_size($http_opts.initial_connection_window_size)
+                    .initial_stream_window_size($http_opts.initial_stream_window_size)
+                    .keep_alive_interval($http_opts.keep_alive_interval)
+                    .keep_alive_timeout($http_opts.keep_alive_timeout)
+                    .max_concurrent_streams($http_opts.max_concurrent_streams)
+                    .max_frame_size($http_opts.max_frame_size)
+                    .max_header_list_size($http_opts.max_headers_size)
+                    .max_send_buf_size($http_opts.max_send_buffer_size)
+                    .serve_connection($stream_wrapper(stream), svc)
+                    .await;
+
                 disconnect_tx.notify_one();
                 drop(permit);
             });
@@ -429,232 +478,304 @@ macro_rules! handle_connection_httpa {
     };
 }
 
-macro_rules! loop_match {
+macro_rules! accept_loop {
     (
-        $http_mode:expr,
-        $http_upgrades:expr,
+        plain
         $tcp_listener:expr,
-        $pyrx:expr,
+        $pysig:expr,
         $backpressure:expr,
-        $rth:expr,
-        $callback_wrapper:expr,
-        $spawner:expr,
-        $executor:expr,
-        $http1_opts:expr,
-        $http2_opts:expr,
-        $http2_stream_wrapper:expr,
-        $target:expr
-    ) => {
-        match (&$http_mode[..], $http_upgrades) {
-            ("auto", true) => {
-                crate::workers::handle_connection_loop!(
-                    $tcp_listener,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_httpa!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        $executor,
-                        serve_connection_with_upgrades,
-                        hyper_util::rt::TokioIo::new,
-                        "http",
-                        $http1_opts,
-                        $http2_opts,
-                        $target
-                    )
-                );
+        // $wrk:expr,
+        $handler:expr
+    ) => {{
+        let tcp_listener = tokio::net::TcpListener::from_std($tcp_listener).unwrap();
+        let local_addr = tcp_listener.local_addr().unwrap();
+        let mut accept_loop = true;
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
+
+        while accept_loop {
+            // let ctx = $wrk.clone();
+            let semaphore = semaphore.clone();
+            tokio::select! {
+                (permit, Ok((stream, remote_addr))) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, tcp_listener.accept().await)
+                } => {
+                    $handler(local_addr, remote_addr, stream, permit, "http");
+                },
+                _ = $pysig.changed() => {
+                    accept_loop = false;
+                }
             }
-            ("auto", false) => {
-                crate::workers::handle_connection_loop!(
-                    $tcp_listener,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_httpa!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        $executor,
-                        serve_connection,
-                        hyper_util::rt::TokioIo::new,
-                        "http",
-                        $http1_opts,
-                        $http2_opts,
-                        $target
-                    )
-                );
-            }
-            ("1", true) => {
-                crate::workers::handle_connection_loop!(
-                    $tcp_listener,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_http1_upgrades!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        hyper_util::rt::TokioIo::new,
-                        "http",
-                        $http1_opts,
-                        $target
-                    )
-                );
-            }
-            ("1", false) => {
-                crate::workers::handle_connection_loop!(
-                    $tcp_listener,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_http1!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        hyper_util::rt::TokioIo::new,
-                        "http",
-                        $http1_opts,
-                        $target
-                    )
-                );
-            }
-            ("2", _) => {
-                crate::workers::handle_connection_loop!(
-                    $tcp_listener,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_http2!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        $executor,
-                        $http2_stream_wrapper,
-                        "http",
-                        $http2_opts,
-                        $target
-                    )
-                );
-            }
-            _ => unreachable!(),
         }
-    };
+    }};
+
+    (
+        tls
+        $tls_config:expr,
+        $tcp_listener:expr,
+        $pysig:expr,
+        $backpressure:expr,
+        // $wrk:expr,
+        $handler:expr
+    ) => {{
+        let (mut tls_listener, local_addr) = crate::tls::tls_listener($tls_config.into(), $tcp_listener).unwrap();
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
+        let mut accept_loop = true;
+
+        while accept_loop {
+            // let ctx = $wrk.clone();
+            let semaphore = semaphore.clone();
+            tokio::select! {
+                (permit, accept) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, tls_listener.accept().await)
+                } => {
+                    match accept {
+                        Ok((stream, remote_addr)) => {
+                            $handler(local_addr, remote_addr, stream, permit, "https")
+                        },
+                        Err(err) => {
+                            log::info!("TLS handshake failed with {:?}", err);
+                        }
+                    }
+                },
+                _ = $pysig.changed() => {
+                    accept_loop = false;
+                }
+            }
+        }
+    }};
 }
 
-macro_rules! loop_match_tls {
+macro_rules! gen_accept_loop {
     (
+        plain
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
         $http_mode:expr,
         $http_upgrades:expr,
         $tcp_listener:expr,
-        $tls_config:expr,
         $pyrx:expr,
         $backpressure:expr,
-        $rth:expr,
-        $callback_wrapper:expr,
+        $rt:expr,
         $spawner:expr,
         $executor:expr,
         $http1_opts:expr,
         $http2_opts:expr,
-        $http2_stream_wrapper:expr,
-        $target:expr
+        $http2_stream_wrapper:expr
     ) => {
         match (&$http_mode[..], $http_upgrades) {
-            ("auto", true) => {
-                crate::workers::handle_connection_loop_tls!(
-                    $tcp_listener,
-                    $tls_config,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_httpa!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        $executor,
-                        serve_connection_with_upgrades,
-                        hyper_util::rt::TokioIo::new,
-                        "https",
-                        $http1_opts,
-                        $http2_opts,
-                        $target
-                    )
-                );
-            }
-            ("auto", false) => {
-                crate::workers::handle_connection_loop_tls!(
-                    $tcp_listener,
-                    $tls_config,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_httpa!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        $executor,
-                        serve_connection,
-                        hyper_util::rt::TokioIo::new,
-                        "https",
-                        $http1_opts,
-                        $http2_opts,
-                        $target
-                    )
-                );
-            }
-            ("1", true) => {
-                crate::workers::handle_connection_loop_tls!(
-                    $tcp_listener,
-                    $tls_config,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_http1_upgrades!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        hyper_util::rt::TokioIo::new,
-                        "https",
-                        $http1_opts,
-                        $target
-                    )
-                );
-            }
-            ("1", false) => {
-                crate::workers::handle_connection_loop_tls!(
-                    $tcp_listener,
-                    $tls_config,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_http1!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        hyper_util::rt::TokioIo::new,
-                        "https",
-                        $http1_opts,
-                        $target
-                    )
-                );
-            }
-            ("2", _) => {
-                crate::workers::handle_connection_loop_tls!(
-                    $tcp_listener,
-                    $tls_config,
-                    $pyrx.changed(),
-                    $backpressure,
-                    crate::workers::handle_connection_http2!(
-                        $rth,
-                        $callback_wrapper,
-                        $spawner,
-                        $executor,
-                        $http2_stream_wrapper,
-                        "https",
-                        $http2_opts,
-                        $target
-                    )
-                );
-            }
-            _ => unreachable!(),
+            ("auto", true) => crate::workers::accept_loop!(
+                plain
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                // $wrk,
+                crate::workers::connection_handler!(
+                    auto
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    $executor,
+                    serve_connection_with_upgrades,
+                    $http1_opts,
+                    $http2_opts
+                )
+            ),
+            ("auto", false) => crate::workers::accept_loop!(
+                plain
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                // $wrk,
+                crate::workers::connection_handler!(
+                    auto
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    $executor,
+                    serve_connection,
+                    $http1_opts,
+                    $http2_opts
+                )
+            ),
+            ("1", true) => crate::workers::accept_loop!(
+                plain
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                // $wrk,
+                crate::workers::connection_handler!(
+                    1
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    connection_builder_h1u,
+                    $http1_opts
+                )
+            ),
+            ("1", false) => crate::workers::accept_loop!(
+                plain
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                // $wrk,
+                crate::workers::connection_handler!(
+                    1
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    connection_builder_h1,
+                    $http1_opts
+                )
+            ),
+            ("2", _) => crate::workers::accept_loop!(
+                plain
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                // $wrk,
+                crate::workers::connection_handler!(
+                    2
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    $executor,
+                    $http2_stream_wrapper,
+                    $http2_opts
+                )
+            ),
+            _ => unreachable!()
+        }
+    };
+
+    (
+        tls
+        $tls_config:expr,
+        $ctx:expr,
+        $target:expr,
+        $svc:ident,
+        $http_mode:expr,
+        $http_upgrades:expr,
+        $tcp_listener:expr,
+        $pyrx:expr,
+        $backpressure:expr,
+        $rt:expr,
+        $spawner:expr,
+        $executor:expr,
+        $http1_opts:expr,
+        $http2_opts:expr,
+        $http2_stream_wrapper:expr
+    ) => {
+        match (&$http_mode[..], $http_upgrades) {
+            ("auto", true) => crate::workers::accept_loop!(
+                tls
+                $tls_config,
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                crate::workers::connection_handler!(
+                    auto
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    $executor,
+                    serve_connection_with_upgrades,
+                    $http1_opts,
+                    $http2_opts
+                )
+            ),
+            ("auto", false) => crate::workers::accept_loop!(
+                tls
+                $tls_config,
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                crate::workers::connection_handler!(
+                    auto
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    $executor,
+                    serve_connection,
+                    $http1_opts,
+                    $http2_opts
+                )
+            ),
+            ("1", true) => crate::workers::accept_loop!(
+                tls
+                $tls_config,
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                crate::workers::connection_handler!(
+                    1
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    connection_builder_h1u,
+                    $http1_opts
+                )
+            ),
+            ("1", false) => crate::workers::accept_loop!(
+                tls
+                $tls_config,
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                crate::workers::connection_handler!(
+                    1
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    connection_builder_h1,
+                    $http1_opts
+                )
+            ),
+            ("2", _) => crate::workers::accept_loop!(
+                tls
+                $tls_config,
+                $tcp_listener,
+                $pyrx,
+                $backpressure,
+                crate::workers::connection_handler!(
+                    2
+                    $ctx,
+                    $target,
+                    $svc,
+                    $rt,
+                    $spawner,
+                    $executor,
+                    $http2_stream_wrapper,
+                    $http2_opts
+                )
+            ),
+            _ => unreachable!()
         }
     };
 }
 
 macro_rules! serve_mtr {
-    ($func_name:ident, $target:expr) => {
+    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -673,38 +794,39 @@ macro_rules! serve_mtr {
             let http1_opts = self.config.http1_opts.clone();
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
-            let callback_wrapper = std::sync::Arc::new(callback);
-            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
-            let rt = py.allow_threads(|| {
-                let ret = crate::runtime::init_runtime_mt(
-                    self.config.threads,
-                    self.config.blocking_threads,
-                    self.config.py_threads,
-                    self.config.py_threads_idle_timeout,
-                    rtpyloop,
-                );
-                ret
-            });
+            let ctxw: Box<dyn crate::workers::WorkerCTX<CTX=$ctx>> = Box::new(crate::workers::Worker::new(<$ctx>::new(callback, self.config.static_files.clone())));
+            let ctx = ctxw.get_ctx();
+
+            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
+            let rt = py.allow_threads(|| crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.blocking_threads,
+                self.config.py_threads,
+                self.config.py_threads_idle_timeout,
+                rtpyloop,
+            ));
             let rth = rt.handler();
             let tasks = tokio_util::task::TaskTracker::new();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
-                crate::workers::loop_match!(
+                crate::workers::gen_accept_loop!(
+                    plain
+                    ctx,
+                    $target,
+                    $svc,
                     http_mode,
                     http_upgrades,
                     tcp_listener,
                     srx,
                     backpressure,
                     rth,
-                    callback_wrapper,
                     |task| tasks.spawn(task),
                     hyper_util::rt::TokioExecutor::new,
                     http1_opts,
                     http2_opts,
-                    hyper_util::rt::TokioIo::new,
-                    $target
+                    hyper_util::rt::TokioIo::new
                 );
 
                 log::info!("Stopping worker-{}", worker_id);
@@ -712,7 +834,7 @@ macro_rules! serve_mtr {
                 tasks.close();
                 tasks.wait().await;
 
-                Python::with_gil(|_| drop(callback_wrapper));
+                Python::with_gil(|_| drop(ctx));
                 Ok(())
             });
 
@@ -725,7 +847,7 @@ macro_rules! serve_mtr {
 }
 
 macro_rules! serve_mtr_ssl {
-    ($func_name:ident, $target:expr) => {
+    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             py: Python,
@@ -745,39 +867,40 @@ macro_rules! serve_mtr_ssl {
             let http2_opts = self.config.http2_opts.clone();
             let backpressure = self.config.backpressure.clone();
             let tls_cfg = self.config.tls_cfg();
-            let callback_wrapper = std::sync::Arc::new(callback);
-            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
 
-            let rt = py.allow_threads(|| {
-                let ret = crate::runtime::init_runtime_mt(
-                    self.config.threads,
-                    self.config.blocking_threads,
-                    self.config.py_threads,
-                    self.config.py_threads_idle_timeout,
-                    rtpyloop,
-                );
-                ret
-            });
+            let ctxw: Box<dyn crate::workers::WorkerCTX<CTX=$ctx>> = Box::new(crate::workers::Worker::new(<$ctx>::new(callback, self.config.static_files.clone())));
+            let ctx = ctxw.get_ctx();
+
+            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
+            let rt = py.allow_threads(|| crate::runtime::init_runtime_mt(
+                self.config.threads,
+                self.config.blocking_threads,
+                self.config.py_threads,
+                self.config.py_threads_idle_timeout,
+                rtpyloop,
+            ));
             let rth = rt.handler();
             let tasks = tokio_util::task::TaskTracker::new();
             let mut srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
-                crate::workers::loop_match_tls!(
+                crate::workers::gen_accept_loop!(
+                    tls
+                    tls_cfg,
+                    ctx,
+                    $target,
+                    $svc,
                     http_mode,
                     http_upgrades,
                     tcp_listener,
-                    tls_cfg,
                     srx,
                     backpressure,
                     rth,
-                    callback_wrapper,
                     |task| tasks.spawn(task),
                     hyper_util::rt::TokioExecutor::new,
                     http1_opts,
                     http2_opts,
-                    hyper_util::rt::TokioIo::new,
-                    $target
+                    hyper_util::rt::TokioIo::new
                 );
 
                 log::info!("Stopping worker-{}", worker_id);
@@ -785,7 +908,7 @@ macro_rules! serve_mtr_ssl {
                 tasks.close();
                 tasks.wait().await;
 
-                Python::with_gil(|_| drop(callback_wrapper));
+                Python::with_gil(|_| drop(ctx));
                 Ok(())
             });
 
@@ -798,8 +921,9 @@ macro_rules! serve_mtr_ssl {
 }
 
 macro_rules! serve_str_inner {
-    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
-        let callback_wrapper = std::sync::Arc::new($callback);
+    ($self:expr, $target:expr, $ctx:ty, $svc:ident, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
+        let ctxw: Box<dyn crate::workers::WorkerCTX<CTX=$ctx>> = Box::new(crate::workers::Worker::new(<$ctx>::new($callback, $self.config.static_files.clone())));
+        let ctx = ctxw.get_ctx();
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
 
         for thread_id in 0..$self.config.threads {
@@ -814,7 +938,7 @@ macro_rules! serve_str_inner {
             let py_threads = $self.config.py_threads.clone();
             let py_threads_idle_timeout = $self.config.py_threads_idle_timeout.clone();
             let backpressure = $self.config.backpressure.clone();
-            let callback_wrapper = callback_wrapper.clone();
+            let ctx = ctx.clone();
             let py_loop = py_loop.clone();
             let mut srx = $srx.clone();
 
@@ -826,20 +950,22 @@ macro_rules! serve_str_inner {
                 let tasks = tokio_util::task::TaskTracker::new();
 
                 crate::runtime::block_on_local(&rt, local, async move {
-                    crate::workers::loop_match!(
+                    crate::workers::gen_accept_loop!(
+                        plain
+                        ctx,
+                        $target,
+                        $svc,
                         http_mode,
                         http_upgrades,
                         tcp_listener,
                         srx,
                         backpressure,
                         rth,
-                        callback_wrapper,
                         |task| tasks.spawn_local(task),
                         crate::workers::WorkerExecutor::new,
                         http1_opts,
                         http2_opts,
-                        |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
-                        $target
+                        |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) }
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
@@ -847,7 +973,7 @@ macro_rules! serve_str_inner {
                     tasks.close();
                     tasks.wait().await;
 
-                    Python::with_gil(|_| drop(callback_wrapper));
+                    Python::with_gil(|_| drop(ctx));
                 });
 
                 Python::with_gil(|_| drop(rt));
@@ -857,7 +983,7 @@ macro_rules! serve_str_inner {
 }
 
 macro_rules! serve_str {
-    ($func_name:ident, $target:expr) => {
+    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -871,7 +997,7 @@ macro_rules! serve_str {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_inner!(self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx);
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -894,8 +1020,9 @@ macro_rules! serve_str {
 }
 
 macro_rules! serve_str_ssl_inner {
-    ($self:expr, $target:expr, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
-        let callback_wrapper = std::sync::Arc::new($callback);
+    ($self:expr, $target:expr, $ctx:ty, $svc:ident, $callback:expr, $event_loop:expr, $wid:expr, $workers:expr, $srx:expr) => {
+        let ctxw: Box<dyn crate::workers::WorkerCTX<CTX=$ctx>> = Box::new(crate::workers::Worker::new(<$ctx>::new($callback, $self.config.static_files.clone())));
+        let ctx = ctxw.get_ctx();
         let py_loop = std::sync::Arc::new($event_loop.clone().unbind());
 
         for thread_id in 0..$self.config.threads {
@@ -911,7 +1038,7 @@ macro_rules! serve_str_ssl_inner {
             let py_threads = $self.config.py_threads.clone();
             let py_threads_idle_timeout = $self.config.py_threads_idle_timeout.clone();
             let backpressure = $self.config.backpressure.clone();
-            let callback_wrapper = callback_wrapper.clone();
+            let ctx = ctx.clone();
             let py_loop = py_loop.clone();
             let mut srx = $srx.clone();
 
@@ -923,21 +1050,23 @@ macro_rules! serve_str_ssl_inner {
                 let tasks = tokio_util::task::TaskTracker::new();
 
                 crate::runtime::block_on_local(&rt, local, async move {
-                    crate::workers::loop_match_tls!(
+                    crate::workers::gen_accept_loop!(
+                        tls
+                        tls_cfg,
+                        ctx,
+                        $target,
+                        $svc,
                         http_mode,
                         http_upgrades,
                         tcp_listener,
-                        tls_cfg,
                         srx,
                         backpressure,
                         rth,
-                        callback_wrapper,
                         |task| tasks.spawn_local(task),
                         crate::workers::WorkerExecutor::new,
                         http1_opts,
                         http2_opts,
-                        |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
-                        $target
+                        |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) }
                     );
 
                     log::info!("Stopping worker-{} runtime-{}", $wid, thread_id + 1);
@@ -945,7 +1074,7 @@ macro_rules! serve_str_ssl_inner {
                     tasks.close();
                     tasks.wait().await;
 
-                    Python::with_gil(|_| drop(callback_wrapper));
+                    Python::with_gil(|_| drop(ctx));
                 });
 
                 Python::with_gil(|_| drop(rt));
@@ -955,7 +1084,7 @@ macro_rules! serve_str_ssl_inner {
 }
 
 macro_rules! serve_str_ssl {
-    ($func_name:ident, $target:expr) => {
+    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -969,7 +1098,9 @@ macro_rules! serve_str_ssl {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_ssl_inner!(
+                self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx
+            );
 
             let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -992,7 +1123,7 @@ macro_rules! serve_str_ssl {
 }
 
 macro_rules! serve_fut {
-    ($func_name:ident, $target:expr) => {
+    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name<'p>(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -1006,7 +1137,7 @@ macro_rules! serve_fut {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_inner!(self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx);
 
             let ret = event_loop.call_method0("create_future").unwrap();
             let pyfut = ret.clone().unbind();
@@ -1047,7 +1178,7 @@ macro_rules! serve_fut {
 }
 
 macro_rules! serve_fut_ssl {
-    ($func_name:ident, $target:expr) => {
+    ($func_name:ident, $target:expr, $ctx:ty, $svc:ident) => {
         fn $func_name<'p>(
             &self,
             callback: Py<crate::callbacks::CallbackScheduler>,
@@ -1061,7 +1192,9 @@ macro_rules! serve_fut_ssl {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
-            crate::workers::serve_str_ssl_inner!(self, $target, callback, event_loop, worker_id, workers, srx);
+            crate::workers::serve_str_ssl_inner!(
+                self, $target, $ctx, $svc, callback, event_loop, worker_id, workers, srx
+            );
 
             let ret = event_loop.call_method0("create_future").unwrap();
             let pyfut = ret.clone().unbind();
@@ -1101,15 +1234,12 @@ macro_rules! serve_fut_ssl {
     };
 }
 
-pub(crate) use build_service;
-pub(crate) use handle_connection_http1;
-pub(crate) use handle_connection_http1_upgrades;
-pub(crate) use handle_connection_http2;
-pub(crate) use handle_connection_httpa;
-pub(crate) use handle_connection_loop;
-pub(crate) use handle_connection_loop_tls;
-pub(crate) use loop_match;
-pub(crate) use loop_match_tls;
+pub(crate) use accept_loop;
+pub(crate) use build_service_fn;
+pub(crate) use connection_builder_h1;
+pub(crate) use connection_builder_h1u;
+pub(crate) use connection_handler;
+pub(crate) use gen_accept_loop;
 pub(crate) use serve_fut;
 pub(crate) use serve_fut_ssl;
 pub(crate) use serve_mtr;
@@ -1118,6 +1248,8 @@ pub(crate) use serve_str;
 pub(crate) use serve_str_inner;
 pub(crate) use serve_str_ssl;
 pub(crate) use serve_str_ssl_inner;
+pub(crate) use service_app;
+pub(crate) use service_files;
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<WorkerSignal>()?;
