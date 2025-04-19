@@ -107,6 +107,9 @@ class AbstractServer(Generic[WT]):
         workers_lifetime: Optional[int] = None,
         workers_kill_timeout: Optional[int] = None,
         factory: bool = False,
+        static_path_route: str = '/static',
+        static_path_mount: Optional[Path] = None,
+        static_path_expires: int = 86400,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
         reload_ignore_dirs: Optional[Sequence[str]] = None,
@@ -152,6 +155,11 @@ class AbstractServer(Generic[WT]):
         self.workers_lifetime = workers_lifetime
         self.workers_kill_timeout = workers_kill_timeout
         self.factory = factory
+        self.static_path = (
+            (static_path_route, str(static_path_mount.resolve()), str(static_path_expires))
+            if static_path_mount
+            else None
+        )
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
