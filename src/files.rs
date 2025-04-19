@@ -1,23 +1,31 @@
+use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
 use hyper::{
     header::{HeaderValue, SERVER as HK_SERVER},
     HeaderMap, StatusCode,
 };
-use std::path::Path;
+use std::{io, path::Path};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::http::{response_404, HTTPResponse, HV_SERVER};
 
 #[inline(always)]
-pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<String> {
+pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<Result<String>> {
     if let Some(file_path) = uri_path.strip_prefix(prefix) {
         let fpath = format!("{mount_point}{file_path}");
-        if let Ok(full_path) = Path::new(&fpath).canonicalize() {
-            if full_path.starts_with(mount_point) {
-                return full_path.to_str().map(ToOwned::to_owned);
+        match Path::new(&fpath).canonicalize() {
+            Ok(full_path) => {
+                if full_path.starts_with(mount_point) {
+                    return full_path.to_str().map(ToOwned::to_owned).map(Ok);
+                }
+                return Some(Err(anyhow::anyhow!("outside mount path")));
             }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                return Some(Err(err.into()));
+            }
+            _ => {}
         }
     }
     None

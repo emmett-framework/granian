@@ -279,11 +279,17 @@ macro_rules! service_app {
 
 macro_rules! service_files {
     ($target:expr, $rt:expr, $ctx:expr, $disconnect_guard:expr, $local_addr:expr, $remote_addr:expr, $proto:expr, $request:expr) => {{
-        if let Some(path) =
+        if let Some(static_match) =
             crate::files::match_static_file($request.uri().path(), &$ctx.static_prefix, &$ctx.static_mount)
         {
+            if static_match.is_err() {
+                return async move { Ok::<_, anyhow::Error>(crate::http::response_404()) }.boxed();
+            }
             let expires = $ctx.static_expires.clone();
-            return async move { Ok::<_, anyhow::Error>(crate::files::serve_static_file(path, expires).await) }.boxed();
+            return async move {
+                Ok::<_, anyhow::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+            }
+            .boxed();
         }
 
         crate::workers::service_app!(
