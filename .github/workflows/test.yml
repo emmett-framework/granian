@@ -27,7 +27,7 @@ jobs:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
-    - uses: astral-sh/setup-uv@v5
+    - uses: astral-sh/setup-uv@v6
       with:
         enable-cache: false
     - name: Install
@@ -58,7 +58,7 @@ jobs:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
-    - uses: astral-sh/setup-uv@v5
+    - uses: astral-sh/setup-uv@v6
       with:
         enable-cache: false
     - name: Install
@@ -89,7 +89,7 @@ jobs:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
-    - uses: astral-sh/setup-uv@v5
+    - uses: astral-sh/setup-uv@v6
       with:
         enable-cache: false
     - name: Install
