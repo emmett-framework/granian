@@ -9,7 +9,7 @@ use std::os::windows::io::FromRawSocket;
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
-use super::tls::{load_certs as tls_load_certs, load_private_key as tls_load_pkey};
+use super::tls::{load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey};
 use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -99,10 +99,15 @@ pub(crate) struct WorkerConfig {
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
     pub static_files: Option<(String, String, String)>,
-    pub ssl_enabled: bool,
-    ssl_cert: Option<String>,
-    ssl_key: Option<String>,
-    ssl_key_password: Option<String>,
+    pub tls_opts: Option<WorkerTlsConfig>,
+}
+
+pub(crate) struct WorkerTlsConfig {
+    cert: String,
+    key: (String, Option<String>),
+    ca: Option<String>,
+    crl: Vec<String>,
+    client_verify: bool,
 }
 
 impl WorkerConfig {
@@ -120,10 +125,24 @@ impl WorkerConfig {
         websockets_enabled: bool,
         static_files: Option<(String, String, String)>,
         ssl_enabled: bool,
-        ssl_cert: Option<&str>,
-        ssl_key: Option<&str>,
-        ssl_key_password: Option<&str>,
+        ssl_cert: Option<String>,
+        ssl_key: Option<String>,
+        ssl_key_password: Option<String>,
+        ssl_ca: Option<String>,
+        ssl_crl: Vec<String>,
+        ssl_client_verify: bool,
     ) -> Self {
+        let tls_opts = match ssl_enabled {
+            true => Some(WorkerTlsConfig {
+                cert: ssl_cert.unwrap(),
+                key: (ssl_key.unwrap(), ssl_key_password),
+                ca: ssl_ca,
+                crl: ssl_crl,
+                client_verify: ssl_client_verify,
+            }),
+            false => None,
+        };
+
         Self {
             id,
             sock,
@@ -137,10 +156,7 @@ impl WorkerConfig {
             http2_opts,
             websockets_enabled,
             static_files,
-            ssl_enabled,
-            ssl_cert: ssl_cert.map(std::convert::Into::into),
-            ssl_key: ssl_key.map(std::convert::Into::into),
-            ssl_key_password: ssl_key_password.map(std::convert::Into::into),
+            tls_opts,
         }
     }
 
@@ -163,11 +179,36 @@ impl WorkerConfig {
     }
 
     pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
-        let mut cfg = tls_listener::rustls::rustls::ServerConfig::builder()
-            .with_no_client_auth()
+        let opts = self.tls_opts.as_ref().unwrap();
+        let cfg_builder = match &opts.ca {
+            Some(ca) => {
+                let cas = tls_load_certs(ca.clone());
+                let mut client_auth_cas = tls_listener::rustls::rustls::RootCertStore::empty();
+                for cert in cas {
+                    client_auth_cas.add(cert).unwrap();
+                }
+                let crls = tls_load_crls(opts.crl.iter());
+                let verifier = match opts.client_verify {
+                    true => tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(client_auth_cas.into())
+                        .with_crls(crls)
+                        .build()
+                        .unwrap(),
+                    false => {
+                        tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(client_auth_cas.into())
+                            .with_crls(crls)
+                            .allow_unauthenticated()
+                            .build()
+                            .unwrap()
+                    }
+                };
+                tls_listener::rustls::rustls::ServerConfig::builder().with_client_cert_verifier(verifier)
+            }
+            None => tls_listener::rustls::rustls::ServerConfig::builder().with_no_client_auth(),
+        };
+        let mut cfg = cfg_builder
             .with_single_cert(
-                tls_load_certs(self.ssl_cert.clone().unwrap()).unwrap(),
-                tls_load_pkey(self.ssl_key.clone().unwrap(), self.ssl_key_password.clone()).unwrap(),
+                tls_load_certs(opts.cert.clone()),
+                tls_load_pkey(opts.key.0.clone(), opts.key.1.clone()),
             )
             .unwrap();
         cfg.alpn_protocols = match &self.http_mode[..] {
@@ -1964,7 +2005,7 @@ macro_rules! gen_serve_match {
     (mtr $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr) => {
         match (
             &$self.config.http_mode[..],
-            $self.config.ssl_enabled,
+            $self.config.tls_opts.is_some(),
             $self.config.websockets_enabled,
             $self.config.static_files.is_some(),
         ) {
@@ -1997,7 +2038,7 @@ macro_rules! gen_serve_match {
     (str $self:expr, $callback:expr, $event_loop:expr, $signal:expr) => {
         match (
             &$self.config.http_mode[..],
-            $self.config.ssl_enabled,
+            $self.config.tls_opts.is_some(),
             $self.config.websockets_enabled,
             $self.config.static_files.is_some(),
         ) {
@@ -2028,7 +2069,7 @@ macro_rules! gen_serve_match {
     (fut $self:expr, $callback:expr, $event_loop:expr, $signal:expr) => {
         match (
             &$self.config.http_mode[..],
-            $self.config.ssl_enabled,
+            $self.config.tls_opts.is_some(),
             $self.config.websockets_enabled,
             $self.config.static_files.is_some(),
         ) {

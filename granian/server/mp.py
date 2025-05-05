@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WSGIWorker
+from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
 from ..wsgi import _callback_wrapper as _wsgi_call_wrap
@@ -95,7 +96,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         from granian._signals import set_loop_signals
@@ -142,7 +143,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         from granian._signals import set_loop_signals
@@ -198,7 +199,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         from granian._signals import set_loop_signals
@@ -248,7 +249,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         from granian._signals import set_sync_signals
