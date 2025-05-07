@@ -48,7 +48,7 @@ pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.24", features = ["anyhow", "extension-module", "generate-import-lib"] }
 pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "=0.5.8", features = ["all"] }
 tls-listener = { version = "=0.11", features = ["rustls-ring"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = "0.1"
