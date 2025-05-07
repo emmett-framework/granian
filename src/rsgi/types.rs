@@ -40,20 +40,24 @@ impl RSGIHeaders {
         ret
     }
 
-    fn values(&self) -> Result<Vec<&str>> {
-        let mut ret = Vec::with_capacity(self.inner.keys_len());
+    fn values(&self) -> Vec<&str> {
+        let mut ret = Vec::with_capacity(self.inner.len());
         for val in self.inner.values() {
-            ret.push(val.to_str()?);
+            if let Ok(v) = val.to_str() {
+                ret.push(v);
+            }
         }
-        Ok(ret)
+        ret
     }
 
-    fn items(&self) -> Result<Vec<(&str, &str)>> {
-        let mut ret = Vec::with_capacity(self.inner.keys_len());
+    fn items(&self) -> Vec<(&str, &str)> {
+        let mut ret = Vec::with_capacity(self.inner.len());
         for (key, val) in &self.inner {
-            ret.push((key.as_str(), val.to_str()?));
+            if let Ok(v) = val.to_str() {
+                ret.push((key.as_str(), v));
+            }
         }
-        Ok(ret)
+        ret
     }
 
     fn __contains__(&self, key: &str) -> bool {
@@ -61,10 +65,10 @@ impl RSGIHeaders {
     }
 
     fn __getitem__(&self, key: &str) -> Result<&str> {
-        match self.inner.get(key) {
-            Some(value) => Ok(value.to_str()?),
-            _ => Err(pyo3::exceptions::PyKeyError::new_err(key.to_owned()).into()),
+        if let Some(value) = self.inner.get(key) {
+            return Ok(value.to_str().unwrap_or(""));
         }
+        Err(pyo3::exceptions::PyKeyError::new_err(key.to_owned()).into())
     }
 
     fn __iter__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyIterator>> {
@@ -77,13 +81,12 @@ impl RSGIHeaders {
 
     #[pyo3(signature = (key, default=None))]
     fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
-        match self.inner.get(key) {
-            Some(val) => match val.to_str() {
-                Ok(string) => Some(PyString::new(py, string).into()),
-                _ => default,
-            },
-            _ => default,
+        if let Some(val) = self.inner.get(key) {
+            if let Ok(v) = val.to_str() {
+                return Some(PyString::new(py, v).into());
+            }
         }
+        default
     }
 
     #[pyo3(signature = (key))]
@@ -93,7 +96,8 @@ impl RSGIHeaders {
             self.inner
                 .get_all(key)
                 .iter()
-                .map(|v| PyString::new(py, v.to_str().unwrap()))
+                .flat_map(|v| v.to_str())
+                .map(|v| PyString::new(py, v))
                 .collect::<Vec<Bound<PyString>>>(),
         )
     }
