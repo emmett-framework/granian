@@ -85,6 +85,7 @@ class MTServer(AbstractServer[WorkerThread]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -103,6 +104,7 @@ class MTServer(AbstractServer[WorkerThread]):
             http1_settings,
             http2_settings,
             websockets,
+            static_path,
             *ssl_ctx,
         )
         serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
@@ -128,6 +130,7 @@ class MTServer(AbstractServer[WorkerThread]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -154,6 +157,7 @@ class MTServer(AbstractServer[WorkerThread]):
             http1_settings,
             http2_settings,
             websockets,
+            static_path,
             *ssl_ctx,
         )
         serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
@@ -180,6 +184,7 @@ class MTServer(AbstractServer[WorkerThread]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -200,6 +205,7 @@ class MTServer(AbstractServer[WorkerThread]):
             http1_settings,
             http2_settings,
             websockets,
+            static_path,
             *ssl_ctx,
         )
         serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
@@ -226,6 +232,7 @@ class MTServer(AbstractServer[WorkerThread]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
+        static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
         ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
         scope_opts: Dict[str, Any],
@@ -243,6 +250,7 @@ class MTServer(AbstractServer[WorkerThread]):
             http_mode,
             http1_settings,
             http2_settings,
+            static_path,
             *ssl_ctx,
         )
         serve = getattr(worker, {RuntimeModes.mt: 'serve_mtr', RuntimeModes.st: 'serve_str'}[runtime_mode])
@@ -273,6 +281,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
+                self.static_path,
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},

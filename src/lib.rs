@@ -20,6 +20,7 @@ mod asyncio;
 mod blocking;
 mod callbacks;
 mod conversion;
+mod files;
 mod http;
 mod io;
 mod rsgi;

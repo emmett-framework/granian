@@ -229,6 +229,22 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='Treat target as a factory function, that should be invoked to build the actual target',
 )
 @option(
+    '--static-path-route',
+    default='/static',
+    help='Route for static file serving',
+)
+@option(
+    '--static-path-mount',
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, readable=True, path_type=pathlib.Path),
+    help='Path to mount for static file serving',
+)
+@option(
+    '--static-path-expires',
+    type=click.IntRange(60),
+    default=86400,
+    help='Cache headers expiration (in seconds) for static file service',
+)
+@option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
@@ -327,6 +343,9 @@ def cli(
     workers_lifetime: Optional[int],
     workers_kill_timeout: Optional[int],
     factory: bool,
+    static_path_route: str,
+    static_path_mount: Optional[pathlib.Path],
+    static_path_expires: int,
     reload: bool,
     reload_paths: Optional[List[pathlib.Path]],
     reload_ignore_dirs: Optional[List[str]],
@@ -394,6 +413,9 @@ def cli(
         workers_lifetime=workers_lifetime,
         workers_kill_timeout=workers_kill_timeout,
         factory=factory,
+        static_path_route=static_path_route,
+        static_path_mount=static_path_mount,
+        static_path_expires=static_path_expires,
         reload=reload,
         reload_paths=reload_paths,
         reload_ignore_paths=reload_ignore_paths,

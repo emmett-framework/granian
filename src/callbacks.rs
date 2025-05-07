@@ -4,7 +4,8 @@ use tokio::sync::Notify;
 
 use crate::{asyncio::copy_context, conversion::FutureResultToPy};
 
-pub(crate) type ArcCBScheduler = Arc<Py<CallbackScheduler>>;
+pub(crate) type PyCBScheduler = Py<CallbackScheduler>;
+pub(crate) type ArcCBScheduler = Arc<PyCBScheduler>;
 
 #[pyclass(frozen, subclass, module = "granian._granian")]
 pub(crate) struct CallbackScheduler {
