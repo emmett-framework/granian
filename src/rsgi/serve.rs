@@ -38,7 +38,10 @@ impl RSGIWorker {
             ssl_enabled=false,
             ssl_cert=None,
             ssl_key=None,
-            ssl_key_password=None
+            ssl_key_password=None,
+            ssl_ca=None,
+            ssl_crl=vec![],
+            ssl_client_verify=false,
         )
     )]
     fn new(
@@ -56,9 +59,12 @@ impl RSGIWorker {
         websockets_enabled: bool,
         static_files: Option<(String, String, String)>,
         ssl_enabled: bool,
-        ssl_cert: Option<&str>,
-        ssl_key: Option<&str>,
-        ssl_key_password: Option<&str>,
+        ssl_cert: Option<String>,
+        ssl_key: Option<String>,
+        ssl_key_password: Option<String>,
+        ssl_ca: Option<String>,
+        ssl_crl: Vec<String>,
+        ssl_client_verify: bool,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -78,6 +84,9 @@ impl RSGIWorker {
                 ssl_cert,
                 ssl_key,
                 ssl_key_password,
+                ssl_ca,
+                ssl_crl,
+                ssl_client_verify,
             ),
         })
     }

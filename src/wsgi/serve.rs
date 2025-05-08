@@ -587,7 +587,10 @@ impl WSGIWorker {
             ssl_enabled=false,
             ssl_cert=None,
             ssl_key=None,
-            ssl_key_password=None
+            ssl_key_password=None,
+            ssl_ca=None,
+            ssl_crl=vec![],
+            ssl_client_verify=false,
         )
     )]
     fn new(
@@ -604,9 +607,12 @@ impl WSGIWorker {
         http2_opts: Option<PyObject>,
         static_files: Option<(String, String, String)>,
         ssl_enabled: bool,
-        ssl_cert: Option<&str>,
-        ssl_key: Option<&str>,
-        ssl_key_password: Option<&str>,
+        ssl_cert: Option<String>,
+        ssl_key: Option<String>,
+        ssl_key_password: Option<String>,
+        ssl_ca: Option<String>,
+        ssl_crl: Vec<String>,
+        ssl_client_verify: bool,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -626,6 +632,9 @@ impl WSGIWorker {
                 ssl_cert,
                 ssl_key,
                 ssl_key_password,
+                ssl_ca,
+                ssl_crl,
+                ssl_client_verify,
             ),
         })
     }
@@ -639,7 +648,7 @@ impl WSGIWorker {
     ) {
         match (
             &self.config.http_mode[..],
-            self.config.ssl_enabled,
+            self.config.tls_opts.is_some(),
             self.config.static_files.is_some(),
         ) {
             ("auto", false, false) => self._serve_mtr_http_plain_auto_base(py, callback, event_loop, signal),
@@ -667,7 +676,7 @@ impl WSGIWorker {
     ) {
         match (
             &self.config.http_mode[..],
-            self.config.ssl_enabled,
+            self.config.tls_opts.is_some(),
             self.config.static_files.is_some(),
         ) {
             ("auto", false, false) => self._serve_str_http_plain_auto_base(py, callback, event_loop, signal),
