@@ -2,10 +2,11 @@ import asyncio
 import multiprocessing
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
+from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
@@ -110,6 +111,9 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         ssl_key_password: Optional[str] = None,
+        ssl_ca: Optional[Path] = None,
+        ssl_crl: Optional[List[Path]] = None,
+        ssl_client_verify: bool = False,
         url_path_prefix: Optional[str] = None,
         factory: bool = False,
         static_path_route: str = '/static',
@@ -140,6 +144,9 @@ class Server(AbstractServer[AsyncWorker]):
             ssl_cert=ssl_cert,
             ssl_key=ssl_key,
             ssl_key_password=ssl_key_password,
+            ssl_ca=ssl_ca,
+            ssl_crl=ssl_crl,
+            ssl_client_verify=ssl_client_verify,
             url_path_prefix=url_path_prefix,
             factory=factory,
             static_path_route=static_path_route,
@@ -198,7 +205,7 @@ class Server(AbstractServer[AsyncWorker]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
@@ -241,7 +248,7 @@ class Server(AbstractServer[AsyncWorker]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         lifespan_handler = LifespanProtocol(callback)
@@ -293,7 +300,7 @@ class Server(AbstractServer[AsyncWorker]):
         websockets: bool,
         static_path: Optional[Tuple[str, str, str]],
         log_access_fmt: Optional[str],
-        ssl_ctx: Tuple[bool, Optional[str], Optional[str], Optional[str]],
+        ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)

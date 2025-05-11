@@ -201,6 +201,22 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='SSL key file',
 )
 @option('--ssl-keyfile-password', help='SSL key password')
+@option(
+    '--ssl-ca',
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
+    help='Root SSL cerificate file for client verification',
+)
+@option(
+    '--ssl-crl',
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
+    help='SSL CRL file(s)',
+    multiple=True,
+)
+@option(
+    '--ssl-client-verify/--no-ssl-client-verify',
+    default=False,
+    help='Verify clients SSL certificates',
+)
 @option('--url-path-prefix', help='URL path prefix the app is mounted on')
 @option(
     '--respawn-failed-workers/--no-respawn-failed-workers',
@@ -337,6 +353,9 @@ def cli(
     ssl_certificate: Optional[pathlib.Path],
     ssl_keyfile: Optional[pathlib.Path],
     ssl_keyfile_password: Optional[str],
+    ssl_ca: Optional[pathlib.Path],
+    ssl_crl: Optional[List[pathlib.Path]],
+    ssl_client_verify: bool,
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
     respawn_interval: float,
@@ -407,6 +426,9 @@ def cli(
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
         ssl_key_password=ssl_keyfile_password,
+        ssl_ca=ssl_ca,
+        ssl_crl=ssl_crl,
+        ssl_client_verify=ssl_client_verify,
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
