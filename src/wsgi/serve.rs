@@ -5,7 +5,7 @@ use super::http::handle;
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::tcp::ListenerSpec;
+use crate::tcp::SocketHolder;
 use crate::workers::{WorkerConfig, WorkerSignalSync};
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -596,7 +596,7 @@ impl WSGIWorker {
     fn new(
         py: Python,
         worker_id: i32,
-        sock: (Py<ListenerSpec>, Option<i32>),
+        sock: Py<SocketHolder>,
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,

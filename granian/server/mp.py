@@ -53,7 +53,7 @@ class WorkerProcess(AbstractWorker):
 
             configure_logging(log_level, log_config, log_enabled)
 
-            sock = (sock[0], sock[1].fileno() if sock[1] is not None else sock[1])
+            sock = sock[0]
             loop = loops.get(loop_impl)
             callback = callback_loader()
             return target(worker_id, callback, sock, loop, *args, **kwargs)
@@ -277,15 +277,12 @@ class MPServer(AbstractServer[WorkerProcess]):
 
     def _init_shared_socket(self):
         super()._init_shared_socket()
-        self._sso = None
-        if self._sfd is not None:
-            sock = socket.socket(fileno=self._sfd)
-            sock.set_inheritable(True)
-            self._sso = sock
+        sock = socket.socket(fileno=self._sfd)
+        sock.set_inheritable(True)
+        self._sso = sock
 
     def _unlink_pidfile(self):
-        if self._sso is not None:
-            self._sso.detach()
+        self._sso.detach()
         super()._unlink_pidfile()
 
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerProcess:
@@ -297,7 +294,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 idx + 1,
                 self.process_name,
                 callback_loader,
-                (self._ssp, self._sso),
+                (self._shd, self._sso),
                 self.loop,
                 self.log_enabled,
                 self.log_level,

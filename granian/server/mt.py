@@ -269,7 +269,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 idx + 1,
                 sig,
                 callback_loader,
-                (self._ssp, self._sfd),
+                self._shd,
                 self.loop,
                 self.runtime_mode,
                 self.runtime_threads,

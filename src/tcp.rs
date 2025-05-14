@@ -10,6 +10,7 @@ use std::os::windows::io::{AsRawSocket, FromRawSocket};
 use socket2::{Domain, Protocol, Socket, Type};
 
 #[pyclass(frozen, module = "granian._granian")]
+#[derive(Clone)]
 pub struct ListenerSpec {
     inp: (String, u16, i32),
     address: SocketAddr,
@@ -18,7 +19,7 @@ pub struct ListenerSpec {
 }
 
 impl ListenerSpec {
-    pub(crate) fn as_listener(&self) -> Result<TcpListener> {
+    pub(crate) fn as_socket(&self) -> Result<Socket> {
         let socket = Socket::new(self.domain, Type::STREAM, Some(Protocol::TCP))?;
 
         #[cfg(not(windows))]
@@ -32,9 +33,11 @@ impl ListenerSpec {
         socket.set_reuse_address(true)?;
         socket.set_nodelay(true)?;
         socket.bind(&self.address.into())?;
+
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         socket.listen(self.backlog)?;
 
-        Ok(socket.into())
+        Ok(socket)
     }
 }
 
@@ -55,14 +58,8 @@ impl ListenerSpec {
         })
     }
 
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    fn share(&self, py: Python) -> PyObject {
-        py.None()
-    }
-
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-    fn share(&self) -> Result<ListenerHolder> {
-        ListenerHolder::from_spec(self)
+    fn build(&self) -> Result<SocketHolder> {
+        SocketHolder::from_spec(self)
     }
 
     pub fn __getstate__(&self, py: Python) -> PyObject {
@@ -70,36 +67,43 @@ impl ListenerSpec {
     }
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 #[pyclass(frozen, module = "granian._granian")]
-pub struct ListenerHolder {
-    socket: TcpListener,
+pub struct SocketHolder {
+    socket: Socket,
 }
 
-impl ListenerHolder {
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+impl SocketHolder {
     fn from_spec(spec: &ListenerSpec) -> Result<Self> {
-        let socket = spec.as_listener()?;
+        let socket = spec.as_socket()?;
         Ok(Self { socket })
     }
 
-    pub fn get_clone(&self) -> TcpListener {
-        self.socket.try_clone().unwrap()
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn as_listener(&self) -> Result<TcpListener> {
+        #[cfg(unix)]
+        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_raw_fd()) };
+        #[cfg(windows)]
+        let listener = unsafe { TcpListener::from_raw_socket(self.socket.as_raw_socket()) };
+        Ok(listener)
     }
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 #[pymethods]
-impl ListenerHolder {
+impl SocketHolder {
     #[cfg(unix)]
     #[new]
     pub fn new(fd: i32) -> Self {
-        let socket = unsafe { TcpListener::from_raw_fd(fd) };
+        let socket = unsafe { Socket::from_raw_fd(fd) };
         Self { socket }
     }
 
     #[cfg(windows)]
     #[new]
     pub fn new(fd: u64) -> Self {
-        let socket = unsafe { TcpListener::from_raw_socket(fd) };
+        let socket = unsafe { Socket::from_raw_socket(fd) };
         Self { socket }
     }
 
@@ -126,9 +130,52 @@ impl ListenerHolder {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[pyclass(frozen, module = "granian._granian")]
+pub struct SocketHolder {
+    socket: Socket,
+    backlog: i32,
+}
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+impl SocketHolder {
+    fn from_spec(spec: &ListenerSpec) -> Result<Self> {
+        let socket = spec.as_socket()?;
+        Ok(Self {
+            socket,
+            backlog: spec.backlog,
+        })
+    }
+
+    pub fn as_listener(&self) -> Result<TcpListener> {
+        self.socket.listen(self.backlog)?;
+        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_raw_fd()) };
+        Ok(listener)
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[pymethods]
+impl SocketHolder {
+    #[new]
+    pub fn new(fd: i32, backlog: i32) -> Self {
+        let socket = unsafe { Socket::from_raw_fd(fd) };
+        Self { socket, backlog }
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyObject {
+        let fd = self.socket.as_raw_fd();
+        (fd, self.backlog).into_py_any(py).unwrap()
+    }
+
+    pub fn get_fd(&self, py: Python) -> PyObject {
+        self.socket.as_raw_fd().into_py_any(py).unwrap()
+    }
+}
+
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<ListenerSpec>()?;
-    module.add_class::<ListenerHolder>()?;
+    module.add_class::<SocketHolder>()?;
 
     Ok(())
 }
