@@ -11,12 +11,27 @@ The main reasons behind Granian design are:
 - Avoid the usual Gunicorn + uvicorn + http-tools dependency composition on unix systems
 - Provide stable [performance](https://github.com/emmett-framework/granian/blob/master/benchmarks/README.md) when compared to existing alternatives
 
+Adopting Granian would thus be a good choice when:
+
+- wanting a modern, single dependency to serve both ASGI and WSGI applications
+- looking for the most performant way to serve your Python application under HTTP/2
+- you need great concurrency capabilities, especially with websockets
+- you care about performance more than everything else
+
+On the other hand, Granian won't be the ideal option if:
+
+- you want a *pure Python* solution
+- you need advanced debugging features
+- your application relies on `trio` or `gevent`
+- you're looking for ASGI extensions [not (yet) implemented](https://github.com/emmett-framework/granian/issues/93) like trailers
+
 ## Features
 
 - Supports ASGI/3, [RSGI](https://github.com/emmett-framework/granian/blob/master/docs/spec/RSGI.md) and WSGI interface applications
-- Implements HTTP/1 and HTTP/2 protocols
-- Supports HTTPS
-- Supports Websockets
+- HTTP/1 and HTTP/2 protocols
+- HTTPS and mTLS
+- Websockets
+- Direct static files serving
 
 ## Quickstart
 
@@ -221,6 +236,13 @@ Options:
   --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
   --ssl-keyfile-password TEXT     SSL key password  [env var:
                                   GRANIAN_SSL_KEYFILE_PASSWORD]
+  --ssl-ca FILE                   Root SSL cerificate file for client
+                                  verification  [env var: GRANIAN_SSL_CA]
+  --ssl-crl FILE                  SSL CRL file(s)  [env var: GRANIAN_SSL_CRL]
+  --ssl-client-verify / --no-ssl-client-verify
+                                  Verify clients SSL certificates  [env var:
+                                  GRANIAN_SSL_CLIENT_VERIFY; default:
+                                  (disabled)]
   --url-path-prefix TEXT          URL path prefix the app is mounted on  [env
                                   var: GRANIAN_URL_PATH_PREFIX]
   --respawn-failed-workers / --no-respawn-failed-workers
@@ -244,6 +266,16 @@ Options:
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:
                                   (disabled)]
+  --static-path-route TEXT        Route for static file serving  [env var:
+                                  GRANIAN_STATIC_PATH_ROUTE; default:
+                                  (/static)]
+  --static-path-mount DIRECTORY   Path to mount for static file serving  [env
+                                  var: GRANIAN_STATIC_PATH_MOUNT]
+  --static-path-expires INTEGER RANGE
+                                  Cache headers expiration (in seconds) for
+                                  static file serving  [env var:
+                                  GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
+                                  x>=60]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
