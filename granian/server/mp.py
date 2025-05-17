@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, RSGIWorker, WSGIWorker
+from .._granian import ASGIWorker, RSGIWorker, SocketHolder, WSGIWorker
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
@@ -54,6 +54,9 @@ class WorkerProcess(AbstractWorker):
             configure_logging(log_level, log_config, log_enabled)
 
             sock, _sso = sock
+            if sys.platform == 'win32':
+                sock = SocketHolder(_sso.fileno())
+
             loop = loops.get(loop_impl)
             callback = callback_loader()
             return target(worker_id, callback, sock, loop, *args, **kwargs)
