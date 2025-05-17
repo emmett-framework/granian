@@ -224,7 +224,6 @@ class AbstractServer(Generic[WT]):
         self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
         self._shd = self._ssp.build()
         self._sfd = self._shd.get_fd()
-        print("SFD", self._sfd)
 
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True

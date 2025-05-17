@@ -54,7 +54,6 @@ class WorkerProcess(AbstractWorker):
             configure_logging(log_level, log_config, log_enabled)
 
             sock, _sso = sock
-            print("FD", _sso.fileno())
             loop = loops.get(loop_impl)
             callback = callback_loader()
             return target(worker_id, callback, sock, loop, *args, **kwargs)
