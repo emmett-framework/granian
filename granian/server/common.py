@@ -222,8 +222,8 @@ class AbstractServer(Generic[WT]):
 
     def _init_shared_socket(self):
         self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
-        self._shd = self._ssp.share()
-        self._sfd = self._shd.get_fd() if self._shd is not None else None
+        self._shd = self._ssp.build()
+        self._sfd = self._shd.get_fd()
 
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True

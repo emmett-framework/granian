@@ -2,11 +2,6 @@ use pyo3::prelude::*;
 use std::net::TcpListener;
 use std::sync::Mutex;
 
-#[cfg(unix)]
-use std::os::unix::io::FromRawFd;
-#[cfg(windows)]
-use std::os::windows::io::FromRawSocket;
-
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey};
@@ -88,7 +83,7 @@ pub(crate) struct HTTP2Config {
 
 pub(crate) struct WorkerConfig {
     pub id: i32,
-    sock: (Py<crate::tcp::ListenerSpec>, Option<i32>),
+    sock: Py<crate::tcp::SocketHolder>,
     pub threads: usize,
     pub blocking_threads: usize,
     pub py_threads: usize,
@@ -113,7 +108,7 @@ pub(crate) struct WorkerTlsConfig {
 impl WorkerConfig {
     pub fn new(
         id: i32,
-        sock: (Py<crate::tcp::ListenerSpec>, Option<i32>),
+        sock: Py<crate::tcp::SocketHolder>,
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,
@@ -160,20 +155,8 @@ impl WorkerConfig {
         }
     }
 
-    #[cfg(unix)]
     pub fn tcp_listener(&self) -> TcpListener {
-        let listener = if let Some(fd) = self.sock.1 {
-            unsafe { TcpListener::from_raw_fd(fd) }
-        } else {
-            self.sock.0.get().as_listener().unwrap()
-        };
-        _ = listener.set_nonblocking(true);
-        listener
-    }
-
-    #[cfg(windows)]
-    pub fn tcp_listener(&self) -> TcpListener {
-        let listener = unsafe { TcpListener::from_raw_socket(self.sock.1.unwrap() as u64) };
+        let listener = self.sock.get().as_listener().unwrap();
         _ = listener.set_nonblocking(true);
         listener
     }

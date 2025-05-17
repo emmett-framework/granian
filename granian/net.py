@@ -1,6 +1,6 @@
 import copyreg
 
-from ._granian import ListenerHolder as SocketHolder, ListenerSpec as SocketSpec
+from ._granian import ListenerSpec as SocketSpec, SocketHolder
 
 
 copyreg.pickle(SocketHolder, lambda v: (SocketHolder, v.__getstate__()))
