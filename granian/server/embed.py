@@ -166,7 +166,7 @@ class Server(AbstractServer[AsyncWorker]):
                 idx + 1,
                 sig,
                 callback_loader,
-                (self._ssp, self._sfd),
+                self._shd,
                 self.runtime_threads,
                 self.runtime_blocking_threads,
                 self.blocking_threads,
