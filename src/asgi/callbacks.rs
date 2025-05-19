@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
     sync::{Arc, OnceLock},
 };
-use tokio::sync::{oneshot, Notify};
+use tokio::sync::{Notify, oneshot};
 
 use super::{
     io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{response_500, HTTPResponse},
+    http::{HTTPResponse, response_500},
     runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
     ws::{HyperWebsocket, UpgradeData},

@@ -1,4 +1,4 @@
-use pyo3::{prelude::*, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::workers::{HTTP1Config, HTTP2Config};
 

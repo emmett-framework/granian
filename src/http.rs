@@ -1,8 +1,8 @@
 use http_body_util::BodyExt;
 use hyper::{
+    Response,
     body::Bytes,
     header::{HeaderValue, SERVER as HK_SERVER},
-    Response,
 };
 
 pub(crate) type HTTPRequest = hyper::Request<hyper::body::Incoming>;

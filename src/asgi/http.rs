@@ -1,14 +1,14 @@
 use http_body_util::BodyExt;
-use hyper::{header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder, StatusCode};
+use hyper::{StatusCode, header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 
 use super::callbacks::{call_http, call_ws};
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{empty_body, response_500, HTTPRequest, HTTPResponse, HV_SERVER},
+    http::{HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
     runtime::RuntimeRef,
-    ws::{is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade, UpgradeData},
+    ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
 
 const SCHEME_HTTPS: &str = "https";

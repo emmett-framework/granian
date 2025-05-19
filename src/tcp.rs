@@ -1,5 +1,5 @@
 use anyhow::Result;
-use pyo3::{prelude::*, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
 #[cfg(unix)]

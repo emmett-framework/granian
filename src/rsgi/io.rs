@@ -1,12 +1,12 @@
-use futures::{sink::SinkExt, StreamExt};
+use futures::{StreamExt, sink::SinkExt};
 use http_body_util::BodyExt;
 use hyper::body;
 use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{
     borrow::Cow,
-    sync::{atomic, Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, atomic},
 };
-use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
+use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    runtime::{empty_future_into_py, err_future_into_py, future_into_py_futlike, RuntimeRef},
+    runtime::{RuntimeRef, empty_future_into_py, err_future_into_py, future_into_py_futlike},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 

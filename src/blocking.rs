@@ -1,7 +1,7 @@
 use crossbeam_channel as channel;
 use pyo3::prelude::*;
 use std::{
-    sync::{atomic, Arc},
+    sync::{Arc, atomic},
     thread, time,
 };
 

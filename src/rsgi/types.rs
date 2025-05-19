@@ -2,10 +2,10 @@ use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
 use hyper::{
+    Method, Uri, Version,
     body::Bytes,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
     http::uri::Authority,
-    Method, Uri, Version,
 };
 use percent_encoding::percent_decode_str;
 use pyo3::types::{PyBytes, PyIterator, PyList, PyString};
@@ -14,7 +14,7 @@ use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::http::{empty_body, response_404, HTTPResponseBody, HV_SERVER};
+use crate::http::{HTTPResponseBody, HV_SERVER, empty_body, response_404};
 
 const RSGI_PROTO_VERSION: &str = "1.5";
 

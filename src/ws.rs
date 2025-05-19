@@ -1,8 +1,8 @@
 use http_body_util::BodyExt;
 use hyper::{
-    header::{HeaderName, HeaderValue, CONNECTION, UPGRADE},
-    http::response::Builder,
     Request, Response, StatusCode,
+    header::{CONNECTION, HeaderName, HeaderValue, UPGRADE},
+    http::response::Builder,
 };
 use pin_project_lite::pin_project;
 use std::{
@@ -12,13 +12,13 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tokio_tungstenite::{
+    WebSocketStream,
     tungstenite::{
+        Error as TungsteniteError, Message,
         error::ProtocolError,
         handshake::derive_accept_key,
         protocol::{Role, WebSocketConfig},
-        Error as TungsteniteError, Message,
     },
-    WebSocketStream,
 };
 
 use super::http::HTTPResponse;

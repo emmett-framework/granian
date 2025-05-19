@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::{
     fs, io,
     iter::Iterator,
@@ -6,17 +6,17 @@ use std::{
     sync::Arc,
 };
 use tls_listener::{
+    TlsListener,
     rustls::{
+        TlsAcceptor,
         rustls::{
             pki_types::{
-                pem::PemObject, CertificateDer as Certificate, CertificateRevocationListDer as CRL,
-                PrivateKeyDer as PrivateKey,
+                CertificateDer as Certificate, CertificateRevocationListDer as CRL, PrivateKeyDer as PrivateKey,
+                pem::PemObject,
             },
             server::ServerConfig,
         },
-        TlsAcceptor,
     },
-    TlsListener,
 };
 
 pub(crate) fn tls_listener(

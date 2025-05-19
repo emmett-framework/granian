@@ -1,7 +1,7 @@
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyBytes, PyDict},
-    IntoPyObjectExt,
 };
 use tokio_tungstenite::tungstenite::Message;
 

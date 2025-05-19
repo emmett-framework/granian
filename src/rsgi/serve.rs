@@ -6,7 +6,7 @@ use super::http::{handle, handle_ws};
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::tcp::SocketHolder;
-use crate::workers::{gen_serve_match, gen_serve_methods, WorkerConfig, WorkerSignal};
+use crate::workers::{WorkerConfig, WorkerSignal, gen_serve_match, gen_serve_methods};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct RSGIWorker {

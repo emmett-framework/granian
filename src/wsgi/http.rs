@@ -5,7 +5,7 @@ use tokio::sync::Notify;
 use super::callbacks::call_http;
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{response_500, HTTPRequest, HTTPResponse, HTTPResponseBody},
+    http::{HTTPRequest, HTTPResponse, HTTPResponseBody, response_500},
     runtime::RuntimeRef,
 };
 

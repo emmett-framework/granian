@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use std::sync::{Arc, OnceLock};
-use tokio::sync::{oneshot, Notify};
+use tokio::sync::{Notify, oneshot};
 
 use super::{
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},

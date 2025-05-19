@@ -1,7 +1,6 @@
 use hyper::{
-    body, header,
+    HeaderMap, Version, body, header,
     http::{request, uri::Authority},
-    HeaderMap, Version,
 };
 use itertools::Itertools;
 use percent_encoding::percent_decode_str;
@@ -15,7 +14,7 @@ use tokio::sync::oneshot;
 use super::{io::WSGIProtocol, types::WSGIBody};
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{empty_body, HTTPResponseBody},
+    http::{HTTPResponseBody, empty_body},
     runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
 };

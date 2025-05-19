@@ -2,14 +2,14 @@ use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
 use hyper::{
-    header::{HeaderValue, SERVER as HK_SERVER},
     HeaderMap, StatusCode,
+    header::{HeaderValue, SERVER as HK_SERVER},
 };
 use std::{io, path::Path};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::http::{response_404, HTTPResponse, HV_SERVER};
+use crate::http::{HTTPResponse, HV_SERVER, response_404};
 
 #[inline(always)]
 pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<Result<String>> {

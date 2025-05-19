@@ -1,4 +1,4 @@
-use pyo3::{prelude::*, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, prelude::*};
 use std::{
     future::Future,
     sync::{Arc, Mutex},
