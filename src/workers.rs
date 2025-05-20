@@ -524,11 +524,19 @@ macro_rules! accept_loop {
         while accept_loop {
             let semaphore = semaphore.clone();
             tokio::select! {
-                (permit, Ok((stream, remote_addr))) = async {
+                (permit, event) = async {
                     let permit = semaphore.acquire_owned().await.unwrap();
                     (permit, tcp_listener.accept().await)
                 } => {
-                    $handler(local_addr, remote_addr, stream, permit, "http");
+                    match event {
+                        Ok((stream, remote_addr)) => {
+                            $handler(local_addr, remote_addr, stream, permit, "http");
+                        },
+                        Err(err) => {
+                            log::info!("TCP handshake failed with error: {:?}", err);
+                            drop(permit);
+                        }
+                    }
                 },
                 _ = $pysig.changed() => {
                     accept_loop = false;
@@ -552,16 +560,17 @@ macro_rules! accept_loop {
         while accept_loop {
             let semaphore = semaphore.clone();
             tokio::select! {
-                (permit, accept) = async {
+                (permit, event) = async {
                     let permit = semaphore.acquire_owned().await.unwrap();
                     (permit, tls_listener.accept().await)
                 } => {
-                    match accept {
+                    match event {
                         Ok((stream, remote_addr)) => {
                             $handler(local_addr, remote_addr, stream, permit, "https")
                         },
                         Err(err) => {
                             log::info!("TLS handshake failed with {:?}", err);
+                            drop(permit);
                         }
                     }
                 },
