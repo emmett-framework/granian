@@ -441,7 +441,11 @@ impl ASGIWebsocketProtocol {
                             return FutureResultToPy::ASGIWSMessage(message);
                         }
                         Ok(message) => return FutureResultToPy::ASGIWSMessage(message),
-                        _ => break,
+                        _ => {
+                            // treat any recv error as a disconnection
+                            closed.store(true, atomic::Ordering::Release);
+                            return FutureResultToPy::ASGIWSMessage(Message::Close(None));
+                        }
                     }
                 }
             }
