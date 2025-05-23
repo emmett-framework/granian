@@ -121,6 +121,7 @@ class AbstractServer(Generic[WT]):
         reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
         reload_tick: int = 50,
         reload_ignore_worker_failure: bool = False,
+        reload_hook: Optional[Callable[[], Any]] = None,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
     ):
@@ -170,6 +171,7 @@ class AbstractServer(Generic[WT]):
         self.reload_filter = reload_filter
         self.reload_tick = reload_tick
         self.reload_ignore_worker_failure = reload_ignore_worker_failure
+        self.reload_hook = reload_hook
         self.process_name = process_name
         self.pid_file = pid_file
 
@@ -445,6 +447,8 @@ class AbstractServer(Generic[WT]):
                     logger.info('Changes detected, reloading workers..')
                     for change, file in changes:
                         logger.info(f'{change.raw_str().capitalize()}: {file}')
+                    if self.reload_hook:
+                        self.reload_hook()
                     self._stop_workers()
                     self._spawn_workers(spawn_target, target_loader)
             except StopIteration:
