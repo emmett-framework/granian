@@ -158,3 +158,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+          # FIXME: they broke something recently
+          attestations: false
