@@ -359,8 +359,8 @@ impl PyDoneAwaitable {
     fn __next__(&self, py: Python) -> PyResult<PyObject> {
         self.result
             .as_ref()
-            .map(|v| v.clone_ref(py))
             .map_err(|v| v.clone_ref(py))
+            .map(|v| Err(PyStopIteration::new_err(v.clone_ref(py))))?
     }
 }
 
