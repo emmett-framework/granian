@@ -1,6 +1,14 @@
-# Granian
+<p align="center">
+  <img width="550" src="https://emmett.sh/static/img/granian-logo-xb-fw.png" alt="granian">
+</p>
 
-A Rust HTTP server for Python applications built on top of the [Hyper crate](https://github.com/hyperium/hyper).
+<p align="center">
+<em>The Rust HTTP server for Python</em>
+</p>
+
+---
+
+Granian is a Rust HTTP server for Python applications built on top of [Hyper](https://github.com/hyperium/hyper) and [Tokio](https://github.com/tokio-rs/tokio).
 
 ## Rationale
 
