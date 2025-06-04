@@ -106,7 +106,6 @@ extend-select = [
 extend-ignore = [
     'B008', # function calls in args defaults are fine
     'B009', # getattr with constants is fine
-    'B034', # re.split won't confuse us
     'B904', # rising without from is fine
     'E501', # leave line length to black
     'N818', # leave to us exceptions naming
