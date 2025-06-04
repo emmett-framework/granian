@@ -7,7 +7,7 @@ from typing import Callable, List, Optional
 
 
 def get_import_components(path: str) -> List[Optional[str]]:
-    return (re.split(r':(?![\\/])', path, 1) + [None])[:2]
+    return (re.split(r':(?![\\/])', path, maxsplit=1) + [None])[:2]
 
 
 def prepare_import(path: str) -> str:
