@@ -1,4 +1,5 @@
 import os
+import platform
 
 import httpx
 import pytest
@@ -49,6 +50,7 @@ async def test_body_large(rsgi_server, runtime_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(platform.python_implementation() == 'PyPy', reason='RSGI stream broken on PyPy')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_body_stream_req(rsgi_server, runtime_mode):
     data = ''.join([f'{idx}test'.zfill(8) for idx in range(0, 5000)])
@@ -60,6 +62,7 @@ async def test_body_stream_req(rsgi_server, runtime_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(platform.python_implementation() == 'PyPy', reason='RSGI stream broken on PyPy')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_body_stream_res(rsgi_server, runtime_mode):
     async with rsgi_server(runtime_mode) as port:

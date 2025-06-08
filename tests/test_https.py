@@ -24,7 +24,7 @@ async def test_http_scope(server_tls, runtime_mode):
 async def test_asgi_ws_scope(asgi_server, runtime_mode):
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     localhost_pem = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls' / 'cert.pem'
-    ssl_context.load_verify_locations(localhost_pem)
+    ssl_context.load_verify_locations(str(localhost_pem))
 
     async with asgi_server(runtime_mode, tls=True) as port:
         async with websockets.connect(f'wss://localhost:{port}/ws_info?test=true', ssl=ssl_context) as ws:
@@ -39,7 +39,7 @@ async def test_asgi_ws_scope(asgi_server, runtime_mode):
 async def test_rsgi_ws_scope(rsgi_server, runtime_mode):
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     localhost_pem = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls' / 'cert.pem'
-    ssl_context.load_verify_locations(localhost_pem)
+    ssl_context.load_verify_locations(str(localhost_pem))
 
     async with rsgi_server(runtime_mode, tls=True) as port:
         async with websockets.connect(f'wss://localhost:{port}/ws_info?test=true', ssl=ssl_context) as ws:

@@ -233,6 +233,7 @@ impl CallbackScheduler {
         self.schedule_fn.set(val).unwrap();
     }
 
+    #[cfg(not(PyPy))]
     fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
         let ctx = copy_context(py);
         let state = Arc::new(CallbackSchedulerState {
@@ -250,6 +251,19 @@ impl CallbackScheduler {
         unsafe {
             pyo3::ffi::PyContext_Exit(ctx.as_ptr());
         }
+    }
+
+    #[cfg(PyPy)]
+    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
+        let ctx = copy_context(py);
+        let state = Arc::new(CallbackSchedulerState {
+            sched: pyself.clone_ref(py),
+            coro,
+            ctx: ctx.clone_ref(py),
+        });
+
+        let step = Py::new(py, CallbackSchedulerStep { state }).unwrap();
+        _ = ctx.call_method1(py, pyo3::intern!(py, "run"), (step,));
     }
 }
 
