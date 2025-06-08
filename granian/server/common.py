@@ -205,7 +205,7 @@ class AbstractServer(Generic[WT]):
             return
         # uneeded?
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(cert, key, password)
+        ctx.load_cert_chain(str(cert.resolve()), str(key.resolve()), password)
         #: build ctx
         if client_verify and not ca:
             logger.warning('SSL client verification requires a CA certificate, ignoring')
@@ -216,7 +216,7 @@ class AbstractServer(Generic[WT]):
             str(key.resolve()),
             password,
             str(ca.resolve()) if ca else None,
-            [item.resolve() for item in crl],
+            [str(item.resolve()) for item in crl],
             client_verify,
         )
 
