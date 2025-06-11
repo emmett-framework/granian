@@ -178,15 +178,38 @@ impl ASGIHTTPProtocol {
     fn send<'p>(&self, py: Python<'p>, data: &Bound<'p, PyDict>) -> PyResult<Bound<'p, PyAny>> {
         match adapt_message_type(py, data) {
             Ok(ASGIMessageType::HTTPResponseStart(intent)) => {
-                match self.response_started.load(atomic::Ordering::Relaxed) {
-                    false => {
-                        let mut response_intent = self.response_intent.lock().unwrap();
-                        *response_intent = Some(intent);
-                        self.response_started.store(true, atomic::Ordering::Relaxed);
-                        empty_future_into_py(py)
-                    }
-                    true => error_flow!(),
+                if self
+                    .response_started
+                    .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
+                    .is_err()
+                {
+                    return error_flow!();
                 }
+
+                // NOTE: we could definitely avoid this check, and always start a streamed response
+                //       and thus get rid of the whole `response_chunked` thing.
+                //       But that seems to be ~4% slower when the app actually just want to send 1 msg.
+                if !intent
+                    .1
+                    .get("content-type")
+                    .is_some_and(|hv| hv.as_bytes().starts_with(b"text/event-stream"))
+                {
+                    let mut response_intent = self.response_intent.lock().unwrap();
+                    *response_intent = Some(intent);
+                    return empty_future_into_py(py);
+                }
+
+                self.response_chunked.store(true, atomic::Ordering::Relaxed);
+                let (status, headers) = intent;
+                let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
+                let body_stream = http_body_util::StreamBody::new(
+                    tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                        .map(body::Frame::data)
+                        .map(Result::Ok),
+                );
+                *self.body_tx.lock().unwrap() = Some(body_tx.clone());
+                self.send_response(status, headers, BodyExt::boxed(body_stream));
+                empty_future_into_py(py)
             }
             Ok(ASGIMessageType::HTTPResponseBody((body, more))) => {
                 match (
