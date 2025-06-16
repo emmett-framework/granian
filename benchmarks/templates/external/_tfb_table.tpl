@@ -1,5 +1,5 @@
 {{ _target = {"async": _data.get('granian-rsgi', {}), "sync": _data.get('granian-wsgi', {})} }}
-{{ groups = {"async": ["fastwsgi-asgi", "granian", "granian-rsgi", "robyn", "uvicorn"], "sync": ["fastwsgi", "granian-wsgi", "uwsgi", "uwsgi-nginx-uwsgi"]} }}
+{{ groups = {"async": ["granian", "granian-rsgi", "fastwsgi-asgi", "robyn", "socketify.py-asgi-python3", "uvicorn"], "sync": ["granian-wsgi", "fastwsgi", "socketify.py-wsgi-python3", "uwsgi", "uwsgi-nginx-uwsgi"]} }}
 
 {{ for group in ["async", "sync"]: }}
 #### {{ =group.title() }}
