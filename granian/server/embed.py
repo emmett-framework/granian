@@ -344,6 +344,8 @@ class Server(AbstractServer[AsyncWorker]):
         self._init_shared_socket()
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
+
+        self._call_hooks(self.hooks_startup)
         self._spawn_workers(spawn_target, target_loader)
 
     async def _serve_loop(self, spawn_target, target_loader):
@@ -360,6 +362,7 @@ class Server(AbstractServer[AsyncWorker]):
 
     async def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
+        self._call_hooks(self.hooks_shutdown)
         await self._stop_workers()
 
     async def _serve(self, spawn_target, target_loader):
