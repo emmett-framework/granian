@@ -378,7 +378,7 @@ macro_rules! connection_handler {
         $http1_opts:expr,
         $http2_opts:expr
     ) => {
-        |local_addr, remote_addr, stream, permit, proto| {
+        |local_addr, remote_addr, stream, permit, sig: std::sync::Arc<tokio::sync::Notify>, proto| {
             let rt = $rt.clone();
             let ctx = $ctx.clone();
 
@@ -396,14 +396,16 @@ macro_rules! connection_handler {
                     proto
                 );
 
-                let mut conn = hyper_util::server::conn::auto::Builder::new($executor());
-                conn.http1()
+                let mut connb = hyper_util::server::conn::auto::Builder::new($executor());
+                connb
+                    .http1()
                     .timer(crate::io::TokioTimer::new())
                     .header_read_timeout($http1_opts.header_read_timeout)
                     .keep_alive($http1_opts.keep_alive)
                     .max_buf_size($http1_opts.max_buffer_size)
                     .pipeline_flush($http1_opts.pipeline_flush);
-                conn.http2()
+                connb
+                    .http2()
                     .timer(crate::io::TokioTimer::new())
                     .adaptive_window($http2_opts.adaptive_window)
                     .initial_connection_window_size($http2_opts.initial_connection_window_size)
@@ -415,7 +417,20 @@ macro_rules! connection_handler {
                     .max_header_list_size($http2_opts.max_headers_size)
                     .max_send_buf_size($http2_opts.max_send_buffer_size);
 
-                _ = conn.$conn_method(hyper_util::rt::TokioIo::new(stream), svc).await;
+                let mut done = false;
+                let conn = connb.$conn_method(hyper_util::rt::TokioIo::new(stream), svc);
+                tokio::pin!(conn);
+                tokio::select! {
+                    _ = conn.as_mut() => {
+                        done = true;
+                    },
+                    _ = sig.notified() => {
+                        conn.as_mut().graceful_shutdown();
+                    }
+                }
+                if !done {
+                    _ = conn.as_mut().await;
+                }
 
                 disconnect_tx.notify_one();
                 drop(permit);
@@ -432,7 +447,7 @@ macro_rules! connection_handler {
         $conn_method:ident,
         $http_opts:expr
     ) => {
-        |local_addr, remote_addr, stream, permit, proto| {
+        |local_addr, remote_addr, stream, permit, sig: std::sync::Arc<tokio::sync::Notify>, proto| {
             let rt = $rt.clone();
             let ctx = $ctx.clone();
 
@@ -450,7 +465,20 @@ macro_rules! connection_handler {
                     proto
                 );
 
-                _ = crate::workers::$conn_method!($http_opts, hyper_util::rt::TokioIo::new(stream), svc).await;
+                let mut done = false;
+                let conn = crate::workers::$conn_method!($http_opts, hyper_util::rt::TokioIo::new(stream), svc);
+                tokio::pin!(conn);
+                tokio::select! {
+                    _ = conn.as_mut() => {
+                        done = true;
+                    },
+                    _ = sig.notified() => {
+                        conn.as_mut().graceful_shutdown();
+                    }
+                }
+                if !done {
+                    _ = conn.as_mut().await;
+                }
 
                 disconnect_tx.notify_one();
                 drop(permit);
@@ -468,7 +496,7 @@ macro_rules! connection_handler {
         $stream_wrapper:expr,
         $http_opts:expr
     ) => {
-        |local_addr, remote_addr, stream, permit, proto| {
+        |local_addr, remote_addr, stream, permit, sig: std::sync::Arc<tokio::sync::Notify>, proto| {
             let rt = $rt.clone();
             let ctx = $ctx.clone();
 
@@ -486,7 +514,8 @@ macro_rules! connection_handler {
                     proto
                 );
 
-                _ = hyper::server::conn::http2::Builder::new($executor())
+                let mut done = false;
+                let conn = hyper::server::conn::http2::Builder::new($executor())
                     .timer(crate::io::TokioTimer::new())
                     .adaptive_window($http_opts.adaptive_window)
                     .initial_connection_window_size($http_opts.initial_connection_window_size)
@@ -497,8 +526,19 @@ macro_rules! connection_handler {
                     .max_frame_size($http_opts.max_frame_size)
                     .max_header_list_size($http_opts.max_headers_size)
                     .max_send_buf_size($http_opts.max_send_buffer_size)
-                    .serve_connection($stream_wrapper(stream), svc)
-                    .await;
+                    .serve_connection($stream_wrapper(stream), svc);
+                tokio::pin!(conn);
+                tokio::select! {
+                    _ = conn.as_mut() => {
+                        done = true;
+                    },
+                    _ = sig.notified() => {
+                        conn.as_mut().graceful_shutdown();
+                    }
+                }
+                if !done {
+                    _ = conn.as_mut().await;
+                }
 
                 disconnect_tx.notify_one();
                 drop(permit);
@@ -518,11 +558,14 @@ macro_rules! accept_loop {
     ) => {{
         let tcp_listener = tokio::net::TcpListener::from_std($listener).unwrap();
         let local_addr = tcp_listener.local_addr().unwrap();
-        let mut accept_loop = true;
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
+        let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
+        let mut accept_loop = true;
 
         while accept_loop {
             let semaphore = semaphore.clone();
+            let connsig = connsig.clone();
+
             tokio::select! {
                 (permit, event) = async {
                     let permit = semaphore.acquire_owned().await.unwrap();
@@ -530,7 +573,7 @@ macro_rules! accept_loop {
                 } => {
                     match event {
                         Ok((stream, remote_addr)) => {
-                            $handler(local_addr, remote_addr, stream, permit, "http");
+                            $handler(local_addr, remote_addr, stream, permit, connsig, "http");
                         },
                         Err(err) => {
                             log::info!("TCP handshake failed with error: {:?}", err);
@@ -540,6 +583,7 @@ macro_rules! accept_loop {
                 },
                 _ = $pysig.changed() => {
                     accept_loop = false;
+                    connsig.notify_waiters();
                 }
             }
         }
@@ -555,10 +599,13 @@ macro_rules! accept_loop {
     ) => {{
         let (mut tls_listener, local_addr) = crate::tls::tls_listener($listener_cfg.into(), $listener).unwrap();
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new($backpressure));
+        let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
         let mut accept_loop = true;
 
         while accept_loop {
             let semaphore = semaphore.clone();
+            let connsig = connsig.clone();
+
             tokio::select! {
                 (permit, event) = async {
                     let permit = semaphore.acquire_owned().await.unwrap();
@@ -566,7 +613,7 @@ macro_rules! accept_loop {
                 } => {
                     match event {
                         Ok((stream, remote_addr)) => {
-                            $handler(local_addr, remote_addr, stream, permit, "https")
+                            $handler(local_addr, remote_addr, stream, permit, connsig, "https")
                         },
                         Err(err) => {
                             log::info!("TLS handshake failed with {:?}", err);
@@ -576,6 +623,7 @@ macro_rules! accept_loop {
                 },
                 _ = $pysig.changed() => {
                     accept_loop = false;
+                    connsig.notify_waiters();
                 }
             }
         }
