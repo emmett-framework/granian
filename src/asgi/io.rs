@@ -183,7 +183,7 @@ impl ASGIHTTPProtocol {
                     .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
                     .is_err()
                 {
-                    return error_flow!();
+                    return error_flow!("Response already started");
                 }
 
                 // NOTE: we could definitely avoid this check, and always start a streamed response
@@ -244,7 +244,7 @@ impl ASGIHTTPProtocol {
                     }
                     (true, true, true) => match &*self.body_tx.lock().unwrap() {
                         Some(tx) => self.send_body(py, tx, body, false),
-                        _ => error_flow!(),
+                        _ => error_flow!("Transport not initialized or closed"),
                     },
                     (true, false, true) => match self.body_tx.lock().unwrap().take() {
                         Some(tx) => match body.is_empty() {
@@ -254,9 +254,9 @@ impl ASGIHTTPProtocol {
                                 empty_future_into_py(py)
                             }
                         },
-                        _ => error_flow!(),
+                        _ => error_flow!("Transport not initialized or closed"),
                     },
-                    _ => error_flow!(),
+                    _ => error_flow!("Response not started"),
                 }
             }
             Ok(ASGIMessageType::HTTPResponseFile(file_path)) => match (
@@ -288,7 +288,7 @@ impl ASGIHTTPProtocol {
                     });
                     empty_future_into_py(py)
                 }
-                _ => error_flow!(),
+                _ => error_flow!("Response not started"),
             },
             Err(err) => Err(err.into()),
             _ => error_message!(),
@@ -388,7 +388,7 @@ impl ASGIWebsocketProtocol {
                     }
                 }
             }
-            FutureResultToPy::Err(error_flow!())
+            FutureResultToPy::Err(error_flow!("Connection already upgraded"))
         })
     }
 
@@ -409,7 +409,7 @@ impl ASGIWebsocketProtocol {
                     }
                 }
             }
-            FutureResultToPy::Err(error_flow!())
+            FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
         })
     }
 
@@ -492,7 +492,7 @@ impl ASGIWebsocketProtocol {
                     }
                 }
             }
-            FutureResultToPy::Err(error_flow!())
+            FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
         })
     }
 
@@ -579,7 +579,7 @@ fn adapt_body(py: Python, message: &Bound<PyDict>) -> (Box<[u8]>, bool) {
 fn adapt_file(py: Python, message: &Bound<PyDict>) -> PyResult<String> {
     match message.get_item(pyo3::intern!(py, "path"))? {
         Some(item) => item.extract(),
-        _ => error_flow!(),
+        _ => error_message!(),
     }
 }
 

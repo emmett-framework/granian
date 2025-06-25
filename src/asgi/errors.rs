@@ -1,12 +1,12 @@
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use std::{error, fmt};
+use std::{error, fmt, rc::Rc};
 
 #[derive(Debug)]
 pub(crate) struct UnsupportedASGIMessage;
 
 #[derive(Debug)]
-pub(crate) struct ASGIFlowError;
+pub(crate) struct ASGIFlowError(pub Option<Rc<str>>);
 
 #[derive(Debug)]
 pub(crate) struct ASGITransportError;
@@ -23,7 +23,10 @@ impl fmt::Display for UnsupportedASGIMessage {
 
 impl fmt::Display for ASGIFlowError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ASGI flow error")
+        match &self.0 {
+            Some(msg) => write!(f, "ASGI flow error: {msg}"),
+            None => write!(f, "ASGI flow error"),
+        }
     }
 }
 
@@ -47,7 +50,7 @@ impl std::convert::From<PyErr> for UnsupportedASGIMessage {
 
 impl std::convert::From<PyErr> for ASGIFlowError {
     fn from(_pyerr: PyErr) -> ASGIFlowError {
-        ASGIFlowError
+        ASGIFlowError(None)
     }
 }
 
@@ -71,7 +74,10 @@ impl std::convert::From<ASGITransportError> for PyErr {
 
 macro_rules! error_flow {
     () => {
-        Err(super::errors::ASGIFlowError.into())
+        Err(super::errors::ASGIFlowError(None).into())
+    };
+    ($msg:expr) => {
+        Err(super::errors::ASGIFlowError(Some($msg.into())).into())
     };
 }
 
