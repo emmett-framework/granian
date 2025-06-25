@@ -176,6 +176,10 @@ class AbstractServer(Generic[WT]):
         if self.reload_on_changes and self.workers_kill_timeout is None:
             self.workers_kill_timeout = 3.5
 
+        self.hooks_startup = []
+        self.hooks_reload = []
+        self.hooks_shutdown = []
+
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
         self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password, ssl_ca, ssl_crl or [], ssl_client_verify)
@@ -219,6 +223,23 @@ class AbstractServer(Generic[WT]):
             [str(item.resolve()) for item in crl],
             client_verify,
         )
+
+    @staticmethod
+    def _call_hooks(hooks):
+        for hook in hooks:
+            hook()
+
+    def on_startup(self, hook: Callable[[], Any]) -> Callable[[], Any]:
+        self.hooks_startup.append(hook)
+        return hook
+
+    def on_reload(self, hook: Callable[[], Any]) -> Callable[[], Any]:
+        self.hooks_reload.append(hook)
+        return hook
+
+    def on_shutdown(self, hook: Callable[[], Any]) -> Callable[[], Any]:
+        self.hooks_shutdown.append(hook)
+        return hook
 
     def _init_shared_socket(self):
         self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
@@ -344,6 +365,7 @@ class AbstractServer(Generic[WT]):
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
 
+        self._call_hooks(self.hooks_startup)
         self._spawn_workers(spawn_target, target_loader)
 
         if self.workers_lifetime is not None:
@@ -352,6 +374,7 @@ class AbstractServer(Generic[WT]):
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
         self._stop_workers()
+        self._call_hooks(self.hooks_shutdown)
         self._unlink_pidfile()
         if not exit_code and self.interrupt_children:
             exit_code = 1
@@ -364,6 +387,7 @@ class AbstractServer(Generic[WT]):
         self.reload_signal = False
         self.respawned_wrks.clear()
         self.main_loop_interrupt.clear()
+        self._call_hooks(self.hooks_reload)
         self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
 
     def _serve_loop(self, spawn_target, target_loader):
@@ -445,6 +469,7 @@ class AbstractServer(Generic[WT]):
                     logger.info('Changes detected, reloading workers..')
                     for change, file in changes:
                         logger.info(f'{change.raw_str().capitalize()}: {file}')
+                    self._call_hooks(self.hooks_reload)
                     self._stop_workers()
                     self._spawn_workers(spawn_target, target_loader)
             except StopIteration:
