@@ -11,20 +11,25 @@ on:
 
 jobs:
   linux:
+    name: linux (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        allocator: [jemalloc]
         python-version:
         - '3.9'
         - '3.10'
         - '3.11'
         - '3.12'
         - '3.13'
-        - '3.13t'
         - '3.14'
-        - '3.14t'
         - pypy3.11
+        include:
+          - python-version: 3.13t
+            allocator: mimalloc
+          - python-version: 3.14t
+            allocator: mimalloc
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
@@ -38,26 +43,31 @@ jobs:
         uv python install ${{ env.UV_PYTHON }}
         uv venv .venv
         uv sync --group all
-        uv run --no-sync maturin develop --uv
+        uv run --no-sync maturin develop --uv --features ${{ matrix.allocator }}
     - name: Test
       run: |
         source .venv/bin/activate
         make test
 
   macos:
+    name: macos (${{ matrix.python-version }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
+        allocator: [jemalloc]
         python-version:
         - '3.9'
         - '3.10'
         - '3.11'
         - '3.12'
         - '3.13'
-        - '3.13t'
         - '3.14'
-        - '3.14t'
+        include:
+          - python-version: 3.13t
+            allocator: mimalloc
+          - python-version: 3.14t
+            allocator: mimalloc
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
@@ -71,7 +81,7 @@ jobs:
         uv python install ${{ env.UV_PYTHON }}
         uv venv .venv
         uv sync --group all
-        uv run --no-sync maturin develop --uv
+        uv run --no-sync maturin develop --uv --features ${{ matrix.allocator }}
     - name: Test
       run: |
         source .venv/bin/activate
@@ -104,7 +114,7 @@ jobs:
         uv python install ${{ env.UV_PYTHON }}
         uv venv .venv
         uv sync --group all
-        uv run --no-sync maturin develop --uv
+        uv run --no-sync maturin develop --uv --features mimalloc
     - name: Test
       run: |
         uv run --no-sync pytest -v tests
