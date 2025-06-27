@@ -11,10 +11,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos, windows]
+        os: [ubuntu, macos]
         target: [x86_64, aarch64]
         manylinux: [auto]
-        allocator: [auto]
+        allocator: [jemalloc]
         include:
           - os: ubuntu
             platform: linux
@@ -29,6 +29,7 @@ jobs:
             platform: linux
             target: i686
             interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+            allocator: jemalloc
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -46,6 +47,7 @@ jobs:
             platform: linux
             target: armv7
             interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+            allocator: jemalloc
           - os: ubuntu
             platform: linux
             target: x86_64
@@ -77,14 +79,8 @@ jobs:
             allocator: mimalloc
           - os: windows
             target: x86_64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9 pypy3.10 pypy3.11
-          - os: windows
-            target: x86_64
-            interpreter: 3.13t 3.14t
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t pypy3.9 pypy3.10 pypy3.11
             allocator: mimalloc
-        exclude:
-          - os: windows
-            target: aarch64
 
     runs-on: ${{ matrix.os }}-latest
     steps:
@@ -94,21 +90,10 @@ jobs:
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
       - uses: pyo3/maturin-action@v1
-        if: matrix.allocator != 'mimalloc'
         with:
           rust-toolchain: stable
           command: build
-          args: --release --out dist --interpreter ${{ matrix.interpreter || env.PY_ALL }}
-          target: ${{ matrix.target }}
-          manylinux: ${{ matrix.manylinux || 'auto' }}
-          container: ${{ matrix.container }}
-          docker-options: -e CI
-      - uses: pyo3/maturin-action@v1
-        if: matrix.allocator == 'mimalloc'
-        with:
-          rust-toolchain: stable
-          command: build
-          args: --release --out dist --features mimalloc --interpreter ${{ matrix.interpreter || env.PY_ALL }}
+          args: --release --out dist --features ${{ matrix.allocator }} --interpreter ${{ matrix.interpreter || env.PY_ALL }}
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
