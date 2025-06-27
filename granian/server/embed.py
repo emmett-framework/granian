@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
+from .._imports import dotenv
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
@@ -21,6 +22,7 @@ from .common import (
     Interfaces,
     LogLevels,
     TaskImpl,
+    load_env,
     logger,
 )
 
@@ -345,6 +347,7 @@ class Server(AbstractServer[AsyncWorker]):
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
 
+        load_env(self.env_files)
         self._call_hooks(self.hooks_startup)
         self._spawn_workers(spawn_target, target_loader)
 
@@ -403,6 +406,10 @@ class Server(AbstractServer[AsyncWorker]):
         if self.websockets:
             if self.http == HTTPModes.http2:
                 logger.info('Websockets are not supported on HTTP/2 only, ignoring')
+
+        if self.env_files and dotenv is None:
+            logger.error('Environment file(s) usage requires the granian[dotenv] extra')
+            raise ConfigurationError('env_files')
 
         if self.blocking_threads_idle_timeout < 10 or self.blocking_threads_idle_timeout > 600:
             logger.error('Blocking threads idle timeout must be between 10 and 600 seconds')

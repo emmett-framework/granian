@@ -20,6 +20,7 @@ from .common import (
     RuntimeModes,
     TaskImpl,
     configure_logging,
+    load_env,
     logger,
     setproctitle,
 )
@@ -43,6 +44,7 @@ class WorkerProcess(AbstractWorker):
             log_enabled,
             log_level,
             log_config,
+            env_files,
             *args,
             **kwargs,
         ):
@@ -52,6 +54,7 @@ class WorkerProcess(AbstractWorker):
                 setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
 
             configure_logging(log_level, log_config, log_enabled)
+            load_env(env_files)
 
             sock, _sso = sock
             if sys.platform == 'win32':
@@ -302,6 +305,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 self.log_enabled,
                 self.log_level,
                 self.log_config,
+                self.env_files,
                 self.runtime_mode,
                 self.runtime_threads,
                 self.runtime_blocking_threads,

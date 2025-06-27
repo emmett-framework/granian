@@ -4,6 +4,11 @@ except ImportError:
     anyio = None
 
 try:
+    import dotenv
+except ImportError:
+    dotenv = None
+
+try:
     import setproctitle
 except ImportError:
     setproctitle = None
