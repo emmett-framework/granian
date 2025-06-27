@@ -22,6 +22,8 @@ jobs:
         - '3.12'
         - '3.13'
         - '3.13t'
+        - '3.14'
+        - '3.14t'
         - pypy3.11
 
     env:
@@ -54,6 +56,8 @@ jobs:
         - '3.12'
         - '3.13'
         - '3.13t'
+        - '3.14'
+        - '3.14t'
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
@@ -85,6 +89,8 @@ jobs:
         - '3.12'
         - '3.13'
         - '3.13t'
+        - '3.14'
+        - '3.14t'
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
