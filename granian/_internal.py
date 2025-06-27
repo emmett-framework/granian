@@ -5,6 +5,8 @@ import traceback
 from types import ModuleType
 from typing import Callable, List, Optional
 
+from ._imports import dotenv
+
 
 def get_import_components(path: str) -> List[Optional[str]]:
     return (re.split(r':(?![\\/])', path, maxsplit=1) + [None])[:2]
@@ -62,3 +64,8 @@ def load_target(target: str, factory: bool = False) -> Callable[..., None]:
     if factory:
         rv = rv()
     return rv
+
+
+def load_env(files):
+    for env_file in files:
+        dotenv.load_dotenv(dotenv_path=env_file)

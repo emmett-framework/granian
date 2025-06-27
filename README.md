@@ -107,6 +107,22 @@ and serve it using Granian CLI:
 
     $ granian --interface wsgi main:app
 
+## Extra dependecies
+
+Mind that Granian also provides several extra dependencies you might be interested into, in particular:
+
+- dotenv (allows to load environment files)
+- pname (allows to customize processes' names)
+- reload (adds reload on changes functionality)
+- [rloop](https://pypi.org/project/rloop/)
+- [uvloop](https://pypi.org/project/uvloop/)
+
+You can combine the above extras to suit your needs, eg:
+
+    $ pip install granian[pname,uvloop]
+
+For further information, check the options below.
+
 ## Options
 
 You can check all the options provided by Granian with the `--help` command:
@@ -274,6 +290,9 @@ Options:
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:
                                   (disabled)]
+  --env-files FILE                Environment file(s) to load (requires
+                                  granian[dotenv] extra)  [env var:
+                                  GRANIAN_ENV_FILES]
   --static-path-route TEXT        Route for static file serving  [env var:
                                   GRANIAN_STATIC_PATH_ROUTE; default:
                                   (/static)]

@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
 
 from .._compat import _PY_312, _PYV
-from .._imports import setproctitle, watchfiles
-from .._internal import load_target
+from .._imports import dotenv, setproctitle, watchfiles
+from .._internal import load_env, load_target
 from .._signals import set_main_signals
 from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
 from ..errors import ConfigurationError, PidFileError
@@ -110,6 +110,7 @@ class AbstractServer(Generic[WT]):
         workers_lifetime: Optional[int] = None,
         workers_kill_timeout: Optional[int] = None,
         factory: bool = False,
+        env_files: Optional[Sequence[Path]] = None,
         static_path_route: str = '/static',
         static_path_mount: Optional[Path] = None,
         static_path_expires: int = 86400,
@@ -158,6 +159,7 @@ class AbstractServer(Generic[WT]):
         self.workers_lifetime = workers_lifetime
         self.workers_kill_timeout = workers_kill_timeout
         self.factory = factory
+        self.env_files = env_files or ()
         self.static_path = (
             (static_path_route, str(static_path_mount.resolve()), str(static_path_expires))
             if static_path_mount
@@ -365,6 +367,7 @@ class AbstractServer(Generic[WT]):
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
 
+        load_env(self.env_files)
         self._call_hooks(self.hooks_startup)
         self._spawn_workers(spawn_target, target_loader)
 
@@ -387,6 +390,8 @@ class AbstractServer(Generic[WT]):
         self.reload_signal = False
         self.respawned_wrks.clear()
         self.main_loop_interrupt.clear()
+
+        load_env(self.env_files)
         self._call_hooks(self.hooks_reload)
         self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
 
@@ -469,6 +474,7 @@ class AbstractServer(Generic[WT]):
                     logger.info('Changes detected, reloading workers..')
                     for change, file in changes:
                         logger.info(f'{change.raw_str().capitalize()}: {file}')
+                    load_env(self.env_files)
                     self._call_hooks(self.hooks_reload)
                     self._stop_workers()
                     self._spawn_workers(spawn_target, target_loader)
@@ -528,6 +534,10 @@ class AbstractServer(Generic[WT]):
         elif self.process_name is not None:
             logger.error('Setting process name requires the granian[pname] extra')
             raise ConfigurationError('process_name')
+
+        if self.env_files and dotenv is None:
+            logger.error('Environment file(s) usage requires the granian[dotenv] extra')
+            raise ConfigurationError('env_files')
 
         if self.workers_lifetime is not None:
             if self.reload_on_changes:
