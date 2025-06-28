@@ -291,6 +291,8 @@ Options:
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:
                                   (disabled)]
+  --working-dir DIRECTORY         Set the working directory  [env var:
+                                  GRANIAN_WORKING_DIR]
   --env-files FILE                Environment file(s) to load (requires
                                   granian[dotenv] extra)  [env var:
                                   GRANIAN_ENV_FILES]
