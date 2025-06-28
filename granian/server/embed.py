@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -83,8 +84,8 @@ class AsyncWorker(AbstractWorker):
         self.interrupt_by_parent = True
         self._task.cancel()
 
-    async def join(self, timeout=None):
-        await asyncio.wait_for(self._task, timeout=timeout)
+    def join(self, timeout=None):
+        return asyncio.wait_for(self._task, timeout=timeout)
 
 
 class Server(AbstractServer[AsyncWorker]):
@@ -328,6 +329,27 @@ class Server(AbstractServer[AsyncWorker]):
         await worker.serve_async(scheduler, loop, shutdown_event)
         callback_del(loop)
 
+    async def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):
+        for idx in workers:
+            self.respawned_wrks[idx] = time.time()
+            logger.info(f'Respawning worker-{idx + 1}')
+            old_wrk = self.wrks.pop(idx)
+            wrk = self._spawn_worker(idx=idx, target=spawn_target, callback_loader=target_loader)
+            wrk.start()
+            self.wrks.insert(idx, wrk)
+            await asyncio.sleep(delay)
+            logger.info(f'Stopping old worker-{idx + 1}')
+            old_wrk.terminate()
+            await old_wrk.join(self.workers_kill_timeout)
+            if self.workers_kill_timeout:
+                # the worker might still be reported alive after `join`, let's context switch
+                if old_wrk.is_alive():
+                    await asyncio.sleep(0.001)
+                if old_wrk.is_alive():
+                    logger.warning(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
+                    old_wrk.kill()
+                    await old_wrk.join()
+
     async def _stop_workers(self):
         for wrk in self.wrks:
             wrk.terminate()
@@ -361,7 +383,7 @@ class Server(AbstractServer[AsyncWorker]):
                 break
 
             if self.reload_signal:
-                self._reload(spawn_target, target_loader)
+                await self._reload(spawn_target, target_loader)
 
     async def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')

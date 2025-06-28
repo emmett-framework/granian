@@ -395,7 +395,7 @@ class AbstractServer(Generic[WT]):
 
         load_env(self.env_files)
         self._call_hooks(self.hooks_reload)
-        self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
+        return self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
 
     def _serve_loop(self, spawn_target, target_loader):
         while True:
