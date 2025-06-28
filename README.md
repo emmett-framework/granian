@@ -408,6 +408,25 @@ Given you specify N threads with the relevant option, in **st** mode Granian wil
 
 Benchmarks suggests **st** mode to be more efficient with a small amount of processes, while **mt** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
 
+### Proxies and forwarded headers
+
+Since none of the supported applications protocols define a strategy for proxies' *forwarded headers*, Granian doesn't provide any option to configure its behaviour around them.
+
+What Granian provides instead, for contexts in which is being run behind a reverse proxy, are *wrappers* you can use on top of your application, in order to alter the request scope based on the headers forwarded by the proxy itself. You can find such wrappers in the `granian.utils.proxies` module:
+
+```python
+from granian.utils.proxies import wrap_asgi_with_proxy_headers, wrap_wsgi_with_proxy_headers
+
+async def my_asgi_app(scope, receive, send):
+    ...
+
+def my_wsgi_app(environ, start_response):
+    ...
+
+my_asgi_app = wrap_asgi_with_proxy_headers(my_asgi_app, trusted_hosts="1.2.3.4")
+my_wsgi_app = wrap_wsgi_with_proxy_headers(my_wsgi_app, trusted_hosts="1.2.3.4")
+```
+
 ## Free-threaded Python
 
 > **Warning:** free-threaded Python support is still experimental and highly discouraged in *production environments*.
