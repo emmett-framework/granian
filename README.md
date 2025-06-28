@@ -17,7 +17,7 @@ The main reasons behind Granian design are:
 - Have a single, correct HTTP implementation, supporting versions 1, 2 (and eventually 3)
 - Provide a single package for several platforms
 - Avoid the usual Gunicorn + uvicorn + http-tools dependency composition on unix systems
-- Provide stable [performance](https://github.com/emmett-framework/granian/blob/master/benchmarks/README.md) when compared to existing alternatives
+- Provide stable [performance](https://github.com/emmett-framework/granian/blob/master/benchmarks/vs.md) when compared to existing alternatives
 
 Adopting Granian would thus be a good choice when:
 
@@ -40,6 +40,7 @@ On the other hand, Granian won't be the ideal option if:
 - HTTPS and mTLS
 - Websockets
 - Direct static files serving
+- ASGI [pathsend](https://asgi.readthedocs.io/en/latest/extensions.html#path-send) extension
 
 ## Quickstart
 
@@ -420,7 +421,11 @@ Since version 2.0 Granian supports free-threaded Python. While the installation 
 While for asynchronous protocols nothing really changes in terms of workers and threads configuration, as the scaling will be still driven by the number of AsyncIO event loops running (so the same rules for GIL workers apply), on synchronous protocols like WSGI every GIL-related limitation is theoretically absent.    
 While the general rules in terms of I/O-bound vs CPU-bound load still apply, at the time being there's not enough data to make suggestions in terms of workers and threads tuning in the free-threaded Python land, and thus you will need to experiment with those values depending on your specific workload.
 
-## Customising asyncio event loop initialization
+## Customising Granian
+
+Running Granian directly from Python instead of its CLI gives you access to some customization interfaces that let you alter its standard behaviour.
+
+### AsyncIO event loop initialization
 
 As soon as you run Granian directly from Python instead of its CLI, you can customise the default event loop initialisation policy by overwriting the `auto` policy. Let's say, for instance, you want to use the selector event loop on Windows:
 
@@ -437,11 +442,73 @@ def build_loop():
 Granian(...).serve()
 ```
 
+### Hooks
+
+Granian provides hooks registration interfaces to run code during specific phases of its lifecycle. Specifically, you have the following methods available:
+
+- `on_startup`
+- `on_shutdown`
+- `on_reload`
+
+The mentioned methods accept a callable with no arguments that will be invoked during the relevant lifecycle phases. You can register your hooks simply passing them to the relevant method:
+
+```python
+from granian import Granian
+
+def my_hook():
+    print("hello from reload!")
+
+server = Granian(...)
+server.on_reload(my_hook)
+```
+
+### Embedding Granian in your project
+
+For projects requiring advance lifecycle management, or implementing their own process management strategy, Granian provides an *embeddable* server implementation, which provides async interfaces and won't spawn workers as processes or threads, but will run them as AsyncIO tasks.
+
+> **Warning:** the embeddable server is still experimental.
+
+> **Note:** the embeddable server only supports async protocols, thus WSGI is not supported. It's also limited to a single worker, as it runs over an existing event loop.
+
+To embed Granian in your project, you can import the server from the relevant module:
+
+```python
+from granian.server.embed import Server
+
+server = Server(...)
+
+async def my_main():
+    await server.serve()
+```
+
+Given the `serve` method is now async, the embeddable server also provides two methods to manage its lifecycle, specifically:
+
+- `stop`
+- `reload`
+
+The idea is that you can spawn the server as a task, and later on interact with it in your own process loop:
+
+```python
+async def my_main():
+    server_task = asyncio.create_task(server.serve())
+    await my_logic()
+    server.stop()
+    await server_task
+```
+
 ## Project status
 
-Granian is currently under active development.
+Granian is being actively maintained and is compatible with Python 3.9 and above versions.
 
-Granian is compatible with Python 3.9 and above versions.
+Granian follows a *semantic versioning* scheme for its releases, with a `{major}.{minor}.{patch}` scheme for versions numbers, where:
+
+- *major* versions might introduce breaking changes
+- *minor* versions introduce new features and backward compatible changes
+- *patch* versions only introduce bug and security fixes
+
+Mind that bug and security fixes are **usually provided for the latest minor version only**.
+
+Granian is used *in production* by some popular projects like [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81) and [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25), and by *famous companies* like [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26).
 
 ## License
 
