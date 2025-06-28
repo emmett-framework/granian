@@ -110,6 +110,7 @@ class AbstractServer(Generic[WT]):
         workers_lifetime: Optional[int] = None,
         workers_kill_timeout: Optional[int] = None,
         factory: bool = False,
+        working_dir: Optional[Path] = None,
         env_files: Optional[Sequence[Path]] = None,
         static_path_route: str = '/static',
         static_path_mount: Optional[Path] = None,
@@ -159,6 +160,7 @@ class AbstractServer(Generic[WT]):
         self.workers_lifetime = workers_lifetime
         self.workers_kill_timeout = workers_kill_timeout
         self.factory = factory
+        self.working_dir = str(working_dir.resolve()) if working_dir else None
         self.env_files = env_files or ()
         self.static_path = (
             (static_path_route, str(static_path_mount.resolve()), str(static_path_expires))
@@ -504,7 +506,7 @@ class AbstractServer(Generic[WT]):
             if wrap_loader:
                 target_loader = partial(target_loader, self.target)
         else:
-            target_loader = partial(load_target, self.target, factory=self.factory)
+            target_loader = partial(load_target, self.target, wd=self.working_dir, factory=self.factory)
 
         if not spawn_target:
             spawn_target = default_spawners[self.interface]

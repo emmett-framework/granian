@@ -52,8 +52,8 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
     return sys.modules[module_name]
 
 
-def load_target(target: str, factory: bool = False) -> Callable[..., None]:
-    sys.path.insert(0, '')
+def load_target(target: str, wd: Optional[str] = None, factory: bool = False) -> Callable[..., None]:
+    sys.path.insert(0, wd or '')
     path, name = get_import_components(target)
     path = prepare_import(path) if path else None
     name = name or 'app'
