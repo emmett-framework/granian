@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 from enum import Enum
 from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
@@ -14,6 +15,50 @@ from .server import Server
 
 _AnyCallable = Callable[..., Any]
 FC = TypeVar('FC', bound=Union[_AnyCallable, click.Command])
+
+
+class Duration(click.ParamType):
+    """Custom parameter type for duration strings like '24h', '6m', '2s', '1h30m', etc.
+
+    If the value is a plain number, it will be treated as seconds.
+    """
+
+    name = 'duration'
+    _multipliers = {'s': 1, 'm': 60, 'h': 60 * 60, 'd': 60 * 60 * 24}
+    _pattern = re.compile(r'^(?:(?P<d>\d+)d)?(?:(?P<h>\d+)h)?(?:(?P<m>\d+)m)?(?:(?P<s>\d+)s)?$')
+
+    def __init__(self, min_seconds: Optional[int] = None, max_seconds: Optional[int] = None) -> None:
+        self.min_seconds = min_seconds
+        self.max_seconds = max_seconds
+
+    def convert(self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]) -> Any:
+        if value is None:
+            return value
+
+        if isinstance(value, int):
+            seconds = value
+        elif isinstance(value, str):
+            if value.isnumeric():
+                seconds = int(value)
+            elif (match := self._pattern.fullmatch(value)) is not None:
+                seconds = (
+                    int(match.group('d') or 0) * self._multipliers['d']
+                    + int(match.group('h') or 0) * self._multipliers['h']
+                    + int(match.group('m') or 0) * self._multipliers['m']
+                    + int(match.group('s') or 0) * self._multipliers['s']
+                )
+            else:
+                self.fail(f'{value!r} is not a valid duration', param, ctx)
+        else:
+            self.fail(f'{value!r} is not a valid duration', param, ctx)
+
+        if self.min_seconds is not None and seconds < self.min_seconds:
+            self.fail(f'{value!r} is less than the minimum allowed value of {self.min_seconds} seconds', param, ctx)
+
+        if self.max_seconds is not None and seconds > self.max_seconds:
+            self.fail(f'{value!r} is greater than the maximum allowed value of {self.max_seconds} seconds', param, ctx)
+
+        return seconds
 
 
 class EnumType(click.Choice):
@@ -230,13 +275,13 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--workers-lifetime',
-    type=click.IntRange(60),
-    help='The maximum amount of time in seconds a worker will be kept alive before respawn',
+    type=Duration(60),
+    help='The maximum amount of time in seconds (or a human-readable duration) a worker will be kept alive before respawn',
 )
 @option(
     '--workers-kill-timeout',
-    type=click.IntRange(1, 1800),
-    help='The amount of time in seconds to wait for killing workers that refused to gracefully stop',
+    type=Duration(1, 1800),
+    help='The amount of time in seconds (or a human-readable duration) to wait for killing workers that refused to gracefully stop',
     show_default='disabled',
 )
 @option(
@@ -267,9 +312,9 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--static-path-expires',
-    type=click.IntRange(60),
+    type=Duration(60),
     default=86400,
-    help='Cache headers expiration (in seconds) for static file serving',
+    help='Cache headers expiration (in seconds or a human-readable duration) for static file serving',
 )
 @option(
     '--reload/--no-reload',

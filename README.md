@@ -277,16 +277,16 @@ Options:
   --respawn-interval FLOAT        The number of seconds to sleep between
                                   workers respawn  [env var:
                                   GRANIAN_RESPAWN_INTERVAL; default: 3.5]
-  --workers-lifetime INTEGER RANGE
-                                  The maximum amount of time in seconds a
-                                  worker will be kept alive before respawn
-                                  [env var: GRANIAN_WORKERS_LIFETIME; x>=60]
-  --workers-kill-timeout INTEGER RANGE
-                                  The amount of time in seconds to wait for
-                                  killing workers that refused to gracefully
-                                  stop  [env var:
-                                  GRANIAN_WORKERS_KILL_TIMEOUT; default:
-                                  (disabled); 1<=x<=1800]
+  --workers-lifetime DURATION     The maximum amount of time in seconds (or a
+                                  human-readable duration) a worker will be
+                                  kept alive before respawn  [env var:
+                                  GRANIAN_WORKERS_LIFETIME]
+  --workers-kill-timeout DURATION
+                                  The amount of time in seconds (or a human-
+                                  readable duration) to wait for killing
+                                  workers that refused to gracefully stop
+                                  [env var: GRANIAN_WORKERS_KILL_TIMEOUT;
+                                  default: (disabled)]
   --factory / --no-factory        Treat target as a factory function, that
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:
@@ -301,11 +301,10 @@ Options:
                                   (/static)]
   --static-path-mount DIRECTORY   Path to mount for static file serving  [env
                                   var: GRANIAN_STATIC_PATH_MOUNT]
-  --static-path-expires INTEGER RANGE
-                                  Cache headers expiration (in seconds) for
-                                  static file serving  [env var:
-                                  GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
-                                  x>=60]
+  --static-path-expires DURATION  Cache headers expiration (in seconds or a
+                                  human-readable duration) for static file
+                                  serving  [env var:
+                                  GRANIAN_STATIC_PATH_EXPIRES; default: 86400]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
