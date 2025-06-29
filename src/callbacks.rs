@@ -51,7 +51,7 @@ impl CallbackScheduler {
             pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
 
             let mut pres = std::ptr::null_mut::<pyo3::ffi::PyObject>();
-            let gres = pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &mut pres);
+            let gres = pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &raw mut pres);
 
             if gres == pyo3::ffi::PySendResult::PYGEN_NEXT {
                 if pres == self.pynone.as_ptr() {
