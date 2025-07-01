@@ -68,4 +68,4 @@ def load_target(target: str, wd: Optional[str] = None, factory: bool = False) ->
 
 def load_env(files):
     for env_file in files:
-        dotenv.load_dotenv(dotenv_path=env_file)
+        dotenv.load_dotenv(dotenv_path=env_file, override=True)
