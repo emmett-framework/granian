@@ -17,7 +17,7 @@ _AnyCallable = Callable[..., Any]
 FC = TypeVar('FC', bound=Union[_AnyCallable, click.Command])
 
 
-class Duration(click.ParamType):
+class Duration(click.IntRange):
     """Custom parameter type for duration strings like '24h', '6m', '2s', '1h30m', etc.
 
     If the value is a plain number, it will be treated as seconds.
@@ -27,9 +27,8 @@ class Duration(click.ParamType):
     _multipliers = {'s': 1, 'm': 60, 'h': 60 * 60, 'd': 60 * 60 * 24}
     _pattern = re.compile(r'^(?:(?P<d>\d+)d)?(?:(?P<h>\d+)h)?(?:(?P<m>\d+)m)?(?:(?P<s>\d+)s)?$')
 
-    def __init__(self, min_seconds: Optional[int] = None, max_seconds: Optional[int] = None) -> None:
-        self.min_seconds = min_seconds
-        self.max_seconds = max_seconds
+    def __init__(self, min: Optional[int] = None, max: Optional[int] = None) -> None:
+        super().__init__(min, max, min_open=False, max_open=False, clamp=False)
 
     def convert(self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]) -> Any:
         if value is None:
@@ -52,11 +51,11 @@ class Duration(click.ParamType):
         else:
             self.fail(f'{value!r} is not a valid duration', param, ctx)
 
-        if self.min_seconds is not None and seconds < self.min_seconds:
-            self.fail(f'{value!r} is less than the minimum allowed value of {self.min_seconds} seconds', param, ctx)
+        if self.min is not None and seconds < self.min:
+            self.fail(f'{value!r} is less than the minimum allowed value of {self.min} seconds', param, ctx)
 
-        if self.max_seconds is not None and seconds > self.max_seconds:
-            self.fail(f'{value!r} is greater than the maximum allowed value of {self.max_seconds} seconds', param, ctx)
+        if self.max is not None and seconds > self.max:
+            self.fail(f'{value!r} is greater than the maximum allowed value of {self.max} seconds', param, ctx)
 
         return seconds
 
@@ -116,9 +115,9 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--blocking-threads-idle-timeout',
-    type=click.IntRange(10, 600),
+    type=Duration(10, 600),
     default=30,
-    help='The maximum amount of time in seconds an idle blocking thread will be kept alive',
+    help='The maximum amount of time in seconds (or a human-readable duration) an idle blocking thread will be kept alive',
 )
 @option('--runtime-threads', type=click.IntRange(1), default=1, help='Number of runtime threads (per worker)')
 @option(
@@ -198,9 +197,9 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--http2-keep-alive-timeout',
-    type=click.IntRange(1),
+    type=Duration(1),
     default=HTTP2Settings.keep_alive_timeout,
-    help='Sets a timeout (in seconds) for receiving an acknowledgement of the HTTP2 keep-alive ping',
+    help='Sets a timeout (in seconds or a human-readable duration) for receiving an acknowledgement of the HTTP2 keep-alive ping',
 )
 @option(
     '--http2-max-concurrent-streams',
