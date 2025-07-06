@@ -44,6 +44,6 @@ def test_duration_convert_invalid(value: str, error_message: str) -> None:
     ),
 )
 def test_duration_convert_out_of_range(value: str, error_message: str) -> None:
-    duration_type = Duration(min_seconds=10, max_seconds=100)
+    duration_type = Duration(10, 100)
     with pytest.raises(click.BadParameter, match=error_message):
         duration_type.convert(value, None, None)

@@ -151,10 +151,10 @@ Options:
   --blocking-threads INTEGER RANGE
                                   Number of blocking threads (per worker)
                                   [env var: GRANIAN_BLOCKING_THREADS; x>=1]
-  --blocking-threads-idle-timeout INTEGER RANGE
-                                  The maximum amount of time in seconds an
-                                  idle blocking thread will be kept alive
-                                  [env var:
+  --blocking-threads-idle-timeout DURATION
+                                  The maximum amount of time in seconds (or a
+                                  human-readable duration) an idle blocking
+                                  thread will be kept alive  [env var:
                                   GRANIAN_BLOCKING_THREADS_IDLE_TIMEOUT;
                                   default: 30; 10<=x<=600]
   --runtime-threads INTEGER RANGE
@@ -221,8 +221,9 @@ Options:
                                   connection alive  [env var:
                                   GRANIAN_HTTP2_KEEP_ALIVE_INTERVAL;
                                   1<=x<=60000]
-  --http2-keep-alive-timeout INTEGER RANGE
-                                  Sets a timeout (in seconds) for receiving an
+  --http2-keep-alive-timeout DURATION
+                                  Sets a timeout (in seconds or a human-
+                                  readable duration) for receiving an
                                   acknowledgement of the HTTP2 keep-alive ping
                                   [env var: GRANIAN_HTTP2_KEEP_ALIVE_TIMEOUT;
                                   default: 20; x>=1]
@@ -280,13 +281,13 @@ Options:
   --workers-lifetime DURATION     The maximum amount of time in seconds (or a
                                   human-readable duration) a worker will be
                                   kept alive before respawn  [env var:
-                                  GRANIAN_WORKERS_LIFETIME]
+                                  GRANIAN_WORKERS_LIFETIME; x>=60]
   --workers-kill-timeout DURATION
                                   The amount of time in seconds (or a human-
                                   readable duration) to wait for killing
                                   workers that refused to gracefully stop
                                   [env var: GRANIAN_WORKERS_KILL_TIMEOUT;
-                                  default: (disabled)]
+                                  default: (disabled); 1<=x<=1800]
   --factory / --no-factory        Treat target as a factory function, that
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:
@@ -304,7 +305,8 @@ Options:
   --static-path-expires DURATION  Cache headers expiration (in seconds or a
                                   human-readable duration) for static file
                                   serving  [env var:
-                                  GRANIAN_STATIC_PATH_EXPIRES; default: 86400]
+                                  GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
+                                  x>=60]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
