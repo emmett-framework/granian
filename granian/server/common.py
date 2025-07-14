@@ -160,7 +160,7 @@ class AbstractServer(Generic[WT]):
         self.workers_lifetime = workers_lifetime
         self.workers_kill_timeout = workers_kill_timeout
         self.factory = factory
-        self.working_dir = str(working_dir.resolve()) if working_dir else None
+        self.working_dir = working_dir
         self.env_files = env_files or ()
         self.static_path = (
             (static_path_route, str(static_path_mount.resolve()), str(static_path_expires))
