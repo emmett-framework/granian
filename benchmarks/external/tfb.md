@@ -5,8 +5,8 @@
 [Repository](https://github.com/TechEmpower/FrameworkBenchmarks)    
 [Website](http://www.techempower.com/benchmarks/)
 
-Run at: Sun 08 Jun 2025, 08:14    
-Run ID: 416d5cf7-11ed-4ed7-8cf5-f3e476dc38b9 ([visualize](https://www.techempower.com/benchmarks/#section=test&runid=416d5cf7-11ed-4ed7-8cf5-f3e476dc38b9))
+Run at: Tue 08 Jul 2025, 06:01    
+Run ID: fbe03b07-c62b-45d0-9387-50c9429ea4fd ([visualize](https://www.techempower.com/benchmarks/#section=test&runid=fbe03b07-c62b-45d0-9387-50c9429ea4fd))
 
 
 ### Plain text
@@ -16,21 +16,21 @@ Run ID: 416d5cf7-11ed-4ed7-8cf5-f3e476dc38b9 ([visualize](https://www.techempowe
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| Granian (ASGI) | 1322616 | 0.75 |
-| Granian (RSGI) | 1772554 | 1.0 |
-| Robyn | 446279 | 0.25 |
-| Socketify (ASGI) | 1259852 | 0.71 |
-| Uvicorn (httptools) | 994910 | 0.56 |
+| Granian (ASGI) | 1328892 | 0.75 |
+| Granian (RSGI) | 1769600 | 1.0 |
+| Robyn | 445228 | 0.25 |
+| Socketify (ASGI) | 1273391 | 0.72 |
+| Uvicorn (httptools) | 996445 | 0.56 |
 
 #### Sync
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| Fastwsgi | 4012266 | 1.96 |
-| Granian (WSGI) | 2044151 | 1.0 |
-| Socketify (WSGI) | 1710893 | 0.84 |
-| uWSGI | 180260 | 0.09 |
-| uWSGI + Nginx | 26957 | 0.01 |
+| Fastwsgi | 4057048 | 1.98 |
+| Granian (WSGI) | 2045247 | 1.0 |
+| Socketify (WSGI) | 1741605 | 0.85 |
+| uWSGI | 179254 | 0.09 |
+| uWSGI + Nginx | 28126 | 0.01 |
 
 
 
@@ -41,21 +41,21 @@ Run ID: 416d5cf7-11ed-4ed7-8cf5-f3e476dc38b9 ([visualize](https://www.techempowe
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| FastWSGI (ASGI) | 1167713 | 0.97 |
-| Granian (ASGI) | 995333 | 0.83 |
-| Granian (RSGI) | 1199635 | 1.0 |
-| Robyn | 334274 | 0.28 |
-| Socketify (ASGI) | 814152 | 0.68 |
-| Uvicorn (httptools) | 850518 | 0.71 |
+| FastWSGI (ASGI) | 1156656 | 0.97 |
+| Granian (ASGI) | 1004474 | 0.84 |
+| Granian (RSGI) | 1192393 | 1.0 |
+| Robyn | 334843 | 0.28 |
+| Socketify (ASGI) | 815991 | 0.68 |
+| Uvicorn (httptools) | 852237 | 0.71 |
 
 #### Sync
 
 | Server | RPS | Change (rate) |
 | --- | --- | --- |
-| Fastwsgi | 2370763 | 1.67 |
-| Granian (WSGI) | 1422664 | 1.0 |
-| Socketify (WSGI) | 1002493 | 0.7 |
-| uWSGI | 188967 | 0.13 |
-| uWSGI + Nginx | 15669 | 0.01 |
+| Fastwsgi | 2344417 | 1.63 |
+| Granian (WSGI) | 1434689 | 1.0 |
+| Socketify (WSGI) | 1017699 | 0.71 |
+| uWSGI | 187734 | 0.13 |
+| uWSGI + Nginx | 13628 | 0.01 |
 
 
