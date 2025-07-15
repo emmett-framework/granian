@@ -71,4 +71,13 @@ incremental = false
 lto = "fat"
 opt-level = 3
 panic = "abort"
+strip = true
+
+[profile.unstripped]
+inherits = "release"
 strip = "debuginfo"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
