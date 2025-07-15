@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import traceback
+from pathlib import Path
 from types import ModuleType
 from typing import Callable, List, Optional
 
@@ -52,8 +53,8 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
     return sys.modules[module_name]
 
 
-def load_target(target: str, wd: Optional[str] = None, factory: bool = False) -> Callable[..., None]:
-    sys.path.insert(0, wd or '')
+def load_target(target: str, wd: Optional[Path] = None, factory: bool = False) -> Callable[..., None]:
+    sys.path.insert(0, str(wd.resolve()) if wd else '')
     path, name = get_import_components(target)
     path = prepare_import(path) if path else None
     name = name or 'app'
