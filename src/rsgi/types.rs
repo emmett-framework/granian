@@ -1,20 +1,19 @@
 use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
-use hyper::{
-    Method, Uri, Version,
-    body::Bytes,
-    header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    http::uri::Authority,
-};
+use hyper::{Method, Response, StatusCode, Uri, Version, body::Bytes, header::HeaderMap, http::uri::Authority};
 use percent_encoding::percent_decode_str;
-use pyo3::types::{PyBytes, PyIterator, PyList, PyString};
-use pyo3::{prelude::*, pybacked::PyBackedStr};
+use pyo3::{
+    prelude::*,
+    pybacked::PyBackedStr,
+    types::{PyBytes, PyIterator, PyList, PyString},
+};
 use std::{borrow::Cow, net::SocketAddr};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::http::{HTTPResponseBody, HV_SERVER, empty_body, response_404};
+use super::conversion::headers_from_py;
+use crate::http::{HTTPResponseBody, empty_body, response_404};
 
 const RSGI_PROTO_VERSION: &str = "1.5";
 
@@ -209,36 +208,22 @@ pub(crate) enum PyResponse {
 }
 
 pub(crate) struct PyResponseBody {
-    status: hyper::StatusCode,
+    status: StatusCode,
     headers: HeaderMap,
     body: HTTPResponseBody,
 }
 
 pub(crate) struct PyResponseFile {
-    status: hyper::StatusCode,
+    status: StatusCode,
     headers: HeaderMap,
     file_path: String,
-}
-
-macro_rules! headers_from_py {
-    ($headers:expr) => {{
-        let mut headers = HeaderMap::with_capacity($headers.len() + 3);
-        for (key, value) in $headers {
-            headers.append(
-                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                HeaderValue::from_str(&value).unwrap(),
-            );
-        }
-        headers.entry(HK_SERVER).or_insert(HV_SERVER);
-        headers
-    }};
 }
 
 impl PyResponseBody {
     pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: HTTPResponseBody) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body,
         }
     }
@@ -246,7 +231,7 @@ impl PyResponseBody {
     pub fn empty(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body: empty_body(),
         }
     }
@@ -254,7 +239,7 @@ impl PyResponseBody {
     pub fn from_bytes(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Box<[u8]>) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body: http_body_util::Full::new(Bytes::from(body))
                 .map_err(std::convert::Into::into)
                 .boxed(),
@@ -264,7 +249,7 @@ impl PyResponseBody {
     pub fn from_string(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body: http_body_util::Full::new(Bytes::from(body))
                 .map_err(std::convert::Into::into)
                 .boxed(),
@@ -272,8 +257,8 @@ impl PyResponseBody {
     }
 
     #[inline]
-    pub fn to_response(self) -> hyper::Response<HTTPResponseBody> {
-        let mut res = hyper::Response::new(self.body);
+    pub fn to_response(self) -> Response<HTTPResponseBody> {
+        let mut res = Response::new(self.body);
         *res.status_mut() = self.status;
         *res.headers_mut() = self.headers;
         res
@@ -284,18 +269,18 @@ impl PyResponseFile {
     pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             file_path,
         }
     }
 
     #[inline]
-    pub async fn to_response(self) -> hyper::Response<HTTPResponseBody> {
+    pub async fn to_response(self) -> Response<HTTPResponseBody> {
         match File::open(&self.file_path).await {
             Ok(file) => {
                 let stream = ReaderStream::with_capacity(file, 131_072);
                 let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
-                let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                let mut res = Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
                 *res.status_mut() = self.status;
                 *res.headers_mut() = self.headers;
                 res
