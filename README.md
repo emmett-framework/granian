@@ -108,7 +108,7 @@ and serve it using Granian CLI:
 
     $ granian --interface wsgi main:app
 
-## Extra dependecies
+## Extra dependencies
 
 Mind that Granian also provides several extra dependencies you might be interested into, in particular:
 
