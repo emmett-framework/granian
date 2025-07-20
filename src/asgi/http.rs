@@ -7,13 +7,9 @@ use super::callbacks::{call_http, call_ws};
 use crate::{
     callbacks::ArcCBScheduler,
     http::{HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
-    runtime::RuntimeRef,
+    runtime::{Runtime, RuntimeRef},
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
-
-const SCHEME_HTTPS: &str = "https";
-const SCHEME_WS: &str = "ws";
-const SCHEME_WSS: &str = "wss";
 
 macro_rules! handle_http_response {
     ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr) => {
@@ -48,7 +44,7 @@ macro_rules! handle_request {
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             req: HTTPRequest,
-            scheme: &str,
+            scheme: crate::http::HTTPProto,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             handle_http_response!(
@@ -76,28 +72,24 @@ macro_rules! handle_request_with_ws {
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             mut req: HTTPRequest,
-            scheme: &str,
+            scheme: crate::http::HTTPProto,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 return match ws_upgrade(&mut req, None) {
                     Ok((res, ws)) => {
                         let (restx, mut resrx) = mpsc::channel(1);
                         let (parts, _) = req.into_parts();
-                        let scheme: Box<str> = match scheme {
-                            SCHEME_HTTPS => SCHEME_WSS,
-                            _ => SCHEME_WS,
-                        }
-                        .into();
+                        let rth = rt.clone();
 
-                        tokio::task::spawn(async move {
+                        rt.spawn(async move {
                             let tx_ref = restx.clone();
 
                             match $handler_ws(
                                 callback,
-                                rt,
+                                rth,
                                 server_addr,
                                 client_addr,
-                                &scheme,
+                                scheme,
                                 ws,
                                 parts,
                                 UpgradeData::new(res, restx),

@@ -25,12 +25,10 @@ pub(crate) async fn handle(
     server_addr: SocketAddr,
     client_addr: SocketAddr,
     req: HTTPRequest,
-    scheme: &str,
+    scheme: crate::http::HTTPProto,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
-    if let Ok((status, headers, body)) =
-        call_http(rt, callback, server_addr, client_addr, scheme.into(), parts, body).await
-    {
+    if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
         return build_response(status, headers, body);
     }
 

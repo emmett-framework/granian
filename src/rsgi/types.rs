@@ -108,7 +108,7 @@ macro_rules! rsgi_scope_cls {
         #[pyclass(frozen, module = "granian._granian")]
         pub(crate) struct $name {
             http_version: Version,
-            scheme: String,
+            scheme: crate::http::HTTPProto,
             method: Method,
             uri: Uri,
             server: SocketAddr,
@@ -120,7 +120,7 @@ macro_rules! rsgi_scope_cls {
         impl $name {
             pub fn new(
                 http_version: Version,
-                scheme: &str,
+                scheme: crate::http::HTTPProto,
                 uri: Uri,
                 method: Method,
                 server: SocketAddr,
@@ -129,7 +129,7 @@ macro_rules! rsgi_scope_cls {
             ) -> Self {
                 Self {
                     http_version,
-                    scheme: scheme.into(),
+                    scheme,
                     method,
                     uri,
                     server,
@@ -174,7 +174,7 @@ macro_rules! rsgi_scope_cls {
 
             #[getter(scheme)]
             fn get_scheme(&self) -> &str {
-                &self.scheme
+                self.scheme.as_str()
             }
 
             #[getter(method)]
