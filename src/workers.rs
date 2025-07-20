@@ -531,7 +531,7 @@ trait WorkerConnectionHandlerLocal<S> {
 macro_rules! conn_builder_h1 {
     ($opts:expr, $stream:expr, $svc:expr) => {
         hyper::server::conn::http1::Builder::new()
-            .timer(crate::io::TokioTimer::new())
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
             .header_read_timeout($opts.header_read_timeout)
             .keep_alive($opts.keep_alive)
             .max_buf_size($opts.max_buffer_size)
@@ -610,7 +610,7 @@ macro_rules! conn_handler_h2 {
             let mut done = false;
             let svc = self.service(svc_ctx);
             let conn = hyper::server::conn::http2::Builder::new(<$exc>::new())
-                .timer(crate::io::TokioTimer::new())
+                .timer(hyper_util::rt::tokio::TokioTimer::new())
                 .adaptive_window(self.handler.opts.adaptive_window)
                 .initial_connection_window_size(self.handler.opts.initial_connection_window_size)
                 .initial_stream_window_size(self.handler.opts.initial_stream_window_size)
@@ -646,14 +646,14 @@ macro_rules! conn_builder_ha {
         let mut connb = hyper_util::server::conn::auto::Builder::new(<$exec>::new());
         connb
             .http1()
-            .timer(crate::io::TokioTimer::new())
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
             .header_read_timeout($opts_h1.header_read_timeout)
             .keep_alive($opts_h1.keep_alive)
             .max_buf_size($opts_h1.max_buffer_size)
             .pipeline_flush($opts_h1.pipeline_flush);
         connb
             .http2()
-            .timer(crate::io::TokioTimer::new())
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
             .adaptive_window($opts_h2.adaptive_window)
             .initial_connection_window_size($opts_h2.initial_connection_window_size)
             .initial_stream_window_size($opts_h2.initial_stream_window_size)
