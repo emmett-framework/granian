@@ -20,7 +20,7 @@ async def test_http_scope(server_tls, runtime_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('runtime_mode', ['mt'])
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_asgi_ws_scope(asgi_server, runtime_mode):
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     localhost_pem = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls' / 'cert.pem'
@@ -35,7 +35,7 @@ async def test_asgi_ws_scope(asgi_server, runtime_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('runtime_mode', ['mt'])
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_rsgi_ws_scope(rsgi_server, runtime_mode):
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     localhost_pem = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls' / 'cert.pem'

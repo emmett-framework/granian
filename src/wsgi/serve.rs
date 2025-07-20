@@ -6,9 +6,7 @@ use super::http::handle;
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::tcp::SocketHolder;
-use crate::workers::{
-    Worker, WorkerAcceptor, WorkerConfig, WorkerExcLocal, WorkerExcSend, WorkerSignalSync, gen_serve_match,
-};
+use crate::workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync, gen_serve_match};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct WSGIWorker {
@@ -93,7 +91,7 @@ impl WSGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignalSync>,
     ) {
-        gen_serve_match!(mt serve_mt, self, py, callback, event_loop, signal, handle, handle);
+        gen_serve_match!(serve_mt, self, py, callback, event_loop, signal, handle, handle);
     }
 
     fn serve_str(
@@ -103,173 +101,7 @@ impl WSGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignalSync>,
     ) {
-        match (
-            &self.config.http_mode[..],
-            self.config.tls_opts.is_some(),
-            self.config.static_files.is_some(),
-        ) {
-            ("auto", false, false) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXBase::new(callback),
-                crate::workers::WorkerAcceptorPlain {},
-                crate::workers::WorkerHA {
-                    opts_h1: self.config.http1_opts.clone(),
-                    opts_h2: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("auto", false, true) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXFiles::new(callback, self.config.static_files.clone()),
-                crate::workers::WorkerAcceptorPlain {},
-                crate::workers::WorkerHA {
-                    opts_h1: self.config.http1_opts.clone(),
-                    opts_h2: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("auto", true, false) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXBase::new(callback),
-                crate::workers::WorkerAcceptorTls {
-                    opts: self.config.tls_cfg().into(),
-                },
-                crate::workers::WorkerHA {
-                    opts_h1: self.config.http1_opts.clone(),
-                    opts_h2: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("auto", true, true) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXFiles::new(callback, self.config.static_files.clone()),
-                crate::workers::WorkerAcceptorTls {
-                    opts: self.config.tls_cfg().into(),
-                },
-                crate::workers::WorkerHA {
-                    opts_h1: self.config.http1_opts.clone(),
-                    opts_h2: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("1", false, false) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXBase::new(callback),
-                crate::workers::WorkerAcceptorPlain {},
-                crate::workers::WorkerH1 {
-                    opts: self.config.http1_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("1", false, true) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXFiles::new(callback, self.config.static_files.clone()),
-                crate::workers::WorkerAcceptorPlain {},
-                crate::workers::WorkerH1 {
-                    opts: self.config.http1_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("1", true, false) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXBase::new(callback),
-                crate::workers::WorkerAcceptorTls {
-                    opts: self.config.tls_cfg().into(),
-                },
-                crate::workers::WorkerH1 {
-                    opts: self.config.http1_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("1", true, true) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXFiles::new(callback, self.config.static_files.clone()),
-                crate::workers::WorkerAcceptorTls {
-                    opts: self.config.tls_cfg().into(),
-                },
-                crate::workers::WorkerH1 {
-                    opts: self.config.http1_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("2", false, false) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXBase::new(callback),
-                crate::workers::WorkerAcceptorPlain {},
-                crate::workers::WorkerH2 {
-                    opts: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("2", false, true) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXFiles::new(callback, self.config.static_files.clone()),
-                crate::workers::WorkerAcceptorPlain {},
-                crate::workers::WorkerH2 {
-                    opts: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("2", true, false) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXBase::new(callback),
-                crate::workers::WorkerAcceptorTls {
-                    opts: self.config.tls_cfg().into(),
-                },
-                crate::workers::WorkerH2 {
-                    opts: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            ("2", true, true) => serve_st(
-                &self.config,
-                py,
-                event_loop,
-                signal,
-                crate::workers::WorkerCTXFiles::new(callback, self.config.static_files.clone()),
-                crate::workers::WorkerAcceptorTls {
-                    opts: self.config.tls_cfg().into(),
-                },
-                crate::workers::WorkerH2 {
-                    opts: self.config.http2_opts.clone(),
-                },
-                std::sync::Arc::new(handle),
-            ),
-            _ => unreachable!(),
-        }
+        gen_serve_match!(serve_st, self, py, callback, event_loop, signal, handle, handle);
     }
 }
 
@@ -293,7 +125,7 @@ pub(crate) fn serve_mt<C, A, H, F, Ret>(
         crate::http::HTTPProto,
     ) -> Ret,
     Ret: Future<Output = crate::http::HTTPResponse>,
-    Worker<C, A, H, WorkerExcSend, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
+    Worker<C, A, H, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
 {
     _ = pyo3_log::try_init();
 
@@ -315,8 +147,7 @@ pub(crate) fn serve_mt<C, A, H, F, Ret>(
     });
     let rth = rt.handler();
 
-    let wexec = crate::workers::WorkerExcSend {};
-    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, wexec, rth, target);
+    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
     let (stx, srx) = tokio::sync::watch::channel(false);
 
     let main_loop: JoinHandle<anyhow::Result<()>> = rt.inner.spawn(async move {
@@ -375,7 +206,7 @@ pub(crate) fn serve_st<C, A, H, F, Ret>(
     C: Clone + Send + 'static,
     A: Clone + Send + 'static,
     H: Clone + Send + 'static,
-    Worker<C, A, H, WorkerExcLocal, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
+    Worker<C, A, H, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
 {
     _ = pyo3_log::try_init();
 
@@ -405,8 +236,7 @@ pub(crate) fn serve_st<C, A, H, F, Ret>(
         workers.push(std::thread::spawn(move || {
             let rt = crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
             let rth = rt.handler();
-            let wexec = crate::workers::WorkerExcLocal {};
-            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, wexec, rth, target);
+            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
             let local = tokio::task::LocalSet::new();
 
             crate::runtime::block_on_local(&rt, local, async move {

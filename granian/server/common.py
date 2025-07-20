@@ -84,7 +84,7 @@ class AbstractServer(Generic[WT]):
         blocking_threads_idle_timeout: int = 30,
         runtime_threads: int = 1,
         runtime_blocking_threads: Optional[int] = None,
-        runtime_mode: RuntimeModes = RuntimeModes.auto,
+        runtime_mode: RuntimeModes = RuntimeModes.st,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
@@ -527,13 +527,6 @@ class AbstractServer(Generic[WT]):
             if self.http == HTTPModes.http2:
                 self.websockets = False
                 logger.info('Websockets are not supported on HTTP/2 only, ignoring')
-
-        if self.runtime_mode == RuntimeModes.st:
-            if self.websockets:
-                logger.error("'st' runtime mode doesn't support websockets")
-                raise ConfigurationError('runtime_mode')
-        if self.runtime_mode == RuntimeModes.auto:
-            self.runtime_mode = RuntimeModes.mt if self.websockets else RuntimeModes.st
 
         if setproctitle is not None:
             self.process_name = self.process_name or (

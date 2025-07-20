@@ -84,7 +84,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--runtime-mode',
     type=EnumType(RuntimeModes),
-    default=RuntimeModes.auto,
+    default=RuntimeModes.st,
     help='Runtime mode to use (single/multi threaded)',
 )
 @option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')

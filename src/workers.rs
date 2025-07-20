@@ -240,18 +240,16 @@ impl WorkerCTXFiles {
 }
 
 #[derive(Clone)]
-pub(crate) struct Worker<C, A, H, X, F> {
+pub(crate) struct Worker<C, A, H, F> {
     ctx: C,
     acceptor: A,
     handler: H,
-    #[allow(dead_code)]
-    exec: X,
     rt: crate::runtime::RuntimeRef,
     pub tasks: tokio_util::task::TaskTracker,
     target: std::sync::Arc<F>,
 }
 
-impl<C, A, H, X, F, Ret> Worker<C, A, H, X, F>
+impl<C, A, H, F, Ret> Worker<C, A, H, F>
 where
     F: Fn(
         crate::runtime::RuntimeRef,
@@ -264,75 +262,15 @@ where
     ) -> Ret,
     Ret: Future<Output = crate::http::HTTPResponse>,
 {
-    pub fn new(
-        ctx: C,
-        acceptor: A,
-        handler: H,
-        exec: X,
-        rt: crate::runtime::RuntimeRef,
-        target: std::sync::Arc<F>,
-    ) -> Self {
+    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: std::sync::Arc<F>) -> Self {
         Self {
             ctx,
             acceptor,
             handler,
-            exec,
             rt,
             tasks: tokio_util::task::TaskTracker::new(),
             target,
         }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct WorkerExecutor;
-
-impl WorkerExecutor {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl<F> hyper::rt::Executor<F> for WorkerExecutor
-where
-    F: std::future::Future + 'static,
-{
-    fn execute(&self, fut: F) {
-        tokio::task::spawn_local(fut);
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct WorkerExcSend {}
-
-#[derive(Clone)]
-pub(crate) struct WorkerExcLocal {}
-
-trait WorkerExcSpawn<S>
-where
-    S: Future,
-{
-    fn spawn(&self, task: S) -> tokio::task::JoinHandle<S::Output>;
-}
-
-impl<C, A, H, F, S> WorkerExcSpawn<S> for Worker<C, A, H, WorkerExcSend, F>
-where
-    S: Future + Send + 'static,
-    S::Output: Send,
-{
-    #[inline]
-    fn spawn(&self, task: S) -> tokio::task::JoinHandle<S::Output> {
-        self.tasks.spawn(task)
-    }
-}
-
-impl<C, A, H, F, S> WorkerExcSpawn<S> for Worker<C, A, H, WorkerExcLocal, F>
-where
-    S: Future + 'static,
-{
-    #[inline]
-    fn spawn(&self, task: S) -> tokio::task::JoinHandle<S::Output> {
-        self.tasks.spawn_local(task)
     }
 }
 
@@ -361,7 +299,7 @@ trait SvcFnBuilder<F> {
     >;
 }
 
-impl<A, H, X, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXBase, A, H, X, F>
+impl<A, H, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXBase, A, H, F>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
@@ -378,7 +316,6 @@ where
     Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
     A: Send + Sync + 'static,
     H: Send + Sync + 'static,
-    X: Send + Sync + 'static,
 {
     fn service(
         &self,
@@ -411,7 +348,7 @@ where
     }
 }
 
-impl<A, H, X, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXFiles, A, H, X, F>
+impl<A, H, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXFiles, A, H, F>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
@@ -428,7 +365,6 @@ where
     Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
     A: Send + Sync + 'static,
     H: Send + Sync + 'static,
-    X: Send + Sync + 'static,
 {
     fn service(
         &self,
@@ -504,7 +440,7 @@ pub(crate) struct WorkerHAU {
     pub opts_h2: HTTP2Config,
 }
 
-trait WorkerConnectionHandlerSend<S> {
+trait WorkerConnectionHandler<S> {
     fn handle(
         self,
         addr_local: std::net::SocketAddr,
@@ -514,18 +450,6 @@ trait WorkerConnectionHandlerSend<S> {
         sig: std::sync::Arc<tokio::sync::Notify>,
         proto: crate::http::HTTPProto,
     ) -> impl Future<Output = ()> + Send + 'static;
-}
-
-trait WorkerConnectionHandlerLocal<S> {
-    fn handle(
-        self,
-        addr_local: std::net::SocketAddr,
-        addr_remote: std::net::SocketAddr,
-        stream: S,
-        permit: tokio::sync::OwnedSemaphorePermit,
-        sig: std::sync::Arc<tokio::sync::Notify>,
-        proto: crate::http::HTTPProto,
-    ) -> impl Future<Output = ()> + 'static;
 }
 
 macro_rules! conn_builder_h1 {
@@ -547,7 +471,7 @@ macro_rules! conn_builder_h1u {
 }
 
 macro_rules! conn_handler_h1 {
-    ($iow:expr, $cb:tt) => {
+    ($cb:tt) => {
         async fn handle(
             self,
             addr_local: std::net::SocketAddr,
@@ -567,7 +491,7 @@ macro_rules! conn_handler_h1 {
             };
             let mut done = false;
             let svc = self.service(svc_ctx);
-            let conn = $cb!(self.handler.opts, $iow(stream), svc);
+            let conn = $cb!(self.handler.opts, hyper_util::rt::TokioIo::new(stream), svc);
             tokio::pin!(conn);
 
             tokio::select! {
@@ -586,89 +510,10 @@ macro_rules! conn_handler_h1 {
             drop(permit);
         }
     };
-}
-
-macro_rules! conn_handler_h2 {
-    ($exc:ty, $iow:expr) => {
-        async fn handle(
-            self,
-            addr_local: std::net::SocketAddr,
-            addr_remote: std::net::SocketAddr,
-            stream: S,
-            permit: tokio::sync::OwnedSemaphorePermit,
-            sig: std::sync::Arc<tokio::sync::Notify>,
-            proto: crate::http::HTTPProto,
-        ) {
-            let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
-            let svc_ctx = WorkerSvcCtx {
-                rt: self.rt.clone(),
-                disconnect_guard: disconnect_guard.clone(),
-                addr_local,
-                addr_remote,
-                proto,
-            };
-            let mut done = false;
-            let svc = self.service(svc_ctx);
-            let conn = hyper::server::conn::http2::Builder::new(<$exc>::new())
-                .timer(hyper_util::rt::tokio::TokioTimer::new())
-                .adaptive_window(self.handler.opts.adaptive_window)
-                .initial_connection_window_size(self.handler.opts.initial_connection_window_size)
-                .initial_stream_window_size(self.handler.opts.initial_stream_window_size)
-                .keep_alive_interval(self.handler.opts.keep_alive_interval)
-                .keep_alive_timeout(self.handler.opts.keep_alive_timeout)
-                .max_concurrent_streams(self.handler.opts.max_concurrent_streams)
-                .max_frame_size(self.handler.opts.max_frame_size)
-                .max_header_list_size(self.handler.opts.max_headers_size)
-                .max_send_buf_size(self.handler.opts.max_send_buffer_size)
-                .serve_connection($iow(stream), svc);
-            tokio::pin!(conn);
-
-            tokio::select! {
-                _ = conn.as_mut() => {
-                    done = true;
-                },
-                _ = sig.notified() => {
-                    conn.as_mut().graceful_shutdown();
-                }
-            }
-            if !done {
-                _ = conn.as_mut().await;
-            }
-
-            disconnect_guard.notify_one();
-            drop(permit);
-        }
-    };
-}
-
-macro_rules! conn_builder_ha {
-    ($opts_h1:expr, $opts_h2:expr, $exec:ty) => {{
-        let mut connb = hyper_util::server::conn::auto::Builder::new(<$exec>::new());
-        connb
-            .http1()
-            .timer(hyper_util::rt::tokio::TokioTimer::new())
-            .header_read_timeout($opts_h1.header_read_timeout)
-            .keep_alive($opts_h1.keep_alive)
-            .max_buf_size($opts_h1.max_buffer_size)
-            .pipeline_flush($opts_h1.pipeline_flush);
-        connb
-            .http2()
-            .timer(hyper_util::rt::tokio::TokioTimer::new())
-            .adaptive_window($opts_h2.adaptive_window)
-            .initial_connection_window_size($opts_h2.initial_connection_window_size)
-            .initial_stream_window_size($opts_h2.initial_stream_window_size)
-            .keep_alive_interval($opts_h2.keep_alive_interval)
-            .keep_alive_timeout($opts_h2.keep_alive_timeout)
-            .max_concurrent_streams($opts_h2.max_concurrent_streams)
-            .max_frame_size($opts_h2.max_frame_size)
-            .max_header_list_size($opts_h2.max_headers_size)
-            .max_send_buf_size($opts_h2.max_send_buffer_size);
-        connb
-    }};
 }
 
 macro_rules! conn_handler_ha {
-    ($exec:ty, $conn_method:ident, $iow:expr) => {
+    ($conn_method:ident) => {
         async fn handle(
             self,
             addr_local: std::net::SocketAddr,
@@ -688,8 +533,27 @@ macro_rules! conn_handler_ha {
             };
             let mut done = false;
             let svc = self.service(svc_ctx);
-            let connb = conn_builder_ha!(self.handler.opts_h1, self.handler.opts_h2, $exec);
-            let conn = connb.$conn_method($iow(stream), svc);
+            let mut connb = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+            connb
+                .http1()
+                .timer(hyper_util::rt::tokio::TokioTimer::new())
+                .header_read_timeout(self.handler.opts_h1.header_read_timeout)
+                .keep_alive(self.handler.opts_h1.keep_alive)
+                .max_buf_size(self.handler.opts_h1.max_buffer_size)
+                .pipeline_flush(self.handler.opts_h1.pipeline_flush);
+            connb
+                .http2()
+                .timer(hyper_util::rt::tokio::TokioTimer::new())
+                .adaptive_window(self.handler.opts_h2.adaptive_window)
+                .initial_connection_window_size(self.handler.opts_h2.initial_connection_window_size)
+                .initial_stream_window_size(self.handler.opts_h2.initial_stream_window_size)
+                .keep_alive_interval(self.handler.opts_h2.keep_alive_interval)
+                .keep_alive_timeout(self.handler.opts_h2.keep_alive_timeout)
+                .max_concurrent_streams(self.handler.opts_h2.max_concurrent_streams)
+                .max_frame_size(self.handler.opts_h2.max_frame_size)
+                .max_header_list_size(self.handler.opts_h2.max_headers_size)
+                .max_send_buf_size(self.handler.opts_h2.max_send_buffer_size);
+            let conn = connb.$conn_method(hyper_util::rt::TokioIo::new(stream), svc);
             tokio::pin!(conn);
 
             tokio::select! {
@@ -711,8 +575,8 @@ macro_rules! conn_handler_ha {
 }
 
 macro_rules! conn_handler_impl {
-    (h1) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerSend<S> for Worker<C, A, WorkerH1, WorkerExcSend, F>
+    (h1 $handler:ty, $cb:tt) => {
+        impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, $handler, F>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -730,39 +594,13 @@ macro_rules! conn_handler_impl {
             A: Send + Sync + 'static,
             C: Send + Sync + 'static,
             S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerH1, WorkerExcSend, F>: SvcFnBuilder<F>,
+            Worker<C, A, $handler, F>: SvcFnBuilder<F>,
         {
-            conn_handler_h1!(hyper_util::rt::TokioIo::new, conn_builder_h1);
-        }
-
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerLocal<S> for Worker<C, A, WorkerH1, WorkerExcLocal, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerH1, WorkerExcLocal, F>: SvcFnBuilder<F>,
-        {
-            conn_handler_h1!(
-                |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) },
-                conn_builder_h1
-            );
+            conn_handler_h1!($cb);
         }
     };
-    (h1u) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerSend<S> for Worker<C, A, WorkerH1U, WorkerExcSend, F>
+    (ha $handler:ty, $conn_method:ident) => {
+        impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, $handler, F>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -780,188 +618,87 @@ macro_rules! conn_handler_impl {
             A: Send + Sync + 'static,
             C: Send + Sync + 'static,
             S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerH1U, WorkerExcSend, F>: SvcFnBuilder<F>,
+            Worker<C, A, $handler, F>: SvcFnBuilder<F>,
         {
-            conn_handler_h1!(hyper_util::rt::TokioIo::new, conn_builder_h1u);
+            conn_handler_ha!($conn_method);
         }
-
-        // FIXME: `with_upgrades` (or `hyper::server::conn::http1::UpgradeableConnection`) requires Send!
-        // impl<C, A, F, Ret> WorkerConnectionHandlerLocal<tokio::net::TcpStream> for Worker<C, A, WorkerH1U, WorkerExcLocal, F>
-        // where
-        //     F: Fn(
-        //         crate::runtime::RuntimeRef,
-        //         std::sync::Arc<tokio::sync::Notify>,
-        //         crate::callbacks::ArcCBScheduler,
-        //         std::net::SocketAddr,
-        //         std::net::SocketAddr,
-        //         crate::http::HTTPRequest,
-        //         crate::http::HTTPProto,
-        //     ) -> Ret + Send + Sync + 'static,
-        //     Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-        //     A: Send + Sync + 'static,
-        //     C: Send + Sync + 'static,
-        //     Worker<C, A, WorkerH1U, WorkerExcLocal, F>: SvcFnBuilder<F>
-        // {
-        //     conn_handler_h1!(|stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) }, conn_builder_h1u);
-        // }
-    };
-    (h2) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerSend<S> for Worker<C, A, WorkerH2, WorkerExcSend, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerH2, WorkerExcSend, F>: SvcFnBuilder<F>,
-        {
-            conn_handler_h2!(hyper_util::rt::TokioExecutor, hyper_util::rt::TokioIo::new);
-        }
-
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerLocal<S> for Worker<C, A, WorkerH2, WorkerExcLocal, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerH2, WorkerExcLocal, F>: SvcFnBuilder<F>,
-        {
-            conn_handler_h2!(WorkerExecutor, |stream| {
-                crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream))
-            });
-        }
-    };
-    (ha) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerSend<S> for Worker<C, A, WorkerHA, WorkerExcSend, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerHA, WorkerExcSend, F>: SvcFnBuilder<F>,
-        {
-            conn_handler_ha!(
-                hyper_util::rt::TokioExecutor,
-                serve_connection,
-                hyper_util::rt::TokioIo::new
-            );
-        }
-
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerLocal<S> for Worker<C, A, WorkerHA, WorkerExcLocal, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerHA, WorkerExcLocal, F>: SvcFnBuilder<F>,
-        {
-            conn_handler_ha!(WorkerExecutor, serve_connection, |stream| {
-                crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream))
-            });
-        }
-    };
-    (hau) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandlerSend<S> for Worker<C, A, WorkerHAU, WorkerExcSend, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, WorkerHAU, WorkerExcSend, F>: SvcFnBuilder<F>,
-        {
-            conn_handler_ha!(
-                hyper_util::rt::TokioExecutor,
-                serve_connection_with_upgrades,
-                hyper_util::rt::TokioIo::new
-            );
-        }
-
-        // FIXME: same as h1u
-        // impl<C, A, F, Ret> WorkerConnectionHandlerLocal<tokio::net::TcpStream> for Worker<C, A, WorkerHAU, WorkerExcLocal, F>
-        // where
-        //     F: Fn(
-        //         crate::runtime::RuntimeRef,
-        //         std::sync::Arc<tokio::sync::Notify>,
-        //         crate::callbacks::ArcCBScheduler,
-        //         std::net::SocketAddr,
-        //         std::net::SocketAddr,
-        //         crate::http::HTTPRequest,
-        //         crate::http::HTTPProto,
-        //     ) -> Ret + Send + Sync + 'static,
-        //     Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-        //     A: Send + Sync + 'static,
-        //     C: Send + Sync + 'static,
-        //     Worker<C, A, WorkerHAU, WorkerExcLocal, F>: SvcFnBuilder<F>
-        // {
-        //     conn_handler_ha!(WorkerExecutor, serve_connection_with_upgrades, |stream| { crate::io::IOTypeNotSend::new(hyper_util::rt::TokioIo::new(stream)) });
-        // }
     };
 }
 
-conn_handler_impl!(h1);
-conn_handler_impl!(h1u);
-conn_handler_impl!(h2);
-conn_handler_impl!(ha);
-conn_handler_impl!(hau);
+conn_handler_impl!(h1 WorkerH1, conn_builder_h1);
+conn_handler_impl!(h1 WorkerH1U, conn_builder_h1u);
+conn_handler_impl!(ha WorkerHA, serve_connection);
+conn_handler_impl!(ha WorkerHAU, serve_connection_with_upgrades);
+
+impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, WorkerH2, F>
+where
+    F: Fn(
+            crate::runtime::RuntimeRef,
+            std::sync::Arc<tokio::sync::Notify>,
+            crate::callbacks::ArcCBScheduler,
+            std::net::SocketAddr,
+            std::net::SocketAddr,
+            crate::http::HTTPRequest,
+            crate::http::HTTPProto,
+        ) -> Ret
+        + Send
+        + Sync
+        + 'static,
+    Ret: Future<Output = crate::http::HTTPResponse> + 'static,
+    A: Send + Sync + 'static,
+    C: Send + Sync + 'static,
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    Worker<C, A, WorkerH2, F>: SvcFnBuilder<F>,
+{
+    async fn handle(
+        self,
+        addr_local: std::net::SocketAddr,
+        addr_remote: std::net::SocketAddr,
+        stream: S,
+        permit: tokio::sync::OwnedSemaphorePermit,
+        sig: std::sync::Arc<tokio::sync::Notify>,
+        proto: crate::http::HTTPProto,
+    ) {
+        let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+        let svc_ctx = WorkerSvcCtx {
+            rt: self.rt.clone(),
+            disconnect_guard: disconnect_guard.clone(),
+            addr_local,
+            addr_remote,
+            proto,
+        };
+        let mut done = false;
+        let svc = self.service(svc_ctx);
+        let conn = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
+            .adaptive_window(self.handler.opts.adaptive_window)
+            .initial_connection_window_size(self.handler.opts.initial_connection_window_size)
+            .initial_stream_window_size(self.handler.opts.initial_stream_window_size)
+            .keep_alive_interval(self.handler.opts.keep_alive_interval)
+            .keep_alive_timeout(self.handler.opts.keep_alive_timeout)
+            .max_concurrent_streams(self.handler.opts.max_concurrent_streams)
+            .max_frame_size(self.handler.opts.max_frame_size)
+            .max_header_list_size(self.handler.opts.max_headers_size)
+            .max_send_buf_size(self.handler.opts.max_send_buffer_size)
+            .serve_connection(hyper_util::rt::TokioIo::new(stream), svc);
+        tokio::pin!(conn);
+
+        tokio::select! {
+            _ = conn.as_mut() => {
+                done = true;
+            },
+            () = sig.notified() => {
+                conn.as_mut().graceful_shutdown();
+            }
+        }
+        if !done {
+            _ = conn.as_mut().await;
+        }
+
+        disconnect_guard.notify_one();
+        drop(permit);
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct WorkerAcceptorPlain {}
@@ -980,149 +717,142 @@ pub(crate) trait WorkerAcceptor<L> {
     ) -> impl Future<Output = ()> + Send + 'static;
 }
 
-macro_rules! worker_acceptor_tcp_impl {
-    ($exec:ty, $exech:ident) => {
-        impl<C, H, F, Ret> WorkerAcceptor<std::net::TcpListener> for Worker<C, WorkerAcceptorPlain, H, $exec, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            C: Send + 'static,
-            H: Send + 'static,
-            Worker<C, WorkerAcceptorPlain, H, $exec, F>: $exech<tokio::net::TcpStream> + Clone,
-        {
-            async fn listen(
-                self,
-                mut sig: tokio::sync::watch::Receiver<bool>,
-                listener: std::net::TcpListener,
-                backpressure: usize,
-            ) {
-                let tcp_listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                let addr_local = tcp_listener.local_addr().unwrap();
-                let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(backpressure));
-                let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
-                let mut accept_loop = true;
+impl<C, H, F, Ret> WorkerAcceptor<std::net::TcpListener> for Worker<C, WorkerAcceptorPlain, H, F>
+where
+    F: Fn(
+            crate::runtime::RuntimeRef,
+            std::sync::Arc<tokio::sync::Notify>,
+            crate::callbacks::ArcCBScheduler,
+            std::net::SocketAddr,
+            std::net::SocketAddr,
+            crate::http::HTTPRequest,
+            crate::http::HTTPProto,
+        ) -> Ret
+        + Send
+        + Sync
+        + 'static,
+    Ret: Future<Output = crate::http::HTTPResponse> + 'static,
+    C: Send + 'static,
+    H: Send + 'static,
+    Worker<C, WorkerAcceptorPlain, H, F>: WorkerConnectionHandler<tokio::net::TcpStream> + Clone,
+{
+    async fn listen(
+        self,
+        mut sig: tokio::sync::watch::Receiver<bool>,
+        listener: std::net::TcpListener,
+        backpressure: usize,
+    ) {
+        let tcp_listener = tokio::net::TcpListener::from_std(listener).unwrap();
+        let addr_local = tcp_listener.local_addr().unwrap();
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(backpressure));
+        let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
+        let mut accept_loop = true;
 
-                while accept_loop {
-                    let wrk = self.clone();
-                    let semaphore = semaphore.clone();
-                    let connsig = connsig.clone();
+        while accept_loop {
+            let wrk = self.clone();
+            let semaphore = semaphore.clone();
+            let connsig = connsig.clone();
 
-                    tokio::select! {
-                        (permit, event) = async {
-                            let permit = semaphore.acquire_owned().await.unwrap();
-                            (permit, tcp_listener.accept().await)
-                        } => {
-                            match event {
-                                Ok((stream, addr_remote)) => {
-                                    let handler = wrk.clone().handle(
-                                        addr_local,
-                                        addr_remote,
-                                        stream,
-                                        permit,
-                                        connsig,
-                                        crate::http::HTTPProto::Plain
-                                    );
-                                    wrk.spawn(handler);
-                                },
-                                Err(err) => {
-                                    log::info!("TCP handshake failed with error: {:?}", err);
-                                    drop(permit);
-                                }
-                            }
+            tokio::select! {
+                (permit, event) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, tcp_listener.accept().await)
+                } => {
+                    match event {
+                        Ok((stream, addr_remote)) => {
+                            let handler = wrk.clone().handle(
+                                addr_local,
+                                addr_remote,
+                                stream,
+                                permit,
+                                connsig,
+                                crate::http::HTTPProto::Plain
+                            );
+                            wrk.tasks.spawn(handler);
                         },
-                        _ = sig.changed() => {
-                            accept_loop = false;
-                            connsig.notify_waiters();
+                        Err(err) => {
+                            log::info!("TCP handshake failed with error: {err:?}");
+                            drop(permit);
                         }
                     }
+                },
+                _ = sig.changed() => {
+                    accept_loop = false;
+                    connsig.notify_waiters();
                 }
             }
         }
-
-        impl<C, H, F, Ret> WorkerAcceptor<std::net::TcpListener> for Worker<C, WorkerAcceptorTls, H, $exec, F>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    std::net::SocketAddr,
-                    std::net::SocketAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            C: Send + 'static,
-            H: Send + 'static,
-            Worker<C, WorkerAcceptorTls, H, $exec, F>:
-                $exech<tls_listener::rustls::server::TlsStream<tokio::net::TcpStream>> + Clone,
-        {
-            async fn listen(
-                self,
-                mut sig: tokio::sync::watch::Receiver<bool>,
-                listener: std::net::TcpListener,
-                backpressure: usize,
-            ) {
-                let tls_cfg = self.acceptor.opts.clone();
-                let (mut tls_listener, addr_local) = crate::tls::tls_listener(tls_cfg, listener).unwrap();
-                let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(backpressure));
-                let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
-                let mut accept_loop = true;
-
-                while accept_loop {
-                    let wrk = self.clone();
-                    let semaphore = semaphore.clone();
-                    let connsig = connsig.clone();
-
-                    tokio::select! {
-                        (permit, event) = async {
-                            let permit = semaphore.acquire_owned().await.unwrap();
-                            (permit, tls_listener.accept().await)
-                        } => {
-                            match event {
-                                Ok((stream, addr_remote)) => {
-                                    let handler = wrk.clone().handle(
-                                        addr_local,
-                                        addr_remote,
-                                        stream,
-                                        permit,
-                                        connsig,
-                                        crate::http::HTTPProto::Tls
-                                    );
-                                    wrk.spawn(handler);
-                                },
-                                Err(err) => {
-                                    log::info!("TCP handshake failed with error: {:?}", err);
-                                    drop(permit);
-                                }
-                            }
-                        },
-                        _ = sig.changed() => {
-                            accept_loop = false;
-                            connsig.notify_waiters();
-                        }
-                    }
-                }
-            }
-        }
-    };
+    }
 }
 
-worker_acceptor_tcp_impl!(WorkerExcSend, WorkerConnectionHandlerSend);
-worker_acceptor_tcp_impl!(WorkerExcLocal, WorkerConnectionHandlerLocal);
+impl<C, H, F, Ret> WorkerAcceptor<std::net::TcpListener> for Worker<C, WorkerAcceptorTls, H, F>
+where
+    F: Fn(
+            crate::runtime::RuntimeRef,
+            std::sync::Arc<tokio::sync::Notify>,
+            crate::callbacks::ArcCBScheduler,
+            std::net::SocketAddr,
+            std::net::SocketAddr,
+            crate::http::HTTPRequest,
+            crate::http::HTTPProto,
+        ) -> Ret
+        + Send
+        + Sync
+        + 'static,
+    Ret: Future<Output = crate::http::HTTPResponse> + 'static,
+    C: Send + 'static,
+    H: Send + 'static,
+    Worker<C, WorkerAcceptorTls, H, F>:
+        WorkerConnectionHandler<tls_listener::rustls::server::TlsStream<tokio::net::TcpStream>> + Clone,
+{
+    async fn listen(
+        self,
+        mut sig: tokio::sync::watch::Receiver<bool>,
+        listener: std::net::TcpListener,
+        backpressure: usize,
+    ) {
+        let tls_cfg = self.acceptor.opts.clone();
+        let (mut tls_listener, addr_local) = crate::tls::tls_listener(tls_cfg, listener).unwrap();
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(backpressure));
+        let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
+        let mut accept_loop = true;
+
+        while accept_loop {
+            let wrk = self.clone();
+            let semaphore = semaphore.clone();
+            let connsig = connsig.clone();
+
+            tokio::select! {
+                (permit, event) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, tls_listener.accept().await)
+                } => {
+                    match event {
+                        Ok((stream, addr_remote)) => {
+                            let handler = wrk.clone().handle(
+                                addr_local,
+                                addr_remote,
+                                stream,
+                                permit,
+                                connsig,
+                                crate::http::HTTPProto::Tls
+                            );
+                            wrk.tasks.spawn(handler);
+                        },
+                        Err(err) => {
+                            log::info!("TCP handshake failed with error: {err:?}");
+                            drop(permit);
+                        }
+                    }
+                },
+                _ = sig.changed() => {
+                    accept_loop = false;
+                    connsig.notify_waiters();
+                }
+            }
+        }
+    }
+}
 
 pub(crate) fn serve_mt<C, A, H, F, Ret>(
     cfg: &WorkerConfig,
@@ -1144,7 +874,7 @@ pub(crate) fn serve_mt<C, A, H, F, Ret>(
         crate::http::HTTPProto,
     ) -> Ret,
     Ret: Future<Output = crate::http::HTTPResponse>,
-    Worker<C, A, H, WorkerExcSend, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
+    Worker<C, A, H, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
 {
     _ = pyo3_log::try_init();
 
@@ -1166,8 +896,7 @@ pub(crate) fn serve_mt<C, A, H, F, Ret>(
     });
     let rth = rt.handler();
 
-    let wexec = crate::workers::WorkerExcSend {};
-    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, wexec, rth, target);
+    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
     let srx = signal.get().rx.lock().unwrap().take().unwrap();
 
     let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
@@ -1190,6 +919,7 @@ pub(crate) fn serve_mt<C, A, H, F, Ret>(
 
 pub(crate) fn serve_st<C, A, H, F, Ret>(
     cfg: &WorkerConfig,
+    _py: (),
     event_loop: &Bound<PyAny>,
     signal: Py<WorkerSignal>,
     ctx: C,
@@ -1212,7 +942,7 @@ pub(crate) fn serve_st<C, A, H, F, Ret>(
     C: Clone + Send + 'static,
     A: Clone + Send + 'static,
     H: Clone + Send + 'static,
-    Worker<C, A, H, WorkerExcLocal, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
+    Worker<C, A, H, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
 {
     _ = pyo3_log::try_init();
 
@@ -1242,8 +972,7 @@ pub(crate) fn serve_st<C, A, H, F, Ret>(
         workers.push(std::thread::spawn(move || {
             let rt = crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
             let rth = rt.handler();
-            let wexec = crate::workers::WorkerExcLocal {};
-            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, wexec, rth, target);
+            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
             let local = tokio::task::LocalSet::new();
 
             crate::runtime::block_on_local(&rt, local, async move {
@@ -1281,6 +1010,7 @@ pub(crate) fn serve_st<C, A, H, F, Ret>(
 
 pub(crate) fn serve_fut<'p, C, A, H, F, Ret>(
     cfg: &WorkerConfig,
+    _py: (),
     event_loop: &Bound<'p, PyAny>,
     signal: Py<WorkerSignal>,
     ctx: C,
@@ -1304,7 +1034,7 @@ where
     C: Clone + Send + 'static,
     A: Clone + Send + 'static,
     H: Clone + Send + 'static,
-    Worker<C, A, H, WorkerExcSend, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
+    Worker<C, A, H, F>: WorkerAcceptor<std::net::TcpListener> + Clone + Send + 'static,
 {
     _ = pyo3_log::try_init();
 
@@ -1322,11 +1052,9 @@ where
     let pyloop_r2 = pyloop_r1.clone();
 
     let worker = std::thread::spawn(move || {
-        // NOTE: this was originally `init_runtime_st`, but we want to avoid non-Send limitations
-        let rt = crate::runtime::init_runtime_mt(1, blocking_threads, py_threads, py_threads_idle_timeout, pyloop_r1);
+        let rt = crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, pyloop_r1);
         let rth = rt.handler();
-        let wexec = crate::workers::WorkerExcSend {};
-        let wrk = crate::workers::Worker::new(ctx, acceptor, handler, wexec, rth, target);
+        let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
 
         rt.inner.block_on(async move {
             wrk.clone().listen(srx, tcp_listener, backpressure).await;
@@ -1375,723 +1103,281 @@ where
 }
 
 macro_rules! gen_serve_match {
-    (mt $sm:expr, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {
+    ($sm:expr, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {
         match (
             &$self.config.http_mode[..],
             $self.config.tls_opts.is_some(),
             $self.config.websockets_enabled,
             $self.config.static_files.is_some(),
         ) {
-            ("auto", false, false, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", false, false, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", false, true, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("auto", false, true, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("auto", true, false, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", true, false, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", true, true, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("auto", true, true, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", false, false, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", false, false, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", false, true, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", false, true, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", true, false, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", true, false, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", true, true, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", true, true, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("2", false, _, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", false, _, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", true, _, false) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", true, _, true) => {
-                $sm(
-                    &$self.config,
-                    $py,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            _ => unreachable!(),
-        }
-    };
-
-    (st $sm:expr, $self:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr) => {
-        match (
-            &$self.config.http_mode[..],
-            $self.config.tls_opts.is_some(),
-            $self.config.websockets_enabled,
-            $self.config.static_files.is_some(),
-        ) {
-            ("auto", false, false, false) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", false, false, true) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            // FIXME: no auto send
-            // ("auto", false, true, false) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXBase::new($callback),
-            //         crate::workers::WorkerAcceptorPlain{},
-            //         crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-            //         std::sync::Arc::new($targetws),
-            //     )
-            // }
-            // FIXME: no auto send
-            // ("auto", false, true, true) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-            //         crate::workers::WorkerAcceptorPlain{},
-            //         crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-            //         std::sync::Arc::new($targetws),
-            //     )
-            // }
-            ("auto", true, false, false) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", true, false, true) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            // FIXME: no auto send
-            // ("auto", true, true, false) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXBase::new($callback),
-            //         crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-            //         crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-            //         std::sync::Arc::new($target),
-            //     )
-            // }
-            // FIXME: no auto send
-            // ("auto", true, true, true) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-            //         crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-            //         crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-            //         std::sync::Arc::new($target),
-            //     )
-            // }
-            ("1", false, false, false) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", false, false, true) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            // FIXME: no auto send
-            // ("1", false, true, false) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXBase::new($callback),
-            //         crate::workers::WorkerAcceptorPlain{},
-            //         crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-            //         std::sync::Arc::new($targetws),
-            //     )
-            // }
-            // FIXME: no auto send
-            // ("1", false, true, true) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-            //         crate::workers::WorkerAcceptorPlain{},
-            //         crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-            //         std::sync::Arc::new($targetws),
-            //     )
-            // }
-            ("1", true, false, false) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", true, false, true) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            // FIXME: no auto send
-            // ("1", true, true, false) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXBase::new($callback),
-            //         crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-            //         crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-            //         std::sync::Arc::new($target),
-            //     )
-            // }
-            // FIXME: no auto send
-            // ("1", true, true, true) => {
-            //     $sm(
-            //         &$self.config,
-            //         $event_loop,
-            //         $signal,
-            //         crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-            //         crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-            //         crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-            //         std::sync::Arc::new($target),
-            //     )
-            // }
-            ("2", false, _, false) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", false, _, true) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", true, _, false) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", true, _, true) => {
-                $sm(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            _ => unreachable!(),
-        }
-    };
-
-    (fut $self:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {
-        match (
-            &$self.config.http_mode[..],
-            $self.config.tls_opts.is_some(),
-            $self.config.websockets_enabled,
-            $self.config.static_files.is_some(),
-        ) {
-            ("auto", false, false, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", false, false, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", false, true, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("auto", false, true, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("auto", true, false, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", true, false, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHA{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("auto", true, true, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("auto", true, true, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerHAU{ opts_h1: $self.config.http1_opts.clone(), opts_h2: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", false, false, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", false, false, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", false, true, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", false, true, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", true, false, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", true, false, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("1", true, true, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("1", true, true, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH1U{ opts: $self.config.http1_opts.clone() },
-                    std::sync::Arc::new($targetws),
-                )
-            }
-            ("2", false, _, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", false, _, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorPlain{},
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", true, _, false) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXBase::new($callback),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
-            ("2", true, _, true) => {
-                crate::workers::serve_fut(
-                    &$self.config,
-                    $event_loop,
-                    $signal,
-                    crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
-                    crate::workers::WorkerAcceptorTls{ opts: $self.config.tls_cfg().into() },
-                    crate::workers::WorkerH2{ opts: $self.config.http2_opts.clone() },
-                    std::sync::Arc::new($target),
-                )
-            }
+            ("auto", false, false, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerHA {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("auto", false, false, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerHA {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("auto", false, true, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerHAU {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("auto", false, true, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerHAU {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("auto", true, false, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerHA {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("auto", true, false, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerHA {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("auto", true, true, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerHAU {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("auto", true, true, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerHAU {
+                    opts_h1: $self.config.http1_opts.clone(),
+                    opts_h2: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("1", false, false, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerH1 {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("1", false, false, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerH1 {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("1", false, true, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerH1U {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("1", false, true, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerH1U {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("1", true, false, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerH1 {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("1", true, false, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerH1 {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("1", true, true, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerH1U {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("1", true, true, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerH1U {
+                    opts: $self.config.http1_opts.clone(),
+                },
+                std::sync::Arc::new($targetws),
+            ),
+            ("2", false, _, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerH2 {
+                    opts: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("2", false, _, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorPlain {},
+                crate::workers::WorkerH2 {
+                    opts: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("2", true, _, false) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXBase::new($callback),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerH2 {
+                    opts: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
+            ("2", true, _, true) => $sm(
+                &$self.config,
+                $py,
+                $event_loop,
+                $signal,
+                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                crate::workers::WorkerAcceptorTls {
+                    opts: $self.config.tls_cfg().into(),
+                },
+                crate::workers::WorkerH2 {
+                    opts: $self.config.http2_opts.clone(),
+                },
+                std::sync::Arc::new($target),
+            ),
             _ => unreachable!(),
         }
     };

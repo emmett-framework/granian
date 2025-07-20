@@ -92,11 +92,29 @@ impl RSGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignal>,
     ) {
-        gen_serve_match!(mt crate::workers::serve_mt, self, py, callback, event_loop, signal, handle, handle_ws);
+        gen_serve_match!(
+            crate::workers::serve_mt,
+            self,
+            py,
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        );
     }
 
     fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
-        gen_serve_match!(st crate::workers::serve_st, self, callback, event_loop, signal, handle);
+        gen_serve_match!(
+            crate::workers::serve_st,
+            self,
+            (),
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        );
     }
 
     fn serve_async<'p>(
@@ -105,6 +123,15 @@ impl RSGIWorker {
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
-        gen_serve_match!(fut self, callback, event_loop, signal, handle, handle_ws)
+        gen_serve_match!(
+            crate::workers::serve_fut,
+            self,
+            (),
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        )
     }
 }
