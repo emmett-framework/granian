@@ -107,7 +107,9 @@ class AbstractServer(Generic[WT]):
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
+        rss_sample_interval: int = 30,
         workers_lifetime: Optional[int] = None,
+        workers_max_rss: Optional[int] = None,
         workers_kill_timeout: Optional[int] = None,
         factory: bool = False,
         working_dir: Optional[Path] = None,
@@ -157,7 +159,9 @@ class AbstractServer(Generic[WT]):
         self.respawn_failed_workers = respawn_failed_workers
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
+        self.rss_sample_interval = rss_sample_interval
         self.workers_lifetime = workers_lifetime
+        self.workers_rss = workers_max_rss * 1024 * 1024 if workers_max_rss else None
         self.workers_kill_timeout = workers_kill_timeout
         self.factory = factory
         self.working_dir = working_dir
@@ -197,6 +201,7 @@ class AbstractServer(Generic[WT]):
         self.respawned_wrks = {}
         self.reload_signal = False
         self.lifetime_signal = False
+        self.rss_signal = False
         self.pid = None
 
     def build_ssl_context(
@@ -310,8 +315,17 @@ class AbstractServer(Generic[WT]):
         self.lifetime_signal = True
         self.main_loop_interrupt.set()
 
+    def _workers_rss_watcher(self):
+        time.sleep(self.rss_sample_interval)
+        self.rss_signal = True
+        self.main_loop_interrupt.set()
+
     def _watch_workers_lifetime(self, ttl):
         waker = threading.Thread(target=self._workers_lifetime_watcher, args=(ttl,), daemon=True)
+        waker.start()
+
+    def _watch_workers_rss(self):
+        waker = threading.Thread(target=self._workers_rss_watcher, daemon=True)
         waker.start()
 
     def _write_pid(self):
@@ -375,6 +389,8 @@ class AbstractServer(Generic[WT]):
 
         if self.workers_lifetime is not None:
             self._watch_workers_lifetime(self.workers_lifetime)
+        if self.workers_rss is not None:
+            self._watch_workers_rss()
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
@@ -396,6 +412,9 @@ class AbstractServer(Generic[WT]):
         load_env(self.env_files)
         self._call_hooks(self.hooks_reload)
         return self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
+
+    def _handle_rss_signal(self, spawn_target, target_loader):
+        raise NotImplementedError
 
     def _serve_loop(self, spawn_target, target_loader):
         while True:
@@ -421,22 +440,31 @@ class AbstractServer(Generic[WT]):
             if self.reload_signal:
                 self._reload(spawn_target, target_loader)
 
-            if self.lifetime_signal:
-                self.lifetime_signal = False
+            if self.lifetime_signal or self.rss_signal:
                 self.main_loop_interrupt.clear()
-                ttl = self.workers_lifetime * 0.95
-                now = time.time()
-                etas = [self.workers_lifetime]
-                for worker in list(self.wrks):
-                    if (now - worker.birth) >= ttl:
-                        logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
-                        self._respawn_workers([worker.idx], spawn_target, target_loader, delay=self.respawn_interval)
-                    else:
-                        elapsed = now - worker.birth
-                        remaining = self.workers_lifetime - elapsed
-                        etas.append(max(60, int(remaining)))
-                next_tick = min(etas)
-                self._watch_workers_lifetime(next_tick)
+
+                if self.lifetime_signal:
+                    self.lifetime_signal = False
+                    ttl = self.workers_lifetime * 0.95
+                    now = time.time()
+                    etas = [self.workers_lifetime]
+                    for worker in list(self.wrks):
+                        if (now - worker.birth) >= ttl:
+                            logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
+                            self._respawn_workers(
+                                [worker.idx], spawn_target, target_loader, delay=self.respawn_interval
+                            )
+                        else:
+                            elapsed = now - worker.birth
+                            remaining = self.workers_lifetime - elapsed
+                            etas.append(max(60, int(remaining)))
+                    next_tick = min(etas)
+                    self._watch_workers_lifetime(next_tick)
+
+                if self.rss_signal:
+                    self.rss_signal = False
+                    self._handle_rss_signal(spawn_target, target_loader)
+                    self._watch_workers_rss()
 
     def _serve(self, spawn_target, target_loader):
         self.startup(spawn_target, target_loader)
@@ -525,7 +553,6 @@ class AbstractServer(Generic[WT]):
                 self.websockets = False
                 logger.info('Websockets are not supported on WSGI, ignoring')
             if self.http == HTTPModes.http2:
-                self.websockets = False
                 logger.info('Websockets are not supported on HTTP/2 only, ignoring')
 
         if setproctitle is not None:

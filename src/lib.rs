@@ -18,6 +18,7 @@ mod files;
 mod http;
 mod rsgi;
 mod runtime;
+mod sys;
 mod tcp;
 mod tls;
 mod utils;
@@ -46,6 +47,7 @@ fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<callbacks::CallbackScheduler>()?;
     asgi::init_pymodule(module)?;
     rsgi::init_pymodule(py, module)?;
+    sys::init_pymodule(module)?;
     tcp::init_pymodule(module)?;
     workers::init_pymodule(module)?;
     Ok(())

@@ -319,4 +319,8 @@ class MTServer(AbstractServer[WorkerThread]):
             logger.error('The changes reloader is not supported on the free-threaded build')
             raise ConfigurationError('reload')
 
+        if self.workers_rss:
+            logger.error('The resource monitor is not supported on the free-threaded build')
+            raise ConfigurationError('workers_max_rss')
+
         super().serve(spawn_target, target_loader, wrap_loader)

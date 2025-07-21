@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, RSGIWorker, SocketHolder, WSGIWorker
+from .._granian import ASGIWorker, ProcInfoCollector, RSGIWorker, SocketHolder, WSGIWorker
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
@@ -287,9 +287,30 @@ class MPServer(AbstractServer[WorkerProcess]):
         sock.set_inheritable(True)
         self._sso = sock
 
+    def _write_pidfile(self):
+        super()._write_pidfile()
+        self._rss_collector = ProcInfoCollector()
+
     def _unlink_pidfile(self):
         self._sso.detach()
         super()._unlink_pidfile()
+
+    def _handle_rss_signal(self, spawn_target, target_loader):
+        wpids = {wrk._id(): wrk for wrk in self.wrks}
+        try:
+            rss_data = self._rss_collector.memory(list(wpids.keys()))
+        except Exception:
+            logger.warning('Unable to collect resource usage for workers')
+            return
+        logger.debug(f'Collected resource usages for workers: {rss_data}')
+        to_restart = []
+        for wpid, wmem in rss_data.items():
+            if wmem >= self.workers_rss:
+                wrk = wpids[wpid]
+                logger.info(f'worker-{wrk.idx + 1} RSS over threshold, gracefully respawning..')
+                to_restart.append(wrk.idx)
+        if to_restart:
+            self._respawn_workers(to_restart, spawn_target, target_loader, delay=self.respawn_interval)
 
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerProcess:
         return WorkerProcess(

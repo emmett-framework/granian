@@ -278,10 +278,18 @@ Options:
   --respawn-interval FLOAT        The number of seconds to sleep between
                                   workers respawn  [env var:
                                   GRANIAN_RESPAWN_INTERVAL; default: 3.5]
+  --rss-sample-interval DURATION  The sample rate in seconds (or a human-
+                                  readable duration) for the resource monitor
+                                  [env var: GRANIAN_RSS_SAMPLE_INTERVAL;
+                                  default: 30; 10<=x<=300]
   --workers-lifetime DURATION     The maximum amount of time in seconds (or a
                                   human-readable duration) a worker will be
                                   kept alive before respawn  [env var:
                                   GRANIAN_WORKERS_LIFETIME; x>=60]
+  --workers-max-rss INTEGER RANGE
+                                  The maximum amount of memory (in MiB) a
+                                  worker can consume before respawn  [env var:
+                                  GRANIAN_WORKERS_MAX_RSS; x>=1]
   --workers-kill-timeout DURATION
                                   The amount of time in seconds (or a human-
                                   readable duration) to wait for killing
