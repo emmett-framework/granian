@@ -96,27 +96,31 @@ macro_rules! build_scope_common {
 }
 
 #[inline]
-pub(super) fn build_scope_http<'p>(
-    py: Python<'p>,
+pub(super) fn build_scope_http(
+    py: Python,
     req: request::Parts,
     server: SocketAddr,
     client: SocketAddr,
-    scheme: &'p str,
-) -> PyResult<Bound<'p, PyDict>> {
-    build_scope_common!(py, scope, req, server, client, scheme, "http");
+    scheme: crate::http::HTTPProto,
+) -> PyResult<Bound<PyDict>> {
+    build_scope_common!(py, scope, req, server, client, scheme.as_str(), "http");
     scope_set!(py, scope, "method", req.method.as_str());
     Ok(scope)
 }
 
 #[inline]
-pub(super) fn build_scope_ws<'p>(
-    py: Python<'p>,
+pub(super) fn build_scope_ws(
+    py: Python,
     req: request::Parts,
     server: SocketAddr,
     client: SocketAddr,
-    scheme: &'p str,
-) -> PyResult<Bound<'p, PyDict>> {
-    build_scope_common!(py, scope, req, server, client, scheme, "websocket");
+    scheme: crate::http::HTTPProto,
+) -> PyResult<Bound<PyDict>> {
+    let ws_scheme = match scheme {
+        crate::http::HTTPProto::Plain => "ws",
+        crate::http::HTTPProto::Tls => "wss",
+    };
+    build_scope_common!(py, scope, req, server, client, ws_scheme, "websocket");
     scope_set!(
         py,
         scope,

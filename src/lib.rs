@@ -16,7 +16,6 @@ mod callbacks;
 mod conversion;
 mod files;
 mod http;
-mod io;
 mod rsgi;
 mod runtime;
 mod tcp;

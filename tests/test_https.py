@@ -11,7 +11,7 @@ import websockets
 @pytest.mark.parametrize('server_tls', ['asgi', 'rsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_http_scope(server_tls, runtime_mode):
-    async with server_tls(runtime_mode) as port:
+    async with server_tls(runtime_mode, ws=False) as port:
         res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
 
     assert res.status_code == 200
@@ -51,7 +51,7 @@ async def test_rsgi_ws_scope(rsgi_server, runtime_mode):
 
 @pytest.mark.asyncio
 async def test_tls_encrypted_key(rsgi_server):
-    async with rsgi_server('st', tls='priv') as port:
+    async with rsgi_server('st', ws=False, tls='priv') as port:
         res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
 
     assert res.status_code == 200

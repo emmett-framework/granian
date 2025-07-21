@@ -522,8 +522,10 @@ class AbstractServer(Generic[WT]):
 
         if self.websockets:
             if self.interface == Interfaces.WSGI:
+                self.websockets = False
                 logger.info('Websockets are not supported on WSGI, ignoring')
             if self.http == HTTPModes.http2:
+                self.websockets = False
                 logger.info('Websockets are not supported on HTTP/2 only, ignoring')
 
         if setproctitle is not None:

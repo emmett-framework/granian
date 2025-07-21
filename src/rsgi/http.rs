@@ -11,7 +11,7 @@ use super::{
 use crate::{
     callbacks::ArcCBScheduler,
     http::{HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
-    runtime::RuntimeRef,
+    runtime::{Runtime, RuntimeRef},
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
 
@@ -52,7 +52,7 @@ macro_rules! handle_request {
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             req: HTTPRequest,
-            scheme: &str,
+            scheme: crate::http::HTTPProto,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
@@ -71,7 +71,7 @@ macro_rules! handle_request_with_ws {
             server_addr: SocketAddr,
             client_addr: SocketAddr,
             mut req: HTTPRequest,
-            scheme: &str,
+            scheme: crate::http::HTTPProto,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 match ws_upgrade(&mut req, None) {
@@ -79,11 +79,12 @@ macro_rules! handle_request_with_ws {
                         let (parts, _) = req.into_parts();
                         let scope = build_scope!(WebsocketScope, server_addr, client_addr, parts, scheme);
                         let (restx, mut resrx) = mpsc::channel(1);
+                        let rth = rt.clone();
 
-                        tokio::task::spawn(async move {
+                        rt.spawn(async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(callback, rt, ws, UpgradeData::new(res, restx), scope).await {
+                            match $handler_ws(callback, rth, ws, UpgradeData::new(res, restx), scope).await {
                                 Ok((status, consumed, stream)) => match (consumed, stream) {
                                     (false, _) => {
                                         let _ = tx_ref

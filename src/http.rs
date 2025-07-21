@@ -11,6 +11,21 @@ pub(crate) type HTTPResponse = hyper::Response<HTTPResponseBody>;
 
 pub(crate) const HV_SERVER: HeaderValue = HeaderValue::from_static("granian");
 
+#[derive(Clone)]
+pub(crate) enum HTTPProto {
+    Plain,
+    Tls,
+}
+
+impl HTTPProto {
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            Self::Plain => "http",
+            Self::Tls => "https",
+        }
+    }
+}
+
 pub(crate) fn response_404() -> HTTPResponse {
     let mut builder = Response::builder().status(404);
     let headers = builder.headers_mut().unwrap();

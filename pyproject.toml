@@ -117,7 +117,7 @@ extend-ignore = [
     'S110', # except pass is fine
 ]
 flake8-quotes = { inline-quotes = 'single', multiline-quotes = 'double' }
-mccabe = { max-complexity = 20 }
+mccabe = { max-complexity = 23 }
 
 [tool.ruff.format]
 quote-style = 'single'

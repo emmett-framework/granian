@@ -375,6 +375,7 @@ dependencies = [
  "bus",
  "crossbeam-channel",
  "futures",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
