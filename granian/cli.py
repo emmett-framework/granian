@@ -311,9 +311,9 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--static-path-expires',
-    type=Duration(60),
+    type=Duration(0),
     default=86400,
-    help='Cache headers expiration (in seconds or a human-readable duration) for static file serving',
+    help='Cache headers expiration (in seconds or a human-readable duration) for static file serving. 0 to disable.',
 )
 @option(
     '--reload/--no-reload',

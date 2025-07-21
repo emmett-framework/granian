@@ -39,7 +39,7 @@ pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str)
     None
 }
 
-pub(crate) async fn serve_static_file(path: String, expires: String) -> HTTPResponse {
+pub(crate) async fn serve_static_file(path: String, expires: Option<String>) -> HTTPResponse {
     match File::open(&path).await {
         Ok(file) => {
             let mime = mime_guess::from_path(path).first();
@@ -49,10 +49,12 @@ pub(crate) async fn serve_static_file(path: String, expires: String) -> HTTPResp
             let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
 
             headers.insert(HK_SERVER, HV_SERVER);
-            headers.insert(
-                "cache-control",
-                HeaderValue::from_str(&format!("max-age={expires}")).unwrap(),
-            );
+            if let Some(expires) = expires {
+                headers.insert(
+                    "cache-control",
+                    HeaderValue::from_str(&format!("max-age={expires}")).unwrap(),
+                );
+            }
             if let Some(mime) = mime {
                 if let Ok(hv) = HeaderValue::from_str(mime.essence_str()) {
                     headers.insert("content-type", hv);
