@@ -418,6 +418,10 @@ class Server(AbstractServer[AsyncWorker]):
             logger.error('The changes reloader is not supported in embedded mode')
             raise ConfigurationError('reload')
 
+        if self.workers_rss:
+            logger.error('The resource monitor is not supported in embedded mode')
+            raise ConfigurationError('workers_max_rss')
+
         if not spawn_target:
             spawn_target = default_spawners[self.interface]
 

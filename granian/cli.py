@@ -273,9 +273,20 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     help='The number of seconds to sleep between workers respawn',
 )
 @option(
+    '--rss-sample-interval',
+    type=Duration(10, 300),
+    default=30,
+    help='The sample rate in seconds (or a human-readable duration) for the resource monitor',
+)
+@option(
     '--workers-lifetime',
     type=Duration(60),
     help='The maximum amount of time in seconds (or a human-readable duration) a worker will be kept alive before respawn',
+)
+@option(
+    '--workers-max-rss',
+    type=click.IntRange(1),
+    help='The maximum amount of memory (in MiB) a worker can consume before respawn',
 )
 @option(
     '--workers-kill-timeout',
@@ -414,7 +425,9 @@ def cli(
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
     respawn_interval: float,
+    rss_sample_interval: int,
     workers_lifetime: Optional[int],
+    workers_max_rss: Optional[int],
     workers_kill_timeout: Optional[int],
     factory: bool,
     working_dir: Optional[pathlib.Path],
@@ -489,7 +502,9 @@ def cli(
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,
+        rss_sample_interval=rss_sample_interval,
         workers_lifetime=workers_lifetime,
+        workers_max_rss=workers_max_rss,
         workers_kill_timeout=workers_kill_timeout,
         factory=factory,
         working_dir=working_dir,
