@@ -163,7 +163,11 @@ class AbstractServer(Generic[WT]):
         self.working_dir = working_dir
         self.env_files = env_files or ()
         self.static_path = (
-            (static_path_route, str(static_path_mount.resolve()), str(static_path_expires))
+            (
+                static_path_route,
+                str(static_path_mount.resolve()),
+                (str(static_path_expires) if static_path_expires else None),
+            )
             if static_path_mount
             else None
         )

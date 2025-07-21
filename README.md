@@ -304,9 +304,9 @@ Options:
                                   var: GRANIAN_STATIC_PATH_MOUNT]
   --static-path-expires DURATION  Cache headers expiration (in seconds or a
                                   human-readable duration) for static file
-                                  serving  [env var:
+                                  serving. 0 to disable.  [env var:
                                   GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
-                                  x>=60]
+                                  x>=0]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:

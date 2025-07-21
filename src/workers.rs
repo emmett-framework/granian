@@ -95,7 +95,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
-    pub static_files: Option<(String, String, String)>,
+    pub static_files: Option<(String, String, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
 }
 
@@ -121,7 +121,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
-        static_files: Option<(String, String, String)>,
+        static_files: Option<(String, String, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -224,11 +224,11 @@ pub(crate) struct WorkerCTXFiles {
     pub callback: crate::callbacks::ArcCBScheduler,
     pub static_prefix: String,
     pub static_mount: String,
-    pub static_expires: String,
+    pub static_expires: Option<String>,
 }
 
 impl WorkerCTXFiles {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, String)>) -> Self {
+    pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, Option<String>)>) -> Self {
         let (static_prefix, static_mount, static_expires) = files.unwrap();
         Self {
             callback: std::sync::Arc::new(callback),
