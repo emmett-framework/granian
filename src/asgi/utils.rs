@@ -8,7 +8,7 @@ use pyo3::{
     types::{PyBytes, PyDict, PyList, PyString},
 };
 
-use crate::net::SockAddr;
+use crate::{http::HTTPProto, net::SockAddr};
 
 static ASGI_VERSION: GILOnceCell<PyObject> = GILOnceCell::new();
 static ASGI_EXTENSIONS: GILOnceCell<PyObject> = GILOnceCell::new();
@@ -92,7 +92,7 @@ pub(super) fn build_scope_http(
     req: request::Parts,
     server: SockAddr,
     client: SockAddr,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
 ) -> PyResult<Bound<PyDict>> {
     build_scope_common!(py, scope, req, server, client, scheme.as_str(), "http");
     scope_set!(py, scope, "method", req.method.as_str());
@@ -105,11 +105,11 @@ pub(super) fn build_scope_ws(
     req: request::Parts,
     server: SockAddr,
     client: SockAddr,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
 ) -> PyResult<Bound<PyDict>> {
     let ws_scheme = match scheme {
-        crate::http::HTTPProto::Plain => "ws",
-        crate::http::HTTPProto::Tls => "wss",
+        HTTPProto::Plain => "ws",
+        HTTPProto::Tls => "wss",
     };
     build_scope_common!(py, scope, req, server, client, ws_scheme, "websocket");
     scope_set!(

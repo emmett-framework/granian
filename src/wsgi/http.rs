@@ -5,7 +5,7 @@ use tokio::sync::Notify;
 use super::callbacks::call_http;
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{HTTPRequest, HTTPResponse, HTTPResponseBody, response_500},
+    http::{HTTPProto, HTTPRequest, HTTPResponse, HTTPResponseBody, response_500},
     net::SockAddr,
     runtime::RuntimeRef,
 };
@@ -26,7 +26,7 @@ pub(crate) async fn handle(
     server_addr: SockAddr,
     client_addr: SockAddr,
     req: HTTPRequest,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
     if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {

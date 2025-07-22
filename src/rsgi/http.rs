@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
+    http::{HTTPProto, HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
     net::SockAddr,
     runtime::{Runtime, RuntimeRef},
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
@@ -53,7 +53,7 @@ macro_rules! handle_request {
             server_addr: SockAddr,
             client_addr: SockAddr,
             req: HTTPRequest,
-            scheme: crate::http::HTTPProto,
+            scheme: HTTPProto,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
@@ -72,7 +72,7 @@ macro_rules! handle_request_with_ws {
             server_addr: SockAddr,
             client_addr: SockAddr,
             mut req: HTTPRequest,
-            scheme: crate::http::HTTPProto,
+            scheme: HTTPProto,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 match ws_upgrade(&mut req, None) {

@@ -15,7 +15,7 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    http::{HTTPResponseBody, HV_SERVER, empty_body, response_404},
+    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404},
     net::SockAddr,
 };
 
@@ -111,7 +111,7 @@ macro_rules! rsgi_scope_cls {
         #[pyclass(frozen, module = "granian._granian")]
         pub(crate) struct $name {
             http_version: Version,
-            scheme: crate::http::HTTPProto,
+            scheme: HTTPProto,
             method: Method,
             uri: Uri,
             server: SockAddr,
@@ -123,7 +123,7 @@ macro_rules! rsgi_scope_cls {
         impl $name {
             pub fn new(
                 http_version: Version,
-                scheme: crate::http::HTTPProto,
+                scheme: HTTPProto,
                 uri: Uri,
                 method: Method,
                 server: SockAddr,

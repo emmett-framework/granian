@@ -1,8 +1,9 @@
 use futures::FutureExt;
 use pyo3::prelude::*;
-use std::net::TcpListener;
-use std::pin::Pin;
-use std::sync::Mutex;
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
@@ -158,7 +159,7 @@ impl WorkerConfig {
         }
     }
 
-    pub fn tcp_listener(&self) -> TcpListener {
+    pub fn tcp_listener(&self) -> std::net::TcpListener {
         let listener = self.sock.get().as_tcp_listener().unwrap();
         _ = listener.set_nonblocking(true);
         listener
@@ -221,7 +222,7 @@ pub(crate) struct WorkerCTXBase {
 impl WorkerCTXBase {
     pub fn new(callback: crate::callbacks::PyCBScheduler) -> Self {
         Self {
-            callback: std::sync::Arc::new(callback),
+            callback: Arc::new(callback),
         }
     }
 }
@@ -238,7 +239,7 @@ impl WorkerCTXFiles {
     pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, Option<String>)>) -> Self {
         let (static_prefix, static_mount, static_expires) = files.unwrap();
         Self {
-            callback: std::sync::Arc::new(callback),
+            callback: Arc::new(callback),
             static_prefix,
             static_mount,
             static_expires,
@@ -253,14 +254,14 @@ pub(crate) struct Worker<C, A, H, F> {
     handler: H,
     rt: crate::runtime::RuntimeRef,
     pub tasks: tokio_util::task::TaskTracker,
-    target: std::sync::Arc<F>,
+    target: Arc<F>,
 }
 
 impl<C, A, H, F, Ret> Worker<C, A, H, F>
 where
     F: Fn(
         crate::runtime::RuntimeRef,
-        std::sync::Arc<tokio::sync::Notify>,
+        Arc<tokio::sync::Notify>,
         crate::callbacks::ArcCBScheduler,
         crate::net::SockAddr,
         crate::net::SockAddr,
@@ -269,7 +270,7 @@ where
     ) -> Ret,
     Ret: Future<Output = crate::http::HTTPResponse>,
 {
-    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: std::sync::Arc<F>) -> Self {
+    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: Arc<F>) -> Self {
         Self {
             ctx,
             acceptor,
@@ -283,7 +284,7 @@ where
 
 struct WorkerSvcCtx {
     rt: crate::runtime::RuntimeRef,
-    disconnect_guard: std::sync::Arc<tokio::sync::Notify>,
+    disconnect_guard: Arc<tokio::sync::Notify>,
     addr_local: crate::net::SockAddr,
     addr_remote: crate::net::SockAddr,
     proto: crate::http::HTTPProto,
@@ -310,7 +311,7 @@ impl<A, H, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXBase, A, H, F>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
-            std::sync::Arc<tokio::sync::Notify>,
+            Arc<tokio::sync::Notify>,
             crate::callbacks::ArcCBScheduler,
             crate::net::SockAddr,
             crate::net::SockAddr,
@@ -359,7 +360,7 @@ impl<A, H, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXFiles, A, H, F>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
-            std::sync::Arc<tokio::sync::Notify>,
+            Arc<tokio::sync::Notify>,
             crate::callbacks::ArcCBScheduler,
             crate::net::SockAddr,
             crate::net::SockAddr,
@@ -454,7 +455,7 @@ trait WorkerConnectionHandler<S> {
         addr_remote: crate::net::SockAddr,
         stream: S,
         permit: tokio::sync::OwnedSemaphorePermit,
-        sig: std::sync::Arc<tokio::sync::Notify>,
+        sig: Arc<tokio::sync::Notify>,
         proto: crate::http::HTTPProto,
     ) -> impl Future<Output = ()> + Send + 'static;
 }
@@ -485,10 +486,10 @@ macro_rules! conn_handler_h1 {
             addr_remote: crate::net::SockAddr,
             stream: S,
             permit: tokio::sync::OwnedSemaphorePermit,
-            sig: std::sync::Arc<tokio::sync::Notify>,
+            sig: Arc<tokio::sync::Notify>,
             proto: crate::http::HTTPProto,
         ) {
-            let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+            let disconnect_guard = Arc::new(tokio::sync::Notify::new());
             let svc_ctx = WorkerSvcCtx {
                 rt: self.rt.clone(),
                 disconnect_guard: disconnect_guard.clone(),
@@ -527,10 +528,10 @@ macro_rules! conn_handler_ha {
             addr_remote: crate::net::SockAddr,
             stream: S,
             permit: tokio::sync::OwnedSemaphorePermit,
-            sig: std::sync::Arc<tokio::sync::Notify>,
+            sig: Arc<tokio::sync::Notify>,
             proto: crate::http::HTTPProto,
         ) {
-            let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+            let disconnect_guard = Arc::new(tokio::sync::Notify::new());
             let svc_ctx = WorkerSvcCtx {
                 rt: self.rt.clone(),
                 disconnect_guard: disconnect_guard.clone(),
@@ -587,7 +588,7 @@ macro_rules! conn_handler_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -611,7 +612,7 @@ macro_rules! conn_handler_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -641,7 +642,7 @@ impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, WorkerH2, F>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
-            std::sync::Arc<tokio::sync::Notify>,
+            Arc<tokio::sync::Notify>,
             crate::callbacks::ArcCBScheduler,
             crate::net::SockAddr,
             crate::net::SockAddr,
@@ -663,10 +664,10 @@ where
         addr_remote: crate::net::SockAddr,
         stream: S,
         permit: tokio::sync::OwnedSemaphorePermit,
-        sig: std::sync::Arc<tokio::sync::Notify>,
+        sig: Arc<tokio::sync::Notify>,
         proto: crate::http::HTTPProto,
     ) {
-        let disconnect_guard = std::sync::Arc::new(tokio::sync::Notify::new());
+        let disconnect_guard = Arc::new(tokio::sync::Notify::new());
         let svc_ctx = WorkerSvcCtx {
             rt: self.rt.clone(),
             disconnect_guard: disconnect_guard.clone(),
@@ -712,7 +713,7 @@ pub(crate) struct WorkerAcceptorTcpPlain {}
 
 #[derive(Clone)]
 pub(crate) struct WorkerAcceptorTcpTls {
-    pub opts: std::sync::Arc<tls_listener::rustls::rustls::ServerConfig>,
+    pub opts: Arc<tls_listener::rustls::rustls::ServerConfig>,
 }
 
 #[derive(Clone)]
@@ -720,7 +721,7 @@ pub(crate) struct WorkerAcceptorUdsPlain {}
 
 #[derive(Clone)]
 pub(crate) struct WorkerAcceptorUdsTls {
-    pub opts: std::sync::Arc<tls_listener::rustls::rustls::ServerConfig>,
+    pub opts: Arc<tls_listener::rustls::rustls::ServerConfig>,
 }
 
 pub(crate) trait WorkerAcceptor<L> {
@@ -738,7 +739,7 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -761,8 +762,8 @@ macro_rules! acceptor_impl {
             ) {
                 let listener = <$listenero>::from_std(listener).unwrap();
                 let addr_local = $sockwrap(listener.local_addr().unwrap());
-                let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(backpressure));
-                let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
+                let semaphore = Arc::new(tokio::sync::Semaphore::new(backpressure));
+                let connsig = Arc::new(tokio::sync::Notify::new());
                 let mut accept_loop = true;
 
                 while accept_loop {
@@ -806,7 +807,7 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -830,8 +831,8 @@ macro_rules! acceptor_impl {
             ) {
                 let tls_cfg = self.acceptor.opts.clone();
                 let (mut tls_listener, addr_local) = $tlswrap(tls_cfg, listener).unwrap();
-                let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(backpressure));
-                let connsig = std::sync::Arc::new(tokio::sync::Notify::new());
+                let semaphore = Arc::new(tokio::sync::Semaphore::new(backpressure));
+                let connsig = Arc::new(tokio::sync::Notify::new());
                 let mut accept_loop = true;
 
                 while accept_loop {
@@ -903,11 +904,11 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: std::sync::Arc<F>,
+            target: Arc<F>,
         ) where
             F: Fn(
                 crate::runtime::RuntimeRef,
-                std::sync::Arc<tokio::sync::Notify>,
+                Arc<tokio::sync::Notify>,
                 crate::callbacks::ArcCBScheduler,
                 crate::net::SockAddr,
                 crate::net::SockAddr,
@@ -925,7 +926,7 @@ macro_rules! serve_fn {
             let listener = cfg.$listener_gen();
             let backpressure = cfg.backpressure;
 
-            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
+            let rtpyloop = Arc::new(event_loop.clone().unbind());
             let rt = py.allow_threads(|| {
                 crate::runtime::init_runtime_mt(
                     cfg.threads,
@@ -968,11 +969,11 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: std::sync::Arc<F>,
+            target: Arc<F>,
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -995,7 +996,7 @@ macro_rules! serve_fn {
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 
-            let py_loop = std::sync::Arc::new(event_loop.clone().unbind());
+            let py_loop = Arc::new(event_loop.clone().unbind());
 
             for thread_id in 0..cfg.threads {
                 log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);
@@ -1034,7 +1035,7 @@ macro_rules! serve_fn {
                 }));
             }
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, std::sync::Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
@@ -1062,12 +1063,12 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: std::sync::Arc<F>,
+            target: Arc<F>,
         ) -> Bound<'p, PyAny>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -1094,7 +1095,7 @@ macro_rules! serve_fn {
             let backpressure = cfg.backpressure;
 
             let (stx, srx) = tokio::sync::watch::channel(false);
-            let pyloop_r1 = std::sync::Arc::new(event_loop.clone().unbind());
+            let pyloop_r1 = Arc::new(event_loop.clone().unbind());
             let pyloop_r2 = pyloop_r1.clone();
 
             let worker = std::thread::spawn(move || {

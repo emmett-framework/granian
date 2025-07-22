@@ -1,12 +1,16 @@
 use pyo3::prelude::*;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 use super::http::handle;
 
-use crate::callbacks::CallbackScheduler;
-use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::net::SocketHolder;
-use crate::workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync, gen_serve_match};
+use crate::{
+    callbacks::CallbackScheduler,
+    conversion::{worker_http1_config_from_py, worker_http2_config_from_py},
+    http::HTTPProto,
+    net::SocketHolder,
+    workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync, gen_serve_match},
+};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct WSGIWorker {
@@ -181,16 +185,16 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: std::sync::Arc<F>,
+            target: Arc<F>,
         ) where
             F: Fn(
                 crate::runtime::RuntimeRef,
-                std::sync::Arc<tokio::sync::Notify>,
+                Arc<tokio::sync::Notify>,
                 crate::callbacks::ArcCBScheduler,
                 crate::net::SockAddr,
                 crate::net::SockAddr,
                 crate::http::HTTPRequest,
-                crate::http::HTTPProto,
+                HTTPProto,
             ) -> Ret,
             Ret: Future<Output = crate::http::HTTPResponse>,
             Worker<C, A, H, F>: WorkerAcceptor<$listener> + Clone + Send + 'static,
@@ -203,7 +207,7 @@ macro_rules! serve_fn {
             let listener = cfg.$listener_gen();
             let backpressure = cfg.backpressure;
 
-            let rtpyloop = std::sync::Arc::new(event_loop.clone().unbind());
+            let rtpyloop = Arc::new(event_loop.clone().unbind());
             let rt = py.allow_threads(|| {
                 crate::runtime::init_runtime_mt(
                     cfg.threads,
@@ -258,16 +262,16 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: std::sync::Arc<F>,
+            target: Arc<F>,
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    std::sync::Arc<tokio::sync::Notify>,
+                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
+                    HTTPProto,
                 ) -> Ret
                 + Send
                 + Sync,
@@ -285,7 +289,7 @@ macro_rules! serve_fn {
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 
-            let py_loop = std::sync::Arc::new(event_loop.clone().unbind());
+            let py_loop = Arc::new(event_loop.clone().unbind());
 
             for thread_id in 0..cfg.threads {
                 log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{HTTPResponse, response_500},
+    http::{HTTPProto, HTTPResponse, response_500},
     net::SockAddr,
     runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
@@ -149,7 +149,7 @@ pub(crate) fn call_http(
     disconnect_guard: Arc<Notify>,
     server_addr: SockAddr,
     client_addr: SockAddr,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
     req: hyper::http::request::Parts,
     body: hyper::body::Incoming,
 ) -> oneshot::Receiver<HTTPResponse> {
@@ -173,7 +173,7 @@ pub(crate) fn call_ws(
     rt: RuntimeRef,
     server_addr: SockAddr,
     client_addr: SockAddr,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
     ws: HyperWebsocket,
     req: hyper::http::request::Parts,
     upgrade: UpgradeData,

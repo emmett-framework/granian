@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use super::{io::WSGIProtocol, types::WSGIBody};
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{HTTPResponseBody, empty_body},
+    http::{HTTPProto, HTTPResponseBody, empty_body},
     net::SockAddr,
     runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
@@ -36,7 +36,7 @@ fn build_wsgi(
     py: Python,
     server_addr: SockAddr,
     client_addr: SockAddr,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
     mut req: request::Parts,
     protocol: WSGIProtocol,
     body: WSGIBody,
@@ -111,7 +111,7 @@ pub(crate) fn call_http(
     cb: ArcCBScheduler,
     server_addr: SockAddr,
     client_addr: SockAddr,
-    scheme: crate::http::HTTPProto,
+    scheme: HTTPProto,
     req: request::Parts,
     body: body::Incoming,
 ) -> oneshot::Receiver<(u16, HeaderMap, HTTPResponseBody)> {
