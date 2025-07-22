@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, ProcInfoCollector, RSGIWorker, SocketHolder, WSGIWorker
+from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
@@ -20,7 +21,6 @@ from .common import (
     RuntimeModes,
     TaskImpl,
     configure_logging,
-    load_env,
     logger,
     setproctitle,
 )

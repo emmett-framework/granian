@@ -69,4 +69,18 @@ def load_target(target: str, wd: Optional[Path] = None, factory: bool = False) -
 
 def load_env(files):
     for env_file in files:
-        dotenv.load_dotenv(dotenv_path=env_file, override=True)
+        dotenv.load_dotenv(dotenv_path=env_file, override=False)
+
+
+def build_env_loader():
+    env = set(os.environ.keys())
+
+    def loader(files):
+        for env_file in files:
+            values = dotenv.dotenv_values(dotenv_path=env_file)
+            for key in set(values.keys()) - env:
+                val = values[key]
+                if val is not None:
+                    os.environ[key] = val
+
+    return loader
