@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing
+import sys
 import time
 from functools import wraps
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
 from .._imports import dotenv
+from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
@@ -23,7 +25,6 @@ from .common import (
     Interfaces,
     LogLevels,
     TaskImpl,
-    load_env,
     logger,
 )
 
@@ -94,6 +95,7 @@ class Server(AbstractServer[AsyncWorker]):
         target: Any,
         address: str = '127.0.0.1',
         port: int = 8000,
+        uds: Optional[Path] = None,
         interface: Interfaces = Interfaces.RSGI,
         blocking_threads: Optional[int] = None,
         blocking_threads_idle_timeout: int = 30,
@@ -127,6 +129,7 @@ class Server(AbstractServer[AsyncWorker]):
             target=target,
             address=address,
             port=port,
+            uds=uds,
             interface=interface,
             blocking_threads=blocking_threads,
             blocking_threads_idle_timeout=blocking_threads_idle_timeout,
@@ -228,8 +231,9 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
         )
+        serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        await worker.serve_async(scheduler, loop, shutdown_event)
+        await serve(scheduler, loop, shutdown_event)
 
     @staticmethod
     @AsyncWorker.wrap_target
@@ -279,8 +283,9 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
         )
+        serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        await worker.serve_async(scheduler, loop, shutdown_event)
+        await serve(scheduler, loop, shutdown_event)
         await lifespan_handler.shutdown()
 
     @staticmethod
@@ -325,8 +330,9 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
         )
+        serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        await worker.serve_async(scheduler, loop, shutdown_event)
+        await serve(scheduler, loop, shutdown_event)
         callback_del(loop)
 
     async def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):
@@ -367,7 +373,7 @@ class Server(AbstractServer[AsyncWorker]):
         logger.info('Starting granian (embedded)')
         self._init_shared_socket()
         proto = 'https' if self.ssl_ctx[0] else 'http'
-        logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
+        logger.info(f'Listening at: {proto}://{self._bind_addr_fmt}')
 
         load_env(self.env_files)
         self._call_hooks(self.hooks_startup)
@@ -389,6 +395,8 @@ class Server(AbstractServer[AsyncWorker]):
         logger.info('Shutting down granian')
         self._call_hooks(self.hooks_shutdown)
         await self._stop_workers()
+        if self.bind_uds and self.bind_uds.exists():
+            self.bind_uds.unlink()
 
     async def _serve(self, spawn_target, target_loader):
         target = target_loader()
@@ -424,6 +432,12 @@ class Server(AbstractServer[AsyncWorker]):
 
         if not spawn_target:
             spawn_target = default_spawners[self.interface]
+
+        if self.bind_uds:
+            if sys.platform == 'win32':
+                logger.error('Unix Domain sockets are not available on Windows')
+                raise ConfigurationError('uds')
+            logger.warning('Unix Domain Sockets support is experimental!')
 
         if self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')

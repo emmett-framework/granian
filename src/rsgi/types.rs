@@ -10,11 +10,14 @@ use hyper::{
 use percent_encoding::percent_decode_str;
 use pyo3::types::{PyBytes, PyIterator, PyList, PyString};
 use pyo3::{prelude::*, pybacked::PyBackedStr};
-use std::{borrow::Cow, net::SocketAddr};
+use std::borrow::Cow;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::http::{HTTPResponseBody, HV_SERVER, empty_body, response_404};
+use crate::{
+    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404},
+    net::SockAddr,
+};
 
 const RSGI_PROTO_VERSION: &str = "1.5";
 
@@ -108,11 +111,11 @@ macro_rules! rsgi_scope_cls {
         #[pyclass(frozen, module = "granian._granian")]
         pub(crate) struct $name {
             http_version: Version,
-            scheme: crate::http::HTTPProto,
+            scheme: HTTPProto,
             method: Method,
             uri: Uri,
-            server: SocketAddr,
-            client: SocketAddr,
+            server: SockAddr,
+            client: SockAddr,
             #[pyo3(get)]
             headers: RSGIHeaders,
         }
@@ -120,11 +123,11 @@ macro_rules! rsgi_scope_cls {
         impl $name {
             pub fn new(
                 http_version: Version,
-                scheme: crate::http::HTTPProto,
+                scheme: HTTPProto,
                 uri: Uri,
                 method: Method,
-                server: SocketAddr,
-                client: SocketAddr,
+                server: SockAddr,
+                client: SockAddr,
                 headers: HeaderMap,
             ) -> Self {
                 Self {

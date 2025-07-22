@@ -1,10 +1,5 @@
 use anyhow::{Result, anyhow};
-use std::{
-    fs, io,
-    iter::Iterator,
-    net::{SocketAddr, TcpListener},
-    sync::Arc,
-};
+use std::{fs, io, iter::Iterator, sync::Arc};
 use tls_listener::{
     TlsListener,
     rustls::{
@@ -19,14 +14,27 @@ use tls_listener::{
     },
 };
 
-pub(crate) fn tls_listener(
+use crate::net::SockAddr;
+
+pub(crate) fn tls_tcp_listener(
     config: Arc<ServerConfig>,
-    tcp: TcpListener,
-) -> Result<(TlsListener<tokio::net::TcpListener, TlsAcceptor>, SocketAddr)> {
+    tcp: std::net::TcpListener,
+) -> Result<(TlsListener<tokio::net::TcpListener, TlsAcceptor>, SockAddr)> {
     let tcp_listener = tokio::net::TcpListener::from_std(tcp).unwrap();
     let local_addr = tcp_listener.local_addr()?;
     let listener = TlsListener::new(TlsAcceptor::from(config), tcp_listener);
-    Ok((listener, local_addr))
+    Ok((listener, SockAddr::TCP(local_addr)))
+}
+
+#[cfg(unix)]
+pub(crate) fn tls_uds_listener(
+    config: Arc<ServerConfig>,
+    uds: std::os::unix::net::UnixListener,
+) -> Result<(TlsListener<tokio::net::UnixListener, TlsAcceptor>, SockAddr)> {
+    let uds_listener = tokio::net::UnixListener::from_std(uds).unwrap();
+    let local_addr = uds_listener.local_addr()?;
+    let listener = TlsListener::new(TlsAcceptor::from(config), uds_listener);
+    Ok((listener, SockAddr::UDS(local_addr)))
 }
 
 pub(crate) fn load_certs(filename: String) -> Vec<Certificate<'static>> {

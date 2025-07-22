@@ -7,7 +7,8 @@ use pyo3::{
     sync::GILOnceCell,
     types::{PyBytes, PyDict, PyList, PyString},
 };
-use std::net::SocketAddr;
+
+use crate::{http::HTTPProto, net::SockAddr};
 
 static ASGI_VERSION: GILOnceCell<PyObject> = GILOnceCell::new();
 static ASGI_EXTENSIONS: GILOnceCell<PyObject> = GILOnceCell::new();
@@ -63,18 +64,8 @@ macro_rules! build_scope_common {
                 _ => "1",
             }
         );
-        scope_set!(
-            $py,
-            $scope,
-            "server",
-            ($server.ip().to_string(), $server.port().to_string())
-        );
-        scope_set!(
-            $py,
-            $scope,
-            "client",
-            ($client.ip().to_string(), $client.port().to_string())
-        );
+        scope_set!($py, $scope, "server", ($server.ip(), $server.port().to_string()));
+        scope_set!($py, $scope, "client", ($client.ip(), $client.port().to_string()));
         scope_set!($py, $scope, "scheme", $scheme);
         scope_set!($py, $scope, "path", &path);
         scope_set!($py, $scope, "raw_path", PyBytes::new($py, raw_path.as_bytes()));
@@ -99,9 +90,9 @@ macro_rules! build_scope_common {
 pub(super) fn build_scope_http(
     py: Python,
     req: request::Parts,
-    server: SocketAddr,
-    client: SocketAddr,
-    scheme: crate::http::HTTPProto,
+    server: SockAddr,
+    client: SockAddr,
+    scheme: HTTPProto,
 ) -> PyResult<Bound<PyDict>> {
     build_scope_common!(py, scope, req, server, client, scheme.as_str(), "http");
     scope_set!(py, scope, "method", req.method.as_str());
@@ -112,13 +103,13 @@ pub(super) fn build_scope_http(
 pub(super) fn build_scope_ws(
     py: Python,
     req: request::Parts,
-    server: SocketAddr,
-    client: SocketAddr,
-    scheme: crate::http::HTTPProto,
+    server: SockAddr,
+    client: SockAddr,
+    scheme: HTTPProto,
 ) -> PyResult<Bound<PyDict>> {
     let ws_scheme = match scheme {
-        crate::http::HTTPProto::Plain => "ws",
-        crate::http::HTTPProto::Tls => "wss",
+        HTTPProto::Plain => "ws",
+        HTTPProto::Tls => "wss",
     };
     build_scope_common!(py, scope, req, server, client, ws_scheme, "websocket");
     scope_set!(

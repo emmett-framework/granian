@@ -19,10 +19,15 @@ from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
-from ..net import SocketSpec
+from ..net import SocketSpec, UnixSocketSpec
 
 
 WT = TypeVar('WT')
+
+WORKERS_METHODS = {
+    RuntimeModes.mt: {False: 'serve_mtr', True: 'serve_mtr_uds'},
+    RuntimeModes.st: {False: 'serve_str', True: 'serve_str_uds'},
+}
 
 
 class AbstractWorker:
@@ -78,6 +83,7 @@ class AbstractServer(Generic[WT]):
         target: str,
         address: str = '127.0.0.1',
         port: int = 8000,
+        uds: Optional[Path] = None,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         blocking_threads: Optional[int] = None,
@@ -131,6 +137,7 @@ class AbstractServer(Generic[WT]):
         self.target = target
         self.bind_addr = address
         self.bind_port = port
+        self.bind_uds = uds.resolve() if uds else None
         self.interface = interface
         self.workers = max(1, workers)
         self.runtime_threads = max(1, runtime_threads)
@@ -238,6 +245,10 @@ class AbstractServer(Generic[WT]):
             client_verify,
         )
 
+    @property
+    def _bind_addr_fmt(self):
+        return f'unix:{self.bind_uds}' if self.bind_uds else f'{self.bind_addr}:{self.bind_port}'
+
     @staticmethod
     def _call_hooks(hooks):
         for hook in hooks:
@@ -256,7 +267,10 @@ class AbstractServer(Generic[WT]):
         return hook
 
     def _init_shared_socket(self):
-        self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
+        if self.bind_uds:
+            self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog)
+        else:
+            self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
         self._shd = self._ssp.build()
         self._sfd = self._shd.get_fd()
 
@@ -366,6 +380,9 @@ class AbstractServer(Generic[WT]):
         self._write_pid()
 
     def _unlink_pidfile(self):
+        if self.bind_uds and self.bind_uds.exists():
+            self.bind_uds.unlink()
+
         if not (self.pid_file and self.pid_file.exists()):
             return
 
@@ -386,7 +403,7 @@ class AbstractServer(Generic[WT]):
         set_main_signals(self.signal_handler_interrupt, self.signal_handler_reload)
         self._init_shared_socket()
         proto = 'https' if self.ssl_ctx[0] else 'http'
-        logger.info(f'Listening at: {proto}://{self.bind_addr}:{self.bind_port}')
+        logger.info(f'Listening at: {proto}://{self._bind_addr_fmt}')
 
         self._env_loader(self.env_files)
         self._call_hooks(self.hooks_startup)
@@ -549,6 +566,12 @@ class AbstractServer(Generic[WT]):
                     'Number of workers will now fallback to 1.'
                 )
 
+        if self.bind_uds:
+            if sys.platform == 'win32':
+                logger.error('Unix Domain sockets are not available on Windows')
+                raise ConfigurationError('uds')
+            logger.warning('Unix Domain Sockets support is experimental!')
+
         if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
             raise ConfigurationError('blocking_threads')
@@ -561,9 +584,7 @@ class AbstractServer(Generic[WT]):
                 logger.info('Websockets are not supported on HTTP/2 only, ignoring')
 
         if setproctitle is not None:
-            self.process_name = self.process_name or (
-                f'granian {self.interface} {self.bind_addr}:{self.bind_port} {self.target}'
-            )
+            self.process_name = self.process_name or (f'granian {self.interface} {self._bind_addr_fmt} {self.target}')
             setproctitle.setproctitle(self.process_name)
         elif self.process_name is not None:
             logger.error('Setting process name requires the granian[pname] extra')

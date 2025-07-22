@@ -8,13 +8,13 @@ use pyo3::{
     prelude::*,
     types::{PyBytes, PyDict},
 };
-use std::net::SocketAddr;
 use tokio::sync::oneshot;
 
 use super::{io::WSGIProtocol, types::WSGIBody};
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{HTTPResponseBody, empty_body},
+    http::{HTTPProto, HTTPResponseBody, empty_body},
+    net::SockAddr,
     runtime::{Runtime, RuntimeRef},
     utils::log_application_callable_exception,
 };
@@ -34,9 +34,9 @@ macro_rules! environ_set_header {
 #[inline(always)]
 fn build_wsgi(
     py: Python,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
-    scheme: crate::http::HTTPProto,
+    server_addr: SockAddr,
+    client_addr: SockAddr,
+    scheme: HTTPProto,
     mut req: request::Parts,
     protocol: WSGIProtocol,
     body: WSGIBody,
@@ -60,9 +60,9 @@ fn build_wsgi(
             _ => "HTTP/1",
         }
     );
-    environ_set!(py, environ, "SERVER_NAME", server_addr.ip().to_string());
+    environ_set!(py, environ, "SERVER_NAME", server_addr.ip());
     environ_set!(py, environ, "SERVER_PORT", server_addr.port().to_string());
-    environ_set!(py, environ, "REMOTE_ADDR", client_addr.ip().to_string());
+    environ_set!(py, environ, "REMOTE_ADDR", client_addr.ip());
     environ_set!(py, environ, "REQUEST_METHOD", req.method.as_str());
     environ_set!(
         py,
@@ -109,9 +109,9 @@ fn build_wsgi(
 pub(crate) fn call_http(
     rt: RuntimeRef,
     cb: ArcCBScheduler,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
-    scheme: crate::http::HTTPProto,
+    server_addr: SockAddr,
+    client_addr: SockAddr,
+    scheme: HTTPProto,
     req: request::Parts,
     body: body::Incoming,
 ) -> oneshot::Receiver<(u16, HeaderMap, HTTPResponseBody)> {

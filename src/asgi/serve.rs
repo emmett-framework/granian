@@ -4,7 +4,7 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::tcp::SocketHolder;
+use crate::net::SocketHolder;
 use crate::workers::{WorkerConfig, WorkerSignal, gen_serve_match};
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -94,6 +94,8 @@ impl ASGIWorker {
     ) {
         gen_serve_match!(
             crate::workers::serve_mt,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
             self,
             py,
             callback,
@@ -107,6 +109,8 @@ impl ASGIWorker {
     fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::workers::serve_st,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
             self,
             (),
             callback,
@@ -125,6 +129,67 @@ impl ASGIWorker {
     ) -> Bound<'p, PyAny> {
         gen_serve_match!(
             crate::workers::serve_fut,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
+            self,
+            (),
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        )
+    }
+
+    #[cfg(unix)]
+    fn serve_mtr_uds(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
+        gen_serve_match!(
+            crate::workers::serve_mt_uds,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            py,
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        );
+    }
+
+    #[cfg(unix)]
+    fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        gen_serve_match!(
+            crate::workers::serve_st_uds,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            (),
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        );
+    }
+
+    #[cfg(unix)]
+    fn serve_async_uds<'p>(
+        &self,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<'p, PyAny>,
+        signal: Py<WorkerSignal>,
+    ) -> Bound<'p, PyAny> {
+        gen_serve_match!(
+            crate::workers::serve_fut_uds,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
             self,
             (),
             callback,
