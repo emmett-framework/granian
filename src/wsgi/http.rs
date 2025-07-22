@@ -1,11 +1,12 @@
 use hyper::Response;
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::Notify;
 
 use super::callbacks::call_http;
 use crate::{
     callbacks::ArcCBScheduler,
     http::{HTTPRequest, HTTPResponse, HTTPResponseBody, response_500},
+    net::SockAddr,
     runtime::RuntimeRef,
 };
 
@@ -22,8 +23,8 @@ pub(crate) async fn handle(
     rt: RuntimeRef,
     _disconnect_guard: Arc<Notify>,
     callback: ArcCBScheduler,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
+    server_addr: SockAddr,
+    client_addr: SockAddr,
     req: HTTPRequest,
     scheme: crate::http::HTTPProto,
 ) -> HTTPResponse {

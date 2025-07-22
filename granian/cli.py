@@ -100,6 +100,9 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option('--port', type=int, default=8000, help='Port to bind to.')
 @option(
+    '--uds', type=click.Path(exists=False, writable=True, path_type=pathlib.Path), help='Unix Domain Socket to bind to.'
+)
+@option(
     '--interface',
     type=EnumType(Interfaces),
     default=Interfaces.RSGI,
@@ -385,6 +388,7 @@ def cli(
     app: str,
     host: str,
     port: int,
+    uds: Optional[pathlib.Path],
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
@@ -458,6 +462,7 @@ def cli(
         app,
         address=host,
         port=port,
+        uds=uds,
         interface=interface,
         workers=workers,
         blocking_threads=blocking_threads,

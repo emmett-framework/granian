@@ -1,7 +1,7 @@
 use futures::sink::SinkExt;
 use http_body_util::BodyExt;
 use hyper::{StatusCode, header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder};
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::{Notify, mpsc};
 
 use super::{
@@ -11,6 +11,7 @@ use super::{
 use crate::{
     callbacks::ArcCBScheduler,
     http::{HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
+    net::SockAddr,
     runtime::{Runtime, RuntimeRef},
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
@@ -49,8 +50,8 @@ macro_rules! handle_request {
             rt: RuntimeRef,
             disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
-            server_addr: SocketAddr,
-            client_addr: SocketAddr,
+            server_addr: SockAddr,
+            client_addr: SockAddr,
             req: HTTPRequest,
             scheme: crate::http::HTTPProto,
         ) -> HTTPResponse {
@@ -68,8 +69,8 @@ macro_rules! handle_request_with_ws {
             rt: RuntimeRef,
             disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
-            server_addr: SocketAddr,
-            client_addr: SocketAddr,
+            server_addr: SockAddr,
+            client_addr: SockAddr,
             mut req: HTTPRequest,
             scheme: crate::http::HTTPProto,
         ) -> HTTPResponse {
