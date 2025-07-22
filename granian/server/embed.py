@@ -393,8 +393,8 @@ class Server(AbstractServer[AsyncWorker]):
 
     async def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
-        self._call_hooks(self.hooks_shutdown)
         await self._stop_workers()
+        self._call_hooks(self.hooks_shutdown)
         if self.bind_uds and self.bind_uds.exists():
             self.bind_uds.unlink()
 
