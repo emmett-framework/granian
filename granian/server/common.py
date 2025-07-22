@@ -566,6 +566,12 @@ class AbstractServer(Generic[WT]):
                     'Number of workers will now fallback to 1.'
                 )
 
+        if self.bind_uds:
+            if sys.platform == 'win32':
+                logger.error('Unix Domain sockets are not available on Windows')
+                raise ConfigurationError('uds')
+            logger.warning('Unix Domain Sockets support is experimental!')
+
         if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
             raise ConfigurationError('blocking_threads')
@@ -619,9 +625,6 @@ class AbstractServer(Generic[WT]):
                 logger.warning('Rust task implementation is not available on Python >= 3.12, falling back to asyncio')
             else:
                 logger.warning('Rust task implementation is experimental!')
-
-        if self.bind_uds:
-            logger.warning('Unix Domain Sockets support is experimental!')
 
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)

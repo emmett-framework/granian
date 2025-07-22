@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing
+import sys
 import time
 from functools import wraps
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
 from .._imports import dotenv
+from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
@@ -23,7 +25,6 @@ from .common import (
     Interfaces,
     LogLevels,
     TaskImpl,
-    load_env,
     logger,
 )
 
@@ -431,6 +432,12 @@ class Server(AbstractServer[AsyncWorker]):
 
         if not spawn_target:
             spawn_target = default_spawners[self.interface]
+
+        if self.bind_uds:
+            if sys.platform == 'win32':
+                logger.error('Unix Domain sockets are not available on Windows')
+                raise ConfigurationError('uds')
+            logger.warning('Unix Domain Sockets support is experimental!')
 
         if self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
