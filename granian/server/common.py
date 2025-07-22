@@ -620,5 +620,8 @@ class AbstractServer(Generic[WT]):
             else:
                 logger.warning('Rust task implementation is experimental!')
 
+        if self.bind_uds:
+            logger.warning('Unix Domain Sockets support is experimental!')
+
         serve_method = self._serve_with_reloader if self.reload_on_changes else self._serve
         serve_method(spawn_target, target_loader)
