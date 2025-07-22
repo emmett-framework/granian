@@ -8,7 +8,7 @@ import websockets
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('server_tls', ['asgi', 'rsgi'], indirect=True)
+@pytest.mark.parametrize('server_tls', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_http_scope(server_tls, runtime_mode):
     async with server_tls(runtime_mode, ws=False) as port:
