@@ -247,7 +247,7 @@ class AbstractServer(Generic[WT]):
 
     @property
     def _bind_addr_fmt(self):
-        return self.bind_uds if self.bind_uds else f'{self.bind_addr}:{self.bind_port}'
+        return f'unix:{self.bind_uds}' if self.bind_uds else f'{self.bind_addr}:{self.bind_port}'
 
     @staticmethod
     def _call_hooks(hooks):

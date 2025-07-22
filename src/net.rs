@@ -26,7 +26,7 @@ impl SockAddr {
         match self {
             Self::TCP(addr) => addr.ip().to_string(),
             #[cfg(unix)]
-            Self::UDS(addr) => addr.as_pathname().unwrap().to_str().unwrap().to_string(),
+            Self::UDS(addr) => addr.as_pathname().map_or("", |v| v.to_str().unwrap()).to_string(),
         }
     }
 
@@ -43,7 +43,7 @@ impl SockAddr {
         match self {
             Self::TCP(addr) => addr.to_string(),
             #[cfg(unix)]
-            Self::UDS(addr) => addr.as_pathname().unwrap().to_str().unwrap().to_string(),
+            Self::UDS(addr) => addr.as_pathname().map_or("", |v| v.to_str().unwrap()).to_string(),
         }
     }
 }
