@@ -503,6 +503,7 @@ macro_rules! conn_handler_h1 {
             tokio::pin!(conn);
 
             tokio::select! {
+                biased;
                 _ = conn.as_mut() => {
                     done = true;
                 },
@@ -565,6 +566,7 @@ macro_rules! conn_handler_ha {
             tokio::pin!(conn);
 
             tokio::select! {
+                biased;
                 _ = conn.as_mut() => {
                     done = true;
                 },
@@ -692,6 +694,7 @@ where
         tokio::pin!(conn);
 
         tokio::select! {
+            biased;
             _ = conn.as_mut() => {
                 done = true;
             },
@@ -772,6 +775,7 @@ macro_rules! acceptor_impl {
                     let connsig = connsig.clone();
 
                     tokio::select! {
+                        biased;
                         (permit, event) = async {
                             let permit = semaphore.acquire_owned().await.unwrap();
                             (permit, listener.accept().await)
@@ -841,6 +845,7 @@ macro_rules! acceptor_impl {
                     let connsig = connsig.clone();
 
                     tokio::select! {
+                        biased;
                         (permit, event) = async {
                             let permit = semaphore.acquire_owned().await.unwrap();
                             (permit, tls_listener.accept().await)

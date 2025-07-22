@@ -148,6 +148,7 @@ impl ASGIHTTPProtocol {
             let mut more_body = false;
 
             let chunk = tokio::select! {
+                biased;
                 frame = body.next() => match frame {
                     Some(Ok(buf)) => {
                         more_body = true;

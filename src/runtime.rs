@@ -220,6 +220,7 @@ where
 
     rt.spawn(async move {
         tokio::select! {
+            biased;
             result = fut => rth.spawn_blocking(move |py| PyFutureAwaitable::set_result(aw, py, result)),
             () = cancel_tx.notified() => rth.spawn_blocking(move |py| aw.drop_ref(py)),
         }
@@ -252,6 +253,7 @@ where
 
     rt.spawn(async move {
         tokio::select! {
+            biased;
             result = fut => {
                 rth.spawn_blocking(move |py| {
                     let pyres = result.into_pyobject(py).map(Bound::unbind);
