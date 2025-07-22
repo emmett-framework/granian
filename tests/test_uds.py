@@ -155,6 +155,7 @@ async def test_wsgi(wsgi_server, runtime_mode, http_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(IS_WIN, reason='no UDS on win')
 @pytest.mark.parametrize('server_tls', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_https(server_tls, runtime_mode, http_client):
