@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::bytes::{BufMut, BytesMut};
 
-use super::utils::py_allow_threads;
 use crate::{conversion::BytesToPy, runtime::RuntimeRef};
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
@@ -75,7 +74,7 @@ impl WSGIBody {
     #[allow(clippy::map_unwrap_or)]
     fn _readline(&self, py: Python) -> Bytes {
         let inner = self.inner.clone();
-        py_allow_threads!(py, {
+        py.allow_threads(|| {
             self.rt.inner.block_on(async move {
                 WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Line).await;
             });
@@ -112,7 +111,7 @@ impl WSGIBody {
         match size {
             None => {
                 let inner = self.inner.clone();
-                let data = py_allow_threads!(py, {
+                let data = py.allow_threads(|| {
                     self.rt.inner.block_on(async move {
                         let mut inner = inner.lock().await;
                         BodyExt::collect(&mut *inner)
@@ -126,7 +125,7 @@ impl WSGIBody {
                 0 => BytesToPy(Bytes::new()),
                 size => {
                     let inner = self.inner.clone();
-                    py_allow_threads!(py, {
+                    py.allow_threads(|| {
                         self.rt.inner.block_on(async move {
                             WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Size(size)).await;
                         });
@@ -150,7 +149,7 @@ impl WSGIBody {
     #[pyo3(signature = (_hint=None))]
     fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> PyResult<Bound<'p, PyList>> {
         let inner = self.inner.clone();
-        let data = py_allow_threads!(py, {
+        let data = py.allow_threads(|| {
             self.rt.inner.block_on(async move {
                 let mut inner = inner.lock().await;
                 BodyExt::collect(&mut *inner)
