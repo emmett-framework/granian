@@ -12,11 +12,13 @@ use tokio_util::io::ReaderStream;
 use crate::{
     http::{HTTPRequest, HTTPResponse, HV_SERVER, response_404},
     utils::header_contains_value,
+    workers::StaticFilesConfig,
 };
 
 #[inline(always)]
-pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<Result<String>> {
-    if let Some(file_path) = uri_path.strip_prefix(prefix) {
+pub(crate) fn match_static_file(uri_path: &str, config: &StaticFilesConfig) -> Option<Result<String>> {
+    if let Some(file_path) = uri_path.strip_prefix(&config.prefix) {
+        let mount_point = &config.mount;
         #[cfg(not(windows))]
         let fpath = format!("{mount_point}{file_path}");
         #[cfg(windows)]
@@ -42,7 +44,7 @@ pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str)
     None
 }
 
-pub(crate) async fn serve_static_file(req: HTTPRequest, path: String, expires: Option<String>) -> HTTPResponse {
+pub(crate) async fn serve_static_file(req: HTTPRequest, path: String, config: &StaticFilesConfig) -> HTTPResponse {
     let build_response = |file, content_encoding: Option<&str>| {
         let mime = mime_guess::from_path(&path).first();
         let stream = ReaderStream::with_capacity(file, 131_072);
@@ -51,7 +53,7 @@ pub(crate) async fn serve_static_file(req: HTTPRequest, path: String, expires: O
         let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
 
         headers.insert(HK_SERVER, HV_SERVER);
-        if let Some(expires) = expires {
+        if let Some(expires) = &config.expires {
             headers.insert(
                 CACHE_CONTROL,
                 HeaderValue::from_str(&format!("max-age={expires}")).unwrap(),

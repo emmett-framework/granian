@@ -17,6 +17,7 @@ from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
 from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
 from ..errors import ConfigurationError, PidFileError
+from ..files import StaticFilesSettings
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
 from ..net import SocketSpec, UnixSocketSpec
@@ -173,11 +174,11 @@ class AbstractServer(Generic[WT]):
         self.factory = factory
         self.working_dir = working_dir
         self.env_files = env_files or ()
-        self.static_path = (
-            (
-                static_path_route,
-                str(static_path_mount.resolve()),
-                (str(static_path_expires) if static_path_expires else None),
+        self.static_files = (
+            StaticFilesSettings(
+                prefix=static_path_route,
+                mount=str(static_path_mount),
+                expires=str(static_path_expires) if static_path_expires else None,
             )
             if static_path_mount
             else None

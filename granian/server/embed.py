@@ -4,7 +4,7 @@ import sys
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
@@ -24,6 +24,7 @@ from .common import (
     HTTPModes,
     Interfaces,
     LogLevels,
+    StaticFilesSettings,
     TaskImpl,
     logger,
 )
@@ -183,7 +184,7 @@ class Server(AbstractServer[AsyncWorker]):
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
-                self.static_path,
+                self.static_files,
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
@@ -209,7 +210,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        static_path: Optional[Tuple[str, str, str]],
+        static_files: Optional[StaticFilesSettings],
         log_access_fmt: Optional[str],
         ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
@@ -228,7 +229,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
-            static_path,
+            static_files,
             *ssl_ctx,
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
@@ -253,7 +254,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        static_path: Optional[Tuple[str, str, str]],
+        static_files: Optional[StaticFilesSettings],
         log_access_fmt: Optional[str],
         ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
@@ -280,7 +281,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
-            static_path,
+            static_files,
             *ssl_ctx,
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
@@ -306,7 +307,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: Optional[HTTP1Settings],
         http2_settings: Optional[HTTP2Settings],
         websockets: bool,
-        static_path: Optional[Tuple[str, str, str]],
+        static_files: Optional[StaticFilesSettings],
         log_access_fmt: Optional[str],
         ssl_ctx: SSLCtx,
         scope_opts: Dict[str, Any],
@@ -327,7 +328,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
-            static_path,
+            static_files,
             *ssl_ctx,
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async

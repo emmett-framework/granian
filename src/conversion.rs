@@ -1,6 +1,6 @@
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::workers::{HTTP1Config, HTTP2Config};
+use crate::workers::{HTTP1Config, HTTP2Config, StaticFilesConfig};
 
 pub(crate) struct BytesToPy(pub hyper::body::Bytes);
 pub(crate) struct Utf8BytesToPy(pub tokio_tungstenite::tungstenite::Utf8Bytes);
@@ -102,6 +102,21 @@ pub(crate) fn worker_http2_config_from_py(py: Python, cfg: Option<PyObject>) -> 
             max_headers_size: 16 * 1024 * 1024,
             max_send_buffer_size: 1024 * 400,
         },
+    };
+    Ok(ret)
+}
+
+pub(crate) fn worker_static_files_config_from_py(
+    py: Python,
+    cfg: Option<PyObject>,
+) -> PyResult<Option<StaticFilesConfig>> {
+    let ret = match cfg {
+        Some(cfg) => Some(StaticFilesConfig {
+            prefix: cfg.getattr(py, "prefix")?.extract(py)?,
+            mount: cfg.getattr(py, "mount")?.extract(py)?,
+            expires: cfg.getattr(py, "expires")?.extract(py)?,
+        }),
+        None => None,
     };
     Ok(ret)
 }

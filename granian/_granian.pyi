@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ._types import WebsocketMessage
 from .http import HTTP1Settings, HTTP2Settings
+from .files import StaticFilesSettings
 
 __version__: str
 BUILD_GIL: bool
@@ -68,7 +69,7 @@ class ASGIWorker:
         http1_opts: Optional[HTTP1Settings],
         http2_opts: Optional[HTTP2Settings],
         websockets_enabled: bool,
-        static_files: Optional[Tuple[str, str, str]],
+        static_files: Optional[StaticFilesSettings],
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],
@@ -90,7 +91,7 @@ class WSGIWorker:
         http_mode: str,
         http1_opts: Optional[HTTP1Settings],
         http2_opts: Optional[HTTP2Settings],
-        static_files: Optional[Tuple[str, str, str]],
+        static_files: Optional[StaticFilesSettings],
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],
@@ -113,7 +114,7 @@ class RSGIWorker:
         http1_opts: Optional[HTTP1Settings],
         http2_opts: Optional[HTTP2Settings],
         websockets_enabled: bool,
-        static_files: Optional[Tuple[str, str, str]],
+        static_files: Optional[StaticFilesSettings],
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],

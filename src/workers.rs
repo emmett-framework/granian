@@ -84,6 +84,13 @@ pub(crate) struct HTTP2Config {
     pub max_send_buffer_size: usize,
 }
 
+#[derive(Clone)]
+pub(crate) struct StaticFilesConfig {
+    pub prefix: String,
+    pub mount: String,
+    pub expires: Option<String>,
+}
+
 pub(crate) struct WorkerConfig {
     pub id: i32,
     sock: Py<crate::net::SocketHolder>,
@@ -96,7 +103,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
-    pub static_files: Option<(String, String, Option<String>)>,
+    pub static_files: Option<StaticFilesConfig>,
     pub tls_opts: Option<WorkerTlsConfig>,
 }
 
@@ -122,7 +129,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
-        static_files: Option<(String, String, Option<String>)>,
+        static_files: Option<StaticFilesConfig>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -230,19 +237,14 @@ impl WorkerCTXBase {
 #[derive(Clone)]
 pub(crate) struct WorkerCTXFiles {
     pub callback: crate::callbacks::ArcCBScheduler,
-    pub static_prefix: String,
-    pub static_mount: String,
-    pub static_expires: Option<String>,
+    pub config: StaticFilesConfig,
 }
 
 impl WorkerCTXFiles {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, Option<String>)>) -> Self {
-        let (static_prefix, static_mount, static_expires) = files.unwrap();
+    pub fn new(callback: crate::callbacks::PyCBScheduler, config: Option<StaticFilesConfig>) -> Self {
         Self {
             callback: Arc::new(callback),
-            static_prefix,
-            static_mount,
-            static_expires,
+            config: config.unwrap(),
         }
     }
 }
@@ -389,16 +391,14 @@ where
             + '_,
     > {
         Box::new(hyper::service::service_fn(move |req| {
-            if let Some(static_match) =
-                crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
-            {
+            let config = self.ctx.config.clone();
+            if let Some(static_match) = crate::files::match_static_file(req.uri().path(), &config) {
                 if static_match.is_err() {
                     return async move { Ok::<_, std::convert::Infallible>(crate::http::response_404()) }.boxed();
                 }
-                let expires = self.ctx.static_expires.clone();
                 return async move {
                     Ok::<_, std::convert::Infallible>(
-                        crate::files::serve_static_file(req, static_match.unwrap(), expires).await,
+                        crate::files::serve_static_file(req, static_match.unwrap(), &config).await,
                     )
                 }
                 .boxed();
