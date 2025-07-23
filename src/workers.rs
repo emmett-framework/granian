@@ -398,7 +398,7 @@ where
                 let expires = self.ctx.static_expires.clone();
                 return async move {
                     Ok::<_, std::convert::Infallible>(
-                        crate::files::serve_static_file(static_match.unwrap(), expires).await,
+                        crate::files::serve_static_file(req, static_match.unwrap(), expires).await,
                     )
                 }
                 .boxed();

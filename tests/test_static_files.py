@@ -58,7 +58,6 @@ async def test_static_files_precompressed_identity(server_static_files, runtime_
     assert 'vary' not in res.headers
 
 
-@pytest.mark.xfail
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
@@ -74,7 +73,6 @@ async def test_static_files_precompressed_gzip(server_static_files, runtime_mode
     assert res.headers['vary'] == 'accept-encoding'
 
 
-@pytest.mark.xfail
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
