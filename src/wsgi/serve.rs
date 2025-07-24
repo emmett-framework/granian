@@ -185,17 +185,18 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: Arc<F>,
+            target: F,
         ) where
             F: Fn(
-                crate::runtime::RuntimeRef,
-                Arc<tokio::sync::Notify>,
-                crate::callbacks::ArcCBScheduler,
-                crate::net::SockAddr,
-                crate::net::SockAddr,
-                crate::http::HTTPRequest,
-                HTTPProto,
-            ) -> Ret,
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    HTTPProto,
+                ) -> Ret
+                + Copy,
             Ret: Future<Output = crate::http::HTTPResponse>,
             Worker<C, A, H, F>: WorkerAcceptor<$listener> + Clone + Send + 'static,
         {
@@ -262,7 +263,7 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: Arc<F>,
+            target: F,
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -273,8 +274,8 @@ macro_rules! serve_fn {
                     crate::http::HTTPRequest,
                     HTTPProto,
                 ) -> Ret
-                + Send
-                + Sync,
+                + Copy
+                + Send,
             Ret: Future<Output = crate::http::HTTPResponse>,
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,

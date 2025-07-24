@@ -254,23 +254,24 @@ pub(crate) struct Worker<C, A, H, F> {
     handler: H,
     rt: crate::runtime::RuntimeRef,
     pub tasks: tokio_util::task::TaskTracker,
-    target: Arc<F>,
+    target: F,
 }
 
 impl<C, A, H, F, Ret> Worker<C, A, H, F>
 where
     F: Fn(
-        crate::runtime::RuntimeRef,
-        Arc<tokio::sync::Notify>,
-        crate::callbacks::ArcCBScheduler,
-        crate::net::SockAddr,
-        crate::net::SockAddr,
-        crate::http::HTTPRequest,
-        crate::http::HTTPProto,
-    ) -> Ret,
+            crate::runtime::RuntimeRef,
+            Arc<tokio::sync::Notify>,
+            crate::callbacks::ArcCBScheduler,
+            crate::net::SockAddr,
+            crate::net::SockAddr,
+            crate::http::HTTPRequest,
+            crate::http::HTTPProto,
+        ) -> Ret
+        + Copy,
     Ret: Future<Output = crate::http::HTTPResponse>,
 {
-    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: Arc<F>) -> Self {
+    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: F) -> Self {
         Self {
             ctx,
             acceptor,
@@ -318,8 +319,8 @@ where
             crate::http::HTTPRequest,
             crate::http::HTTPProto,
         ) -> Ret
+        + Copy
         + Send
-        + Sync
         + 'static,
     Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
     A: Send + Sync + 'static,
@@ -338,7 +339,7 @@ where
                 >,
             > + Send,
     > {
-        let f = self.target.clone();
+        let f = self.target;
         let pycbs = self.ctx.callback.clone();
         Box::new(hyper::service::service_fn(move |req| {
             let fut = (f)(
@@ -404,9 +405,8 @@ where
                 .boxed();
             }
 
-            let f = self.target.clone();
             let pycbs = self.ctx.callback.clone();
-            let fut = (f)(
+            let fut = (self.target)(
                 ctx.rt.clone(),
                 ctx.disconnect_guard.clone(),
                 pycbs,
@@ -909,17 +909,18 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: Arc<F>,
+            target: F,
         ) where
             F: Fn(
-                crate::runtime::RuntimeRef,
-                Arc<tokio::sync::Notify>,
-                crate::callbacks::ArcCBScheduler,
-                crate::net::SockAddr,
-                crate::net::SockAddr,
-                crate::http::HTTPRequest,
-                crate::http::HTTPProto,
-            ) -> Ret,
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy,
             Ret: Future<Output = crate::http::HTTPResponse>,
             Worker<C, A, H, F>: WorkerAcceptor<$listener> + Clone + Send + 'static,
         {
@@ -974,7 +975,7 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: Arc<F>,
+            target: F,
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -985,8 +986,8 @@ macro_rules! serve_fn {
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
                 ) -> Ret
-                + Send
-                + Sync,
+                + Copy
+                + Send,
             Ret: Future<Output = crate::http::HTTPResponse>,
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,
@@ -1068,7 +1069,7 @@ macro_rules! serve_fn {
             ctx: C,
             acceptor: A,
             handler: H,
-            target: Arc<F>,
+            target: F,
         ) -> Bound<'p, PyAny>
         where
             F: Fn(
@@ -1080,8 +1081,8 @@ macro_rules! serve_fn {
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
                 ) -> Ret
-                + Send
-                + Sync,
+                + Copy
+                + Send,
             Ret: Future<Output = crate::http::HTTPResponse>,
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,
@@ -1186,7 +1187,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("auto", false, false, true) => $sm(
                 &$self.config,
@@ -1199,7 +1200,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("auto", false, true, false) => $sm(
                 &$self.config,
@@ -1212,7 +1213,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("auto", false, true, true) => $sm(
                 &$self.config,
@@ -1225,7 +1226,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("auto", true, false, false) => $sm(
                 &$self.config,
@@ -1240,7 +1241,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("auto", true, false, true) => $sm(
                 &$self.config,
@@ -1255,7 +1256,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("auto", true, true, false) => $sm(
                 &$self.config,
@@ -1270,7 +1271,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("auto", true, true, true) => $sm(
                 &$self.config,
@@ -1285,7 +1286,7 @@ macro_rules! gen_serve_match {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("1", false, false, false) => $sm(
                 &$self.config,
@@ -1297,7 +1298,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1 {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("1", false, false, true) => $sm(
                 &$self.config,
@@ -1309,7 +1310,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1 {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("1", false, true, false) => $sm(
                 &$self.config,
@@ -1321,7 +1322,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1U {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("1", false, true, true) => $sm(
                 &$self.config,
@@ -1333,7 +1334,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1U {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("1", true, false, false) => $sm(
                 &$self.config,
@@ -1347,7 +1348,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1 {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("1", true, false, true) => $sm(
                 &$self.config,
@@ -1361,7 +1362,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1 {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("1", true, true, false) => $sm(
                 &$self.config,
@@ -1375,7 +1376,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1U {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("1", true, true, true) => $sm(
                 &$self.config,
@@ -1389,7 +1390,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH1U {
                     opts: $self.config.http1_opts.clone(),
                 },
-                std::sync::Arc::new($targetws),
+                $targetws,
             ),
             ("2", false, _, false) => $sm(
                 &$self.config,
@@ -1401,7 +1402,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("2", false, _, true) => $sm(
                 &$self.config,
@@ -1413,7 +1414,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("2", true, _, false) => $sm(
                 &$self.config,
@@ -1427,7 +1428,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             ("2", true, _, true) => $sm(
                 &$self.config,
@@ -1441,7 +1442,7 @@ macro_rules! gen_serve_match {
                 crate::workers::WorkerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
-                std::sync::Arc::new($target),
+                $target,
             ),
             _ => unreachable!(),
         }
