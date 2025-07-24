@@ -16,7 +16,16 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, port, runtime_mode, ws=True, tls=False, task_impl='asyncio', static_mount=False):
+async def _server(
+    interface,
+    port,
+    runtime_mode,
+    ws=True,
+    tls=False,
+    task_impl='asyncio',
+    static_mount=False,
+    static_precompressed=False,
+):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
@@ -37,6 +46,7 @@ async def _server(interface, port, runtime_mode, ws=True, tls=False, task_impl='
             kwargs['ssl_key'] = certs_path / 'key.pem'
     if static_mount:
         kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
+        kwargs['static_path_precompressed'] = static_precompressed
 
     succeeded, spawn_failures = False, 0
     while spawn_failures < 3:

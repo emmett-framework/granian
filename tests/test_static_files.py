@@ -49,40 +49,15 @@ async def test_static_files_approute(server_static_files, runtime_mode):
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_static_files_precompressed_identity(server_static_files, runtime_mode):
-    async with server_static_files(runtime_mode, ws=False) as port:
-        res = httpx.get(f'http://localhost:{port}/static/precompressed.txt', headers={'accept-encoding': ''})
-
-    assert res.status_code == 200
-    assert 'content-encoding' not in res.headers
-    assert 'vary' not in res.headers
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
-@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_static_files_precompressed_gzip(server_static_files, runtime_mode):
+@pytest.mark.parametrize('encoding, encoded_size', [(None, 141), ('gzip', 104), ('br', 55)])
+async def test_static_files_precompressed(server_static_files, runtime_mode, encoding, encoded_size):
     async with server_static_files(runtime_mode, ws=False) as port:
         res = httpx.get(
             f'http://localhost:{port}/static/precompressed.txt',
-            headers={'accept-encoding': 'gzip, deflate'},
+            headers={'accept-encoding': encoding or ''},
         )
 
     assert res.status_code == 200
-    assert res.headers['content-encoding'] == 'gzip'
-    assert res.headers['vary'] == 'accept-encoding'
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
-@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_static_files_precompressed_brotli(server_static_files, runtime_mode):
-    async with server_static_files(runtime_mode, ws=False) as port:
-        res = httpx.get(
-            f'http://localhost:{port}/static/precompressed.txt',
-            headers={'accept-encoding': 'gzip, deflate, br'},
-        )
-
-    assert res.status_code == 200
-    assert res.headers['content-encoding'] == 'br'
-    assert res.headers['vary'] == 'accept-encoding'
+    assert res.num_bytes_downloaded == encoded_size
+    assert res.headers.get('content-encoding') == encoding
+    assert res.headers.get('vary') == ('accept-encoding' if encoding is not None else None)
