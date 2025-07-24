@@ -32,15 +32,18 @@ impl ProcInfoCollector {
             || vec![sysinfo::get_current_pid().unwrap()],
             |v| v.into_iter().map(sysinfo::Pid::from_u32).collect(),
         );
-        let mut sys = self.sys.lock().unwrap();
-        sys.refresh_processes(ProcessesToUpdate::Some(&pids), false);
-        let mut ret = HashMap::with_capacity(pids.len());
-        for pid in pids {
-            let proc = sys
-                .process(pid)
-                .ok_or(PyRuntimeError::new_err("unable to refresh process"))?;
-            ret.insert(pid.as_u32(), proc.memory());
-        }
+        let ret = py.allow_threads(|| {
+            let mut sys = self.sys.lock().unwrap();
+            sys.refresh_processes(ProcessesToUpdate::Some(&pids), false);
+            let mut ret = HashMap::with_capacity(pids.len());
+            for pid in pids {
+                let proc = sys
+                    .process(pid)
+                    .ok_or(PyRuntimeError::new_err("unable to refresh process"))?;
+                ret.insert(pid.as_u32(), proc.memory());
+            }
+            Ok::<HashMap<u32, u64>, PyErr>(ret)
+        })?;
         ret.into_py_dict(py)
     }
 }
