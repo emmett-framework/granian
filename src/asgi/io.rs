@@ -14,7 +14,7 @@ use tokio::{
     fs::File,
     sync::{Mutex as AsyncMutex, Notify, mpsc, oneshot},
 };
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Message, protocol::frame as wsframe};
 use tokio_util::io::ReaderStream;
 
 use super::{
@@ -306,15 +306,29 @@ pub(crate) struct WebsocketDetachedTransport {
     pub consumed: bool,
     rx: Option<WSRxStream>,
     tx: Option<WSTxStream>,
+    closeframe: Option<wsframe::CloseFrame>,
 }
 
 impl WebsocketDetachedTransport {
-    pub fn new(consumed: bool, rx: Option<WSRxStream>, tx: Option<WSTxStream>) -> Self {
-        Self { consumed, rx, tx }
+    pub fn new(
+        consumed: bool,
+        rx: Option<WSRxStream>,
+        tx: Option<WSTxStream>,
+        closeframe: Option<wsframe::CloseFrame>,
+    ) -> Self {
+        Self {
+            consumed,
+            rx,
+            tx,
+            closeframe,
+        }
     }
 
     pub async fn close(&mut self) {
         if let Some(mut tx) = self.tx.take() {
+            if let Some(frame) = self.closeframe.take() {
+                _ = tx.send(Message::Close(Some(frame))).await;
+            }
             if let Err(err) = tx.close().await {
                 log::info!("Failed to close websocket with error {err:?}");
             }
@@ -415,7 +429,7 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn close<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+    fn close<'p>(&self, py: Python<'p>, frame: Option<wsframe::CloseFrame>) -> PyResult<Bound<'p, PyAny>> {
         let closed = self.closed.clone();
         let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
@@ -423,7 +437,7 @@ impl ASGIWebsocketProtocol {
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
                 closed.store(true, atomic::Ordering::Release);
-                WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx))
+                WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx), frame)
                     .close()
                     .await;
             }
@@ -445,7 +459,7 @@ impl ASGIWebsocketProtocol {
         let mut ws_tx = self.ws_tx.blocking_lock();
         (
             self.tx.lock().unwrap().take(),
-            WebsocketDetachedTransport::new(self.consumed(), ws_rx.take(), ws_tx.take()),
+            WebsocketDetachedTransport::new(self.consumed(), ws_rx.take(), ws_tx.take(), None),
         )
     }
 }
@@ -500,7 +514,7 @@ impl ASGIWebsocketProtocol {
     fn send<'p>(&self, py: Python<'p>, data: &Bound<'p, PyDict>) -> PyResult<Bound<'p, PyAny>> {
         match adapt_message_type(py, data) {
             Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
-            Ok(ASGIMessageType::WSClose) => self.close(py),
+            Ok(ASGIMessageType::WSClose(frame)) => self.close(py, frame),
             Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
             _ => err_future_into_py(py, error_message!()),
         }
@@ -526,7 +540,23 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     };
                     Ok(ASGIMessageType::WSAccept(subproto))
                 }
-                "websocket.close" => Ok(ASGIMessageType::WSClose),
+                "websocket.close" => {
+                    let code: wsframe::coding::CloseCode = match message.get_item(pyo3::intern!(py, "code")) {
+                        Ok(Some(item)) => item
+                            .extract::<u16>()
+                            .map(std::convert::Into::into)
+                            .unwrap_or(wsframe::coding::CloseCode::Normal),
+                        _ => wsframe::coding::CloseCode::Normal,
+                    };
+                    let reason: String = match message.get_item(pyo3::intern!(py, "reason")) {
+                        Ok(Some(item)) => item.extract::<String>().unwrap_or(String::new()),
+                        _ => String::new(),
+                    };
+                    Ok(ASGIMessageType::WSClose(Some(wsframe::CloseFrame {
+                        code,
+                        reason: reason.into(),
+                    })))
+                }
                 "websocket.send" => Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?)),
                 _ => error_message!(),
             }

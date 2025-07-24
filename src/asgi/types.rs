@@ -1,5 +1,5 @@
 use hyper::{HeaderMap, body};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Message, protocol::CloseFrame};
 
 pub(crate) enum ASGIMessageType {
     HTTPResponseStart((u16, HeaderMap)),
@@ -9,6 +9,6 @@ pub(crate) enum ASGIMessageType {
     HTTPRequestBody((body::Bytes, bool)),
     WSAccept(Option<String>),
     WSConnect,
-    WSClose,
+    WSClose(Option<CloseFrame>),
     WSMessage(Message),
 }
