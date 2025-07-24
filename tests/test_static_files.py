@@ -44,3 +44,20 @@ async def test_static_files_approute(server_static_files, runtime_mode):
         res = httpx.get(f'http://localhost:{port}/info')
 
     assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+@pytest.mark.parametrize('encoding, encoded_size', [(None, 141), ('gzip', 104), ('br', 55)])
+async def test_static_files_precompressed(server_static_files, runtime_mode, encoding, encoded_size):
+    async with server_static_files(runtime_mode, ws=False) as port:
+        res = httpx.get(
+            f'http://localhost:{port}/static/precompressed.txt',
+            headers={'accept-encoding': encoding or ''},
+        )
+
+    assert res.status_code == 200
+    assert res.num_bytes_downloaded == encoded_size
+    assert res.headers.get('content-encoding') == encoding
+    assert res.headers.get('vary') == ('accept-encoding' if encoding is not None else None)
