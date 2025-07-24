@@ -125,6 +125,7 @@ class Server(AbstractServer[AsyncWorker]):
         static_path_route: str = '/static',
         static_path_mount: Optional[Path] = None,
         static_path_expires: int = 86400,
+        static_path_precompressed: bool = False,
     ):
         super().__init__(
             target=target,
@@ -159,6 +160,7 @@ class Server(AbstractServer[AsyncWorker]):
             static_path_route=static_path_route,
             static_path_mount=static_path_mount,
             static_path_expires=static_path_expires,
+            static_path_precompressed=static_path_precompressed,
         )
         self.main_loop_interrupt = asyncio.Event()
 

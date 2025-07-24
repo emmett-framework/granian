@@ -7,3 +7,4 @@ class StaticFilesSettings:
     mount: str
     prefix: str = '/static'
     expires: Optional[str] = None
+    precompressed: bool = False

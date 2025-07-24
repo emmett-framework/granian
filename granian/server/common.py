@@ -124,6 +124,7 @@ class AbstractServer(Generic[WT]):
         static_path_route: str = '/static',
         static_path_mount: Optional[Path] = None,
         static_path_expires: int = 86400,
+        static_path_precompressed: bool = False,
         reload: bool = False,
         reload_paths: Optional[Sequence[Path]] = None,
         reload_ignore_dirs: Optional[Sequence[str]] = None,
@@ -179,6 +180,7 @@ class AbstractServer(Generic[WT]):
                 prefix=static_path_route,
                 mount=str(static_path_mount),
                 expires=str(static_path_expires) if static_path_expires else None,
+                precompressed=static_path_precompressed,
             )
             if static_path_mount
             else None

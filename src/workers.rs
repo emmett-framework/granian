@@ -89,6 +89,7 @@ pub(crate) struct StaticFilesConfig {
     pub prefix: String,
     pub mount: String,
     pub expires: Option<String>,
+    pub precompressed: bool,
 }
 
 pub(crate) struct WorkerConfig {

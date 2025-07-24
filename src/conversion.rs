@@ -115,6 +115,7 @@ pub(crate) fn worker_static_files_config_from_py(
             prefix: cfg.getattr(py, "prefix")?.extract(py)?,
             mount: cfg.getattr(py, "mount")?.extract(py)?,
             expires: cfg.getattr(py, "expires")?.extract(py)?,
+            precompressed: cfg.getattr(py, "precompressed")?.extract(py)?,
         }),
         None => None,
     };

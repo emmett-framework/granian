@@ -74,14 +74,16 @@ pub(crate) async fn serve_static_file(req: HTTPRequest, path: String, config: &S
         res
     };
 
-    if header_contains_value(req.headers(), ACCEPT_ENCODING, "br") {
-        if let Ok(file) = File::open(format!("{path}.br")).await {
-            return build_response(file, Some("br"));
+    if config.precompressed {
+        if header_contains_value(req.headers(), ACCEPT_ENCODING, "br") {
+            if let Ok(file) = File::open(format!("{path}.br")).await {
+                return build_response(file, Some("br"));
+            }
         }
-    }
-    if header_contains_value(req.headers(), ACCEPT_ENCODING, "gzip") {
-        if let Ok(file) = File::open(format!("{path}.gz")).await {
-            return build_response(file, Some("gzip"));
+        if header_contains_value(req.headers(), ACCEPT_ENCODING, "gzip") {
+            if let Ok(file) = File::open(format!("{path}.gz")).await {
+                return build_response(file, Some("gzip"));
+            }
         }
     }
 
