@@ -50,7 +50,7 @@ pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.25", features = ["anyhow", "extension-module", "generate-import-lib"] }
 pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
-socket2 = { version = "=0.5.10", features = ["all"] }
+socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.36"
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", features = ["rustls-ring"] }

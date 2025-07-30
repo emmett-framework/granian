@@ -79,7 +79,7 @@ impl ListenerSpec {
             socket.set_reuse_port_lb(true)?;
         }
         socket.set_reuse_address(true)?;
-        socket.set_nodelay(true)?;
+        socket.set_tcp_nodelay(true)?;
         socket.bind(&self.address.into())?;
 
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
