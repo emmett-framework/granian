@@ -394,12 +394,12 @@ Granian offers different options to configure the number of workers and threads 
 In general, Granian will try its best to automatically pick proper values for the threading configuration, leaving to you the responsibility to choose the number of workers you need.    
 There is no *golden rule* here, as these numbers will vastly depend both on your application behavior and the deployment target, but we can list some suggestions:
 - matching the amount of CPU cores for the workers is generally the best starting point; on containerized environments like docker or k8s is best to have 1 worker per container though and scale your containers using the relevant orchestrator;
-- the default number of runtime threads and runtime blocking threads is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets, and lowering the second only if you serve the same few files to a lot of connections;
+- the default number of **runtime threads** and **runtime blocking threads** is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets or if you primarily use HTTP/2, and lowering the second only if you serve the same few files to a lot of connections;
 
 In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will also be the one holding the GIL for the vast majority of the time, and thus the value is fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount of inactivity time specified with the relevant setting.    
 In general, and unless you have a very specific use-case to do so (for example, if your application have an average millisecond response, a very limited amount of blocking threads usually delivers better throughput) you should avoid to tune this threadpool size and configure a backpressure value that suits your needs instead. In that regards, please check the next section.
 
-Also, you should generally avoid to configure workers and threads based on numbers suggested for other servers, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
+Also, **you should generally avoid to configure workers and threads based on numbers suggested for other servers**, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
 
 ### Backpressure
 
@@ -507,11 +507,13 @@ To embed Granian in your project, you can import the server from the relevant mo
 ```python
 from granian.server.embed import Server
 
-server = Server(...)
+server = Server(my_app, interface="asgi")
 
 async def my_main():
     await server.serve()
 ```
+
+> **Note:** as you might already figured out, the embed server accepts the application object as its first argument, instead of the import target string of the standard servers.
 
 Given the `serve` method is now async, the embeddable server also provides two methods to manage its lifecycle, specifically:
 
