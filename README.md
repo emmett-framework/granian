@@ -353,6 +353,17 @@ Options:
   --help                          Show this message and exit.
 ```
 
+### Human-readable durations
+
+Whenever Granian accepts a duration, it can be specified either as sole number, in which case it is interpreted as a number of seconds, or using one of the following suffixes:
+
+| suffix|meaning|
+| --- | --- |
+| `s` | seconds (same as no suffix) |
+| `m` | minutes |
+| `h` | hours |
+| `d` | days |
+
 ### Logging
 
 Despite being a Rust project, Granian is a good Python citizen and uses the standard library's [`logging`](https://docs.python.org/3/library/logging.html) module to produce logs. This means you can freely configure your logging level and format using the [standard idioms](https://docs.python.org/3/howto/logging.html) you probably familiar with.
