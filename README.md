@@ -357,7 +357,7 @@ Options:
 
 Whenever Granian accepts a duration, it can be specified either as sole number, in which case it is interpreted as a number of seconds, or using one of the following suffixes:
 
-| suffix|meaning|
+| suffix | meaning |
 | --- | --- |
 | `s` | seconds (same as no suffix) |
 | `m` | minutes |
