@@ -13,17 +13,17 @@ homepage = "https://github.com/emmett-framework/granian"
 repository = "https://github.com/emmett-framework/granian"
 
 include = [
-    "/Cargo.toml",
-    "/pyproject.toml",
-    "/build.rs",
-    "/LICENSE",
-    "/README.md",
-    "/src",
-    "/granian",
-    "/tests",
-    "!__pycache__",
-    "!tests/.pytest_cache",
-    "!*.so",
+  "/Cargo.toml",
+  "/pyproject.toml",
+  "/build.rs",
+  "/LICENSE",
+  "/README.md",
+  "/src",
+  "/granian",
+  "/tests",
+  "!__pycache__",
+  "!tests/.pytest_cache",
+  "!*.so",
 ]
 
 [lib]
@@ -31,6 +31,7 @@ name = "_granian"
 crate-type = ["cdylib"]
 
 [dependencies]
+
 anyhow = "=1.0"
 crossbeam-channel = "0.5"
 encoding_rs = "=0.8"
@@ -39,9 +40,13 @@ futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }
 hyper = { version = "=1.8", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
+interprocess = { version = "2.2", features = ["tokio"] }
 itertools = "0.14"
 log = "0.4"
 mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls", "v3"], optional = true }
+metrics = "0.24"
+metrics-exporter-prometheus = "0.17"
+metrics-util = "0.20"
 mime_guess = "=2.0"
 pem = "=3.0"
 percent-encoding = "=2.3"
@@ -50,11 +55,14 @@ pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.27", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
 pyo3-log = { version = "=0.13", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-027" }
 rustls-pemfile = "2.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.37"
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
 tokio = { version = "1.45", features = ["full"] }
+tokio-metrics = { version = "0.4", features = ["metrics-rs-integration"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.28"
 tokio-util = { version = "0.7", features = ["codec", "rt"] }

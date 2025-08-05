@@ -6,6 +6,7 @@ use std::{
 };
 
 use super::asgi::serve::ASGIWorker;
+use super::metrics::recorder::IPCBuilder;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{
     load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
@@ -337,6 +338,18 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
+            let worker_id = format!("{}", ctx.rt.worker_id());
+            let method = req.method().clone();
+            let uri = req.uri().clone();
+            let path = uri.path().to_string();
+            metrics::counter!("granian_requests_processed_total",
+                "worker_id" => worker_id.clone(),
+                "method" => method.to_string(),
+                "path" => path,
+            )
+            .increment(1);
+
+            let start_time = std::time::Instant::now();
                 let fut = (self.f)(
                     self.rt.clone(),
                     self.disconnect_guard.clone(),
@@ -346,7 +359,33 @@ macro_rules! service_impl {
                     req,
                     $proto,
                 );
-                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+async move {
+                let response = fut.await;
+
+                let duration = start_time.elapsed();
+                metrics::histogram!("granian_python_call_latency",
+                    "worker_id" => worker_id.clone(),
+                    "status" => response.status().as_u16().to_string()
+                )
+                .record(duration.as_secs_f64());
+
+                let status = response.status().as_u16();
+                metrics::counter!(
+                    "granian_http_responses_total",
+                    "worker_id" => worker_id.clone(),
+                    "status_code" => match status {
+                        200..=299 => "2xx",
+                        300..=399 => "3xx",
+                        400..=499 => "4xx",
+                        500..=599 => "5xx",
+                        _ => "other"
+                    }
+                )
+                .increment(1);
+
+                Ok::<_, hyper::Error>(response)
+            }
+            .boxed()
             }
         }
 
@@ -384,6 +423,7 @@ macro_rules! service_impl {
                     });
                 }
 
+                let start_time = std::time::Instant::now();
                 let fut = (self.f)(
                     self.rt.clone(),
                     self.disconnect_guard.clone(),
@@ -393,7 +433,34 @@ macro_rules! service_impl {
                     req,
                     $proto,
                 );
-                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+            async move {
+                let response = fut.await;
+
+                let duration = start_time.elapsed();
+                metrics::histogram!("granian_python_call_latency",
+                    "worker_id" => worker_id.clone(),
+                    "status" => response.status().as_u16().to_string(),
+                )
+                .record(duration.as_secs_f64());
+
+                let status = response.status().as_u16();
+                metrics::counter!(
+                    "granian_http_responses_total",
+                    "worker_id" => worker_id.clone(),
+                    "status_code" => match status {
+                        200..=299 => "2xx",
+                        300..=399 => "3xx",
+                        400..=499 => "4xx",
+                        500..=599 => "5xx",
+                        _ => "other"
+                    }
+                )
+                .increment(1);
+
+                Ok::<_, hyper::Error>(response)
+            }
+            .boxed()
+
             }
         }
     };
@@ -794,9 +861,12 @@ macro_rules! acceptor_impl {
                                         addr_remote: $sockwrap(addr_remote),
                                         _proto: PhantomData::<WorkerMarkerPlain>,
                                     };
+
+                                    metrics::counter!("granian_connections_total", "worker_id" => format!("{}", wrk.rt.worker_id())).increment(1);
                                     tasks.spawn(handle.call(svc, stream, permit, connsig));
                                 },
                                 Err(err) => {
+                                    metrics::counter!("granian_connection_errors_total", "worker_id" => format!("{}", wrk.rt.worker_id())).increment(1);
                                     log::info!("TCP handshake failed with error: {err:?}");
                                     drop(permit);
                                 }
@@ -940,6 +1010,13 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
+            if let Err(e) = IPCBuilder::default().build() {
+                log::warn!("Error starting metrics exporter {e}");
+            }
+
+            metrics::counter!("granian_worker_started_total").increment(1);
+            metrics::gauge!("granian_number_workers").increment(1.0);
+
             let listener = cfg.$listener_gen();
             let backpressure = cfg.backpressure;
 
@@ -951,6 +1028,7 @@ macro_rules! serve_fn {
                     cfg.py_threads,
                     cfg.py_threads_idle_timeout,
                     rtpyloop,
+                    worker_id,
                 )
             });
             let rth = rt.handler();
@@ -960,9 +1038,21 @@ macro_rules! serve_fn {
             let srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
+                tokio::task::spawn(
+                    tokio_metrics::RuntimeMetricsReporterBuilder::default()
+                        .with_metrics_transformer(move |name| {
+                            let name = name.replacen("tokio_", "granian_", 1);
+                            metrics::Key::from_parts(name, &[("worker_id", format!("{}", worker_id))])
+                        })
+                        .describe_and_run(),
+                );
+
+                wrk.clone().listen(srx, listener, backpressure).await;
                 wrk.listen(srx, listener, backpressure).await;
 
                 log::info!("Stopping worker-{worker_id}");
+                metrics::gauge!("granian_number_workers").decrement(1.0);
+                metrics::counter!("granian_worker_stopped_total").increment(1);
 
                 tasks.close();
                 tasks.wait().await;
@@ -1011,6 +1101,9 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
+            if let Err(e) = IPCBuilder::default().build() {
+                log::warn!("Error starting metrics exporter {e}");
+            }
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 
@@ -1032,14 +1125,28 @@ macro_rules! serve_fn {
                 let srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt =
-                        crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
+                    let rt = crate::runtime::init_runtime_st(
+                        blocking_threads,
+                        py_threads,
+                        py_threads_idle_timeout,
+                        py_loop,
+                        worker_id,
+                    );
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                     let local = tokio::task::LocalSet::new();
                     let tasks = wrk.tasks.clone();
 
                     crate::runtime::block_on_local(&rt, local, async move {
+                        tokio::task::spawn(
+                            tokio_metrics::RuntimeMetricsReporterBuilder::default()
+                                .with_metrics_transformer(move |name| {
+                                    let name = name.replacen("tokio_", "granian_", 1);
+                                    metrics::Key::from_parts(name, &[("worker_id", format!("{}", worker_id))])
+                                })
+                                .describe_and_run(),
+                        );
+
                         wrk.listen(srx, listener, backpressure).await;
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
@@ -1054,7 +1161,7 @@ macro_rules! serve_fn {
                 }));
             }
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()), worker_id);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
@@ -1107,6 +1214,9 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
+            if let Err(e) = IPCBuilder::default().build() {
+                log::warn!("Error starting metrics exporter {e}");
+            }
             let tcp_listener = cfg.$listener_gen();
             let blocking_threads = cfg.blocking_threads;
             let py_threads = cfg.py_threads;
@@ -1118,8 +1228,13 @@ macro_rules! serve_fn {
             let pyloop_r2 = pyloop_r1.clone();
 
             let worker = std::thread::spawn(move || {
-                let rt =
-                    crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, pyloop_r1);
+                let rt = crate::runtime::init_runtime_st(
+                    blocking_threads,
+                    py_threads,
+                    py_threads_idle_timeout,
+                    pyloop_r1,
+                    worker_id,
+                );
                 let rth = rt.handler();
                 let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                 let tasks = wrk.tasks.clone();
@@ -1142,7 +1257,7 @@ macro_rules! serve_fn {
             let pyfut = ret.clone().unbind();
 
             std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop_r2.clone());
+                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop_r2.clone(), worker_id);
                 let local = tokio::task::LocalSet::new();
 
                 let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
