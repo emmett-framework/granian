@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
 
 from .._compat import _PY_312, _PYV
+from .._granian import init_metrics
 from .._imports import dotenv, setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
@@ -133,6 +134,7 @@ class AbstractServer(Generic[WT]):
         reload_ignore_worker_failure: bool = False,
         process_name: Optional[str] = None,
         pid_file: Optional[Path] = None,
+        metrics_port: int = 9000,
     ):
         self.target = target
         self.bind_addr = address
@@ -215,6 +217,8 @@ class AbstractServer(Generic[WT]):
         self.rss_signal = False
         self.pid = None
         self._env_loader = build_env_loader()
+
+        self.metrics_port = metrics_port
 
     def build_ssl_context(
         self,
@@ -407,6 +411,8 @@ class AbstractServer(Generic[WT]):
 
         self._env_loader(self.env_files)
         self._call_hooks(self.hooks_startup)
+        init_metrics(self.bind_addr, self.metrics_port)
+        logger.info(f'Metrics initialized, on {self.bind_addr}:{self.metrics_port}')
         self._spawn_workers(spawn_target, target_loader)
 
         if self.workers_lifetime is not None:
