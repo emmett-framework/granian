@@ -35,6 +35,7 @@ macro_rules! handle_http_response {
         match $handler($callback, $rt, $disconnect_guard, $body, $scope).await {
             Ok(PyResponse::Body(pyres)) => pyres.to_response(),
             Ok(PyResponse::File(pyres)) => pyres.to_response().await,
+            Ok(PyResponse::FilePartial(pyres)) => pyres.to_response().await,
             _ => {
                 log::error!("RSGI protocol failure");
                 response_500()

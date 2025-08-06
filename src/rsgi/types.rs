@@ -15,7 +15,7 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404},
+    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404, response_500},
     net::SockAddr,
 };
 
@@ -209,6 +209,7 @@ rsgi_scope_cls!(RSGIWebsocketScope, "ws");
 pub(crate) enum PyResponse {
     Body(PyResponseBody),
     File(PyResponseFile),
+    FilePartial(PyResponseFilePartial),
 }
 
 pub(crate) struct PyResponseBody {
@@ -221,6 +222,14 @@ pub(crate) struct PyResponseFile {
     status: hyper::StatusCode,
     headers: HeaderMap,
     file_path: String,
+}
+
+pub(crate) struct PyResponseFilePartial {
+    status: hyper::StatusCode,
+    headers: HeaderMap,
+    file_path: String,
+    start: u64,
+    end: u64,
 }
 
 macro_rules! headers_from_py {
@@ -302,6 +311,53 @@ impl PyResponseFile {
                 *res.status_mut() = self.status;
                 *res.headers_mut() = self.headers;
                 res
+            }
+            Err(_) => {
+                log::info!("Cannot open file {}", &self.file_path);
+                response_404()
+            }
+        }
+    }
+}
+
+impl PyResponseFilePartial {
+    pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String, start: u64, end: u64) -> Self {
+        Self {
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
+            file_path,
+            start,
+            end,
+        }
+    }
+
+    #[inline]
+    pub async fn to_response(self) -> hyper::Response<HTTPResponseBody> {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+        match File::open(&self.file_path).await {
+            Ok(mut file) => {
+                // Seek to start position
+                match file.seek(std::io::SeekFrom::Start(self.start)).await {
+                    Ok(_) => {
+                        // Limit the file reader to only read the requested range
+                        let bytes_to_read = self.end - self.start + 1;
+                        let limited_file = file.take(bytes_to_read);
+
+                        // Create stream from limited file reader
+                        let stream = ReaderStream::with_capacity(limited_file, 131_072);
+                        let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+                        let mut res =
+                            hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                        *res.status_mut() = self.status;
+                        *res.headers_mut() = self.headers;
+                        res
+                    }
+                    Err(_) => {
+                        log::error!("Cannot seek to position {} in file {}", self.start, &self.file_path);
+                        response_500()
+                    }
+                }
             }
             Err(_) => {
                 log::info!("Cannot open file {}", &self.file_path);
