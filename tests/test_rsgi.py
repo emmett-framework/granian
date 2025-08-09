@@ -113,22 +113,25 @@ async def test_response_file_partial_start_beyond_file(rsgi_server, runtime_mode
     """Test error when start position is beyond file size"""
     async with rsgi_server(runtime_mode, ws=False) as port:
         # Start at byte 150 when file is only 100 bytes
-        res = httpx.get(f'http://localhost:{port}/file_partial?start=150&end=160&test_error=1')
+        res = httpx.get(f'http://localhost:{port}/file_partial?start=150&end=160')
 
-        assert res.status_code == 400
-        assert 'Start position 150 is beyond file size 100' in res.text
+        assert res.status_code == 416
+        assert res.headers.get('content-range') == 'bytes */100'
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_response_file_partial_end_beyond_file(rsgi_server, runtime_mode):
-    """Test error when end position is beyond file size"""
+    """Test auto-correction when end position is beyond file size"""
     async with rsgi_server(runtime_mode, ws=False) as port:
-        # End at byte 150 when file is only 100 bytes
-        res = httpx.get(f'http://localhost:{port}/file_partial?start=90&end=150&test_error=1')
+        # End at byte 150 when file is only 100 bytes - should clamp to 99
+        res = httpx.get(f'http://localhost:{port}/file_partial?start=90&end=150')
 
-        assert res.status_code == 400
-        assert 'End position 150 is beyond file size 100' in res.text
+        # Should succeed with clamped range
+        assert res.status_code == 206
+        assert res.headers['content-range'] == 'bytes 90-99/100'
+        assert res.headers['content-length'] == '10'
+        assert res.text == '0123456789'  # Last 10 bytes
 
 
 @pytest.mark.asyncio
@@ -137,10 +140,10 @@ async def test_response_file_partial_start_after_end(rsgi_server, runtime_mode):
     """Test error when start is greater than end"""
     async with rsgi_server(runtime_mode, ws=False) as port:
         # Start at 60, end at 40 (invalid range)
-        res = httpx.get(f'http://localhost:{port}/file_partial?start=60&end=40&test_error=1')
+        res = httpx.get(f'http://localhost:{port}/file_partial?start=60&end=40')
 
-        assert res.status_code == 400
-        assert 'Start position 60 is greater than end position 40' in res.text
+        assert res.status_code == 416
+        assert res.headers.get('content-range') == 'bytes */100'
 
 
 @pytest.mark.asyncio

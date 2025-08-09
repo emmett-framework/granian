@@ -7,6 +7,20 @@ from urllib.parse import parse_qs
 from granian.rsgi import HTTPProtocol, Scope, WebsocketMessageType, WebsocketProtocol
 
 
+# Pre-create test file for partial serving tests
+_TEST_FILE_PATH = None
+
+
+def _get_test_file():
+    """Get or create the test file for partial serving."""
+    global _TEST_FILE_PATH
+    if _TEST_FILE_PATH is None:
+        fd, _TEST_FILE_PATH = tempfile.mkstemp(suffix='.bin', prefix='granian_partial_test_')
+        with os.fdopen(fd, 'wb') as f:
+            f.write(b'0123456789' * 10)  # 100 bytes
+    return _TEST_FILE_PATH
+
+
 async def info(scope: Scope, protocol: HTTPProtocol):
     protocol.response_bytes(
         200,
@@ -112,43 +126,13 @@ async def serve_file(scope: Scope, protocol: HTTPProtocol):
 
 async def serve_file_partial(scope: Scope, protocol: HTTPProtocol):
     """Simple test handler for response_file_partial - uses query parameters"""
+    file_path = _get_test_file()
 
-    # Create test file
-    with tempfile.NamedTemporaryFile(mode='wb', suffix='.bin', delete=False) as tmp:
-        tmp.write(b'0123456789' * 10)  # 100 bytes
-        file_path = tmp.name
+    params = parse_qs(scope.query_string) if scope.query_string else {}
+    start = int(params.get('start', ['0'])[0])
+    end = int(params.get('end', ['9'])[0])
 
-    try:
-        # Parse query parameters using urllib.parse
-        params = parse_qs(scope.query_string) if scope.query_string else {}
-
-        # Extract start and end from params (parse_qs returns lists)
-        start = int(params.get('start', ['0'])[0])
-        end = int(params.get('end', ['9'])[0])
-
-        # Check if this is an error test
-        if 'test_error' in params:
-            try:
-                protocol.response_file_partial(206, [], file_path, start, end)
-                protocol.response_empty(500, [])  # Should not reach here if error expected
-            except ValueError as e:
-                protocol.response_str(400, [('content-type', 'text/plain')], str(e))
-            return
-
-        # Normal response
-        headers = [
-            ('content-type', 'text/plain'),
-            ('content-range', f'bytes {start}-{end}/100'),
-            ('content-length', str(end - start + 1)),
-        ]
-
-        protocol.response_file_partial(206, headers, file_path, start, end)
-    finally:
-        # Clean up temp file
-        try:
-            os.unlink(file_path)
-        except:  # noqa: E722
-            pass
+    protocol.response_file_partial(206, [('content-type', 'text/plain')], file_path, start, end)
 
 
 def app(scope, protocol):

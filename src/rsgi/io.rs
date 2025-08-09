@@ -185,44 +185,12 @@ impl RSGIHTTPProtocol {
         file: String,
         start: u64,
         end: u64,
-    ) -> PyResult<()> {
-        // Only validate ranges, let file-not-found be handled by Rust layer (404)
-        match std::fs::metadata(&file) {
-            Ok(metadata) => {
-                let file_size = metadata.len();
-
-                // Check if range is valid
-                if start >= file_size {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "Start position {start} is beyond file size {file_size}",
-                    )));
-                }
-
-                if end >= file_size {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "End position {end} is beyond file size {file_size}",
-                    )));
-                }
-
-                if start > end {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "Start position {start} is greater than end position {end}",
-                    )));
-                }
-            }
-            Err(_) => {
-                // File doesn't exist - let the Rust layer handle it with 404
-                // (same behavior as response_file)
-            }
-        }
-
+    ) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::FilePartial(PyResponseFilePartial::new(
                 status, headers, file, start, end,
             )));
         }
-
-        Ok(())
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]

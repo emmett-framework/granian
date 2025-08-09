@@ -15,7 +15,7 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404, response_500},
+    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404, response_416, response_500},
     net::SockAddr,
 };
 
@@ -337,11 +337,32 @@ impl PyResponseFilePartial {
 
         match File::open(&self.file_path).await {
             Ok(mut file) => {
+                // Get file metadata to validate ranges
+                let Ok(metadata) = file.metadata().await else {
+                    log::error!("Cannot get metadata for file {}", &self.file_path);
+                    return response_500();
+                };
+                let file_size = metadata.len();
+
+                // Validate and auto-correct ranges
+                if self.start >= file_size {
+                    // Start position beyond file size - return 416
+                    return response_416(file_size);
+                }
+
+                // Clamp end to file_size - 1 if it's beyond the file
+                let actual_end = if self.end >= file_size { file_size - 1 } else { self.end };
+
+                // Additional sanity check (should not happen with proper usage)
+                if self.start > actual_end {
+                    return response_416(file_size);
+                }
+
                 // Seek to start position
                 match file.seek(std::io::SeekFrom::Start(self.start)).await {
                     Ok(_) => {
-                        // Limit the file reader to only read the requested range
-                        let bytes_to_read = self.end - self.start + 1;
+                        // Calculate actual bytes to read
+                        let bytes_to_read = actual_end - self.start + 1;
                         let limited_file = file.take(bytes_to_read);
 
                         // Create stream from limited file reader
@@ -350,7 +371,19 @@ impl PyResponseFilePartial {
                         let mut res =
                             hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
                         *res.status_mut() = self.status;
-                        *res.headers_mut() = self.headers;
+
+                        // Update headers with correct Content-Range and Content-Length
+                        let mut headers = self.headers.clone();
+                        headers.insert(
+                            "content-range",
+                            HeaderValue::from_str(&format!("bytes {}-{actual_end}/{file_size}", self.start)).unwrap(),
+                        );
+                        headers.insert(
+                            "content-length",
+                            HeaderValue::from_str(&bytes_to_read.to_string()).unwrap(),
+                        );
+                        *res.headers_mut() = headers;
+
                         res
                     }
                     Err(_) => {

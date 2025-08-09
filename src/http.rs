@@ -39,6 +39,23 @@ pub(crate) fn response_404() -> HTTPResponse {
         .unwrap()
 }
 
+pub(crate) fn response_416(file_size: u64) -> HTTPResponse {
+    let mut builder = Response::builder().status(416);
+    let headers = builder.headers_mut().unwrap();
+    headers.insert(HK_SERVER, HV_SERVER);
+    headers.insert(
+        "content-range",
+        HeaderValue::from_str(&format!("bytes */{file_size}")).unwrap(),
+    );
+    builder
+        .body(
+            http_body_util::Full::new("Requested range not satisfiable".into())
+                .map_err(|e| match e {})
+                .boxed(),
+        )
+        .unwrap()
+}
+
 pub(crate) fn response_500() -> HTTPResponse {
     let mut builder = Response::builder().status(500);
     let headers = builder.headers_mut().unwrap();
