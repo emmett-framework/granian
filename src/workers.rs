@@ -1,3 +1,5 @@
+use futures::FutureExt;
+use metrics_ipc_collector::IPCRecorderBuilder;
 use pyo3::prelude::*;
 use std::{
     marker::PhantomData,
@@ -6,7 +8,6 @@ use std::{
 };
 
 use super::asgi::serve::ASGIWorker;
-use super::metrics::recorder::IPCBuilder;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{
     load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
@@ -338,18 +339,18 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
-            let worker_id = format!("{}", ctx.rt.worker_id());
-            let method = req.method().clone();
-            let uri = req.uri().clone();
-            let path = uri.path().to_string();
-            metrics::counter!("granian_requests_processed_total",
-                "worker_id" => worker_id.clone(),
-                "method" => method.to_string(),
-                "path" => path,
-            )
-            .increment(1);
+                let worker_id = format!("{}", self.rt.worker_id());
+                let method = req.method().clone();
+                let uri = req.uri().clone();
+                let path = uri.path().to_string();
+                metrics::counter!("granian_requests_processed_total",
+                    "worker_id" => worker_id.clone(),
+                    "method" => method.to_string(),
+                    "path" => path,
+                )
+                .increment(1);
 
-            let start_time = std::time::Instant::now();
+                let start_time = std::time::Instant::now();
                 let fut = (self.f)(
                     self.rt.clone(),
                     self.disconnect_guard.clone(),
@@ -359,33 +360,32 @@ macro_rules! service_impl {
                     req,
                     $proto,
                 );
-async move {
-                let response = fut.await;
+                async move {
+                    let response = fut.await;
 
-                let duration = start_time.elapsed();
-                metrics::histogram!("granian_python_call_latency",
-                    "worker_id" => worker_id.clone(),
-                    "status" => response.status().as_u16().to_string()
-                )
-                .record(duration.as_secs_f64());
+                    let duration = start_time.elapsed();
+                    metrics::histogram!("granian_python_call_latency",
+                        "worker_id" => worker_id.clone(),
+                        "status" => response.status().as_u16().to_string()
+                    )
+                    .record(duration.as_secs_f64());
 
-                let status = response.status().as_u16();
-                metrics::counter!(
-                    "granian_http_responses_total",
-                    "worker_id" => worker_id.clone(),
-                    "status_code" => match status {
-                        200..=299 => "2xx",
-                        300..=399 => "3xx",
-                        400..=499 => "4xx",
-                        500..=599 => "5xx",
-                        _ => "other"
-                    }
-                )
-                .increment(1);
+                    let status = response.status().as_u16();
+                    metrics::counter!(
+                        "granian_http_responses_total",
+                        "worker_id" => worker_id.clone(),
+                        "status_code" => match status {
+                            200..=299 => "2xx",
+                            300..=399 => "3xx",
+                            400..=499 => "4xx",
+                            500..=599 => "5xx",
+                            _ => "other"
+                        }
+                    )
+                    .increment(1);
 
-                Ok::<_, hyper::Error>(response)
-            }
-            .boxed()
+                    Ok::<_, hyper::Error>(response)
+                }.boxed()
             }
         }
 
@@ -411,6 +411,16 @@ async move {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
+                let worker_id = format!("{}", self.rt.worker_id());
+                let method = req.method().clone();
+                let uri = req.uri().clone();
+                let path = uri.path().to_string();
+                metrics::counter!("granian_requests_processed_total",
+                    "worker_id" => worker_id.clone(),
+                    "method" => method.to_string(),
+                    "path" => path,
+                )
+                .increment(1);
                 if let Some(static_match) =
                     crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
                 {
@@ -433,34 +443,32 @@ async move {
                     req,
                     $proto,
                 );
-            async move {
-                let response = fut.await;
+                async move {
+                    let response = fut.await;
 
-                let duration = start_time.elapsed();
-                metrics::histogram!("granian_python_call_latency",
-                    "worker_id" => worker_id.clone(),
-                    "status" => response.status().as_u16().to_string(),
-                )
-                .record(duration.as_secs_f64());
+                    let duration = start_time.elapsed();
+                    metrics::histogram!("granian_python_call_latency",
+                        "worker_id" => worker_id.clone(),
+                        "status" => response.status().as_u16().to_string(),
+                    )
+                    .record(duration.as_secs_f64());
 
-                let status = response.status().as_u16();
-                metrics::counter!(
-                    "granian_http_responses_total",
-                    "worker_id" => worker_id.clone(),
-                    "status_code" => match status {
-                        200..=299 => "2xx",
-                        300..=399 => "3xx",
-                        400..=499 => "4xx",
-                        500..=599 => "5xx",
-                        _ => "other"
-                    }
-                )
-                .increment(1);
+                    let status = response.status().as_u16();
+                    metrics::counter!(
+                        "granian_http_responses_total",
+                        "worker_id" => worker_id.clone(),
+                        "status_code" => match status {
+                            200..=299 => "2xx",
+                            300..=399 => "3xx",
+                            400..=499 => "4xx",
+                            500..=599 => "5xx",
+                            _ => "other"
+                        }
+                    )
+                    .increment(1);
 
-                Ok::<_, hyper::Error>(response)
-            }
-            .boxed()
-
+                    Ok::<_, hyper::Error>(response)
+                }.boxed()
             }
         }
     };
@@ -862,11 +870,11 @@ macro_rules! acceptor_impl {
                                         _proto: PhantomData::<WorkerMarkerPlain>,
                                     };
 
-                                    metrics::counter!("granian_connections_total", "worker_id" => format!("{}", wrk.rt.worker_id())).increment(1);
+                                    metrics::counter!("granian_connections_total", "worker_id" => format!("{}", svc.rt.worker_id())).increment(1);
                                     tasks.spawn(handle.call(svc, stream, permit, connsig));
                                 },
                                 Err(err) => {
-                                    metrics::counter!("granian_connection_errors_total", "worker_id" => format!("{}", wrk.rt.worker_id())).increment(1);
+                                    metrics::counter!("granian_connection_errors_total", "worker_id" => format!("{}", rt.worker_id())).increment(1);
                                     log::info!("TCP handshake failed with error: {err:?}");
                                     drop(permit);
                                 }
@@ -1010,7 +1018,7 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
 
@@ -1047,7 +1055,6 @@ macro_rules! serve_fn {
                         .describe_and_run(),
                 );
 
-                wrk.clone().listen(srx, listener, backpressure).await;
                 wrk.listen(srx, listener, backpressure).await;
 
                 log::info!("Stopping worker-{worker_id}");
@@ -1101,9 +1108,13 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
+
+            metrics::counter!("granian_worker_started_total").increment(1);
+            metrics::gauge!("granian_number_workers").increment(1);
+
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 
@@ -1166,6 +1177,10 @@ macro_rules! serve_fn {
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
+
+                metrics::counter!("granian_worker_stopped_total").increment(1);
+                metrics::gauge!("granian_number_workers").decrement(1);
+
                 log::info!("Stopping worker-{worker_id}");
                 while let Some(worker) = workers.pop() {
                     worker.join().unwrap();
@@ -1214,7 +1229,7 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
             let tcp_listener = cfg.$listener_gen();

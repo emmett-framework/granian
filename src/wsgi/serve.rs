@@ -1,3 +1,4 @@
+use metrics_ipc_collector::IPCRecorderBuilder;
 use pyo3::prelude::*;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -8,7 +9,6 @@ use crate::{
     callbacks::CallbackScheduler,
     conversion::{worker_http1_config_from_py, worker_http2_config_from_py},
     http::HTTPProto,
-    metrics::recorder::IPCBuilder,
     net::SocketHolder,
     workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync, gen_serve_match},
 };
@@ -208,12 +208,12 @@ macro_rules! serve_fn {
 
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
-            metrics::counter!("granian_worker_started_total").increment(1);
-            metrics::gauge!("granian_number_workers").increment(1);
-
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
+
+            metrics::counter!("granian_worker_started_total").increment(1);
+            metrics::gauge!("granian_number_workers").increment(1);
 
             let listener = cfg.$listener_gen();
             let backpressure = cfg.backpressure;
@@ -308,7 +308,7 @@ macro_rules! serve_fn {
 
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
 
