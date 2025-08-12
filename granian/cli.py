@@ -383,6 +383,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, path_type=pathlib.Path),
     help='A path to write the PID file to',
 )
+@option(
+    '--metrics-port',
+    type=click.IntRange(1, 65535),
+    help='Port to expose prometheus the metrics server to',
+    default=9000,
+)
 @click.version_option(message='%(prog)s %(version)s')
 def cli(
     app: str,
@@ -448,6 +454,7 @@ def cli(
     reload_ignore_worker_failure: bool,
     process_name: Optional[str],
     pid_file: Optional[pathlib.Path],
+    metrics_port: Optional[int],
 ) -> None:
     log_dictconfig = None
     if log_config:
@@ -526,6 +533,7 @@ def cli(
         reload_ignore_worker_failure=reload_ignore_worker_failure,
         process_name=process_name,
         pid_file=pid_file,
+        metrics_port=metrics_port,
     )
 
     try:

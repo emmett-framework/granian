@@ -1,3 +1,4 @@
+use metrics_ipc_collector::IPCRecorderBuilder;
 use pyo3::prelude::*;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -204,6 +205,12 @@ macro_rules! serve_fn {
 
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
+            if let Err(e) = IPCRecorderBuilder::default().build() {
+                log::warn!("Error starting metrics exporter {e}");
+            }
+
+            metrics::counter!("granian_worker_started_total").increment(1);
+            metrics::gauge!("granian_number_workers").increment(1);
 
             let listener = cfg.$listener_gen();
             let backpressure = cfg.backpressure;
@@ -216,6 +223,7 @@ macro_rules! serve_fn {
                     cfg.py_threads,
                     cfg.py_threads_idle_timeout,
                     rtpyloop,
+                    worker_id,
                 )
             });
             let rth = rt.handler();
@@ -224,9 +232,20 @@ macro_rules! serve_fn {
             let (stx, srx) = tokio::sync::watch::channel(false);
 
             let main_loop: JoinHandle<anyhow::Result<()>> = rt.inner.spawn(async move {
+                tokio::task::spawn(
+                    tokio_metrics::RuntimeMetricsReporterBuilder::default()
+                        .with_metrics_transformer(move |name| {
+                            let name = name.replacen("tokio_", "granian_", 1);
+                            metrics::Key::from_parts(name, &[("worker_id", format!("{}", worker_id))])
+                        })
+                        .describe_and_run(),
+                );
+
                 wrk.clone().listen(srx, listener, backpressure).await;
 
                 log::info!("Stopping worker-{worker_id}");
+                metrics::gauge!("granian_number_workers").decrement(1);
+                metrics::counter!("granian_worker_stopped_total").increment(1);
 
                 wrk.tasks.close();
                 wrk.tasks.wait().await;
@@ -286,6 +305,12 @@ macro_rules! serve_fn {
 
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
+            if let Err(e) = IPCRecorderBuilder::default().build() {
+                log::warn!("Error starting metrics exporter {e}");
+            }
+
+            metrics::counter!("granian_worker_started_total").increment(1);
+            metrics::gauge!("granian_number_workers").increment(1);
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
@@ -308,16 +333,32 @@ macro_rules! serve_fn {
                 let srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt =
-                        crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
+                    let rt = crate::runtime::init_runtime_st(
+                        blocking_threads,
+                        py_threads,
+                        py_threads_idle_timeout,
+                        py_loop,
+                        worker_id,
+                    );
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                     let local = tokio::task::LocalSet::new();
 
                     crate::runtime::block_on_local(&rt, local, async move {
+                        tokio::task::spawn(
+                            tokio_metrics::RuntimeMetricsReporterBuilder::default()
+                                .with_metrics_transformer(move |name| {
+                                    let name = name.replacen("tokio_", "granian_", 1);
+                                    metrics::Key::from_parts(name, &[("worker_id", format!("{}", worker_id))])
+                                })
+                                .describe_and_run(),
+                        );
+
                         wrk.clone().listen(srx, tcp_listener, backpressure).await;
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
+                        metrics::gauge!("granian_number_workers").decrement(1);
+                        metrics::counter!("granian_worker_stopped_total").increment(1);
 
                         wrk.tasks.close();
                         wrk.tasks.wait().await;
