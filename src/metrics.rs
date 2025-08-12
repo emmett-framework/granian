@@ -1,26 +1,15 @@
+use metrics_exporter_prometheus::PrometheusBuilder;
+use metrics_ipc_collector::IPCCollector;
 use pyo3::prelude::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-pub mod collector;
-pub mod error;
-pub mod events;
-pub mod recorder;
+fn start_collecting(address: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+    // Start the Prometheus metrics exporter and ipc metrics collector
+    PrometheusBuilder::new().with_http_listener(address).install()?;
+    let collector = IPCCollector::default();
+    collector.start_collecting()?;
 
-#[pyfunction]
-fn init_metrics(addr: &str, port: i32) {
-    _ = pyo3_log::try_init();
-
-    let address: SocketAddr = format!("{addr}:{port}")
-        .parse()
-        .unwrap_or_else(|_| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
-
-    if let Err(e) = collector::MetricsCollector::default()
-        .address(address)
-        .start_collecting()
-    {
-        log::warn!("Failed to start metrics collector process {e}");
-    }
-
+    // Register custom metrics
     metrics::describe_gauge!(
         "granian_number_workers",
         "Current number of active workers in the Granian application"
@@ -58,6 +47,21 @@ fn init_metrics(addr: &str, port: i32) {
         "granian_connection_errors_total",
         "Total number of connection errors encountered by each worker since startup"
     );
+
+    Ok(())
+}
+
+#[pyfunction]
+fn init_metrics(addr: &str, port: i32) {
+    _ = pyo3_log::try_init();
+
+    let address: SocketAddr = format!("{addr}:{port}")
+        .parse()
+        .unwrap_or_else(|_| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
+
+    if let Err(e) = start_collecting(address) {
+        log::warn!("Failed to start metrics collector process {e}");
+    }
 }
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {

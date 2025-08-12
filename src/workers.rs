@@ -1,4 +1,5 @@
 use futures::FutureExt;
+use metrics_ipc_collector::IPCRecorderBuilder;
 use pyo3::prelude::*;
 use std::{
     pin::Pin,
@@ -6,7 +7,6 @@ use std::{
 };
 
 use super::asgi::serve::ASGIWorker;
-use super::metrics::recorder::IPCBuilder;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey};
 use super::wsgi::serve::WSGIWorker;
@@ -1013,7 +1013,7 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
 
@@ -1102,9 +1102,13 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
+
+            metrics::counter!("granian_worker_started_total").increment(1);
+            metrics::gauge!("granian_number_workers").increment(1);
+
             let (stx, srx) = tokio::sync::watch::channel(false);
             let mut workers = vec![];
 
@@ -1166,6 +1170,10 @@ macro_rules! serve_fn {
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
+
+                metrics::counter!("granian_worker_stopped_total").increment(1);
+                metrics::gauge!("granian_number_workers").decrement(1);
+
                 log::info!("Stopping worker-{worker_id}");
                 while let Some(worker) = workers.pop() {
                     worker.join().unwrap();
@@ -1214,7 +1222,7 @@ macro_rules! serve_fn {
             let worker_id = cfg.id;
             log::info!("Started worker-{worker_id}");
 
-            if let Err(e) = IPCBuilder::default().build() {
+            if let Err(e) = IPCRecorderBuilder::default().build() {
                 log::warn!("Error starting metrics exporter {e}");
             }
             let tcp_listener = cfg.$listener_gen();

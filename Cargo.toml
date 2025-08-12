@@ -13,17 +13,17 @@ homepage = "https://github.com/emmett-framework/granian"
 repository = "https://github.com/emmett-framework/granian"
 
 include = [
-  "/Cargo.toml",
-  "/pyproject.toml",
-  "/build.rs",
-  "/LICENSE",
-  "/README.md",
-  "/src",
-  "/granian",
-  "/tests",
-  "!__pycache__",
-  "!tests/.pytest_cache",
-  "!*.so",
+    "/Cargo.toml",
+    "/pyproject.toml",
+    "/build.rs",
+    "/LICENSE",
+    "/README.md",
+    "/src",
+    "/granian",
+    "/tests",
+    "!__pycache__",
+    "!tests/.pytest_cache",
+    "!*.so",
 ]
 
 [lib]
@@ -31,7 +31,6 @@ name = "_granian"
 crate-type = ["cdylib"]
 
 [dependencies]
-
 anyhow = "=1.0"
 bus = "=2.4"
 crossbeam-channel = "0.5"
@@ -40,34 +39,23 @@ futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }
 hyper = { version = "=1.6", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
-interprocess = { version = "2.2", features = ["tokio"] }
 itertools = "0.14"
 log = "0.4"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.17"
-metrics-util = "0.20"
-mimalloc = { version = "0.1.43", default-features = false, features = [
-  "local_dynamic_tls",
-], optional = true }
+metrics_ipc_collector = "0.2"
+mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls"], optional = true }
 mime_guess = "=2.0"
 pem = "=3.0"
 percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
 pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
-pyo3 = { version = "=0.25", features = [
-  "anyhow",
-  "extension-module",
-  "generate-import-lib",
-] }
+pyo3 = { version = "=0.25", features = ["anyhow", "extension-module", "generate-import-lib"] }
 pyo3-log = "=0.12"
 rustls-pemfile = "2.2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.36"
-tikv-jemallocator = { version = "0.6.0", default-features = false, features = [
-  "disable_initial_exec_tls",
-], optional = true }
+tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", features = ["rustls-ring"] }
 tokio = { version = "1.45", features = ["full"] }
 tokio-metrics = { version = "0.4", features = ["metrics-rs-integration"] }
