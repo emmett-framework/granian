@@ -32,9 +32,7 @@ class ResponseIterWrap:
         self.inner.close()
 
 
-def _callback_wrapper(
-    callback: Callable[..., Any], scope_opts: Dict[str, Any], access_log_fmt=None
-):
+def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], access_log_fmt=None):
     basic_env: Dict[str, Any] = dict(os.environ)
     basic_env.update(
         {
@@ -98,12 +96,7 @@ def _build_access_logger(fmt):
             'response_body_length': scope['LENGTH'],
         }
         request_headers = {key: value for key, value in scope.items() if key.startswith('HTTP_')}
-        atoms.update(
-            {
-                '{%s}i' % re.match(r'HTTP_(.*)', k).group(1).lower(): v
-                for k, v in request_headers.items()
-            }
-        )
+        atoms.update({'{%s}i' % re.match(r'HTTP_(.*)', k).group(1).lower(): v for k, v in request_headers.items()})
         logger(
             t,
             atoms,

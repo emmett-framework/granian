@@ -153,9 +153,7 @@ def _build_access_logger(fmt):
             'scheme': scope['scheme'],
             'response_body_length': scope.get('LENGTH', '-'),
         }
-        request_headers = {
-            key.decode('utf-8'): value.decode('utf-8') for key, value in scope['headers']
-        }
+        request_headers = {key.decode('utf-8'): value.decode('utf-8') for key, value in scope['headers']}
         atoms.update({'{%s}i' % k: v for k, v in request_headers.items()})
         logger(
             t,

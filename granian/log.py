@@ -82,18 +82,14 @@ LOGGING_CONFIG = {
     },
 }
 
-DEFAULT_ACCESSLOG_FMT = (
-    '[%(time)s] %(addr)s - "%(method)s %(path)s %(protocol)s" %(status)d %(dt_ms).3f'
-)
+DEFAULT_ACCESSLOG_FMT = '[%(time)s] %(addr)s - "%(method)s %(path)s %(protocol)s" %(status)d %(dt_ms).3f'
 
 # NOTE: to be consistent with the Rust module logger name
 logger = logging.getLogger('_granian')
 access_logger = logging.getLogger('granian.access')
 
 
-def configure_logging(
-    level: LogLevels, config: Optional[Dict[str, Any]] = None, enabled: bool = True
-):
+def configure_logging(level: LogLevels, config: Optional[Dict[str, Any]] = None, enabled: bool = True):
     log_config = copy.deepcopy(LOGGING_CONFIG)
 
     if config:
