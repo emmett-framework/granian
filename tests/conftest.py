@@ -35,6 +35,9 @@ async def _server(interface, port, runtime_mode, ws=True, tls=False, task_impl='
         else:
             kwargs['ssl_cert'] = certs_path / 'cert.pem'
             kwargs['ssl_key'] = certs_path / 'key.pem'
+
+        if tls == '1.2':
+            kwargs['ssl_protocol_version'] = '1.2'
     if static_mount:
         kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
 
@@ -103,8 +106,8 @@ def server(server_port, request):
 
 
 @pytest.fixture(scope='function')
-def server_tls(server_port, request):
-    return partial(_server, request.param, server_port, tls=True)
+def server_tls(server_port, request, tls=True):
+    return partial(_server, request.param, server_port, tls=tls)
 
 
 @pytest.fixture(scope='function')

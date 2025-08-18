@@ -111,6 +111,7 @@ class AbstractServer(Generic[WT]):
         ssl_ca: Optional[Path] = None,
         ssl_crl: Optional[List[Path]] = None,
         ssl_client_verify: bool = False,
+        ssl_protocol_version: Optional[str] = None,
         url_path_prefix: Optional[str] = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
@@ -200,7 +201,9 @@ class AbstractServer(Generic[WT]):
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
-        self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password, ssl_ca, ssl_crl or [], ssl_client_verify)
+        self.build_ssl_context(
+            ssl_cert, ssl_key, ssl_key_password, ssl_ca, ssl_crl or [], ssl_client_verify, ssl_protocol_version
+        )
         self._ssp = None
         self._shd = None
         self._sfd = None
@@ -223,6 +226,7 @@ class AbstractServer(Generic[WT]):
         ca: Optional[Path],
         crl: List[Path],
         client_verify: bool,
+        protocol_version: Optional[str],
     ):
         if not (cert and key):
             self.ssl_ctx = (False, None, None, None, None, [], False)
@@ -242,6 +246,7 @@ class AbstractServer(Generic[WT]):
             str(ca.resolve()) if ca else None,
             [str(item.resolve()) for item in crl],
             client_verify,
+            protocol_version,
         )
 
     @property

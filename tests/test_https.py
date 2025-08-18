@@ -1,5 +1,6 @@
 import json
 import pathlib
+import socket
 import ssl
 
 import httpx
@@ -7,12 +8,26 @@ import pytest
 import websockets
 
 
+async def tls_version(hostname, port):
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+
+    with socket.create_connection((hostname, port)) as sock:
+        with context.wrap_socket(sock, server_hostname=hostname) as ssock:
+            return ssock.version()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_tls', ['asgi', 'rsgi', 'wsgi'], indirect=True)
+@pytest.mark.parametrize('tls', [True, '1.2'])
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_http_scope(server_tls, runtime_mode):
-    async with server_tls(runtime_mode, ws=False) as port:
+async def test_http_scope(server_tls, tls, runtime_mode):
+    async with server_tls(runtime_mode, ws=False, tls=tls) as port:
         res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
+
+        expected_tls_version = 'TLSv1.2' if tls == '1.2' else 'TLSv1.3'
+        assert await tls_version('localhost', port) == expected_tls_version
 
     assert res.status_code == 200
     data = res.json()

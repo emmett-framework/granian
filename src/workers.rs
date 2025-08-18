@@ -107,6 +107,7 @@ pub(crate) struct WorkerTlsConfig {
     ca: Option<String>,
     crl: Vec<String>,
     client_verify: bool,
+    protocol_version: Option<String>,
 }
 
 impl WorkerConfig {
@@ -130,6 +131,7 @@ impl WorkerConfig {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        ssl_protocol_version: Option<String>,
     ) -> Self {
         let tls_opts = match ssl_enabled {
             true => Some(WorkerTlsConfig {
@@ -138,6 +140,7 @@ impl WorkerConfig {
                 ca: ssl_ca,
                 crl: ssl_crl,
                 client_verify: ssl_client_verify,
+                protocol_version: ssl_protocol_version,
             }),
             false => None,
         };
@@ -172,8 +175,29 @@ impl WorkerConfig {
         listener
     }
 
+    pub fn resolve_ssl_protocol_version(
+        &self,
+        version_option: Option<&str>,
+    ) -> Vec<&'static rustls::SupportedProtocolVersion> {
+        match version_option {
+            None | Some("auto") => tls_listener::rustls::rustls::ALL_VERSIONS.to_vec(),
+            Some(version) => vec![match version {
+                "1.2" => &tls_listener::rustls::rustls::version::TLS12,
+                "1.3" => &tls_listener::rustls::rustls::version::TLS13,
+                _ => panic!("Failed to look up ssl version '{version}', valid options are '1.2' and '1.3'"),
+            }],
+        }
+    }
+
     pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Failed to install rustls ring crypto provider");
+
         let opts = self.tls_opts.as_ref().unwrap();
+
+        let ssl_protocol_versions = self.resolve_ssl_protocol_version(opts.protocol_version.as_deref());
+
         let cfg_builder = match &opts.ca {
             Some(ca) => {
                 let cas = tls_load_certs(ca.clone());
@@ -197,7 +221,8 @@ impl WorkerConfig {
                 };
                 tls_listener::rustls::rustls::ServerConfig::builder().with_client_cert_verifier(verifier)
             }
-            None => tls_listener::rustls::rustls::ServerConfig::builder().with_no_client_auth(),
+            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&ssl_protocol_versions)
+                .with_no_client_auth(),
         };
         let mut cfg = cfg_builder
             .with_single_cert(

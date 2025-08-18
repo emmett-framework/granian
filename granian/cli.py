@@ -6,7 +6,7 @@ from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 import click
 
-from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
+from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, SslProtocolVersions, TaskImpl
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
@@ -282,6 +282,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     default=False,
     help='Verify clients SSL certificates',
 )
+@option(
+    '--ssl-protocol-version',
+    type=EnumType(SslProtocolVersions),
+    default=SslProtocolVersions.auto,
+    help='Override the supported ssl protocol versions and pin to the one specified.',
+)
 @option('--url-path-prefix', help='URL path prefix the app is mounted on')
 @option(
     '--respawn-failed-workers/--no-respawn-failed-workers',
@@ -445,6 +451,7 @@ def cli(
     ssl_ca: Optional[pathlib.Path],
     ssl_crl: Optional[List[pathlib.Path]],
     ssl_client_verify: bool,
+    ssl_protocol_version: Optional[str],
     url_path_prefix: Optional[str],
     respawn_failed_workers: bool,
     respawn_interval: float,
@@ -528,6 +535,7 @@ def cli(
         ssl_ca=ssl_ca,
         ssl_crl=ssl_crl,
         ssl_client_verify=ssl_client_verify,
+        ssl_protocol_version=ssl_protocol_version,
         url_path_prefix=url_path_prefix,
         respawn_failed_workers=respawn_failed_workers,
         respawn_interval=respawn_interval,

@@ -6,4 +6,4 @@ class WebsocketMessage:
     data: Union[bytes, str]
 
 
-SSLCtx = Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], List[str], bool]
+SSLCtx = Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], List[str], bool, Optional[str]]

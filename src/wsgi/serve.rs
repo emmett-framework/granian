@@ -40,6 +40,7 @@ impl WSGIWorker {
             ssl_ca=None,
             ssl_crl=vec![],
             ssl_client_verify=false,
+            ssl_protocol_version=None,
         )
     )]
     fn new(
@@ -62,6 +63,7 @@ impl WSGIWorker {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        ssl_protocol_version: Option<String>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -84,6 +86,7 @@ impl WSGIWorker {
                 ssl_ca,
                 ssl_crl,
                 ssl_client_verify,
+                ssl_protocol_version,
             ),
         })
     }
