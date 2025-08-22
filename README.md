@@ -453,7 +453,7 @@ Granian will look at the [`X-Forwarded-For`](https://developer.mozilla.org/en-US
 
 ---
 
-Since altering the request scope based on values from headers is security-sensitive, will only look at them if the request is coming from a trusted host as specified by the *trusted_hosts* argument. By default, *trusted_hosts* is set to `127.0.0.1`, which means that it works locally, but most likely not in a production environment.
+Since altering the request scope based on values from headers is security-sensitive, Granian will only do so if the request is coming from a trusted host as specified by the *trusted_hosts* argument. By default, *trusted_hosts* is set to `127.0.0.1`, which means that it works locally, but most likely not in a production environment.
 
 You can pass it either a string or a list of strings.
 
