@@ -384,7 +384,7 @@ The following atoms are available for use:
 | identifier | description |
 | --- | --- |
 | addr | Client remote address |
-| time | Datetime of the request |
+| time | Datetime of the request | 
 | dt_ms | Request duration in ms |
 | status | HTTP response status |
 | path | Request path (without query string) |
@@ -402,12 +402,12 @@ Granian offers different options to configure the number of workers and threads 
 - **runtime threads**: the number of Rust threads per worker that will perform network I/O
 - **runtime blocking threads**: the number of Rust threads per worker involved in blocking operations. The main role of these threads is dealing with blocking I/O – like file system operations.
 
-In general, Granian will try its best to automatically pick proper values for the threading configuration, leaving to you the responsibility to choose the number of workers you need.
+In general, Granian will try its best to automatically pick proper values for the threading configuration, leaving to you the responsibility to choose the number of workers you need.    
 There is no *golden rule* here, as these numbers will vastly depend both on your application behavior and the deployment target, but we can list some suggestions:
 - matching the amount of CPU cores for the workers is generally the best starting point; on containerized environments like docker or k8s is best to have 1 worker per container though and scale your containers using the relevant orchestrator;
 - the default number of **runtime threads** and **runtime blocking threads** is fine for the vast majority of applications out there; you might want to increase the first for applications dealing with several concurrently opened websockets or if you primarily use HTTP/2, and lowering the second only if you serve the same few files to a lot of connections;
 
-In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will also be the one holding the GIL for the vast majority of the time, and thus the value is fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount of inactivity time specified with the relevant setting.
+In regards of blocking threads, the option is irrelevant on asynchronous protocols, as all the interop will happen with the AsyncIO event loop which will also be the one holding the GIL for the vast majority of the time, and thus the value is fixed to a single thread; on synchronous protocols like WSGI instead, it will be the maximum amount of threads interacting – and thus trying to acquire the GIL – with your application code. All those threads will be spawned on-demand depending on the amount of concurrency, and they'll be shutdown after the amount of inactivity time specified with the relevant setting.    
 In general, and unless you have a very specific use-case to do so (for example, if your application have an average millisecond response, a very limited amount of blocking threads usually delivers better throughput) you should avoid to tune this threadpool size and configure a backpressure value that suits your needs instead. In that regards, please check the next section.
 
 Also, **you should generally avoid to configure workers and threads based on numbers suggested for other servers**, as Granian architecture is quite different from projects like Gunicorn or Uvicorn.
@@ -449,15 +449,16 @@ my_asgi_app = wrap_asgi_with_proxy_headers(my_asgi_app, trusted_hosts="1.2.3.4")
 my_wsgi_app = wrap_wsgi_with_proxy_headers(my_wsgi_app, trusted_hosts="1.2.3.4")
 ```
 
-Granian will look at the [`X-Forwarded-For`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For) header to determine the client's IP address and at the [`X-Forwarded-Proto`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-Proto) header to determine the client's protocol and replace the request scope with the values from the headers.
+With these wrappers, Granian will use:
 
----
+- the [`X-Forwarded-For`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For) header to determine the client's IP address 
+- the [`X-Forwarded-Proto`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-Proto) header to determine the client's protocol
 
-Since altering the request scope based on values from headers is security-sensitive, Granian will only do so if the request is coming from a trusted host as specified by the *trusted_hosts* argument. By default, *trusted_hosts* is set to `127.0.0.1`, which means that it works locally, but most likely not in a production environment.
+and replace the relevant request scope attributes with these values.
 
-You can pass it either a string or a list of strings.
+Since altering the request scope based on values from headers is security-sensitive, Granian will check the request is coming from a trusted host as specified by the `trusted_hosts` argument. By default this value is set to `127.0.0.1`, which means Granian will only intercept those headers if the proxy resides on the same machine, but most likely that's not the case in a production environment: you should thus provide the correct set of addresses to the wrappers.
 
-If you pass it `"*"`, or `["*"]`, it will trust all hosts and effectively disable the security check. Other valid values are IP addresses (for example, `192.0.2.1` or `fd12:3456:789a::1`) and CIDR ranges (for example, `192.0.2.0/24` or `2001:db8:abcd::/48`).
+The `trusted_hosts` argument accepts either a string or a list of strings, where valid values are IP addresses (for example, `192.0.2.1` or `fd12:3456:789a::1`) and CIDR ranges (for example, `192.0.2.0/24` or `2001:db8:abcd::/48`). The special *catch-all value* `"*"` (or `["*"]`) will make Granian trust all hosts and effectively disable the security check.
 
 ## Free-threaded Python
 
@@ -471,7 +472,7 @@ Since version 2.0 Granian supports free-threaded Python. While the installation 
 
 > **Note:** if for any reason the GIL gets enabled on the free-threaded build, Granian will refuse to start. This means you can't use the free-threaded build on GIL enabled interpreters.
 
-While for asynchronous protocols nothing really changes in terms of workers and threads configuration, as the scaling will be still driven by the number of AsyncIO event loops running (so the same rules for GIL workers apply), on synchronous protocols like WSGI every GIL-related limitation is theoretically absent.
+While for asynchronous protocols nothing really changes in terms of workers and threads configuration, as the scaling will be still driven by the number of AsyncIO event loops running (so the same rules for GIL workers apply), on synchronous protocols like WSGI every GIL-related limitation is theoretically absent.    
 While the general rules in terms of I/O-bound vs CPU-bound load still apply, at the time being there's not enough data to make suggestions in terms of workers and threads tuning in the free-threaded Python land, and thus you will need to experiment with those values depending on your specific workload.
 
 ## Customising Granian
