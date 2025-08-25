@@ -458,6 +458,10 @@ def cli(
                 print('Unable to parse provided logging config.')
                 raise click.exceptions.Exit(1)
 
+    from ._internal import patch_pypath
+
+    patch_pypath(working_dir)
+
     server = Server(
         app,
         address=host,
