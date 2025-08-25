@@ -24,14 +24,14 @@ Adopting Granian would thus be a good choice when:
 - wanting a modern, single dependency to serve both ASGI and WSGI applications
 - looking for the most performant way to serve your Python application under HTTP/2
 - you need great concurrency capabilities, especially with websockets
-- you care about performance more than everything else
+- you care about throughput more than everything else
 
 On the other hand, Granian won't be the ideal option if:
 
 - you want a *pure Python* solution
 - you need advanced debugging features
 - your application relies on `trio` or `gevent`
-- you're looking for ASGI extensions [not (yet) implemented](https://github.com/emmett-framework/granian/issues/93) like trailers
+- you're looking for ASGI extensions [not (yet) implemented](https://github.com/emmett-framework/granian/issues/93)
 
 ## Features
 
@@ -564,7 +564,7 @@ Granian follows a *semantic versioning* scheme for its releases, with a `{major}
 
 Mind that bug and security fixes are **usually provided for the latest minor version only**.
 
-Granian is used *in production* by some popular projects like [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81) and [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25), and by *famous companies* like [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26).
+Granian is used *in production* by projects like [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81), [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25) and [searxng](https://github.com/searxng/searxng/blob/a0ff173799d978873ba022e5d5d8467b8ca7e822/requirements-server.txt#L1), and by *famous companies* like [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26).
 
 ## License
 
