@@ -9,6 +9,10 @@ from typing import Callable, List, Optional
 from ._imports import dotenv
 
 
+def patch_pypath(wd: Optional[Path] = None):
+    sys.path.insert(0, str(wd.resolve()) if wd else '')
+
+
 def get_import_components(path: str) -> List[Optional[str]]:
     return (re.split(r':(?![\\/])', path, maxsplit=1) + [None])[:2]
 
@@ -54,7 +58,7 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
 
 
 def load_target(target: str, wd: Optional[Path] = None, factory: bool = False) -> Callable[..., None]:
-    sys.path.insert(0, str(wd.resolve()) if wd else '')
+    patch_pypath(wd)
     path, name = get_import_components(target)
     path = prepare_import(path) if path else None
     name = name or 'app'
