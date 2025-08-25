@@ -157,10 +157,10 @@ pub(crate) fn call_http(
     let protocol = HTTPProtocol::new(rt.clone(), body, tx, disconnect_guard);
 
     rt.spawn_blocking(move |py| {
-        if let Ok(scope) = build_scope_http(py, req, server_addr, client_addr, scheme) {
-            if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope) {
-                cb.get().schedule(py, watcher);
-            }
+        if let Ok(scope) = build_scope_http(py, req, server_addr, client_addr, scheme)
+            && let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope)
+        {
+            cb.get().schedule(py, watcher);
         }
     });
 
@@ -182,10 +182,10 @@ pub(crate) fn call_ws(
     let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade);
 
     rt.spawn_blocking(move |py| {
-        if let Ok(scope) = build_scope_ws(py, req, server_addr, client_addr, scheme) {
-            if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope) {
-                cb.get().schedule(py, watcher);
-            }
+        if let Ok(scope) = build_scope_ws(py, req, server_addr, client_addr, scheme)
+            && let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope)
+        {
+            cb.get().schedule(py, watcher);
         }
     });
 

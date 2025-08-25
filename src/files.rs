@@ -55,10 +55,10 @@ pub(crate) async fn serve_static_file(path: String, expires: Option<String>) -> 
                     HeaderValue::from_str(&format!("max-age={expires}")).unwrap(),
                 );
             }
-            if let Some(mime) = mime {
-                if let Ok(hv) = HeaderValue::from_str(mime.essence_str()) {
-                    headers.insert("content-type", hv);
-                }
+            if let Some(mime) = mime
+                && let Ok(hv) = HeaderValue::from_str(mime.essence_str())
+            {
+                headers.insert("content-type", hv);
             }
 
             *res.status_mut() = StatusCode::from_u16(200).unwrap();

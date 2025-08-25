@@ -43,7 +43,8 @@ lint-rust:
 		-A clippy::type-complexity \
 		-A clippy::unused-self \
 		-A clippy::used_underscore_items \
-		-A clippy::wrong-self-convention
+		-A clippy::wrong-self-convention \
+		-A mismatched-lifetime-syntaxes
 
 .PHONY: lint
 lint: lint-python lint-rust

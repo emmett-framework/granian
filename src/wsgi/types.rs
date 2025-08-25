@@ -41,10 +41,10 @@ impl WSGIBody {
         buffering: WSGIBodyBuffering,
     ) {
         let mut buffer = buffer.lock().unwrap();
-        if let WSGIBodyBuffering::Size(size) = buffering {
-            if buffer.len() >= size {
-                return;
-            }
+        if let WSGIBodyBuffering::Size(size) = buffering
+            && buffer.len() >= size
+        {
+            return;
         }
 
         let mut stream = stream.lock().await;

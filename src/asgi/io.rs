@@ -387,20 +387,19 @@ impl ASGIWebsocketProtocol {
                     Some(v) => vec![(WS_SUBPROTO_HNAME.to_string(), v)],
                     _ => vec![],
                 };
-                if (upgrade.send(Some(upgrade_headers)).await).is_ok() {
-                    if let Some(websocket) = websocket {
-                        if let Ok(stream) = websocket.await {
-                            let mut wtx = tx.lock().await;
-                            let mut wrx = rx.lock().await;
-                            let (tx, rx) = stream.split();
-                            *wtx = Some(tx);
-                            *wrx = Some(rx);
-                            drop(wrx);
-                            accepted.store(true, atomic::Ordering::Release);
-                            accept_notify.notify_one();
-                            return FutureResultToPy::None;
-                        }
-                    }
+                if (upgrade.send(Some(upgrade_headers)).await).is_ok()
+                    && let Some(websocket) = websocket
+                    && let Ok(stream) = websocket.await
+                {
+                    let mut wtx = tx.lock().await;
+                    let mut wrx = rx.lock().await;
+                    let (tx, rx) = stream.split();
+                    *wtx = Some(tx);
+                    *wrx = Some(rx);
+                    drop(wrx);
+                    accepted.store(true, atomic::Ordering::Release);
+                    accept_notify.notify_one();
+                    return FutureResultToPy::None;
                 }
             }
             FutureResultToPy::Err(error_flow!("Connection already upgraded"))

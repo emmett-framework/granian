@@ -719,9 +719,11 @@ pub(crate) struct WorkerAcceptorTcpTls {
     pub opts: Arc<tls_listener::rustls::rustls::ServerConfig>,
 }
 
+#[cfg(unix)]
 #[derive(Clone)]
 pub(crate) struct WorkerAcceptorUdsPlain {}
 
+#[cfg(unix)]
 #[derive(Clone)]
 pub(crate) struct WorkerAcceptorUdsTls {
     pub opts: Arc<tls_listener::rustls::rustls::ServerConfig>,

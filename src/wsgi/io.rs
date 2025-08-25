@@ -92,10 +92,9 @@ impl WSGIProtocol {
                         closed = true;
                         None
                     }
-                } {
-                    if body_tx.send(frame).is_ok() {
-                        continue;
-                    }
+                } && body_tx.send(frame).is_ok()
+                {
+                    continue;
                 }
 
                 if !closed {

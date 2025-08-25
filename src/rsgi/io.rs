@@ -244,13 +244,13 @@ impl RSGIWebsocketTransport {
         let bdata: Box<[u8]> = data.into();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut guard) = transport.try_lock() {
-                if let Some(stream) = &mut *guard {
-                    return match stream.send(bdata[..].into()).await {
-                        Ok(()) => FutureResultToPy::None,
-                        _ => FutureResultToPy::Err(error_stream!()),
-                    };
-                }
+            if let Ok(mut guard) = transport.try_lock()
+                && let Some(stream) = &mut *guard
+            {
+                return match stream.send(bdata[..].into()).await {
+                    Ok(()) => FutureResultToPy::None,
+                    _ => FutureResultToPy::Err(error_stream!()),
+                };
             }
             FutureResultToPy::Err(error_proto!())
         })
@@ -260,13 +260,13 @@ impl RSGIWebsocketTransport {
         let transport = self.tx.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut guard) = transport.try_lock() {
-                if let Some(stream) = &mut *guard {
-                    return match stream.send(data.into()).await {
-                        Ok(()) => FutureResultToPy::None,
-                        _ => FutureResultToPy::Err(error_stream!()),
-                    };
-                }
+            if let Ok(mut guard) = transport.try_lock()
+                && let Some(stream) = &mut *guard
+            {
+                return match stream.send(data.into()).await {
+                    Ok(()) => FutureResultToPy::None,
+                    _ => FutureResultToPy::Err(error_stream!()),
+                };
             }
             FutureResultToPy::Err(error_proto!())
         })
@@ -309,10 +309,10 @@ impl RSGIWebsocketProtocol {
     pub fn close(&self, status: Option<i32>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let mut handle = None;
-            if let Ok(mut transport) = self.transport.try_lock() {
-                if let Some(transport) = transport.take() {
-                    handle = Some(transport);
-                }
+            if let Ok(mut transport) = self.transport.try_lock()
+                && let Some(transport) = transport.take()
+            {
+                handle = Some(transport);
             }
 
             let _ = tx.send((status.unwrap_or(0), self.consumed(), handle));
