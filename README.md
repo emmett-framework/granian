@@ -449,6 +449,17 @@ my_asgi_app = wrap_asgi_with_proxy_headers(my_asgi_app, trusted_hosts="1.2.3.4")
 my_wsgi_app = wrap_wsgi_with_proxy_headers(my_wsgi_app, trusted_hosts="1.2.3.4")
 ```
 
+With these wrappers, Granian will use:
+
+- the [`X-Forwarded-For`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For) header to determine the client's IP address 
+- the [`X-Forwarded-Proto`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-Proto) header to determine the client's protocol
+
+and replace the relevant request scope attributes with these values.
+
+Since altering the request scope based on values from headers is security-sensitive, Granian will check the request is coming from a trusted host as specified by the `trusted_hosts` argument. By default this value is set to `127.0.0.1`, which means Granian will only intercept those headers if the proxy resides on the same machine, but most likely that's not the case in a production environment: you should thus provide the correct set of addresses to the wrappers.
+
+The `trusted_hosts` argument accepts either a string or a list of strings, where valid values are IP addresses (for example, `192.0.2.1` or `fd12:3456:789a::1`) and CIDR ranges (for example, `192.0.2.0/24` or `2001:db8:abcd::/48`). The special *catch-all value* `"*"` (or `["*"]`) will make Granian trust all hosts and effectively disable the security check.
+
 ## Free-threaded Python
 
 > **Warning:** free-threaded Python support is still experimental and highly discouraged in *production environments*.
