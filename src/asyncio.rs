@@ -4,14 +4,14 @@ use std::convert::Into;
 static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
 static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
 
-fn contextvars(py: Python) -> PyResult<&Bound<PyAny>> {
+fn contextvars(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
     Ok(CONTEXTVARS
         .get_or_try_init(py, || py.import("contextvars").map(Into::into))?
         .bind(py))
 }
 
 #[allow(dead_code)]
-pub(crate) fn empty_context(py: Python) -> PyResult<&Bound<PyAny>> {
+pub(crate) fn empty_context(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
     Ok(CONTEXT
         .get_or_try_init(py, || {
             contextvars(py)?

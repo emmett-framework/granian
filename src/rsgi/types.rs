@@ -191,7 +191,7 @@ macro_rules! rsgi_scope_cls {
             }
 
             #[getter(path)]
-            fn get_path(&self) -> Cow<str> {
+            fn get_path(&self) -> Cow<'_, str> {
                 percent_decode_str(self.uri.path()).decode_utf8_lossy()
             }
 
