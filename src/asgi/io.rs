@@ -42,12 +42,14 @@ pub(crate) struct ASGIHTTPProtocol {
     request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
-    response_intent: Mutex<Option<(u16, HeaderMap)>>,
+    response_intent: Mutex<Option<(u16, HeaderMap, bool)>>,
     body_tx: Mutex<Option<mpsc::UnboundedSender<body::Bytes>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<Notify>,
     sent_response_code: Arc<atomic::AtomicU16>,
+    trailers: Mutex<Option<Box<HeaderMap>>>,
+    trailers_tx: Mutex<Option<oneshot::Sender<HeaderMap>>>,
 }
 
 impl ASGIHTTPProtocol {
@@ -70,12 +72,30 @@ impl ASGIHTTPProtocol {
             flow_rx_closed: Arc::new(atomic::AtomicBool::new(false)),
             flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
             sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
+            trailers: Mutex::new(None),
+            trailers_tx: Mutex::new(None),
         }
     }
 
     #[inline(always)]
-    fn send_response(&self, status: u16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody) {
+    fn send_response(&self, status: u16, headers: HeaderMap<HeaderValue>, body: HTTPResponseBody, trailers: bool) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
+            let mut body = body;
+            if trailers {
+                let (trailers_tx, trailers_rx) = oneshot::channel::<HeaderMap>();
+                body = body
+                    .with_trailers(async move {
+                        match trailers_rx.await {
+                            Ok(trailers) => Some(Ok(trailers)),
+                            _ => None,
+                        }
+                    })
+                    .boxed();
+
+                *self.trailers.lock().unwrap() = Some(Box::new(HeaderMap::new()));
+                *self.trailers_tx.lock().unwrap() = Some(trailers_tx);
+            }
+
             let mut res = Response::new(body);
             *res.status_mut() = hyper::StatusCode::from_u16(status).unwrap();
             *res.headers_mut() = headers;
@@ -201,7 +221,7 @@ impl ASGIHTTPProtocol {
                 }
 
                 self.response_chunked.store(true, atomic::Ordering::Relaxed);
-                let (status, headers) = intent;
+                let (status, headers, trailers) = intent;
                 let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
                 let body_stream = http_body_util::StreamBody::new(
                     tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
@@ -209,7 +229,7 @@ impl ASGIHTTPProtocol {
                         .map(Result::Ok),
                 );
                 *self.body_tx.lock().unwrap() = Some(body_tx.clone());
-                self.send_response(status, headers, BodyExt::boxed(body_stream));
+                self.send_response(status, headers, BodyExt::boxed(body_stream), trailers);
                 empty_future_into_py(py)
             }
             Ok(ASGIMessageType::HTTPResponseBody((body, more))) => {
@@ -219,20 +239,23 @@ impl ASGIHTTPProtocol {
                     self.response_chunked.load(atomic::Ordering::Relaxed),
                 ) {
                     (true, false, false) => {
-                        let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
+                        let (status, headers, trailers) = self.response_intent.lock().unwrap().take().unwrap();
                         self.send_response(
                             status,
                             headers,
                             http_body_util::Full::new(body::Bytes::from(body))
                                 .map_err(std::convert::Into::into)
                                 .boxed(),
+                            trailers,
                         );
-                        self.flow_tx_waiter.notify_one();
+                        if !trailers {
+                            self.flow_tx_waiter.notify_one();
+                        }
                         empty_future_into_py(py)
                     }
                     (true, true, false) => {
                         self.response_chunked.store(true, atomic::Ordering::Relaxed);
-                        let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
+                        let (status, headers, trailers) = self.response_intent.lock().unwrap().take().unwrap();
                         let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
                         let body_stream = http_body_util::StreamBody::new(
                             tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
@@ -240,7 +263,7 @@ impl ASGIHTTPProtocol {
                                 .map(Result::Ok),
                         );
                         *self.body_tx.lock().unwrap() = Some(body_tx.clone());
-                        self.send_response(status, headers, BodyExt::boxed(body_stream));
+                        self.send_response(status, headers, BodyExt::boxed(body_stream), trailers);
                         self.send_body(py, &body_tx, body, false)
                     }
                     (true, true, true) => match &*self.body_tx.lock().unwrap() {
@@ -248,13 +271,18 @@ impl ASGIHTTPProtocol {
                         _ => error_flow!("Transport not initialized or closed"),
                     },
                     (true, false, true) => match self.body_tx.lock().unwrap().take() {
-                        Some(tx) => match body.is_empty() {
-                            false => self.send_body(py, &tx, body, true),
-                            true => {
-                                self.flow_tx_waiter.notify_one();
-                                empty_future_into_py(py)
+                        Some(tx) => {
+                            let close = !self.trailers_tx.lock().unwrap().is_some();
+                            match body.is_empty() {
+                                false => self.send_body(py, &tx, body, close),
+                                true => {
+                                    if close {
+                                        self.flow_tx_waiter.notify_one();
+                                    }
+                                    empty_future_into_py(py)
+                                }
                             }
-                        },
+                        }
                         _ => error_flow!("Transport not initialized or closed"),
                     },
                     _ => error_flow!("Response not started"),
@@ -265,7 +293,10 @@ impl ASGIHTTPProtocol {
                 self.tx.lock().unwrap().take(),
             ) {
                 (true, Some(tx)) => {
-                    let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
+                    // FIXME: The extension specification for trailers mentions usage with http.response.body but not pathsend.
+                    // It's unclear if they should be allowed together, meaning we should fail the response if trailers was
+                    // set. For now, just ignore trailers with path send.
+                    let (status, headers, _trailers) = self.response_intent.lock().unwrap().take().unwrap();
                     // FIXME: to store the actual status in case of 404 this should be re-implemented taking
                     //        into account the following async flow (we return empty future to avoid waiting)
                     self.sent_response_code.store(status, atomic::Ordering::Relaxed);
@@ -291,6 +322,30 @@ impl ASGIHTTPProtocol {
                 }
                 _ => error_flow!("Response not started"),
             },
+            Ok(ASGIMessageType::HTTPResponseTrailers((headers, more_trailers))) => {
+                if !self.response_started.load(atomic::Ordering::Relaxed) {
+                    return error_flow!("Response not started before sending trailers");
+                }
+                if more_trailers {
+                    if let Some(trailers) = self.trailers.lock().unwrap().as_mut() {
+                        trailers.extend(headers);
+                    } else {
+                        return error_flow!("Trailers not specified when starting this response");
+                    }
+                } else {
+                    if let (Some(mut trailers), Some(tx)) = (
+                        self.trailers.lock().unwrap().take(),
+                        self.trailers_tx.lock().unwrap().take(),
+                    ) {
+                        trailers.extend(headers);
+                        let _ = tx.send(*trailers);
+                        self.flow_tx_waiter.notify_one();
+                    } else {
+                        return error_flow!("Trailers not specified when starting this response or already sent");
+                    }
+                }
+                empty_future_into_py(py)
+            }
             Err(err) => Err(err.into()),
             _ => error_message!(),
         }
@@ -528,9 +583,14 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
             match message_type {
                 "http.response.start" => Ok(ASGIMessageType::HTTPResponseStart((
                     adapt_status_code(py, message)?,
-                    adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
+                    adapt_headers(py, message, false).map_err(|_| UnsupportedASGIMessage)?,
+                    adapt_trailers(py, message)?,
                 ))),
                 "http.response.body" => Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message))),
+                "http.response.trailers" => Ok(ASGIMessageType::HTTPResponseTrailers((
+                    adapt_headers(py, message, true).map_err(|_| UnsupportedASGIMessage)?,
+                    adapt_more_trailers(py, message)?,
+                ))),
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
                 "websocket.accept" => {
                     let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {
@@ -573,7 +633,7 @@ fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<u16, Unsuppo
 }
 
 #[inline(always)]
-fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
+fn adapt_headers(py: Python, message: &Bound<PyDict>, trailers: bool) -> Result<HeaderMap> {
     let mut ret = HeaderMap::new();
     for headers_item in message
         .get_item(pyo3::intern!(py, "headers"))?
@@ -587,8 +647,26 @@ fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
         }
         ret.append(HeaderName::from_bytes(&htup[0])?, HeaderValue::from_bytes(&htup[1])?);
     }
-    ret.entry(HK_SERVER).or_insert(HV_SERVER);
+    if !trailers {
+        ret.entry(HK_SERVER).or_insert(HV_SERVER);
+    }
     Ok(ret)
+}
+
+#[inline(always)]
+fn adapt_trailers(py: Python, message: &Bound<PyDict>) -> Result<bool, UnsupportedASGIMessage> {
+    match message.get_item(pyo3::intern!(py, "trailers"))? {
+        Some(item) => Ok(item.extract()?),
+        _ => Ok(false),
+    }
+}
+
+#[inline(always)]
+fn adapt_more_trailers(py: Python, message: &Bound<PyDict>) -> Result<bool, UnsupportedASGIMessage> {
+    match message.get_item(pyo3::intern!(py, "more_trailers"))? {
+        Some(item) => Ok(item.extract()?),
+        _ => Ok(false),
+    }
 }
 
 #[inline(always)]
