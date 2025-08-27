@@ -88,7 +88,7 @@ def _callbacks_from_target(target):
 
 def _callback_wrapper(callback, access_log_fmt=False):
     async def _http_logger(scope, proto):
-        t = time.time()
+        t = time.perf_counter()
         try:
             rv = await callback(scope, proto)
         finally:
@@ -96,7 +96,7 @@ def _callback_wrapper(callback, access_log_fmt=False):
         return rv
 
     def _ws_logger(scope, proto):
-        access_log(time.time(), scope, 101)
+        access_log(time.perf_counter(), scope, 101)
         return callback(scope, proto)
 
     def _logger(scope, proto):

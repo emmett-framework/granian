@@ -58,7 +58,7 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
         return resp.status
 
     def _logger(proto, scope):
-        t = time.time()
+        t = time.perf_counter()
         try:
             status = _runner(proto, scope)
             access_log(t, scope, status)
