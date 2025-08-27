@@ -24,7 +24,11 @@ class LifespanProtocol:
     async def handle(self):
         try:
             await self.callable(
-                {'type': 'lifespan', 'asgi': {'version': '3.0', 'spec_version': '2.3'}, 'state': self.state},
+                {
+                    'type': 'lifespan',
+                    'asgi': {'version': '3.0', 'spec_version': '2.3'},
+                    'state': self.state,
+                },
                 self.receive,
                 self.send,
             )
@@ -140,16 +144,20 @@ def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
     def access_log(t, scope, resp_code):
+        atoms = {
+            'addr_remote': scope['client'][0],
+            'protocol': 'HTTP/' + scope['http_version'],
+            'path': scope['path'],
+            'qs': scope['query_string'],
+            'method': scope.get('method', '-'),
+            'scheme': scope['scheme'],
+            'response_body_length': scope.get('LENGTH', '-'),
+        }
+        request_headers = {key.decode('utf-8'): value.decode('utf-8') for key, value in scope['headers']}
+        atoms.update({'{%s}i' % k: v for k, v in request_headers.items()})
         logger(
             t,
-            {
-                'addr_remote': scope['client'][0],
-                'protocol': 'HTTP/' + scope['http_version'],
-                'path': scope['path'],
-                'qs': scope['query_string'],
-                'method': scope.get('method', '-'),
-                'scheme': scope['scheme'],
-            },
+            atoms,
             resp_code,
         )
 
