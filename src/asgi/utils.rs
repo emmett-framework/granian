@@ -47,6 +47,7 @@ macro_rules! build_scope_common {
                 .get_or_try_init($py, || {
                     let rv = PyDict::new($py);
                     rv.set_item("http.response.pathsend", PyDict::new($py))?;
+                    rv.set_item("http.response.trailers", PyDict::new($py))?;
                     Ok::<PyObject, PyErr>(rv.into())
                 })?
                 .bind($py)
