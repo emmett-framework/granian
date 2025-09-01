@@ -41,7 +41,7 @@ hyper = { version = "=1.7", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 itertools = "0.14"
 log = "0.4"
-mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls"], optional = true }
+mimalloc = { version = "0.1.48", default-features = false, features = ["local_dynamic_tls"], optional = true }
 mime_guess = "=2.0"
 pem = "=3.0"
 percent-encoding = "=2.3"
