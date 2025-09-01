@@ -26,21 +26,21 @@ def _client_redy(target):
 
 
 async def _client_recv(ws, to_recv):
-    t_start = time.time()
+    t_start = time.perf_counter()
     recv = 0
     while recv < to_recv:
         await ws.recv()
         recv += 1
-    return (recv, time.time() - t_start)
+    return (recv, time.perf_counter() - t_start)
 
 
 async def _client_send(ws, messages):
-    t_start = time.time()
+    t_start = time.perf_counter()
     sent = 0
     for message in messages:
         await ws.send(message)
         sent += 1
-    return (sent, time.time() - t_start)
+    return (sent, time.perf_counter() - t_start)
 
 
 async def client(idx, messages, ready_signal):
@@ -55,9 +55,9 @@ async def client(idx, messages, ready_signal):
             asyncio.create_task(_client_recv(ws, len(messages) * CONCURRENCY)),
             asyncio.create_task(_client_send(ws, messages)),
         )
-        t_start = time.time()
+        t_start = time.perf_counter()
         recv_data, send_data = await asyncio.gather(_task_recv, _task_send)
-        t_end = time.time() - t_start
+        t_end = time.perf_counter() - t_start
     # print(f'Client {idx} terminated')
     return (recv_data, send_data, t_end)
 

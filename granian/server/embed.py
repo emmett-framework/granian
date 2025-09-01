@@ -337,7 +337,7 @@ class Server(AbstractServer[AsyncWorker]):
 
     async def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):
         for idx in workers:
-            self.respawned_wrks[idx] = time.time()
+            self.respawned_wrks[idx] = time.monotonic()
             logger.info(f'Respawning worker-{idx + 1}')
             old_wrk = self.wrks.pop(idx)
             wrk = self._spawn_worker(idx=idx, target=spawn_target, callback_loader=target_loader)

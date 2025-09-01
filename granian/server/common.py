@@ -37,7 +37,7 @@ class AbstractWorker:
         self.parent = parent
         self.idx = idx
         self.interrupt_by_parent = False
-        self.birth = time.time()
+        self.birth = time.monotonic()
         self._spawn(target, args)
 
     def _spawn(self, target, args):
@@ -293,7 +293,7 @@ class AbstractServer(Generic[WT]):
 
     def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):
         for idx in workers:
-            self.respawned_wrks[idx] = time.time()
+            self.respawned_wrks[idx] = time.monotonic()
             logger.info(f'Respawning worker-{idx + 1}')
             old_wrk = self.wrks.pop(idx)
             wrk = self._spawn_worker(idx=idx, target=spawn_target, callback_loader=target_loader)
@@ -448,7 +448,7 @@ class AbstractServer(Generic[WT]):
                 if not self.respawn_failed_workers:
                     break
 
-                cycle = time.time()
+                cycle = time.monotonic()
                 if any(cycle - self.respawned_wrks.get(idx, 0) <= 5.5 for idx in self.interrupt_children):
                     logger.error('Worker crash loop detected, exiting')
                     break
@@ -468,7 +468,7 @@ class AbstractServer(Generic[WT]):
                 if self.lifetime_signal:
                     self.lifetime_signal = False
                     ttl = self.workers_lifetime * 0.95
-                    now = time.time()
+                    now = time.monotonic()
                     etas = [self.workers_lifetime]
                     for worker in list(self.wrks):
                         if (now - worker.birth) >= ttl:
