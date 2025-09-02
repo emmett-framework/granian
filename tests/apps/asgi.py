@@ -159,6 +159,25 @@ async def lifespan(scope, receive, send):
         await send({'type': 'lifespan.startup.complete'})
 
 
+async def trailers(scope, receive, send):
+    start_response = PLAINTEXT_RESPONSE.copy()
+    start_response['trailers'] = True
+    start_response['headers'] = [*start_response['headers'], (b'Trailer', b'Late-Header1, Late-Header2')]
+    await send(start_response)
+    await send(
+        {'type': 'http.response.body', 'body': b'hello', 'more_body': True}
+    )
+    await send(
+        {'type': 'http.response.body', 'body': b' world\n', 'more_body': False}
+    )
+    await send(
+        {'type': 'http.response.trailers', 'headers': [(b'Late-Header1', b'value1')], 'more_trailers': True}
+    )
+    await send(
+        {'type': 'http.response.trailers', 'headers': [(b'Late-Header2', b'value2')], 'more_trailers': False}
+    )
+
+
 def app(scope, receive, send):
     if scope['type'] == 'lifespan':
         return lifespan(scope, receive, send)
@@ -175,4 +194,5 @@ def app(scope, receive, send):
         '/err_proto': err_proto,
         '/timeout_n': timeout_n,
         '/timeout_w': timeout_w,
+        '/trailers': trailers,
     }.get(scope['path'], info)(scope, receive, send)
