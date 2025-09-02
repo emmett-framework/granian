@@ -1,4 +1,6 @@
+import itertools
 import os
+import re
 import sys
 import time
 from functools import wraps
@@ -51,8 +53,15 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
         rv = callback(scope, resp)
 
         if isinstance(rv, list):
+            scope['LENGTH'] = len(b''.join(rv))
             proto.response_bytes(resp.status, resp.headers, b''.join(rv))
         else:
+            rv, rv_copy = itertools.tee(rv)
+            size = 0
+            for chunk in rv_copy:
+                size += len(chunk)
+            scope['LENGTH'] = size
+            del rv_copy
             proto.response_iter(resp.status, resp.headers, ResponseIterWrap(rv))
 
         return resp.status
@@ -77,16 +86,20 @@ def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
     def access_log(t, scope, resp_code):
+        atoms = {
+            'addr_remote': scope['REMOTE_ADDR'].rsplit(':', 1)[0],
+            'protocol': scope['SERVER_PROTOCOL'],
+            'path': scope['PATH_INFO'],
+            'qs': scope['QUERY_STRING'],
+            'method': scope['REQUEST_METHOD'],
+            'scheme': scope['wsgi.url_scheme'],
+            'response_body_length': scope['LENGTH'],
+        }
+        request_headers = {key: value for key, value in scope.items() if key.startswith('HTTP_')}
+        atoms.update({'{%s}i' % re.match(r'HTTP_(.*)', k).group(1).lower(): v for k, v in request_headers.items()})
         logger(
             t,
-            {
-                'addr_remote': scope['REMOTE_ADDR'].rsplit(':', 1)[0],
-                'protocol': scope['SERVER_PROTOCOL'],
-                'path': scope['PATH_INFO'],
-                'qs': scope['QUERY_STRING'],
-                'method': scope['REQUEST_METHOD'],
-                'scheme': scope['wsgi.url_scheme'],
-            },
+            atoms,
             resp_code,
         )
 
