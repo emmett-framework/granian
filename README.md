@@ -170,7 +170,7 @@ Options:
   --runtime-mode [mt|st]          Runtime mode to use (single/multi threaded)
                                   [env var: GRANIAN_RUNTIME_MODE; default:
                                   (st)]
-  --loop [auto|asyncio|rloop|uvloop]
+  --loop [auto|asyncio|rloop|uvloop|winloop]
                                   Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
   --task-impl [asyncio|rust]      Async task implementation to use  [env var:
