@@ -117,6 +117,7 @@ Mind that Granian also provides several extra dependencies you might be interest
 - reload (adds reload on changes functionality)
 - [rloop](https://pypi.org/project/rloop/)
 - [uvloop](https://pypi.org/project/uvloop/)
+- [winloop](https://pypi.org/project/winloop/)
 
 You can combine the above extras to suit your needs, eg:
 
