@@ -32,7 +32,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "=1.0"
-bus = "=2.4"
 crossbeam-channel = "0.5"
 futures = "=0.3"
 futures-util = { version = "=0.3", default-features = false }
