@@ -29,6 +29,7 @@ class Loops(StrEnum):
     asyncio = 'asyncio'
     rloop = 'rloop'
     uvloop = 'uvloop'
+    winloop = 'winloop'
 
 
 class TaskImpl(StrEnum):
