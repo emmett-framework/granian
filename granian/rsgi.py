@@ -88,15 +88,15 @@ def _callbacks_from_target(target):
 
 def _callback_wrapper(callback, access_log_fmt=False):
     async def _http_logger(scope, proto):
-        t = time.perf_counter()
+        rt, mt = time.time(), time.perf_counter()
         try:
             rv = await callback(scope, proto)
         finally:
-            access_log(t, scope, proto.status)
+            access_log(rt, mt, scope, proto.status)
         return rv
 
     def _ws_logger(scope, proto):
-        access_log(time.perf_counter(), scope, 101)
+        access_log(time.time(), time.perf_counter(), scope, 101)
         return callback(scope, proto)
 
     def _logger(scope, proto):
@@ -115,9 +115,10 @@ def _callback_wrapper(callback, access_log_fmt=False):
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(t, scope, resp_code):
+    def access_log(rt, mt, scope, resp_code):
         logger(
-            t,
+            rt,
+            mt,
             {
                 'addr_remote': scope.client.rsplit(':', 1)[0],
                 'protocol': 'HTTP/' + scope.http_version,

@@ -77,8 +77,8 @@ def log_request_builder(fmt):
     local_now = now.astimezone()
     local_tz = local_now.tzinfo
 
-    def log_request(rtime, req, res_code):
-        dt = time.perf_counter() - rtime
+    def log_request(rtime, mtime, req, res_code):
+        dt = time.perf_counter() - mtime
         rdt = datetime.datetime.fromtimestamp(rtime, tz=local_tz)
         access_logger.info(
             fmt,
