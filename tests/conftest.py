@@ -64,7 +64,6 @@ async def _server(interface, port, runtime_mode, ws=True, tls=False, task_impl='
 
     if not succeeded:
         raise RuntimeError('Cannot bind server')
-
     try:
         yield port
     finally:
