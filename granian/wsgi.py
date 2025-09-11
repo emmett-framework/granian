@@ -58,12 +58,12 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
         return resp.status
 
     def _logger(proto, scope):
-        t = time.perf_counter()
+        rt, mt = time.time(), time.perf_counter()
         try:
             status = _runner(proto, scope)
-            access_log(t, scope, status)
+            access_log(rt, mt, scope, status)
         except BaseException:
-            access_log(t, scope, 500)
+            access_log(rt, mt, scope, 500)
             raise
         return status
 
@@ -76,9 +76,10 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(t, scope, resp_code):
+    def access_log(rt, mt, scope, resp_code):
         logger(
-            t,
+            rt,
+            mt,
             {
                 'addr_remote': scope['REMOTE_ADDR'].rsplit(':', 1)[0],
                 'protocol': scope['SERVER_PROTOCOL'],
