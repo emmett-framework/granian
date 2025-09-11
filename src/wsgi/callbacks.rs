@@ -81,6 +81,17 @@ fn build_wsgi(
         environ_set!(py, environ, "CONTENT_LENGTH", content_len.to_str().unwrap_or_default());
     }
 
+    // cookies can't be joined by commas
+    if let header::Entry::Occupied(h) = req.headers.entry(header::COOKIE) {
+        let (hk, hv) = h.remove_entry_mult();
+        environ_set_header!(
+            py,
+            environ,
+            hk,
+            hv.map(|v| v.to_str().unwrap_or_default().to_owned()).join(";")
+        );
+    }
+
     for key in req.headers.keys() {
         environ_set_header!(
             py,
