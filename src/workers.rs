@@ -37,11 +37,11 @@ pub(crate) struct WorkerSignalSync {
     pub rx: Mutex<Option<crossbeam_channel::Receiver<bool>>>,
     tx: crossbeam_channel::Sender<bool>,
     #[pyo3(get)]
-    pub qs: PyObject,
+    pub qs: Py<PyAny>,
 }
 
 impl WorkerSignalSync {
-    pub fn release(&self, py: Python) -> PyResult<PyObject> {
+    pub fn release(&self, py: Python) -> PyResult<Py<PyAny>> {
         self.qs.call_method0(py, "set")
     }
 }
@@ -49,7 +49,7 @@ impl WorkerSignalSync {
 #[pymethods]
 impl WorkerSignalSync {
     #[new]
-    fn new(qs: PyObject) -> Self {
+    fn new(qs: Py<PyAny>) -> Self {
         let (tx, rx) = crossbeam_channel::bounded(1);
         Self {
             rx: Mutex::new(Some(rx)),
@@ -935,7 +935,7 @@ macro_rules! serve_fn {
             let backpressure = cfg.backpressure;
 
             let rtpyloop = Arc::new(event_loop.clone().unbind());
-            let rt = py.allow_threads(|| {
+            let rt = py.detach(|| {
                 crate::runtime::init_runtime_mt(
                     cfg.threads,
                     cfg.blocking_threads,
@@ -957,7 +957,7 @@ macro_rules! serve_fn {
                 wrk.tasks.close();
                 wrk.tasks.wait().await;
 
-                Python::with_gil(|_| drop(wrk));
+                Python::attach(|_| drop(wrk));
                 Ok(())
             });
 
@@ -1036,10 +1036,10 @@ macro_rules! serve_fn {
                         wrk.tasks.close();
                         wrk.tasks.wait().await;
 
-                        Python::with_gil(|_| drop(wrk));
+                        Python::attach(|_| drop(wrk));
                     });
 
-                    Python::with_gil(|_| drop(rt));
+                    Python::attach(|_| drop(rt));
                 }));
             }
 
@@ -1120,10 +1120,10 @@ macro_rules! serve_fn {
                     wrk.tasks.close();
                     wrk.tasks.wait().await;
 
-                    Python::with_gil(|_| drop(wrk));
+                    Python::attach(|_| drop(wrk));
                 });
 
-                Python::with_gil(|_| drop(rt));
+                Python::attach(|_| drop(rt));
             });
 
             let ret = event_loop.call_method0("create_future").unwrap();
@@ -1141,7 +1141,7 @@ macro_rules! serve_fn {
                     worker.join().unwrap();
                 });
 
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let cb = pyfut.getattr(py, "set_result").unwrap();
                     _ = pyloop_r2.call_method1(
                         py,

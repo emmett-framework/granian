@@ -36,13 +36,13 @@ pub trait Runtime: Send + 'static {
 }
 
 pub trait ContextExt: Runtime {
-    fn py_event_loop(&self, py: Python) -> PyObject;
+    fn py_event_loop(&self, py: Python) -> Py<PyAny>;
 }
 
 pub(crate) struct RuntimeWrapper {
     pub inner: tokio::runtime::Runtime,
     br: Arc<BlockingRunner>,
-    pr: Arc<PyObject>,
+    pr: Arc<Py<PyAny>>,
 }
 
 impl RuntimeWrapper {
@@ -50,7 +50,7 @@ impl RuntimeWrapper {
         blocking_threads: usize,
         py_threads: usize,
         py_threads_idle_timeout: u64,
-        py_loop: Arc<PyObject>,
+        py_loop: Arc<Py<PyAny>>,
     ) -> Self {
         Self {
             inner: default_runtime(blocking_threads),
@@ -63,7 +63,7 @@ impl RuntimeWrapper {
         rt: tokio::runtime::Runtime,
         py_threads: usize,
         py_threads_idle_timeout: u64,
-        py_loop: Arc<PyObject>,
+        py_loop: Arc<Py<PyAny>>,
     ) -> Self {
         Self {
             inner: rt,
@@ -81,11 +81,11 @@ impl RuntimeWrapper {
 pub struct RuntimeRef {
     pub inner: tokio::runtime::Handle,
     innerb: Arc<BlockingRunner>,
-    innerp: Arc<PyObject>,
+    innerp: Arc<Py<PyAny>>,
 }
 
 impl RuntimeRef {
-    pub fn new(rt: tokio::runtime::Handle, br: Arc<BlockingRunner>, pyloop: Arc<PyObject>) -> Self {
+    pub fn new(rt: tokio::runtime::Handle, br: Arc<BlockingRunner>, pyloop: Arc<Py<PyAny>>) -> Self {
         Self {
             inner: rt,
             innerb: br,
@@ -121,7 +121,7 @@ impl Runtime for RuntimeRef {
 }
 
 impl ContextExt for RuntimeRef {
-    fn py_event_loop(&self, py: Python) -> PyObject {
+    fn py_event_loop(&self, py: Python) -> Py<PyAny> {
         self.innerp.clone_ref(py)
     }
 }
@@ -139,7 +139,7 @@ pub(crate) fn init_runtime_mt(
     blocking_threads: usize,
     py_threads: usize,
     py_threads_idle_timeout: u64,
-    py_loop: Arc<PyObject>,
+    py_loop: Arc<Py<PyAny>>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         RuntimeBuilder::new_multi_thread()
@@ -158,7 +158,7 @@ pub(crate) fn init_runtime_st(
     blocking_threads: usize,
     py_threads: usize,
     py_threads_idle_timeout: u64,
-    py_loop: Arc<PyObject>,
+    py_loop: Arc<Py<PyAny>>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop)
 }
@@ -169,7 +169,7 @@ pub(crate) fn empty_future_into_py(py: Python) -> PyResult<Bound<PyAny>> {
 }
 
 #[inline(always)]
-pub(crate) fn done_future_into_py(py: Python, result: PyResult<PyObject>) -> PyResult<Bound<PyAny>> {
+pub(crate) fn done_future_into_py(py: Python, result: PyResult<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
     PyDoneAwaitable::new(result).into_bound_py_any(py)
 }
 
@@ -298,7 +298,7 @@ where
 
         // NOTE: we don't care if we block the runtime.
         //       `run_until_complete` is used only for the workers main loop.
-        Python::with_gil(move |py| {
+        Python::attach(move |py| {
             let res_method = future_tx.getattr(py, "set_result").unwrap();
             let _ = loop_tx.call_method(py, "call_soon_threadsafe", (res_method, py.None()), None);
             future_tx.drop_ref(py);

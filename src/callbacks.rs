@@ -9,23 +9,23 @@ pub(crate) type ArcCBScheduler = Arc<PyCBScheduler>;
 
 #[pyclass(frozen, subclass, module = "granian._granian")]
 pub(crate) struct CallbackScheduler {
-    pub cb: PyObject,
+    pub cb: Py<PyAny>,
     #[pyo3(get)]
-    _loop: PyObject,
+    _loop: Py<PyAny>,
     #[pyo3(get)]
-    _ctx: PyObject,
-    schedule_fn: OnceLock<PyObject>,
-    aio_task: PyObject,
-    aio_tenter: PyObject,
-    aio_texit: PyObject,
-    pym_lcs: PyObject,
-    pyname_aioblock: PyObject,
+    _ctx: Py<PyAny>,
+    schedule_fn: OnceLock<Py<PyAny>>,
+    aio_task: Py<PyAny>,
+    aio_tenter: Py<PyAny>,
+    aio_texit: Py<PyAny>,
+    pym_lcs: Py<PyAny>,
+    pyname_aioblock: Py<PyAny>,
     #[cfg(any(not(Py_3_10), PyPy))]
-    pyname_aiosend: PyObject,
-    pyname_aiothrow: PyObject,
-    pyname_futcb: PyObject,
-    pynone: PyObject,
-    pyfalse: PyObject,
+    pyname_aiosend: Py<PyAny>,
+    pyname_aiothrow: Py<PyAny>,
+    pyname_futcb: Py<PyAny>,
+    pynone: Py<PyAny>,
+    pyfalse: Py<PyAny>,
 }
 
 #[cfg(not(PyPy))]
@@ -111,7 +111,7 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    fn throw(&self, _py: Python, state: Arc<CallbackSchedulerState>, err: PyObject) {
+    fn throw(&self, _py: Python, state: Arc<CallbackSchedulerState>, err: Py<PyAny>) {
         let aiotask = self.aio_task.as_ptr();
 
         unsafe {
@@ -148,7 +148,7 @@ impl CallbackScheduler {
                 state.coro.as_ptr(),
                 self.pyname_aiosend.as_ptr(),
                 self.pynone.as_ptr(),
-                std::ptr::null_mut::<PyObject>(),
+                std::ptr::null_mut::<Py<PyAny>>(),
             );
             Bound::from_owned_ptr_or_err(py, res)
         } {
@@ -175,7 +175,7 @@ impl CallbackScheduler {
     }
 
     #[inline]
-    fn throw(&self, py: Python, state: Arc<CallbackSchedulerState>, err: PyObject) {
+    fn throw(&self, py: Python, state: Arc<CallbackSchedulerState>, err: Py<PyAny>) {
         let aiotask = self.aio_task.as_ptr();
 
         unsafe {
@@ -184,7 +184,7 @@ impl CallbackScheduler {
                 state.coro.as_ptr(),
                 self.pyname_aiothrow.as_ptr(),
                 (err,).into_py_any(py).unwrap().into_ptr(),
-                std::ptr::null_mut::<PyObject>(),
+                std::ptr::null_mut::<Py<PyAny>>(),
             );
             pyo3::ffi::PyErr_Clear();
             pyo3::ffi::PyObject_CallObject(self.aio_texit.as_ptr(), aiotask);
@@ -197,11 +197,11 @@ impl CallbackScheduler {
     #[new]
     fn new(
         py: Python,
-        event_loop: PyObject,
-        cb: PyObject,
-        aio_task: PyObject,
-        aio_tenter: PyObject,
-        aio_texit: PyObject,
+        event_loop: Py<PyAny>,
+        cb: Py<PyAny>,
+        aio_task: Py<PyAny>,
+        aio_tenter: Py<PyAny>,
+        aio_texit: Py<PyAny>,
     ) -> Self {
         let ctx = copy_context(py);
         let pym_lcs = event_loop.getattr(py, pyo3::intern!(py, "call_soon")).unwrap();
@@ -229,12 +229,12 @@ impl CallbackScheduler {
     }
 
     #[setter(_schedule_fn)]
-    fn _set_schedule_fn(&self, val: PyObject) {
+    fn _set_schedule_fn(&self, val: Py<PyAny>) {
         self.schedule_fn.set(val).unwrap();
     }
 
     #[cfg(not(PyPy))]
-    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
+    fn _run(pyself: Py<Self>, py: Python, coro: Py<PyAny>) {
         let ctx = copy_context(py);
         let state = Arc::new(CallbackSchedulerState {
             sched: pyself.clone_ref(py),
@@ -254,7 +254,7 @@ impl CallbackScheduler {
     }
 
     #[cfg(PyPy)]
-    fn _run(pyself: Py<Self>, py: Python, coro: PyObject) {
+    fn _run(pyself: Py<Self>, py: Python, coro: Py<PyAny>) {
         let ctx = copy_context(py);
         let state = Arc::new(CallbackSchedulerState {
             sched: pyself.clone_ref(py),
@@ -269,8 +269,8 @@ impl CallbackScheduler {
 
 pub(crate) struct CallbackSchedulerState {
     sched: Py<CallbackScheduler>,
-    coro: PyObject,
-    ctx: PyObject,
+    coro: Py<PyAny>,
+    ctx: Py<PyAny>,
 }
 
 impl CallbackSchedulerState {
@@ -307,7 +307,7 @@ struct CallbackSchedulerWaker {
 
 #[pymethods]
 impl CallbackSchedulerWaker {
-    fn __call__(&self, py: Python, fut: PyObject) {
+    fn __call__(&self, py: Python, fut: Py<PyAny>) {
         match fut.call_method0(py, pyo3::intern!(py, "result")) {
             Ok(_) => self.state.sched.get().send(py, self.state.clone()),
             Err(err) => self
@@ -351,11 +351,11 @@ impl PyEmptyAwaitable {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct PyDoneAwaitable {
-    result: PyResult<PyObject>,
+    result: PyResult<Py<PyAny>>,
 }
 
 impl PyDoneAwaitable {
-    pub(crate) fn new(result: PyResult<PyObject>) -> Self {
+    pub(crate) fn new(result: PyResult<Py<PyAny>>) -> Self {
         Self { result }
     }
 }
@@ -370,7 +370,7 @@ impl PyDoneAwaitable {
         pyself
     }
 
-    fn __next__(&self, py: Python) -> PyResult<PyObject> {
+    fn __next__(&self, py: Python) -> PyResult<Py<PyAny>> {
         self.result
             .as_ref()
             .map_err(|v| v.clone_ref(py))
@@ -406,7 +406,7 @@ impl PyErrAwaitable {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct PyIterAwaitable {
-    result: OnceLock<PyResult<PyObject>>,
+    result: OnceLock<PyResult<Py<PyAny>>>,
 }
 
 impl PyIterAwaitable {
@@ -433,7 +433,7 @@ impl PyIterAwaitable {
         pyself
     }
 
-    fn __next__(&self, py: Python) -> PyResult<Option<PyObject>> {
+    fn __next__(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
         if let Some(res) = self.result.get() {
             return res
                 .as_ref()
@@ -455,16 +455,16 @@ enum PyFutureAwaitableState {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct PyFutureAwaitable {
     state: atomic::AtomicU8,
-    result: OnceLock<PyResult<PyObject>>,
-    event_loop: PyObject,
+    result: OnceLock<PyResult<Py<PyAny>>>,
+    event_loop: Py<PyAny>,
     cancel_tx: Arc<Notify>,
-    cancel_msg: OnceLock<PyObject>,
+    cancel_msg: OnceLock<Py<PyAny>>,
     py_block: atomic::AtomicBool,
-    ack: RwLock<Option<(PyObject, Py<pyo3::types::PyDict>)>>,
+    ack: RwLock<Option<(Py<PyAny>, Py<pyo3::types::PyDict>)>>,
 }
 
 impl PyFutureAwaitable {
-    pub(crate) fn new(event_loop: PyObject) -> Self {
+    pub(crate) fn new(event_loop: Py<PyAny>) -> Self {
         Self {
             state: atomic::AtomicU8::new(PyFutureAwaitableState::Pending as u8),
             result: OnceLock::new(),
@@ -548,12 +548,12 @@ impl PyFutureAwaitable {
         self.py_block.store(val, atomic::Ordering::Relaxed);
     }
 
-    fn get_loop(&self, py: Python) -> PyObject {
+    fn get_loop(&self, py: Python) -> Py<PyAny> {
         self.event_loop.clone_ref(py)
     }
 
     #[pyo3(signature = (cb, context=None))]
-    fn add_done_callback(pyself: PyRef<'_, Self>, cb: PyObject, context: Option<PyObject>) -> PyResult<()> {
+    fn add_done_callback(pyself: PyRef<'_, Self>, cb: Py<PyAny>, context: Option<Py<PyAny>>) -> PyResult<()> {
         let py = pyself.py();
         let kwctx = pyo3::types::PyDict::new(py);
         kwctx.set_item(pyo3::intern!(py, "context"), context)?;
@@ -571,7 +571,7 @@ impl PyFutureAwaitable {
     }
 
     #[allow(unused)]
-    fn remove_done_callback(&self, cb: PyObject) -> i32 {
+    fn remove_done_callback(&self, cb: Py<PyAny>) -> i32 {
         let mut ack = self.ack.write().unwrap();
         *ack = None;
         1
@@ -579,7 +579,7 @@ impl PyFutureAwaitable {
 
     #[allow(unused)]
     #[pyo3(signature = (msg=None))]
-    fn cancel(pyself: PyRef<'_, Self>, msg: Option<PyObject>) -> bool {
+    fn cancel(pyself: PyRef<'_, Self>, msg: Option<Py<PyAny>>) -> bool {
         if pyself
             .state
             .compare_exchange(
@@ -616,7 +616,7 @@ impl PyFutureAwaitable {
         self.state.load(atomic::Ordering::Acquire) != PyFutureAwaitableState::Pending as u8
     }
 
-    fn result(&self, py: Python) -> PyResult<PyObject> {
+    fn result(&self, py: Python) -> PyResult<Py<PyAny>> {
         let state = self.state.load(atomic::Ordering::Acquire);
 
         if state == PyFutureAwaitableState::Completed as u8 {
@@ -641,7 +641,7 @@ impl PyFutureAwaitable {
         ))
     }
 
-    fn exception(&self, py: Python) -> PyResult<PyObject> {
+    fn exception(&self, py: Python) -> PyResult<Py<PyAny>> {
         let state = self.state.load(atomic::Ordering::Acquire);
 
         if state == PyFutureAwaitableState::Completed as u8 {

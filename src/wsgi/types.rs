@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::bytes::{BufMut, BytesMut};
 
-use crate::{conversion::BytesToPy, runtime::RuntimeRef};
+use crate::runtime::RuntimeRef;
 
 const LINE_SPLIT: u8 = u8::from_be_bytes(*b"\n");
 
@@ -74,7 +74,7 @@ impl WSGIBody {
     #[allow(clippy::map_unwrap_or)]
     fn _readline(&self, py: Python) -> Bytes {
         let inner = self.inner.clone();
-        py.allow_threads(|| {
+        py.detach(|| {
             self.rt.inner.block_on(async move {
                 WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Line).await;
             });
@@ -98,34 +98,33 @@ impl WSGIBody {
         pyself
     }
 
-    fn __next__(&self, py: Python) -> Option<BytesToPy> {
+    fn __next__(&self, py: Python) -> Option<Bytes> {
         let line = self._readline(py);
         match line.len() {
             0 => None,
-            _ => Some(BytesToPy(line)),
+            _ => Some(line),
         }
     }
 
     #[pyo3(signature = (size=None))]
-    fn read(&self, py: Python, size: Option<usize>) -> BytesToPy {
+    fn read(&self, py: Python, size: Option<usize>) -> Bytes {
         match size {
             None => {
                 let inner = self.inner.clone();
-                let data = py.allow_threads(|| {
+                py.detach(|| {
                     self.rt.inner.block_on(async move {
                         let mut inner = inner.lock().await;
                         BodyExt::collect(&mut *inner)
                             .await
                             .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
                     })
-                });
-                BytesToPy(data)
+                })
             }
             Some(size) => match size {
-                0 => BytesToPy(Bytes::new()),
+                0 => Bytes::new(),
                 size => {
                     let inner = self.inner.clone();
-                    py.allow_threads(|| {
+                    py.detach(|| {
                         self.rt.inner.block_on(async move {
                             WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Size(size)).await;
                         });
@@ -134,22 +133,21 @@ impl WSGIBody {
                     let mut buffer = self.buffer.lock().unwrap();
                     let limit = buffer.len();
                     let rsize = if size > limit { limit } else { size };
-                    let data = buffer.split_to(rsize).freeze();
-                    BytesToPy(data)
+                    buffer.split_to(rsize).freeze()
                 }
             },
         }
     }
 
     #[pyo3(signature = (_size=None))]
-    fn readline(&self, py: Python, _size: Option<usize>) -> BytesToPy {
-        BytesToPy(self._readline(py))
+    fn readline(&self, py: Python, _size: Option<usize>) -> Bytes {
+        self._readline(py)
     }
 
     #[pyo3(signature = (_hint=None))]
-    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<PyObject>) -> PyResult<Bound<'p, PyList>> {
+    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<Py<PyAny>>) -> PyResult<Bound<'p, PyList>> {
         let inner = self.inner.clone();
-        let data = py.allow_threads(|| {
+        let data = py.detach(|| {
             self.rt.inner.block_on(async move {
                 let mut inner = inner.lock().await;
                 BodyExt::collect(&mut *inner)

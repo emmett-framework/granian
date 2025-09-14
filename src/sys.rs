@@ -32,7 +32,7 @@ impl ProcInfoCollector {
             || vec![sysinfo::get_current_pid().unwrap()],
             |v| v.into_iter().map(sysinfo::Pid::from_u32).collect(),
         );
-        let ret = py.allow_threads(|| {
+        let ret = py.detach(|| {
             let mut sys = self.sys.lock().unwrap();
             sys.refresh_processes(ProcessesToUpdate::Some(&pids), false);
             let mut ret = HashMap::with_capacity(pids.len());

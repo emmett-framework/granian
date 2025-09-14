@@ -110,7 +110,7 @@ impl ListenerSpec {
         SocketHolder::from_spec(self)
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyObject {
+    pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
         self.inp.clone().into_py_any(py).unwrap()
     }
 }
@@ -145,7 +145,7 @@ impl UnixListenerSpec {
         SocketHolder::from_unix_spec(self)
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyObject {
+    pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
         self.inp.clone().into_py_any(py).unwrap()
     }
 }
@@ -191,12 +191,12 @@ impl SocketHolder {
         Self { socket, uds }
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyObject {
+    pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
         let fd = self.socket.as_raw_fd();
         (fd, self.uds).into_py_any(py).unwrap()
     }
 
-    pub fn get_fd(&self, py: Python) -> PyObject {
+    pub fn get_fd(&self, py: Python) -> Py<PyAny> {
         self.socket.as_raw_fd().into_py_any(py).unwrap()
     }
 
@@ -255,12 +255,12 @@ impl SocketHolder {
         Self { socket, uds, backlog }
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyObject {
+    pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
         let fd = self.socket.as_raw_fd();
         (fd, self.uds, self.backlog).into_py_any(py).unwrap()
     }
 
-    pub fn get_fd(&self, py: Python) -> PyObject {
+    pub fn get_fd(&self, py: Python) -> Py<PyAny> {
         self.socket.as_raw_fd().into_py_any(py).unwrap()
     }
 
@@ -296,12 +296,12 @@ impl SocketHolder {
         Self { socket }
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyObject {
+    pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
         let fd = self.socket.as_raw_socket();
         (fd,).into_py_any(py).unwrap()
     }
 
-    pub fn get_fd(&self, py: Python) -> PyObject {
+    pub fn get_fd(&self, py: Python) -> Py<PyAny> {
         self.socket.as_raw_socket().into_py_any(py).unwrap()
     }
 

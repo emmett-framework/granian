@@ -147,16 +147,16 @@ impl BlockingRunnerPool {
 }
 
 fn blocking_worker(queue: channel::Receiver<BlockingTask>) {
-    Python::with_gil(|py| {
-        while let Ok(task) = py.allow_threads(|| queue.recv()) {
+    Python::attach(|py| {
+        while let Ok(task) = py.detach(|| queue.recv()) {
             task.run(py);
         }
     });
 }
 
 fn blocking_worker_idle(queue: channel::Receiver<BlockingTask>, timeout: time::Duration) {
-    Python::with_gil(|py| {
-        while let Ok(task) = py.allow_threads(|| queue.recv_timeout(timeout)) {
+    Python::attach(|py| {
+        while let Ok(task) = py.detach(|| queue.recv_timeout(timeout)) {
             task.run(py);
         }
     });

@@ -2,18 +2,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::workers::{HTTP1Config, HTTP2Config};
 
-pub(crate) struct BytesToPy(pub hyper::body::Bytes);
 pub(crate) struct Utf8BytesToPy(pub tokio_tungstenite::tungstenite::Utf8Bytes);
-
-impl<'p> IntoPyObject<'p> for BytesToPy {
-    type Target = PyAny;
-    type Output = Bound<'p, Self::Target>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'p>) -> Result<Self::Output, Self::Error> {
-        self.0.as_ref().into_bound_py_any(py)
-    }
-}
 
 impl<'p> IntoPyObject<'p> for Utf8BytesToPy {
     type Target = PyAny;
@@ -44,7 +33,7 @@ impl<'p> IntoPyObject<'p> for FutureResultToPy {
         match self {
             Self::None => Ok(py.None().into_bound(py)),
             Self::Err(res) => Err(res.err().unwrap()),
-            Self::Bytes(inner) => inner.into_pyobject(py),
+            Self::Bytes(inner) => inner.into_bound_py_any(py),
             Self::ASGIMessage(message) => crate::asgi::conversion::message_into_py(py, message),
             Self::ASGIWSMessage(message) => crate::asgi::conversion::ws_message_into_py(py, message),
             Self::RSGIWSAccept(obj) => obj.into_bound_py_any(py),
@@ -53,7 +42,7 @@ impl<'p> IntoPyObject<'p> for FutureResultToPy {
     }
 }
 
-pub(crate) fn worker_http1_config_from_py(py: Python, cfg: Option<PyObject>) -> PyResult<HTTP1Config> {
+pub(crate) fn worker_http1_config_from_py(py: Python, cfg: Option<Py<PyAny>>) -> PyResult<HTTP1Config> {
     let ret = match cfg {
         Some(cfg) => HTTP1Config {
             header_read_timeout: cfg
@@ -74,7 +63,7 @@ pub(crate) fn worker_http1_config_from_py(py: Python, cfg: Option<PyObject>) -> 
     Ok(ret)
 }
 
-pub(crate) fn worker_http2_config_from_py(py: Python, cfg: Option<PyObject>) -> PyResult<HTTP2Config> {
+pub(crate) fn worker_http2_config_from_py(py: Python, cfg: Option<Py<PyAny>>) -> PyResult<HTTP2Config> {
     let ret = match cfg {
         Some(cfg) => HTTP2Config {
             adaptive_window: cfg.getattr(py, "adaptive_window")?.extract(py)?,
