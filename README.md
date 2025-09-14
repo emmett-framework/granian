@@ -117,6 +117,7 @@ Mind that Granian also provides several extra dependencies you might be interest
 - reload (adds reload on changes functionality)
 - [rloop](https://pypi.org/project/rloop/)
 - [uvloop](https://pypi.org/project/uvloop/)
+- [winloop](https://pypi.org/project/winloop/)
 
 You can combine the above extras to suit your needs, eg:
 
@@ -170,7 +171,7 @@ Options:
   --runtime-mode [mt|st]          Runtime mode to use (single/multi threaded)
                                   [env var: GRANIAN_RUNTIME_MODE; default:
                                   (st)]
-  --loop [auto|asyncio|rloop|uvloop]
+  --loop [auto|asyncio|rloop|uvloop|winloop]
                                   Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
   --task-impl [asyncio|rust]      Async task implementation to use  [env var:

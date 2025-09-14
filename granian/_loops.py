@@ -82,6 +82,13 @@ def build_uv_loop(uvloop):
     return loop
 
 
+@loops.register('winloop', packages=['winloop'])
+def build_winloop(winloop):
+    loop = winloop.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop
+
+
 @loops.register('rloop', packages=['rloop'])
 def build_rloop(rloop):
     loop = rloop.new_event_loop()
@@ -95,4 +102,6 @@ def build_auto_loop():
         return loops.get('rloop')
     if 'uvloop' in loops:
         return loops.get('uvloop')
+    if 'winloop' in loops:
+        return loops.get('winloop')
     return loops.get('asyncio')
