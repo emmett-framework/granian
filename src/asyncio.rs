@@ -1,8 +1,8 @@
-use pyo3::{prelude::*, sync::GILOnceCell};
+use pyo3::{prelude::*, sync::PyOnceLock};
 use std::convert::Into;
 
-static CONTEXTVARS: GILOnceCell<PyObject> = GILOnceCell::new();
-static CONTEXT: GILOnceCell<PyObject> = GILOnceCell::new();
+static CONTEXTVARS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static CONTEXT: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 fn contextvars(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
     Ok(CONTEXTVARS
@@ -24,7 +24,7 @@ pub(crate) fn empty_context(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
 
 #[cfg(not(PyPy))]
 #[inline(always)]
-pub(crate) fn copy_context(py: Python) -> PyObject {
+pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
     let ctx = unsafe {
         let ptr = pyo3::ffi::PyContext_CopyCurrent();
         Bound::from_owned_ptr(py, ptr)
@@ -34,6 +34,6 @@ pub(crate) fn copy_context(py: Python) -> PyObject {
 
 #[cfg(PyPy)]
 #[inline(always)]
-pub(crate) fn copy_context(py: Python) -> PyObject {
+pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
     contextvars(py).unwrap().call_method0("copy_context").unwrap().unbind()
 }

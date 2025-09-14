@@ -46,7 +46,7 @@ pub(crate) struct CallbackWatcherHTTP {
     proto: Py<HTTPProtocol>,
     #[pyo3(get)]
     scope: Py<HTTPScope>,
-    aio_taskref: OnceLock<PyObject>,
+    aio_taskref: OnceLock<Py<PyAny>>,
 }
 
 impl CallbackWatcherHTTP {
@@ -72,7 +72,7 @@ impl CallbackWatcherHTTP {
         callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
-    fn taskref(&self, py: Python, task: PyObject) {
+    fn taskref(&self, py: Python, task: Py<PyAny>) {
         callback_impl_taskref!(self, py, task);
     }
 }
@@ -83,7 +83,7 @@ pub(crate) struct CallbackWatcherWebsocket {
     proto: Py<WebsocketProtocol>,
     #[pyo3(get)]
     scope: Py<WebsocketScope>,
-    aio_taskref: OnceLock<PyObject>,
+    aio_taskref: OnceLock<Py<PyAny>>,
 }
 
 impl CallbackWatcherWebsocket {
@@ -109,7 +109,7 @@ impl CallbackWatcherWebsocket {
         callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
-    fn taskref(&self, py: Python, task: PyObject) {
+    fn taskref(&self, py: Python, task: Py<PyAny>) {
         callback_impl_taskref!(self, py, task);
     }
 }

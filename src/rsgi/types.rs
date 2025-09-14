@@ -83,7 +83,7 @@ impl RSGIHeaders {
     }
 
     #[pyo3(signature = (key, default=None))]
-    fn get(&self, py: Python, key: &str, default: Option<PyObject>) -> Option<PyObject> {
+    fn get(&self, py: Python, key: &str, default: Option<Py<PyAny>>) -> Option<Py<PyAny>> {
         if let Some(val) = self.inner.get(key)
             && let Ok(v) = val.to_str()
         {

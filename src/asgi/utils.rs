@@ -4,14 +4,14 @@ use hyper::{
 };
 use pyo3::{
     prelude::*,
-    sync::GILOnceCell,
+    sync::PyOnceLock,
     types::{PyBytes, PyDict, PyList, PyString},
 };
 
 use crate::{http::HTTPProto, net::SockAddr};
 
-static ASGI_VERSION: GILOnceCell<PyObject> = GILOnceCell::new();
-static ASGI_EXTENSIONS: GILOnceCell<PyObject> = GILOnceCell::new();
+static ASGI_VERSION: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static ASGI_EXTENSIONS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 macro_rules! scope_set {
     ($py:expr, $scope:expr, $key:expr, $val:expr) => {
@@ -35,7 +35,7 @@ macro_rules! build_scope_common {
                     let rv = PyDict::new($py);
                     rv.set_item("version", "3.0")?;
                     rv.set_item("spec_version", "2.3")?;
-                    Ok::<PyObject, PyErr>(rv.into())
+                    Ok::<Py<PyAny>, PyErr>(rv.into())
                 })?
                 .bind($py)
         );
@@ -47,7 +47,7 @@ macro_rules! build_scope_common {
                 .get_or_try_init($py, || {
                     let rv = PyDict::new($py);
                     rv.set_item("http.response.pathsend", PyDict::new($py))?;
-                    Ok::<PyObject, PyErr>(rv.into())
+                    Ok::<Py<PyAny>, PyErr>(rv.into())
                 })?
                 .bind($py)
         );

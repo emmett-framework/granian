@@ -51,7 +51,7 @@ pub(crate) struct CallbackWatcherHTTP {
     proto: Py<HTTPProtocol>,
     #[pyo3(get)]
     scope: Py<PyDict>,
-    aio_taskref: OnceLock<PyObject>,
+    aio_taskref: OnceLock<Py<PyAny>>,
 }
 
 impl CallbackWatcherHTTP {
@@ -77,7 +77,7 @@ impl CallbackWatcherHTTP {
         callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
-    fn taskref(&self, py: Python, task: PyObject) {
+    fn taskref(&self, py: Python, task: Py<PyAny>) {
         callback_impl_taskref!(self, py, task);
     }
 }
@@ -88,7 +88,7 @@ pub(crate) struct CallbackWatcherWebsocket {
     proto: Py<WebsocketProtocol>,
     #[pyo3(get)]
     scope: Py<PyDict>,
-    aio_taskref: OnceLock<PyObject>,
+    aio_taskref: OnceLock<Py<PyAny>>,
 }
 
 impl CallbackWatcherWebsocket {
@@ -114,7 +114,7 @@ impl CallbackWatcherWebsocket {
         callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
-    fn taskref(&self, py: Python, task: PyObject) {
+    fn taskref(&self, py: Python, task: Py<PyAny>) {
         callback_impl_taskref!(self, py, task);
     }
 }
@@ -123,7 +123,7 @@ impl CallbackWatcherWebsocket {
 //       dyn fields easily.
 // pub(crate) async fn call(
 //     cb: CallbackWrapper,
-//     protocol: impl ASGIProtocol + IntoPy<PyObject>,
+//     protocol: impl ASGIProtocol + IntoPy<Py<PyAny>>,
 //     scope: Scope
 // ) -> Result<(), ASGIFlowError> {
 //     let (tx, rx) = oneshot::channel();

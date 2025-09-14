@@ -46,8 +46,9 @@ pem = "=3.0"
 percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
 pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
-pyo3 = { version = "=0.25", features = ["anyhow", "extension-module", "generate-import-lib"] }
-pyo3-log = "=0.12"
+pyo3 = { version = "=0.26", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
+# FIXME: update once merged into main pyo3-log
+pyo3-log = { git = "https://github.com/alex/pyo3-log.git", rev = "3193bba", version = "=0.12" }
 rustls-pemfile = "2.2"
 socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.36"
@@ -59,7 +60,7 @@ tokio-tungstenite = "=0.27"
 tokio-util = { version = "0.7", features = ["codec", "rt"] }
 
 [build-dependencies]
-pyo3-build-config = "=0.25"
+pyo3-build-config = "=0.26"
 
 [features]
 jemalloc = ["dep:tikv-jemallocator"]
