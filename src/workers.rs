@@ -1,6 +1,6 @@
-use futures::FutureExt;
 use pyo3::prelude::*;
 use std::{
+    marker::PhantomData,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -214,6 +214,15 @@ impl WorkerConfig {
     }
 }
 
+struct WorkerMarkerPlain;
+struct WorkerMarkerTls;
+
+#[derive(Clone)]
+pub(crate) struct WorkerMarkerConnNoUpgrades;
+
+#[derive(Clone)]
+pub(crate) struct WorkerMarkerConnUpgrades;
+
 #[derive(Clone)]
 pub(crate) struct WorkerCTXBase {
     pub callback: crate::callbacks::ArcCBScheduler,
@@ -283,182 +292,105 @@ where
     }
 }
 
-struct WorkerSvcCtx {
+#[derive(Clone)]
+struct WorkerSvc<F, C, P> {
+    f: F,
+    ctx: C,
     rt: crate::runtime::RuntimeRef,
     disconnect_guard: Arc<tokio::sync::Notify>,
     addr_local: crate::net::SockAddr,
     addr_remote: crate::net::SockAddr,
-    proto: crate::http::HTTPProto,
+    _proto: PhantomData<P>,
 }
 
-trait SvcFnBuilder<F> {
-    fn service(
-        &self,
-        ctx: WorkerSvcCtx,
-    ) -> Box<
-        dyn hyper::service::Service<
-                crate::http::HTTPRequest,
-                Response = crate::http::HTTPResponse,
-                Error = std::convert::Infallible,
-                Future = Pin<
-                    Box<dyn Future<Output = Result<crate::http::HTTPResponse, std::convert::Infallible>> + Send>,
-                >,
-            > + Send
-            + '_,
-    >;
-}
+macro_rules! service_impl {
+    ($marker:ty, $proto:expr) => {
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest> for WorkerSvc<F, WorkerCTXBase, $marker>
+        where
+            F: Fn(
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy
+                + Send
+                + Sync
+                + 'static,
+            Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
+        {
+            type Response = crate::http::HTTPResponse;
+            type Error = hyper::Error;
+            type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-impl<A, H, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXBase, A, H, F>
-where
-    F: Fn(
-            crate::runtime::RuntimeRef,
-            Arc<tokio::sync::Notify>,
-            crate::callbacks::ArcCBScheduler,
-            crate::net::SockAddr,
-            crate::net::SockAddr,
-            crate::http::HTTPRequest,
-            crate::http::HTTPProto,
-        ) -> Ret
-        + Copy
-        + Send
-        + 'static,
-    Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
-    A: Send + Sync + 'static,
-    H: Send + Sync + 'static,
-{
-    fn service(
-        &self,
-        ctx: WorkerSvcCtx,
-    ) -> Box<
-        dyn hyper::service::Service<
-                crate::http::HTTPRequest,
-                Response = crate::http::HTTPResponse,
-                Error = std::convert::Infallible,
-                Future = Pin<
-                    Box<dyn Future<Output = Result<crate::http::HTTPResponse, std::convert::Infallible>> + Send>,
-                >,
-            > + Send,
-    > {
-        let f = self.target;
-        let pycbs = self.ctx.callback.clone();
-        Box::new(hyper::service::service_fn(move |req| {
-            let fut = (f)(
-                ctx.rt.clone(),
-                ctx.disconnect_guard.clone(),
-                pycbs.clone(),
-                ctx.addr_local.clone(),
-                ctx.addr_remote.clone(),
-                req,
-                ctx.proto.clone(),
-            );
-
-            async move { Ok::<_, std::convert::Infallible>(fut.await) }.boxed()
-        }))
-    }
-}
-
-impl<A, H, F, Ret> SvcFnBuilder<F> for Worker<WorkerCTXFiles, A, H, F>
-where
-    F: Fn(
-            crate::runtime::RuntimeRef,
-            Arc<tokio::sync::Notify>,
-            crate::callbacks::ArcCBScheduler,
-            crate::net::SockAddr,
-            crate::net::SockAddr,
-            crate::http::HTTPRequest,
-            crate::http::HTTPProto,
-        ) -> Ret
-        + Send
-        + Sync
-        + 'static,
-    Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
-    A: Send + Sync + 'static,
-    H: Send + Sync + 'static,
-{
-    fn service(
-        &self,
-        ctx: WorkerSvcCtx,
-    ) -> Box<
-        dyn hyper::service::Service<
-                crate::http::HTTPRequest,
-                Response = crate::http::HTTPResponse,
-                Error = std::convert::Infallible,
-                Future = Pin<
-                    Box<dyn Future<Output = Result<crate::http::HTTPResponse, std::convert::Infallible>> + Send>,
-                >,
-            > + Send
-            + '_,
-    > {
-        Box::new(hyper::service::service_fn(move |req| {
-            if let Some(static_match) =
-                crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
-            {
-                if static_match.is_err() {
-                    return async move { Ok::<_, std::convert::Infallible>(crate::http::response_404()) }.boxed();
-                }
-                let expires = self.ctx.static_expires.clone();
-                return async move {
-                    Ok::<_, std::convert::Infallible>(
-                        crate::files::serve_static_file(static_match.unwrap(), expires).await,
-                    )
-                }
-                .boxed();
+            fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
+                let fut = (self.f)(
+                    self.rt.clone(),
+                    self.disconnect_guard.clone(),
+                    self.ctx.callback.clone(),
+                    self.addr_local.clone(),
+                    self.addr_remote.clone(),
+                    req,
+                    $proto,
+                );
+                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
             }
+        }
 
-            let pycbs = self.ctx.callback.clone();
-            let fut = (self.target)(
-                ctx.rt.clone(),
-                ctx.disconnect_guard.clone(),
-                pycbs,
-                ctx.addr_local.clone(),
-                ctx.addr_remote.clone(),
-                req,
-                ctx.proto.clone(),
-            );
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest> for WorkerSvc<F, WorkerCTXFiles, $marker>
+        where
+            F: Fn(
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy
+                + Send
+                + Sync
+                + 'static,
+            Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
+        {
+            type Response = crate::http::HTTPResponse;
+            type Error = hyper::Error;
+            type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-            async move { Ok::<_, std::convert::Infallible>(fut.await) }.boxed()
-        }))
-    }
+            fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
+                if let Some(static_match) =
+                    crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
+                {
+                    if static_match.is_err() {
+                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
+                    }
+                    let expires = self.ctx.static_expires.clone();
+                    return Box::pin(async move {
+                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                    });
+                }
+
+                let fut = (self.f)(
+                    self.rt.clone(),
+                    self.disconnect_guard.clone(),
+                    self.ctx.callback.clone(),
+                    self.addr_local.clone(),
+                    self.addr_remote.clone(),
+                    req,
+                    $proto,
+                );
+                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+            }
+        }
+    };
 }
 
-#[derive(Clone)]
-pub(crate) struct WorkerH1 {
-    pub opts: HTTP1Config,
-}
-
-#[derive(Clone)]
-pub(crate) struct WorkerH1U {
-    pub opts: HTTP1Config,
-}
-
-#[derive(Clone)]
-pub(crate) struct WorkerH2 {
-    pub opts: HTTP2Config,
-}
-
-#[derive(Clone)]
-pub(crate) struct WorkerHA {
-    pub opts_h1: HTTP1Config,
-    pub opts_h2: HTTP2Config,
-}
-
-#[derive(Clone)]
-pub(crate) struct WorkerHAU {
-    pub opts_h1: HTTP1Config,
-    pub opts_h2: HTTP2Config,
-}
-
-trait WorkerConnectionHandler<S> {
-    fn handle(
-        self,
-        addr_local: crate::net::SockAddr,
-        addr_remote: crate::net::SockAddr,
-        stream: S,
-        permit: tokio::sync::OwnedSemaphorePermit,
-        sig: Arc<tokio::sync::Notify>,
-        proto: crate::http::HTTPProto,
-    ) -> impl Future<Output = ()> + Send + 'static;
-}
+service_impl!(WorkerMarkerPlain, crate::http::HTTPProto::Plain);
+service_impl!(WorkerMarkerTls, crate::http::HTTPProto::Tls);
 
 macro_rules! conn_builder_h1 {
     ($opts:expr, $stream:expr, $svc:expr) => {
@@ -478,28 +410,148 @@ macro_rules! conn_builder_h1u {
     };
 }
 
-macro_rules! conn_handler_h1 {
+#[derive(Clone)]
+pub(crate) struct WorkerHandlerH1<U> {
+    pub opts: HTTP1Config,
+    pub _upgrades: PhantomData<U>,
+}
+
+#[derive(Clone)]
+pub(crate) struct WorkerHandlerH2 {
+    pub opts: HTTP2Config,
+}
+
+#[derive(Clone)]
+pub(crate) struct WorkerHandlerHA<U> {
+    pub opts_h1: HTTP1Config,
+    pub opts_h2: HTTP2Config,
+    pub _upgrades: PhantomData<U>,
+}
+
+struct WorkerHandleH1<U> {
+    opts: HTTP1Config,
+    guard: Arc<tokio::sync::Notify>,
+    _upgrades: PhantomData<U>,
+}
+
+struct WorkerHandleH2 {
+    opts: HTTP2Config,
+    guard: Arc<tokio::sync::Notify>,
+}
+
+struct WorkerHandleHA<U> {
+    opts_h1: HTTP1Config,
+    opts_h2: HTTP2Config,
+    guard: Arc<tokio::sync::Notify>,
+    _upgrades: PhantomData<U>,
+}
+
+trait WorkerHandleBuilder<I, S> {
+    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S>;
+}
+
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnNoUpgrades>, F>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+        WorkerHandleH1 {
+            opts: self.handler.opts.clone(),
+            guard,
+            _upgrades: PhantomData::<WorkerMarkerConnNoUpgrades>,
+        }
+    }
+}
+
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnUpgrades>, F>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+        WorkerHandleH1 {
+            opts: self.handler.opts.clone(),
+            guard,
+            _upgrades: PhantomData::<WorkerMarkerConnUpgrades>,
+        }
+    }
+}
+
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH2, F>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+        WorkerHandleH2 {
+            opts: self.handler.opts.clone(),
+            guard,
+        }
+    }
+}
+
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnNoUpgrades>, F>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+        WorkerHandleHA {
+            opts_h1: self.handler.opts_h1.clone(),
+            opts_h2: self.handler.opts_h2.clone(),
+            guard,
+            _upgrades: PhantomData::<WorkerMarkerConnNoUpgrades>,
+        }
+    }
+}
+
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnUpgrades>, F>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+        WorkerHandleHA {
+            opts_h1: self.handler.opts_h1.clone(),
+            opts_h2: self.handler.opts_h2.clone(),
+            guard,
+            _upgrades: PhantomData::<WorkerMarkerConnUpgrades>,
+        }
+    }
+}
+
+trait WorkerHandle<I, S> {
+    fn call(
+        self,
+        svc: S,
+        stream: I,
+        permit: tokio::sync::OwnedSemaphorePermit,
+        sig: Arc<tokio::sync::Notify>,
+    ) -> impl Future<Output = ()> + Send + 'static;
+}
+
+macro_rules! conn_handle_h1 {
     ($cb:tt) => {
-        async fn handle(
+        async fn call(
             self,
-            addr_local: crate::net::SockAddr,
-            addr_remote: crate::net::SockAddr,
-            stream: S,
+            svc: S,
+            stream: I,
             permit: tokio::sync::OwnedSemaphorePermit,
             sig: Arc<tokio::sync::Notify>,
-            proto: crate::http::HTTPProto,
         ) {
-            let disconnect_guard = Arc::new(tokio::sync::Notify::new());
-            let svc_ctx = WorkerSvcCtx {
-                rt: self.rt.clone(),
-                disconnect_guard: disconnect_guard.clone(),
-                addr_local,
-                addr_remote,
-                proto,
-            };
             let mut done = false;
-            let svc = self.service(svc_ctx);
-            let conn = $cb!(self.handler.opts, hyper_util::rt::TokioIo::new(stream), svc);
+            let conn = $cb!(self.opts, hyper_util::rt::TokioIo::new(stream), svc);
             tokio::pin!(conn);
 
             tokio::select! {
@@ -515,53 +567,42 @@ macro_rules! conn_handler_h1 {
                 _ = conn.as_mut().await;
             }
 
-            disconnect_guard.notify_one();
+            self.guard.notify_one();
             drop(permit);
         }
     };
 }
 
-macro_rules! conn_handler_ha {
+macro_rules! conn_handle_ha {
     ($conn_method:ident) => {
-        async fn handle(
+        async fn call(
             self,
-            addr_local: crate::net::SockAddr,
-            addr_remote: crate::net::SockAddr,
-            stream: S,
+            svc: S,
+            stream: I,
             permit: tokio::sync::OwnedSemaphorePermit,
             sig: Arc<tokio::sync::Notify>,
-            proto: crate::http::HTTPProto,
         ) {
-            let disconnect_guard = Arc::new(tokio::sync::Notify::new());
-            let svc_ctx = WorkerSvcCtx {
-                rt: self.rt.clone(),
-                disconnect_guard: disconnect_guard.clone(),
-                addr_local,
-                addr_remote,
-                proto,
-            };
             let mut done = false;
-            let svc = self.service(svc_ctx);
             let mut connb = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
             connb
                 .http1()
                 .timer(hyper_util::rt::tokio::TokioTimer::new())
-                .header_read_timeout(self.handler.opts_h1.header_read_timeout)
-                .keep_alive(self.handler.opts_h1.keep_alive)
-                .max_buf_size(self.handler.opts_h1.max_buffer_size)
-                .pipeline_flush(self.handler.opts_h1.pipeline_flush);
+                .header_read_timeout(self.opts_h1.header_read_timeout)
+                .keep_alive(self.opts_h1.keep_alive)
+                .max_buf_size(self.opts_h1.max_buffer_size)
+                .pipeline_flush(self.opts_h1.pipeline_flush);
             connb
                 .http2()
                 .timer(hyper_util::rt::tokio::TokioTimer::new())
-                .adaptive_window(self.handler.opts_h2.adaptive_window)
-                .initial_connection_window_size(self.handler.opts_h2.initial_connection_window_size)
-                .initial_stream_window_size(self.handler.opts_h2.initial_stream_window_size)
-                .keep_alive_interval(self.handler.opts_h2.keep_alive_interval)
-                .keep_alive_timeout(self.handler.opts_h2.keep_alive_timeout)
-                .max_concurrent_streams(self.handler.opts_h2.max_concurrent_streams)
-                .max_frame_size(self.handler.opts_h2.max_frame_size)
-                .max_header_list_size(self.handler.opts_h2.max_headers_size)
-                .max_send_buf_size(self.handler.opts_h2.max_send_buffer_size);
+                .adaptive_window(self.opts_h2.adaptive_window)
+                .initial_connection_window_size(self.opts_h2.initial_connection_window_size)
+                .initial_stream_window_size(self.opts_h2.initial_stream_window_size)
+                .keep_alive_interval(self.opts_h2.keep_alive_interval)
+                .keep_alive_timeout(self.opts_h2.keep_alive_timeout)
+                .max_concurrent_streams(self.opts_h2.max_concurrent_streams)
+                .max_frame_size(self.opts_h2.max_frame_size)
+                .max_header_list_size(self.opts_h2.max_headers_size)
+                .max_send_buf_size(self.opts_h2.max_send_buffer_size);
             let conn = connb.$conn_method(hyper_util::rt::TokioIo::new(stream), svc);
             tokio::pin!(conn);
 
@@ -578,118 +619,62 @@ macro_rules! conn_handler_ha {
                 _ = conn.as_mut().await;
             }
 
-            disconnect_guard.notify_one();
+            self.guard.notify_one();
             drop(permit);
         }
     };
 }
 
-macro_rules! conn_handler_impl {
-    (h1 $handler:ty, $cb:tt) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, $handler, F>
+macro_rules! conn_handle_impl {
+    (h1 $handle:ty, $cb:tt) => {
+        impl<I, S> WorkerHandle<I, S> for $handle
         where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    crate::net::SockAddr,
-                    crate::net::SockAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, $handler, F>: SvcFnBuilder<F>,
+            I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+            S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+            S::Future: Send + 'static,
+            S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         {
-            conn_handler_h1!($cb);
+            conn_handle_h1!($cb);
         }
     };
-    (ha $handler:ty, $conn_method:ident) => {
-        impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, $handler, F>
+    (ha $handle:ty, $conn_method:ident) => {
+        impl<I, S> WorkerHandle<I, S> for $handle
         where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    crate::net::SockAddr,
-                    crate::net::SockAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Send
-                + Sync
-                + 'static,
-            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            A: Send + Sync + 'static,
-            C: Send + Sync + 'static,
-            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            Worker<C, A, $handler, F>: SvcFnBuilder<F>,
+            I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+            S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+            S::Future: Send + 'static,
+            S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         {
-            conn_handler_ha!($conn_method);
+            conn_handle_ha!($conn_method);
         }
     };
 }
 
-conn_handler_impl!(h1 WorkerH1, conn_builder_h1);
-conn_handler_impl!(h1 WorkerH1U, conn_builder_h1u);
-conn_handler_impl!(ha WorkerHA, serve_connection);
-conn_handler_impl!(ha WorkerHAU, serve_connection_with_upgrades);
+conn_handle_impl!(h1 WorkerHandleH1<WorkerMarkerConnNoUpgrades>, conn_builder_h1);
+conn_handle_impl!(h1 WorkerHandleH1<WorkerMarkerConnUpgrades>, conn_builder_h1u);
+conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnNoUpgrades>, serve_connection);
+conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnUpgrades>, serve_connection_with_upgrades);
 
-impl<C, A, F, Ret, S> WorkerConnectionHandler<S> for Worker<C, A, WorkerH2, F>
+impl<I, S> WorkerHandle<I, S> for WorkerHandleH2
 where
-    F: Fn(
-            crate::runtime::RuntimeRef,
-            Arc<tokio::sync::Notify>,
-            crate::callbacks::ArcCBScheduler,
-            crate::net::SockAddr,
-            crate::net::SockAddr,
-            crate::http::HTTPRequest,
-            crate::http::HTTPProto,
-        ) -> Ret
-        + Send
-        + Sync
-        + 'static,
-    Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-    A: Send + Sync + 'static,
-    C: Send + Sync + 'static,
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    Worker<C, A, WorkerH2, F>: SvcFnBuilder<F>,
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    async fn handle(
-        self,
-        addr_local: crate::net::SockAddr,
-        addr_remote: crate::net::SockAddr,
-        stream: S,
-        permit: tokio::sync::OwnedSemaphorePermit,
-        sig: Arc<tokio::sync::Notify>,
-        proto: crate::http::HTTPProto,
-    ) {
-        let disconnect_guard = Arc::new(tokio::sync::Notify::new());
-        let svc_ctx = WorkerSvcCtx {
-            rt: self.rt.clone(),
-            disconnect_guard: disconnect_guard.clone(),
-            addr_local,
-            addr_remote,
-            proto,
-        };
+    async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
         let mut done = false;
-        let svc = self.service(svc_ctx);
         let conn = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
             .timer(hyper_util::rt::tokio::TokioTimer::new())
-            .adaptive_window(self.handler.opts.adaptive_window)
-            .initial_connection_window_size(self.handler.opts.initial_connection_window_size)
-            .initial_stream_window_size(self.handler.opts.initial_stream_window_size)
-            .keep_alive_interval(self.handler.opts.keep_alive_interval)
-            .keep_alive_timeout(self.handler.opts.keep_alive_timeout)
-            .max_concurrent_streams(self.handler.opts.max_concurrent_streams)
-            .max_frame_size(self.handler.opts.max_frame_size)
-            .max_header_list_size(self.handler.opts.max_headers_size)
-            .max_send_buf_size(self.handler.opts.max_send_buffer_size)
+            .adaptive_window(self.opts.adaptive_window)
+            .initial_connection_window_size(self.opts.initial_connection_window_size)
+            .initial_stream_window_size(self.opts.initial_stream_window_size)
+            .keep_alive_interval(self.opts.keep_alive_interval)
+            .keep_alive_timeout(self.opts.keep_alive_timeout)
+            .max_concurrent_streams(self.opts.max_concurrent_streams)
+            .max_frame_size(self.opts.max_frame_size)
+            .max_header_list_size(self.opts.max_headers_size)
+            .max_send_buf_size(self.opts.max_send_buffer_size)
             .serve_connection(hyper_util::rt::TokioIo::new(stream), svc);
         tokio::pin!(conn);
 
@@ -706,7 +691,7 @@ where
             _ = conn.as_mut().await;
         }
 
-        disconnect_guard.notify_one();
+        self.guard.notify_one();
         drop(permit);
     }
 }
@@ -731,11 +716,11 @@ pub(crate) struct WorkerAcceptorUdsTls {
 
 pub(crate) trait WorkerAcceptor<L> {
     fn listen(
-        self,
+        &self,
         sig: tokio::sync::watch::Receiver<bool>,
         listener: L,
         backpressure: usize,
-    ) -> impl Future<Output = ()> + Send + 'static;
+    ) -> impl Future<Output = ()> + Send;
 }
 
 macro_rules! acceptor_impl {
@@ -751,16 +736,17 @@ macro_rules! acceptor_impl {
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
                 ) -> Ret
+                + Copy
                 + Send
                 + Sync
                 + 'static,
             Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            C: Send + 'static,
-            H: Send + 'static,
-            Worker<C, $target_plain, H, F>: WorkerConnectionHandler<$stream> + Clone,
+            C: Clone + Send + Sync + 'static,
+            H: Send + Sync + 'static,
+            Worker<C, $target_plain, H, F>: WorkerHandleBuilder<$stream, WorkerSvc<F, C, WorkerMarkerPlain>> + Clone,
         {
             async fn listen(
-                self,
+                &self,
                 mut sig: tokio::sync::watch::Receiver<bool>,
                 listener: $listeneri,
                 backpressure: usize,
@@ -772,7 +758,10 @@ macro_rules! acceptor_impl {
                 let mut accept_loop = true;
 
                 while accept_loop {
-                    let wrk = self.clone();
+                    let rt = self.rt.clone();
+                    let tasks = self.tasks.clone();
+                    let target = self.target;
+                    let ctx = self.ctx.clone();
                     let semaphore = semaphore.clone();
                     let connsig = connsig.clone();
 
@@ -784,15 +773,18 @@ macro_rules! acceptor_impl {
                         } => {
                             match event {
                                 Ok((stream, addr_remote)) => {
-                                    let handler = wrk.clone().handle(
-                                        addr_local.clone(),
-                                        $sockwrap(addr_remote),
-                                        stream,
-                                        permit,
-                                        connsig,
-                                        crate::http::HTTPProto::Plain
-                                    );
-                                    wrk.tasks.spawn(handler);
+                                    let disconnect_guard = Arc::new(tokio::sync::Notify::new());
+                                    let handle = self.handle(disconnect_guard.clone());
+                                    let svc = WorkerSvc {
+                                        f: target,
+                                        ctx,
+                                        rt,
+                                        disconnect_guard,
+                                        addr_local: addr_local.clone(),
+                                        addr_remote: $sockwrap(addr_remote),
+                                        _proto: PhantomData::<WorkerMarkerPlain>,
+                                    };
+                                    tasks.spawn(handle.call(svc, stream, permit, connsig));
                                 },
                                 Err(err) => {
                                     log::info!("TCP handshake failed with error: {err:?}");
@@ -820,17 +812,18 @@ macro_rules! acceptor_impl {
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
                 ) -> Ret
+                + Copy
                 + Send
                 + Sync
                 + 'static,
             Ret: Future<Output = crate::http::HTTPResponse> + 'static,
-            C: Send + 'static,
-            H: Send + 'static,
+            C: Clone + Send + Sync + 'static,
+            H: Send + Sync + 'static,
             Worker<C, $target_tls, H, F>:
-                WorkerConnectionHandler<tls_listener::rustls::server::TlsStream<$stream>> + Clone,
+                WorkerHandleBuilder<tls_listener::rustls::server::TlsStream<$stream>, WorkerSvc<F, C, WorkerMarkerTls>> + Clone,
         {
             async fn listen(
-                self,
+                &self,
                 mut sig: tokio::sync::watch::Receiver<bool>,
                 listener: $listeneri,
                 backpressure: usize,
@@ -842,7 +835,10 @@ macro_rules! acceptor_impl {
                 let mut accept_loop = true;
 
                 while accept_loop {
-                    let wrk = self.clone();
+                    let rt = self.rt.clone();
+                    let tasks = self.tasks.clone();
+                    let target = self.target;
+                    let ctx = self.ctx.clone();
                     let semaphore = semaphore.clone();
                     let connsig = connsig.clone();
 
@@ -854,15 +850,18 @@ macro_rules! acceptor_impl {
                         } => {
                             match event {
                                 Ok((stream, addr_remote)) => {
-                                    let handler = wrk.clone().handle(
-                                        addr_local.clone(),
-                                        $sockwrap(addr_remote),
-                                        stream,
-                                        permit,
-                                        connsig,
-                                        crate::http::HTTPProto::Tls
-                                    );
-                                    wrk.tasks.spawn(handler);
+                                    let disconnect_guard = Arc::new(tokio::sync::Notify::new());
+                                    let handle = self.handle(disconnect_guard.clone());
+                                    let svc = WorkerSvc {
+                                        f: target,
+                                        ctx,
+                                        rt,
+                                        disconnect_guard,
+                                        addr_local: addr_local.clone(),
+                                        addr_remote: $sockwrap(addr_remote),
+                                        _proto: PhantomData::<WorkerMarkerTls>,
+                                    };
+                                    tasks.spawn(handle.call(svc, stream, permit, connsig));
                                 },
                                 Err(err) => {
                                     log::info!("TCP handshake failed with error: {err:?}");
@@ -924,7 +923,7 @@ macro_rules! serve_fn {
                 ) -> Ret
                 + Copy,
             Ret: Future<Output = crate::http::HTTPResponse>,
-            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Clone + Send + 'static,
+            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Send + 'static,
         {
             _ = pyo3_log::try_init();
 
@@ -947,15 +946,16 @@ macro_rules! serve_fn {
             let rth = rt.handler();
 
             let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
+            let tasks = wrk.tasks.clone();
             let srx = signal.get().rx.lock().unwrap().take().unwrap();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
-                wrk.clone().listen(srx, listener, backpressure).await;
+                wrk.listen(srx, listener, backpressure).await;
 
                 log::info!("Stopping worker-{worker_id}");
 
-                wrk.tasks.close();
-                wrk.tasks.wait().await;
+                tasks.close();
+                tasks.wait().await;
 
                 Python::attach(|_| drop(wrk));
                 Ok(())
@@ -994,7 +994,7 @@ macro_rules! serve_fn {
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,
             H: Clone + Send + 'static,
-            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Clone + Send + 'static,
+            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Send + 'static,
         {
             _ = pyo3_log::try_init();
 
@@ -1027,14 +1027,15 @@ macro_rules! serve_fn {
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                     let local = tokio::task::LocalSet::new();
+                    let tasks = wrk.tasks.clone();
 
                     crate::runtime::block_on_local(&rt, local, async move {
-                        wrk.clone().listen(srx, listener, backpressure).await;
+                        wrk.listen(srx, listener, backpressure).await;
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
 
-                        wrk.tasks.close();
-                        wrk.tasks.wait().await;
+                        tasks.close();
+                        tasks.wait().await;
 
                         Python::attach(|_| drop(wrk));
                     });
@@ -1089,7 +1090,7 @@ macro_rules! serve_fn {
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,
             H: Clone + Send + 'static,
-            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Clone + Send + 'static,
+            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Send + 'static,
         {
             _ = pyo3_log::try_init();
 
@@ -1111,14 +1112,15 @@ macro_rules! serve_fn {
                     crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, pyloop_r1);
                 let rth = rt.handler();
                 let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
+                let tasks = wrk.tasks.clone();
 
                 rt.inner.block_on(async move {
-                    wrk.clone().listen(srx, tcp_listener, backpressure).await;
+                    wrk.listen(srx, tcp_listener, backpressure).await;
 
                     log::info!("Stopping worker-{worker_id}");
 
-                    wrk.tasks.close();
-                    wrk.tasks.wait().await;
+                    tasks.close();
+                    tasks.wait().await;
 
                     Python::attach(|_| drop(wrk));
                 });
@@ -1185,9 +1187,10 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXBase::new($callback),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerHA {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1198,9 +1201,10 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerHA {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1211,9 +1215,10 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXBase::new($callback),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerHAU {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1224,9 +1229,10 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerHAU {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1239,9 +1245,10 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerHA {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1254,9 +1261,10 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerHA {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1269,9 +1277,10 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerHAU {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1284,9 +1293,10 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerHAU {
+                crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1297,8 +1307,9 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXBase::new($callback),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerH1 {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1309,8 +1320,9 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerH1 {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1321,8 +1333,9 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXBase::new($callback),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerH1U {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1333,8 +1346,9 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerH1U {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1347,8 +1361,9 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerH1 {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1361,8 +1376,9 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerH1 {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
             ),
@@ -1375,8 +1391,9 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerH1U {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1389,8 +1406,9 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerH1U {
+                crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
             ),
@@ -1401,7 +1419,7 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXBase::new($callback),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerH2 {
+                crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
                 $target,
@@ -1413,7 +1431,7 @@ macro_rules! gen_serve_match {
                 $signal,
                 crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
-                crate::workers::WorkerH2 {
+                crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
                 $target,
@@ -1427,7 +1445,7 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerH2 {
+                crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
                 $target,
@@ -1441,7 +1459,7 @@ macro_rules! gen_serve_match {
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
-                crate::workers::WorkerH2 {
+                crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
                 },
                 $target,
