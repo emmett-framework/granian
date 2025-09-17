@@ -4,7 +4,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 use std::net::{IpAddr, TcpListener};
 #[cfg(unix)]
 use std::os::unix::{
-    io::{AsRawFd, FromRawFd},
+    io::{AsRawFd},
     net::UnixListener,
 };
 #[cfg(windows)]
@@ -171,13 +171,13 @@ impl SocketHolder {
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_tcp_listener(&self) -> Result<TcpListener> {
-        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_raw_fd()) };
+        let listener =  TcpListener::from(self.socket.try_clone()?);
         Ok(listener)
     }
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_unix_listener(&self) -> Result<UnixListener> {
-        let listener = unsafe { UnixListener::from_raw_fd(self.socket.as_raw_fd()) };
+        let listener = UnixListener::from(self.socket.try_clone()?);
         Ok(listener)
     }
 }
