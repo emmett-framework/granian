@@ -33,6 +33,7 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "=1.0"
 crossbeam-channel = "0.5"
+encoding_rs = "=0.8"
 futures = "=0.3"
 futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }

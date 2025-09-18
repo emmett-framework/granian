@@ -4,10 +4,7 @@ use hyper::{
 };
 use itertools::Itertools;
 use percent_encoding::percent_decode_str;
-use pyo3::{
-    prelude::*,
-    types::{PyBytes, PyDict},
-};
+use pyo3::{prelude::*, types::PyDict};
 use tokio::sync::oneshot;
 
 use super::{io::WSGIProtocol, types::WSGIBody};
@@ -42,8 +39,13 @@ fn build_wsgi(
     body: WSGIBody,
 ) -> PyResult<(Py<WSGIProtocol>, Bound<PyDict>)> {
     let (path, query_string) = req.uri.path_and_query().map_or_else(
-        || (vec![], ""),
-        |pq| (percent_decode_str(pq.path()).collect_vec(), pq.query().unwrap_or("")),
+        || (String::new(), String::new()),
+        |pq| {
+            (
+                encoding_rs::mem::decode_latin1(&percent_decode_str(pq.path()).collect_vec()).into_owned(),
+                encoding_rs::mem::decode_latin1(pq.query().unwrap_or("").as_bytes()).into_owned(),
+            )
+        },
     );
     let proto = Py::new(py, protocol)?;
     let environ = PyDict::new(py);
@@ -64,12 +66,7 @@ fn build_wsgi(
     environ_set!(py, environ, "SERVER_PORT", server_addr.port().to_string());
     environ_set!(py, environ, "REMOTE_ADDR", client_addr.ip());
     environ_set!(py, environ, "REQUEST_METHOD", req.method.as_str());
-    environ_set!(
-        py,
-        environ,
-        "PATH_INFO",
-        PyBytes::new(py, &path).call_method1(pyo3::intern!(py, "decode"), (pyo3::intern!(py, "latin1"),))?
-    );
+    environ_set!(py, environ, "PATH_INFO", path);
     environ_set!(py, environ, "QUERY_STRING", query_string);
     environ_set!(py, environ, "wsgi.url_scheme", scheme.as_str());
     environ_set!(py, environ, "wsgi.input", body);
