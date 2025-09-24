@@ -298,7 +298,7 @@ Options:
                                   readable duration) to wait for killing
                                   workers that refused to gracefully stop
                                   [env var: GRANIAN_WORKERS_KILL_TIMEOUT;
-                                  default: (disabled); 1<=x<=1800]
+                                  default: (disabled); 0<=x<=1800]
   --factory / --no-factory        Treat target as a factory function, that
                                   should be invoked to build the actual target
                                   [env var: GRANIAN_FACTORY; default:

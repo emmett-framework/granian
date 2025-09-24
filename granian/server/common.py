@@ -192,9 +192,6 @@ class AbstractServer(Generic[WT]):
         self.process_name = process_name
         self.pid_file = pid_file
 
-        if self.reload_on_changes and self.workers_kill_timeout is None:
-            self.workers_kill_timeout = 3.5
-
         self.hooks_startup = []
         self.hooks_reload = []
         self.hooks_shutdown = []
