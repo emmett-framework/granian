@@ -293,7 +293,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option(
     '--workers-kill-timeout',
-    type=Duration(1, 1800),
+    type=Duration(0, 1800),
     help='The amount of time in seconds (or a human-readable duration) to wait for killing workers that refused to gracefully stop',
     show_default='disabled',
 )
