@@ -1,6 +1,7 @@
 import asyncio
 import multiprocessing as mp
 import os
+import stat
 import sys
 from contextlib import asynccontextmanager
 from functools import partial
@@ -21,7 +22,9 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, runtime_mode, ws=True, tls=False, task_impl='asyncio', static_mount=False):
+async def _server(
+    interface, runtime_mode, ws=True, tls=False, task_impl='asyncio', static_mount=False, **server_kwargs
+):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
@@ -44,7 +47,7 @@ async def _server(interface, runtime_mode, ws=True, tls=False, task_impl='asynci
     if static_mount:
         kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
 
-    proc = mp.get_context('spawn').Process(target=_serve, kwargs=kwargs)
+    proc = mp.get_context('spawn').Process(target=_serve, kwargs=kwargs | server_kwargs)
     proc.start()
     await asyncio.sleep(1.5)
 
@@ -81,6 +84,11 @@ def server_tls(request):
 def http_client():
     transport = httpx.HTTPTransport(uds='granian.sock', verify=False)
     return httpx.Client(transport=transport)
+
+
+@pytest.fixture(scope='function')
+def permissible_asgi_server(**extras):
+    return partial(_server, 'asgi', uds_file_permission=0o666, **extras)
 
 
 @pytest.mark.asyncio
@@ -165,3 +173,26 @@ async def test_https(server_tls, runtime_mode, http_client):
     assert res.status_code == 200
     data = res.json()
     assert data['scheme'] == 'https'
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(IS_WIN, reason='no UDS on win')
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_uds_default_file_permission(asgi_server, runtime_mode, http_client):
+    async with asgi_server(runtime_mode, ws=False):
+        assert stat.S_IMODE(os.stat('granian.sock').st_mode) == 0o664
+        res = http_client.get('http://granian/info?test=true')
+
+    assert res.status_code == 200
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(IS_WIN, reason='no UDS on win')
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_uds_configurable_file_permission(permissible_asgi_server, runtime_mode, http_client):
+    async with permissible_asgi_server(runtime_mode, ws=False):
+        assert stat.S_IMODE(os.stat('granian.sock').st_mode) == 0o666
+        res = http_client.get('http://granian/info?test=true')
+
+    assert res.status_code == 200
