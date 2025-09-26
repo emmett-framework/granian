@@ -73,6 +73,23 @@ class EnumType(click.Choice):
         return self.__enum(converted_str)
 
 
+class PossiblyOctalInt(click.ParamType):
+    name = int
+
+    def convert(self, value, param, ctx):
+        if value is None or isinstance(value, int):
+            return value
+
+        if not isinstance(value, str):
+            self.fail(f'{value!r} is not a valid integer')
+
+        base = 8 if len(value) > 0 and value[0] == '0' else 10
+        try:
+            return int(value, base)
+        except ValueError as e:
+            self.fail(str(e))
+
+
 def _pretty_print_default(value: Optional[bool]) -> Optional[str]:
     if isinstance(value, bool):
         return 'enabled' if value else 'disabled'
@@ -102,7 +119,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--uds', type=click.Path(exists=False, writable=True, path_type=pathlib.Path), help='Unix Domain Socket to bind to.'
 )
-@option('--uds-file-permission', type=int, default=0o664, help='Unix Domain Socket file permission')
+@option('--uds-file-permission', type=PossiblyOctalInt(), default=0o664, help='Unix Domain Socket file permission')
 @option(
     '--interface',
     type=EnumType(Interfaces),
