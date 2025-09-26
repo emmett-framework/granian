@@ -186,6 +186,7 @@ async def test_uds_default_file_permission(asgi_server, runtime_mode, http_clien
 
     assert res.status_code == 200
 
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(IS_WIN, reason='no UDS on win')
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
