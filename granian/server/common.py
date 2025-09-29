@@ -266,16 +266,12 @@ class AbstractServer(Generic[WT]):
         return hook
 
     def _init_shared_socket(self):
-        old_mask = os.umask(0o777 - self.uds_file_permission)
-        try:
-            if self.bind_uds:
-                self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog)
-            else:
-                self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
-            self._shd = self._ssp.build()
-            self._sfd = self._shd.get_fd()
-        finally:
-            os.umask(old_mask)
+        if self.bind_uds:
+            self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_file_permission)
+        else:
+            self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
+        self._shd = self._ssp.build()
+        self._sfd = self._shd.get_fd()
 
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True
