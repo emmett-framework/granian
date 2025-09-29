@@ -181,7 +181,9 @@ async def test_https(server_tls, runtime_mode, http_client):
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_uds_default_file_permission(asgi_server, runtime_mode, http_client):
     async with asgi_server(runtime_mode, ws=False):
-        assert stat.S_IMODE(os.stat('granian.sock').st_mode) == 0o664
+        current_umask = os.umask(0)
+        os.umask(current_umask)
+        assert stat.S_IMODE(os.stat('granian.sock').st_mode) == 0o777 - current_umask
         res = http_client.get('http://granian/info?test=true')
 
     assert res.status_code == 200

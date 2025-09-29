@@ -64,7 +64,7 @@ pub struct UnixListenerSpec {
     inp: (String, i32),
     address: socket2::SockAddr,
     backlog: i32,
-    file_permission: u32,
+    file_permission: Option<u32>,
 }
 
 impl ListenerSpec {
@@ -127,10 +127,12 @@ impl UnixListenerSpec {
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         socket.listen(self.backlog)?;
 
-        let socket_path = self.address.as_pathname().unwrap();
-        let mut permissions = fs::metadata(socket_path)?.permissions();
-        permissions.set_mode(self.file_permission);
-        fs::set_permissions(socket_path, permissions)?;
+        if let Some(mode) = self.file_permission {
+            let socket_path = self.address.as_pathname().unwrap();
+            let mut permissions = fs::metadata(socket_path)?.permissions();
+            permissions.set_mode(mode);
+            fs::set_permissions(socket_path, permissions)?;
+        }
 
         Ok(socket)
     }
@@ -140,7 +142,7 @@ impl UnixListenerSpec {
 #[pymethods]
 impl UnixListenerSpec {
     #[new]
-    fn new(bind: String, backlog: i32, file_permission: u32) -> PyResult<Self> {
+    fn new(bind: String, backlog: i32, file_permission: Option<u32>) -> PyResult<Self> {
         let address = socket2::SockAddr::unix(&bind)?;
         Ok(Self {
             inp: (bind, backlog),

@@ -84,7 +84,7 @@ class AbstractServer(Generic[WT]):
         address: str = '127.0.0.1',
         port: int = 8000,
         uds: Optional[Path] = None,
-        uds_file_permission: Optional[int] = 0o664,
+        uds_file_permission: Optional[int] = None,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         blocking_threads: Optional[int] = None,

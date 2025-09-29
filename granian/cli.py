@@ -119,7 +119,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--uds', type=click.Path(exists=False, writable=True, path_type=pathlib.Path), help='Unix Domain Socket to bind to.'
 )
-@option('--uds-file-permission', type=PossiblyOctalInt(), default=0o664, help='Unix Domain Socket file permission')
+@option('--uds-file-permission', type=PossiblyOctalInt(), default=None, help='Unix Domain Socket file permission')
 @option(
     '--interface',
     type=EnumType(Interfaces),
