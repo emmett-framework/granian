@@ -33,6 +33,14 @@ multiprocessing.allow_connection_pickling()
 class WorkerProcess(AbstractWorker):
     _idl = 'PID'
 
+    def __init__(self, parent, idx, target, args):
+        # NOTE: Python 3.14 defaults mp spawn method to 'forkserver' on Linux,
+        #       which doesn't really play well with shared sockets.
+        self._spawn_method = multiprocessing.get_start_method()
+        if self._spawn_method not in {'fork', 'spawn'}:
+            self._spawn_method = 'spawn'
+        super().__init__(parent, idx, target, args)
+
     @staticmethod
     def wrap_target(target):
         @wraps(target)
@@ -68,7 +76,9 @@ class WorkerProcess(AbstractWorker):
         return wrapped
 
     def _spawn(self, target, args):
-        self.inner = multiprocessing.get_context().Process(name='granian-worker', target=target, args=args)
+        self.inner = multiprocessing.get_context(self._spawn_method).Process(
+            name='granian-worker', target=target, args=args
+        )
 
     def _id(self):
         return self.inner.pid
