@@ -64,6 +64,7 @@ pub struct UnixListenerSpec {
     inp: (String, i32),
     address: socket2::SockAddr,
     backlog: i32,
+    permissions: Option<u32>,
 }
 
 impl ListenerSpec {
@@ -118,11 +119,20 @@ impl ListenerSpec {
 #[cfg(unix)]
 impl UnixListenerSpec {
     pub(crate) fn as_socket(&self) -> Result<Socket> {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
         let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
 
         socket.bind(&self.address)?;
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         socket.listen(self.backlog)?;
+
+        if let Some(mode) = self.permissions {
+            let socket_path = self.address.as_pathname().unwrap();
+            let mut permissions = fs::metadata(socket_path)?.permissions();
+            permissions.set_mode(mode);
+            fs::set_permissions(socket_path, permissions)?;
+        }
 
         Ok(socket)
     }
@@ -132,12 +142,13 @@ impl UnixListenerSpec {
 #[pymethods]
 impl UnixListenerSpec {
     #[new]
-    fn new(bind: String, backlog: i32) -> PyResult<Self> {
+    fn new(bind: String, backlog: i32, permissions: Option<u32>) -> PyResult<Self> {
         let address = socket2::SockAddr::unix(&bind)?;
         Ok(Self {
             inp: (bind, backlog),
             address,
             backlog,
+            permissions,
         })
     }
 

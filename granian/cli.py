@@ -73,6 +73,23 @@ class EnumType(click.Choice):
         return self.__enum(converted_str)
 
 
+class OctalIntType(click.ParamType):
+    name = 'Octal integer'
+
+    def convert(self, value, param, ctx):
+        if value is None or isinstance(value, int):
+            return value
+
+        if not isinstance(value, str):
+            self.fail(f'{value!r} is not a valid integer')
+
+        base = 8 if len(value) > 0 and value[0] == '0' else 10
+        try:
+            return int(value, base)
+        except ValueError as e:
+            self.fail(str(e))
+
+
 def _pretty_print_default(value: Optional[bool]) -> Optional[str]:
     if isinstance(value, bool):
         return 'enabled' if value else 'disabled'
@@ -102,6 +119,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--uds', type=click.Path(exists=False, writable=True, path_type=pathlib.Path), help='Unix Domain Socket to bind to.'
 )
+@option('--uds-permissions', type=OctalIntType(), default=None, help='Unix Domain Socket file permissions')
 @option(
     '--interface',
     type=EnumType(Interfaces),
@@ -389,6 +407,7 @@ def cli(
     host: str,
     port: int,
     uds: Optional[pathlib.Path],
+    uds_permissions: Optional[int],
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
@@ -467,6 +486,7 @@ def cli(
         address=host,
         port=port,
         uds=uds,
+        uds_permissions=uds_permissions,
         interface=interface,
         workers=workers,
         blocking_threads=blocking_threads,

@@ -1,6 +1,7 @@
 import asyncio
 import multiprocessing as mp
 import os
+import stat
 import sys
 from contextlib import asynccontextmanager
 from functools import partial
@@ -21,7 +22,9 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, runtime_mode, ws=True, tls=False, task_impl='asyncio', static_mount=False):
+async def _server(
+    interface, runtime_mode, ws=True, tls=False, task_impl='asyncio', static_mount=False, **server_kwargs
+):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
@@ -43,6 +46,7 @@ async def _server(interface, runtime_mode, ws=True, tls=False, task_impl='asynci
             kwargs['ssl_key'] = certs_path / 'key.pem'
     if static_mount:
         kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
+    kwargs.update(server_kwargs)
 
     proc = mp.get_context('spawn').Process(target=_serve, kwargs=kwargs)
     proc.start()
@@ -165,3 +169,24 @@ async def test_https(server_tls, runtime_mode, http_client):
     assert res.status_code == 200
     data = res.json()
     assert data['scheme'] == 'https'
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(IS_WIN, reason='no UDS on win')
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_uds_default_file_permission(asgi_server, runtime_mode):
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+
+    async with asgi_server(runtime_mode, ws=False):
+        assert stat.S_IMODE(os.stat('granian.sock').st_mode) == 0o777 - current_umask
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(IS_WIN, reason='no UDS on win')
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_uds_configurable_file_permission(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws=False, uds_permissions=0o666):
+        assert stat.S_IMODE(os.stat('granian.sock').st_mode) == 0o666
