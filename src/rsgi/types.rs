@@ -15,7 +15,7 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404},
+    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404, response_416, response_500},
     net::SockAddr,
 };
 
@@ -209,6 +209,7 @@ rsgi_scope_cls!(RSGIWebsocketScope, "ws");
 pub(crate) enum PyResponse {
     Body(PyResponseBody),
     File(PyResponseFile),
+    FilePartial(PyResponseFilePartial),
 }
 
 pub(crate) struct PyResponseBody {
@@ -221,6 +222,14 @@ pub(crate) struct PyResponseFile {
     status: hyper::StatusCode,
     headers: HeaderMap,
     file_path: String,
+}
+
+pub(crate) struct PyResponseFilePartial {
+    status: hyper::StatusCode,
+    headers: HeaderMap,
+    file_path: String,
+    start: u64,
+    end: u64,
 }
 
 macro_rules! headers_from_py {
@@ -302,6 +311,86 @@ impl PyResponseFile {
                 *res.status_mut() = self.status;
                 *res.headers_mut() = self.headers;
                 res
+            }
+            Err(_) => {
+                log::info!("Cannot open file {}", &self.file_path);
+                response_404()
+            }
+        }
+    }
+}
+
+impl PyResponseFilePartial {
+    pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String, start: u64, end: u64) -> Self {
+        Self {
+            status: status.try_into().unwrap(),
+            headers: headers_from_py!(headers),
+            file_path,
+            start,
+            end,
+        }
+    }
+
+    #[inline]
+    pub async fn to_response(self) -> hyper::Response<HTTPResponseBody> {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+        match File::open(&self.file_path).await {
+            Ok(mut file) => {
+                // Get file metadata to validate ranges
+                let Ok(metadata) = file.metadata().await else {
+                    log::error!("Cannot get metadata for file {}", &self.file_path);
+                    return response_500();
+                };
+                let file_size = metadata.len();
+
+                // Validate and auto-correct ranges
+                if self.start >= file_size {
+                    // Start position beyond file size - return 416
+                    return response_416(file_size);
+                }
+
+                // Clamp end to file_size - 1 if it's beyond the file
+                let actual_end = if self.end >= file_size { file_size - 1 } else { self.end };
+
+                // Additional sanity check (should not happen with proper usage)
+                if self.start > actual_end {
+                    return response_416(file_size);
+                }
+
+                // Seek to start position
+                match file.seek(std::io::SeekFrom::Start(self.start)).await {
+                    Ok(_) => {
+                        // Calculate actual bytes to read
+                        let bytes_to_read = actual_end - self.start + 1;
+                        let limited_file = file.take(bytes_to_read);
+
+                        // Create stream from limited file reader
+                        let stream = ReaderStream::with_capacity(limited_file, 131_072);
+                        let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+                        let mut res =
+                            hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                        *res.status_mut() = self.status;
+
+                        // Update headers with correct Content-Range and Content-Length
+                        let mut headers = self.headers.clone();
+                        headers.insert(
+                            "content-range",
+                            HeaderValue::from_str(&format!("bytes {}-{actual_end}/{file_size}", self.start)).unwrap(),
+                        );
+                        headers.insert(
+                            "content-length",
+                            HeaderValue::from_str(&bytes_to_read.to_string()).unwrap(),
+                        );
+                        *res.headers_mut() = headers;
+
+                        res
+                    }
+                    Err(_) => {
+                        log::error!("Cannot seek to position {} in file {}", self.start, &self.file_path);
+                        response_500()
+                    }
+                }
             }
             Err(_) => {
                 log::info!("Cannot open file {}", &self.file_path);
