@@ -74,7 +74,7 @@ class EnumType(click.Choice):
 
 
 class OctalIntType(click.ParamType):
-    name = int
+    name = 'Octal integer'
 
     def convert(self, value, param, ctx):
         if value is None or isinstance(value, int):

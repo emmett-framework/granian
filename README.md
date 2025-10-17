@@ -142,6 +142,9 @@ Options:
                                   default: 8000]
   --uds PATH                      Unix Domain Socket to bind to.  [env var:
                                   GRANIAN_UDS]
+  --uds-permissions OCTAL INTEGER
+                                  Unix Domain Socket file permissions  [env
+                                  var: GRANIAN_UDS_PERMISSIONS]
   --interface [asgi|asginl|rsgi|wsgi]
                                   Application interface type  [env var:
                                   GRANIAN_INTERFACE; default: (rsgi)]
