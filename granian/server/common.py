@@ -84,7 +84,7 @@ class AbstractServer(Generic[WT]):
         address: str = '127.0.0.1',
         port: int = 8000,
         uds: Optional[Path] = None,
-        uds_file_permission: Optional[int] = None,
+        uds_permissions: Optional[int] = None,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         blocking_threads: Optional[int] = None,
@@ -139,7 +139,7 @@ class AbstractServer(Generic[WT]):
         self.bind_addr = address
         self.bind_port = port
         self.bind_uds = uds.resolve() if uds else None
-        self.uds_file_permission = uds_file_permission
+        self.uds_permissions = uds_permissions
         self.interface = interface
         self.workers = max(1, workers)
         self.runtime_threads = max(1, runtime_threads)
@@ -267,7 +267,7 @@ class AbstractServer(Generic[WT]):
 
     def _init_shared_socket(self):
         if self.bind_uds:
-            self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_file_permission)
+            self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_permissions)
         else:
             self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
         self._shd = self._ssp.build()

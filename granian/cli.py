@@ -73,7 +73,7 @@ class EnumType(click.Choice):
         return self.__enum(converted_str)
 
 
-class PossiblyOctalInt(click.ParamType):
+class OctalIntType(click.ParamType):
     name = int
 
     def convert(self, value, param, ctx):
@@ -119,7 +119,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 @option(
     '--uds', type=click.Path(exists=False, writable=True, path_type=pathlib.Path), help='Unix Domain Socket to bind to.'
 )
-@option('--uds-file-permission', type=PossiblyOctalInt(), default=None, help='Unix Domain Socket file permission')
+@option('--uds-permissions', type=OctalIntType(), default=None, help='Unix Domain Socket file permissions')
 @option(
     '--interface',
     type=EnumType(Interfaces),
@@ -407,7 +407,7 @@ def cli(
     host: str,
     port: int,
     uds: Optional[pathlib.Path],
-    uds_file_permission: Optional[int],
+    uds_permissions: Optional[int],
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
@@ -486,7 +486,7 @@ def cli(
         address=host,
         port=port,
         uds=uds,
-        uds_file_permission=uds_file_permission,
+        uds_permissions=uds_permissions,
         interface=interface,
         workers=workers,
         blocking_threads=blocking_threads,
