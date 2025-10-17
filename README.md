@@ -426,6 +426,8 @@ While on asynchronous protocols, the default value for the backpressure should w
 
 In general, think of backpressure as the maximum amount of concurrency you want to handle (per worker) in your application, after which Granian will halt and wait before pushing more work.
 
+> **Warning**: since backpressure interacts with the accept loop, it will limit connections, not the single requests. Kept-alive connections will handle multiple requests within a single connection, but Granian won't count those requests in the *actual pressure*. This also means, if you typically have several long-running kept-alive connections to your service (for example, if you run behind a reverse proxy), a backpressure value can prevent Granian to accept new connections once the amount of kept-alive connections reaches that limit. Under this circumstances, you want to ensure the configured backpressure is higher than the expected amount of kept-alive connections, and if you're trying to limit the concurrency, it's probably better to configure the blocking threads number rather than the backpressure itself.
+
 ### Runtime mode
 
 Granian offers two different runtime threading paradigms, due to the fact the runtime can be multi-threaded – in opposition to what happens in Python event-loop which can only run as a single thread.
@@ -568,7 +570,7 @@ Granian follows a *semantic versioning* scheme for its releases, with a `{major}
 
 Mind that bug and security fixes are **usually provided for the latest minor version only**.
 
-Granian is used *in production* by projects like [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81), [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25) and [searxng](https://github.com/searxng/searxng/blob/a0ff173799d978873ba022e5d5d8467b8ca7e822/requirements-server.txt#L1), and by *famous companies* like [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26).
+Granian is used *in production* by projects like [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81), [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25), [searxng](https://github.com/searxng/searxng/blob/a0ff173799d978873ba022e5d5d8467b8ca7e822/requirements-server.txt#L1) and [Weblate](https://github.com/WeblateOrg/weblate/blob/weblate-5.13.3/pyproject.toml#L238), and by companies like [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26), [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Sentry](https://github.com/getsentry/sentry/blob/25.10.0/pyproject.toml#L38).
 
 ## License
 
