@@ -72,7 +72,33 @@ macro_rules! build_scope_common {
         scope_set!($py, $scope, "query_string", PyBytes::new($py, query_string.as_bytes()));
 
         let headers = PyList::empty($py);
+        let cookie_joined = {
+            let mut values = $req.headers.get_all(header::COOKIE).iter();
+            values.next().map(|first| {
+                let mut joined = Vec::new();
+                joined.extend_from_slice(first.as_bytes());
+                for value in values {
+                    joined.push(b';');
+                    joined.extend_from_slice(value.as_bytes());
+                }
+                joined
+            })
+        };
+        let mut cookie_added = false;
         for (key, value) in &$req.headers {
+            if key == &header::COOKIE {
+                if !cookie_added {
+                    let cookie_bytes = cookie_joined
+                        .as_ref()
+                        .map_or_else(|| value.as_bytes(), |v| v.as_slice());
+                    headers.append((
+                        PyBytes::new($py, key.as_str().as_bytes()),
+                        PyBytes::new($py, cookie_bytes),
+                    ))?;
+                    cookie_added = true;
+                }
+                continue;
+            }
             headers.append((
                 PyBytes::new($py, key.as_str().as_bytes()),
                 PyBytes::new($py, value.as_bytes()),
