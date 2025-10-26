@@ -49,12 +49,11 @@ pin-project-lite = "=0.2"
 pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.27", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
 pyo3-log = { version = "=0.13", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-027" }
-rustls = { version = "0.23.30", features = ["ring", "tls12"] }
 rustls-pemfile = "2.2"
 socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.36"
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
-tls-listener = { version = "=0.11", features = ["rustls-ring"] }
+tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
 tokio = { version = "1.45", features = ["full"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.28"

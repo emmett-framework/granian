@@ -178,7 +178,7 @@ impl WorkerConfig {
     pub fn resolve_ssl_protocol_version(
         &self,
         version_option: Option<&str>,
-    ) -> Vec<&'static rustls::SupportedProtocolVersion> {
+    ) -> Vec<&'static tls_listener::rustls::rustls::SupportedProtocolVersion> {
         match version_option {
             None | Some("auto") => tls_listener::rustls::rustls::ALL_VERSIONS.to_vec(),
             Some(version) => vec![match version {
@@ -190,7 +190,7 @@ impl WorkerConfig {
     }
 
     pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
-        rustls::crypto::ring::default_provider()
+        tls_listener::rustls::rustls::crypto::ring::default_provider()
             .install_default()
             .expect("Failed to install rustls ring crypto provider");
 
