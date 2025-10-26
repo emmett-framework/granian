@@ -69,6 +69,11 @@ jobs:
             allocator: jemalloc
           - os: ubuntu
             platform: linux
+            target: armv7
+            interpreter: 3.13t 3.14t
+            allocator: mimalloc
+          - os: ubuntu
+            platform: linux
             target: x86_64
             manylinux: musllinux_1_1
             allocator: mimalloc

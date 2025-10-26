@@ -7,7 +7,7 @@ on:
       - master
 
 env:
-  UV_PYTHON: 3.12
+  UV_PYTHON: 3.13
 
 jobs:
   lint:
