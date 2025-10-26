@@ -436,11 +436,9 @@ class Server(AbstractServer[AsyncWorker]):
         if not spawn_target:
             spawn_target = default_spawners[self.interface]
 
-        if self.bind_uds:
-            if sys.platform == 'win32':
-                logger.error('Unix Domain sockets are not available on Windows')
-                raise ConfigurationError('uds')
-            logger.warning('Unix Domain Sockets support is experimental!')
+        if self.bind_uds and sys.platform == 'win32':
+            logger.error('Unix Domain sockets are not available on Windows')
+            raise ConfigurationError('uds')
 
         if self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')

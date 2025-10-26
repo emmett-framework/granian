@@ -570,11 +570,9 @@ class AbstractServer(Generic[WT]):
                     'Number of workers will now fallback to 1.'
                 )
 
-        if self.bind_uds:
-            if sys.platform == 'win32':
-                logger.error('Unix Domain sockets are not available on Windows')
-                raise ConfigurationError('uds')
-            logger.warning('Unix Domain Sockets support is experimental!')
+        if self.bind_uds and sys.platform == 'win32':
+            logger.error('Unix Domain sockets are not available on Windows')
+            raise ConfigurationError('uds')
 
         if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
