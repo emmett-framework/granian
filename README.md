@@ -269,8 +269,8 @@ Options:
   --ssl-keyfile-password TEXT     SSL key password  [env var:
                                   GRANIAN_SSL_KEYFILE_PASSWORD]
   --ssl-protocol-min [tls1.2|tls1.3]
-                                  Override the supported ssl protocol versions
-                                  and pin to the one specified.  [env var:
+                                  Set the minimum supported protocol for SSL
+                                  connections.  [env var:
                                   GRANIAN_SSL_PROTOCOL_MIN; default: (tls1.3)]
   --ssl-ca FILE                   Root SSL cerificate file for client
                                   verification  [env var: GRANIAN_SSL_CA]

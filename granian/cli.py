@@ -270,7 +270,7 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
     '--ssl-protocol-min',
     type=EnumType(SSLProtocols),
     default=SSLProtocols.tls13,
-    help='Override the supported ssl protocol versions and pin to the one specified.',
+    help='Set the minimum supported protocol for SSL connections.',
 )
 @option(
     '--ssl-ca',
