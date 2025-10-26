@@ -37,7 +37,6 @@ class TaskImpl(StrEnum):
     rust = 'rust'
 
 
-class SslProtocolVersions(StrEnum):
-    auto = 'auto'
-    tls12 = '1.2'
-    tls13 = '1.3'
+class SSLProtocols(StrEnum):
+    tls12 = 'tls1.2'
+    tls13 = 'tls1.3'

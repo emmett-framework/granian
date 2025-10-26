@@ -16,7 +16,9 @@ def _serve(**kwargs):
 
 
 @asynccontextmanager
-async def _server(interface, port, runtime_mode, ws=True, tls=False, task_impl='asyncio', static_mount=False):
+async def _server(
+    interface, port, runtime_mode, ws=True, tls=False, tls_proto=None, task_impl='asyncio', static_mount=False
+):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
         'interface': interface,
@@ -36,8 +38,9 @@ async def _server(interface, port, runtime_mode, ws=True, tls=False, task_impl='
             kwargs['ssl_cert'] = certs_path / 'cert.pem'
             kwargs['ssl_key'] = certs_path / 'key.pem'
 
-        if tls == '1.2':
-            kwargs['ssl_protocol_version'] = '1.2'
+        if tls_proto:
+            kwargs['ssl_protocol_min'] = tls_proto
+
     if static_mount:
         kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
 
@@ -106,8 +109,8 @@ def server(server_port, request):
 
 
 @pytest.fixture(scope='function')
-def server_tls(server_port, request, tls=True):
-    return partial(_server, request.param, server_port, tls=tls)
+def server_tls(server_port, request, tls=True, **extras):
+    return partial(_server, request.param, server_port, tls=tls, **extras)
 
 
 @pytest.fixture(scope='function')

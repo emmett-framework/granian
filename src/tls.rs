@@ -5,16 +5,26 @@ use tls_listener::{
     rustls::{
         TlsAcceptor,
         rustls::{
+            SupportedProtocolVersion,
             pki_types::{
                 CertificateDer as Certificate, CertificateRevocationListDer as CRL, PrivateKeyDer as PrivateKey,
                 pem::PemObject,
             },
             server::ServerConfig,
+            version as tls_version,
         },
     },
 };
 
 use crate::net::SockAddr;
+
+pub(crate) fn resolve_protocol_versions(min_version: &str) -> Vec<&'static SupportedProtocolVersion> {
+    match min_version {
+        "tls1.2" => vec![&tls_version::TLS12, &tls_version::TLS13],
+        "tls1.3" => vec![&tls_version::TLS13],
+        _ => unreachable!(),
+    }
+}
 
 pub(crate) fn tls_tcp_listener(
     config: Arc<ServerConfig>,

@@ -8,26 +8,34 @@ import pytest
 import websockets
 
 
-async def tls_version(hostname, port):
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server_tls', ['asgi', 'rsgi', 'wsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+@pytest.mark.parametrize(
+    'tls_scope', [('tls1.2', ssl.TLSVersion.TLSv1_2, 'TLSv1.2'), ('tls1.3', ssl.TLSVersion.TLSv1_3, 'TLSv1.3')]
+)
+async def test_tls_protocol(server_tls, runtime_mode, tls_scope):
+    tls_input, tls_max_proto, tls_expected = tls_scope
 
-    with socket.create_connection((hostname, port)) as sock:
-        with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-            return ssock.version()
+    async with server_tls(runtime_mode, ws=False, tls_proto=tls_input) as port:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.maximum_version = tls_max_proto
+
+        with socket.create_connection(('localhost', port)) as sock:
+            with context.wrap_socket(sock, server_hostname='localhost') as ssock:
+                tls_version = ssock.version()
+
+        assert tls_version == tls_expected
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_tls', ['asgi', 'rsgi', 'wsgi'], indirect=True)
-@pytest.mark.parametrize('tls', [True, '1.2'])
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_http_scope(server_tls, tls, runtime_mode):
-    async with server_tls(runtime_mode, ws=False, tls=tls) as port:
+async def test_http_scope(server_tls, runtime_mode):
+    async with server_tls(runtime_mode, ws=False) as port:
         res = httpx.get(f'https://localhost:{port}/info?test=true', verify=False)
-
-        expected_tls_version = 'TLSv1.2' if tls == '1.2' else 'TLSv1.3'
-        assert await tls_version('localhost', port) == expected_tls_version
 
     assert res.status_code == 200
     data = res.json()

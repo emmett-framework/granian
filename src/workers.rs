@@ -7,7 +7,10 @@ use std::{
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
-use super::tls::{load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey};
+use super::tls::{
+    load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
+    resolve_protocol_versions,
+};
 use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -104,10 +107,10 @@ pub(crate) struct WorkerConfig {
 pub(crate) struct WorkerTlsConfig {
     cert: String,
     key: (String, Option<String>),
+    proto: String,
     ca: Option<String>,
     crl: Vec<String>,
     client_verify: bool,
-    protocol_version: Option<String>,
 }
 
 impl WorkerConfig {
@@ -128,19 +131,19 @@ impl WorkerConfig {
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
         ssl_key_password: Option<String>,
+        ssl_protocol_min: &str,
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
-        ssl_protocol_version: Option<String>,
     ) -> Self {
         let tls_opts = match ssl_enabled {
             true => Some(WorkerTlsConfig {
                 cert: ssl_cert.unwrap(),
                 key: (ssl_key.unwrap(), ssl_key_password),
+                proto: ssl_protocol_min.into(),
                 ca: ssl_ca,
                 crl: ssl_crl,
                 client_verify: ssl_client_verify,
-                protocol_version: ssl_protocol_version,
             }),
             false => None,
         };
@@ -175,28 +178,9 @@ impl WorkerConfig {
         listener
     }
 
-    pub fn resolve_ssl_protocol_version(
-        &self,
-        version_option: Option<&str>,
-    ) -> Vec<&'static tls_listener::rustls::rustls::SupportedProtocolVersion> {
-        match version_option {
-            None | Some("auto") => tls_listener::rustls::rustls::ALL_VERSIONS.to_vec(),
-            Some(version) => vec![match version {
-                "1.2" => &tls_listener::rustls::rustls::version::TLS12,
-                "1.3" => &tls_listener::rustls::rustls::version::TLS13,
-                _ => panic!("Failed to look up ssl version '{version}', valid options are '1.2' and '1.3'"),
-            }],
-        }
-    }
-
     pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
-        tls_listener::rustls::rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls ring crypto provider");
-
         let opts = self.tls_opts.as_ref().unwrap();
-
-        let ssl_protocol_versions = self.resolve_ssl_protocol_version(opts.protocol_version.as_deref());
+        let tls_protos = resolve_protocol_versions(&opts.proto);
 
         let cfg_builder = match &opts.ca {
             Some(ca) => {
@@ -219,9 +203,10 @@ impl WorkerConfig {
                             .unwrap()
                     }
                 };
-                tls_listener::rustls::rustls::ServerConfig::builder().with_client_cert_verifier(verifier)
+                tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
+                    .with_client_cert_verifier(verifier)
             }
-            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&ssl_protocol_versions)
+            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
                 .with_no_client_auth(),
         };
         let mut cfg = cfg_builder

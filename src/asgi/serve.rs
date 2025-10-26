@@ -33,10 +33,10 @@ impl ASGIWorker {
             ssl_cert=None,
             ssl_key=None,
             ssl_key_password=None,
+            ssl_protocol_min="1.3",
             ssl_ca=None,
             ssl_crl=vec![],
             ssl_client_verify=false,
-            ssl_protocol_version=None,
         )
     )]
     fn new(
@@ -57,10 +57,10 @@ impl ASGIWorker {
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
         ssl_key_password: Option<String>,
+        ssl_protocol_min: &str,
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
-        ssl_protocol_version: Option<String>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -80,10 +80,10 @@ impl ASGIWorker {
                 ssl_cert,
                 ssl_key,
                 ssl_key_password,
+                ssl_protocol_min,
                 ssl_ca,
                 ssl_crl,
                 ssl_client_verify,
-                ssl_protocol_version,
             ),
         })
     }
