@@ -51,6 +51,11 @@ jobs:
             allocator: jemalloc
           - os: ubuntu
             platform: linux
+            target: i686
+            interpreter: 3.13t 3.14t
+            allocator: mimalloc
+          - os: ubuntu
+            platform: linux
             target: aarch64
             # rust-cross/manylinux2014-cross:aarch64 has issues with `ring`
             container: ghcr.io/rust-cross/manylinux_2_28-cross:aarch64
@@ -65,13 +70,8 @@ jobs:
           - os: ubuntu
             platform: linux
             target: armv7
-            interpreter: 3.10 3.11 3.12 3.13 3.14
+            interpreter: 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t
             allocator: jemalloc
-          - os: ubuntu
-            platform: linux
-            target: armv7
-            interpreter: 3.13t 3.14t
-            allocator: mimalloc
           - os: ubuntu
             platform: linux
             target: x86_64
