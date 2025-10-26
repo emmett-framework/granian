@@ -229,7 +229,7 @@ class AbstractServer(Generic[WT]):
         client_verify: bool,
     ):
         if not (cert and key):
-            self.ssl_ctx = (False, None, None, None, None, None, [], False)
+            self.ssl_ctx = (False, None, None, None, str(proto), None, [], False)
             return
         # uneeded?
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

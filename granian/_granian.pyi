@@ -72,10 +72,11 @@ class ASGIWorker:
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],
+        ssl_key_password: Optional[str],
+        ssl_protocol_min: str,
         ssl_ca: Optional[str],
         ssl_crl: List[str],
         ssl_client_verify: bool,
-        ssl_protocol_version: Optional[str],
     ) -> ASGIWorker: ...
 
 class WSGIWorker:
@@ -95,10 +96,11 @@ class WSGIWorker:
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],
+        ssl_key_password: Optional[str],
+        ssl_protocol_min: str,
         ssl_ca: Optional[str],
         ssl_crl: List[str],
         ssl_client_verify: bool,
-        ssl_protocol_version: Optional[str],
     ) -> WSGIWorker: ...
 
 class RSGIWorker:
@@ -119,10 +121,11 @@ class RSGIWorker:
         ssl_enabled: bool,
         ssl_cert: Optional[str],
         ssl_key: Optional[str],
+        ssl_key_password: Optional[str],
+        ssl_protocol_min: str,
         ssl_ca: Optional[str],
         ssl_crl: List[str],
         ssl_client_verify: bool,
-        ssl_protocol_version: Optional[str],
     ) -> RSGIWorker: ...
 
 class SocketHolder:
