@@ -24,6 +24,7 @@ from .common import (
     HTTPModes,
     Interfaces,
     LogLevels,
+    SSLProtocols,
     TaskImpl,
     logger,
 )
@@ -116,6 +117,7 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         ssl_key_password: Optional[str] = None,
+        ssl_protocol_min: SSLProtocols = SSLProtocols.tls13,
         ssl_ca: Optional[Path] = None,
         ssl_crl: Optional[List[Path]] = None,
         ssl_client_verify: bool = False,
@@ -150,6 +152,7 @@ class Server(AbstractServer[AsyncWorker]):
             ssl_cert=ssl_cert,
             ssl_key=ssl_key,
             ssl_key_password=ssl_key_password,
+            ssl_protocol_min=ssl_protocol_min,
             ssl_ca=ssl_ca,
             ssl_crl=ssl_crl,
             ssl_client_verify=ssl_client_verify,

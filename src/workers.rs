@@ -7,7 +7,10 @@ use std::{
 
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
-use super::tls::{load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey};
+use super::tls::{
+    load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
+    resolve_protocol_versions,
+};
 use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -104,6 +107,7 @@ pub(crate) struct WorkerConfig {
 pub(crate) struct WorkerTlsConfig {
     cert: String,
     key: (String, Option<String>),
+    proto: String,
     ca: Option<String>,
     crl: Vec<String>,
     client_verify: bool,
@@ -127,6 +131,7 @@ impl WorkerConfig {
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
         ssl_key_password: Option<String>,
+        ssl_protocol_min: &str,
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
@@ -135,6 +140,7 @@ impl WorkerConfig {
             true => Some(WorkerTlsConfig {
                 cert: ssl_cert.unwrap(),
                 key: (ssl_key.unwrap(), ssl_key_password),
+                proto: ssl_protocol_min.into(),
                 ca: ssl_ca,
                 crl: ssl_crl,
                 client_verify: ssl_client_verify,
@@ -174,6 +180,8 @@ impl WorkerConfig {
 
     pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
         let opts = self.tls_opts.as_ref().unwrap();
+        let tls_protos = resolve_protocol_versions(&opts.proto);
+
         let cfg_builder = match &opts.ca {
             Some(ca) => {
                 let cas = tls_load_certs(ca.clone());
@@ -195,9 +203,11 @@ impl WorkerConfig {
                             .unwrap()
                     }
                 };
-                tls_listener::rustls::rustls::ServerConfig::builder().with_client_cert_verifier(verifier)
+                tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
+                    .with_client_cert_verifier(verifier)
             }
-            None => tls_listener::rustls::rustls::ServerConfig::builder().with_no_client_auth(),
+            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
+                .with_no_client_auth(),
         };
         let mut cfg = cfg_builder
             .with_single_cert(

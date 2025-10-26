@@ -15,7 +15,7 @@ from .._compat import _PY_312, _PYV
 from .._imports import dotenv, setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
-from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
+from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
@@ -108,6 +108,7 @@ class AbstractServer(Generic[WT]):
         ssl_cert: Optional[Path] = None,
         ssl_key: Optional[Path] = None,
         ssl_key_password: Optional[str] = None,
+        ssl_protocol_min: SSLProtocols = SSLProtocols.tls13,
         ssl_ca: Optional[Path] = None,
         ssl_crl: Optional[List[Path]] = None,
         ssl_client_verify: bool = False,
@@ -200,7 +201,9 @@ class AbstractServer(Generic[WT]):
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
-        self.build_ssl_context(ssl_cert, ssl_key, ssl_key_password, ssl_ca, ssl_crl or [], ssl_client_verify)
+        self.build_ssl_context(
+            ssl_cert, ssl_key, ssl_key_password, ssl_protocol_min, ssl_ca, ssl_crl or [], ssl_client_verify
+        )
         self._ssp = None
         self._shd = None
         self._sfd = None
@@ -220,12 +223,13 @@ class AbstractServer(Generic[WT]):
         cert: Optional[Path],
         key: Optional[Path],
         password: Optional[str],
+        proto: SSLProtocols,
         ca: Optional[Path],
         crl: List[Path],
         client_verify: bool,
     ):
         if not (cert and key):
-            self.ssl_ctx = (False, None, None, None, None, [], False)
+            self.ssl_ctx = (False, None, None, None, str(proto), None, [], False)
             return
         # uneeded?
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -239,6 +243,7 @@ class AbstractServer(Generic[WT]):
             str(cert.resolve()),
             str(key.resolve()),
             password,
+            str(proto),
             str(ca.resolve()) if ca else None,
             [str(item.resolve()) for item in crl],
             client_verify,

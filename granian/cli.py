@@ -6,7 +6,7 @@ from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 import click
 
-from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, TaskImpl
+from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
@@ -267,6 +267,12 @@ def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs:
 )
 @option('--ssl-keyfile-password', help='SSL key password')
 @option(
+    '--ssl-protocol-min',
+    type=EnumType(SSLProtocols),
+    default=SSLProtocols.tls13,
+    help='Set the minimum supported protocol for SSL connections.',
+)
+@option(
     '--ssl-ca',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
     help='Root SSL cerificate file for client verification',
@@ -442,6 +448,7 @@ def cli(
     ssl_certificate: Optional[pathlib.Path],
     ssl_keyfile: Optional[pathlib.Path],
     ssl_keyfile_password: Optional[str],
+    ssl_protocol_min: SSLProtocols,
     ssl_ca: Optional[pathlib.Path],
     ssl_crl: Optional[List[pathlib.Path]],
     ssl_client_verify: bool,
@@ -525,6 +532,7 @@ def cli(
         ssl_cert=ssl_certificate,
         ssl_key=ssl_keyfile,
         ssl_key_password=ssl_keyfile_password,
+        ssl_protocol_min=ssl_protocol_min,
         ssl_ca=ssl_ca,
         ssl_crl=ssl_crl,
         ssl_client_verify=ssl_client_verify,

@@ -268,6 +268,10 @@ Options:
   --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
   --ssl-keyfile-password TEXT     SSL key password  [env var:
                                   GRANIAN_SSL_KEYFILE_PASSWORD]
+  --ssl-protocol-min [tls1.2|tls1.3]
+                                  Set the minimum supported protocol for SSL
+                                  connections.  [env var:
+                                  GRANIAN_SSL_PROTOCOL_MIN; default: (tls1.3)]
   --ssl-ca FILE                   Root SSL cerificate file for client
                                   verification  [env var: GRANIAN_SSL_CA]
   --ssl-crl FILE                  SSL CRL file(s)  [env var: GRANIAN_SSL_CRL]
@@ -275,6 +279,10 @@ Options:
                                   Verify clients SSL certificates  [env var:
                                   GRANIAN_SSL_CLIENT_VERIFY; default:
                                   (disabled)]
+  --ssl-protocol-version [auto|1.2|1.3]
+                                  Override the supported ssl protocol versions
+                                  and pin to the one specified.  [env var:
+                                  GRANIAN_SSL_PROTOCOL_VERSION; default: auto]
   --url-path-prefix TEXT          URL path prefix the app is mounted on  [env
                                   var: GRANIAN_URL_PATH_PREFIX]
   --respawn-failed-workers / --no-respawn-failed-workers

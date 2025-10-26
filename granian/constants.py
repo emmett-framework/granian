@@ -35,3 +35,8 @@ class Loops(StrEnum):
 class TaskImpl(StrEnum):
     asyncio = 'asyncio'
     rust = 'rust'
+
+
+class SSLProtocols(StrEnum):
+    tls12 = 'tls1.2'
+    tls13 = 'tls1.3'

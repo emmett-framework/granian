@@ -1156,8 +1156,7 @@ dependencies = [
 [[package]]
 name = "tls-listener"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab41256c16d6fc2b3021545f20bf77a73200b18bd54040ac656dddfca6205bfa"
+source = "git+https://github.com/gi0baro/tls-listener.git?branch=0.11.x#28d8a48209466324343d133414ea9af218faebb3"
 dependencies = [
  "futures-util",
  "pin-project-lite",
