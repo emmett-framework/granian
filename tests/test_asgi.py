@@ -75,9 +75,13 @@ async def test_app_error(asgi_server, runtime_mode):
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_protocol_error(asgi_server, runtime_mode):
     async with asgi_server(runtime_mode, ws=False) as port:
-        res = httpx.get(f'http://localhost:{port}/err_proto')
+        res = httpx.get(f'http://localhost:{port}/err_proto/type')
+        assert res.status_code == 200
+        assert res.text == 'Unsupported ASGI message'
 
-    assert res.status_code == 500
+        res = httpx.get(f'http://localhost:{port}/err_proto/flow')
+        assert res.status_code == 200
+        assert res.text == 'msg1'
 
 
 @pytest.mark.asyncio
