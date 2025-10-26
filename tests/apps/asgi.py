@@ -123,8 +123,26 @@ async def err_app(scope, receive, send):
     1 / 0
 
 
-async def err_proto(scope, receive, send):
-    await send({'type': 'wrong.msg'})
+async def err_proto_msg(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    try:
+        await send({'type': 'wrong.msg'})
+    except Exception as e:
+        msg = e.args[0]
+    await send({'type': 'http.response.body', 'body': msg.encode('utf8'), 'more_body': False})
+
+
+async def err_proto_flow(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    await send({'type': 'http.response.body', 'body': b'msg1', 'more_body': False})
+    try:
+        await send({'type': 'http.response.body', 'body': b'msg2', 'more_body': True})
+    except Exception:
+        pass
+    try:
+        await send({'type': 'http.response.body', 'body': b'msg3', 'more_body': False})
+    except Exception:
+        pass
 
 
 async def timeout_n(scope, receive, send):
@@ -172,7 +190,8 @@ def app(scope, receive, send):
         '/ws_echo': ws_echo,
         '/ws_push': ws_push,
         '/err_app': err_app,
-        '/err_proto': err_proto,
+        '/err_proto/type': err_proto_msg,
+        '/err_proto/flow': err_proto_flow,
         '/timeout_n': timeout_n,
         '/timeout_w': timeout_w,
     }.get(scope['path'], info)(scope, receive, send)

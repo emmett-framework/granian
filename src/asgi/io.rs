@@ -218,31 +218,35 @@ impl ASGIHTTPProtocol {
                     more,
                     self.response_chunked.load(atomic::Ordering::Relaxed),
                 ) {
-                    (true, false, false) => {
-                        let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
-                        self.send_response(
-                            status,
-                            headers,
-                            http_body_util::Full::new(body::Bytes::from(body))
-                                .map_err(std::convert::Into::into)
-                                .boxed(),
-                        );
-                        self.flow_tx_waiter.notify_one();
-                        empty_future_into_py(py)
-                    }
-                    (true, true, false) => {
-                        self.response_chunked.store(true, atomic::Ordering::Relaxed);
-                        let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
-                        let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
-                        let body_stream = http_body_util::StreamBody::new(
-                            tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
-                                .map(body::Frame::data)
-                                .map(Result::Ok),
-                        );
-                        *self.body_tx.lock().unwrap() = Some(body_tx.clone());
-                        self.send_response(status, headers, BodyExt::boxed(body_stream));
-                        self.send_body(py, &body_tx, body, false)
-                    }
+                    (true, false, false) => match self.response_intent.lock().unwrap().take() {
+                        Some((status, headers)) => {
+                            self.send_response(
+                                status,
+                                headers,
+                                http_body_util::Full::new(body::Bytes::from(body))
+                                    .map_err(std::convert::Into::into)
+                                    .boxed(),
+                            );
+                            self.flow_tx_waiter.notify_one();
+                            empty_future_into_py(py)
+                        }
+                        _ => error_flow!("Response already finished"),
+                    },
+                    (true, true, false) => match self.response_intent.lock().unwrap().take() {
+                        Some((status, headers)) => {
+                            self.response_chunked.store(true, atomic::Ordering::Relaxed);
+                            let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
+                            let body_stream = http_body_util::StreamBody::new(
+                                tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                                    .map(body::Frame::data)
+                                    .map(Result::Ok),
+                            );
+                            *self.body_tx.lock().unwrap() = Some(body_tx.clone());
+                            self.send_response(status, headers, BodyExt::boxed(body_stream));
+                            self.send_body(py, &body_tx, body, false)
+                        }
+                        _ => error_flow!("Response already finished"),
+                    },
                     (true, true, true) => match &*self.body_tx.lock().unwrap() {
                         Some(tx) => self.send_body(py, tx, body, false),
                         _ => error_flow!("Transport not initialized or closed"),
