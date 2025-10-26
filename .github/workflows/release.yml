@@ -6,7 +6,7 @@ on:
       - v*.*.*
 
 env:
-  PY_ALL: 3.9 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t pypy3.9 pypy3.10 pypy3.11
+  PY_ALL: 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t pypy3.11
 
 jobs:
   sdist:
@@ -38,7 +38,7 @@ jobs:
           - os: ubuntu
             platform: linux
             target: x86_64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9 pypy3.10 pypy3.11
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
           - os: ubuntu
             platform: linux
             target: x86_64
@@ -47,14 +47,14 @@ jobs:
           - os: ubuntu
             platform: linux
             target: i686
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+            interpreter: 3.10 3.11 3.12 3.13 3.14
             allocator: jemalloc
           - os: ubuntu
             platform: linux
             target: aarch64
             # rust-cross/manylinux2014-cross:aarch64 has issues with `ring`
             container: ghcr.io/rust-cross/manylinux_2_28-cross:aarch64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9 pypy3.10 pypy3.11
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
           - os: ubuntu
             platform: linux
             target: aarch64
@@ -65,7 +65,7 @@ jobs:
           - os: ubuntu
             platform: linux
             target: armv7
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+            interpreter: 3.10 3.11 3.12 3.13 3.14
             allocator: jemalloc
           - os: ubuntu
             platform: linux
@@ -89,21 +89,21 @@ jobs:
             allocator: mimalloc
           - os: macos
             target: x86_64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9 pypy3.10 pypy3.11
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
           - os: macos
             target: x86_64
             interpreter: 3.13t 3.14t
             allocator: mimalloc
           - os: macos
             target: aarch64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9 pypy3.10 pypy3.11
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
           - os: macos
             target: aarch64
             interpreter: 3.13t 3.14t
             allocator: mimalloc
           - os: windows
             target: x86_64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t pypy3.9 pypy3.10 pypy3.11
+            interpreter: 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t pypy3.11
             allocator: mimalloc
 
     runs-on: ${{ matrix.os }}-latest

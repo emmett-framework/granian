@@ -560,7 +560,7 @@ async def my_main():
 
 ## Project status
 
-Granian is being actively maintained and is compatible with Python 3.9 and above versions.
+Granian is being actively maintained and is compatible with Python 3.10 and above versions.
 
 Granian follows a *semantic versioning* scheme for its releases, with a `{major}.{minor}.{patch}` scheme for versions numbers, where:
 
