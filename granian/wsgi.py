@@ -48,6 +48,9 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], 
     def _runner(proto, scope):
         resp = Response()
         scope.update(basic_env)
+        if scope['SCRIPT_NAME']:
+            scope['PATH_INFO'] = scope['PATH_INFO'][len(scope['SCRIPT_NAME']) :] or '/'
+
         rv = callback(scope, resp)
 
         if isinstance(rv, list):
