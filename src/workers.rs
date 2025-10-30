@@ -1,10 +1,3 @@
-use pyo3::prelude::*;
-use std::{
-    marker::PhantomData,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
-
 use super::asgi::serve::ASGIWorker;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{
@@ -12,6 +5,13 @@ use super::tls::{
     resolve_protocol_versions,
 };
 use super::wsgi::serve::WSGIWorker;
+use percent_encoding::percent_decode_str;
+use pyo3::prelude::*;
+use std::{
+    marker::PhantomData,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WorkerSignal {
@@ -372,9 +372,13 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
-                if let Some(static_match) =
-                    crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
-                {
+                if let Some(static_match) = crate::files::match_static_file(
+                    &percent_decode_str(req.uri().path())
+                        .decode_utf8_lossy()
+                        .into_owned(),
+                    &self.ctx.static_prefix,
+                    &self.ctx.static_mount,
+                ) {
                     if static_match.is_err() {
                         return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
                     }

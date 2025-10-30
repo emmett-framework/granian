@@ -5,6 +5,19 @@ import pytest
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+@pytest.mark.parametrize('filename', ['こんにちは.pdf', '漢.pdf', '👍.pdf'])
+async def test_static_files_with_non_ascii_filename(server_static_files, runtime_mode, filename):
+    async with server_static_files(runtime_mode, ws=False) as port:
+        res = httpx.get(f'http://localhost:{port}/static/{filename}')
+
+    assert res.status_code == 200
+    assert res.headers.get('content-type') == 'application/pdf'
+    assert res.headers.get('cache-control')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_static_files(server_static_files, runtime_mode):
     async with server_static_files(runtime_mode, ws=False) as port:
         res = httpx.get(f'http://localhost:{port}/static/media.png')
