@@ -182,14 +182,12 @@ impl SocketHolder {
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_tcp_listener(&self) -> Result<TcpListener> {
-        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_raw_fd()) };
-        Ok(listener)
+        Ok(TcpListener::from(self.socket.try_clone()?))
     }
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_unix_listener(&self) -> Result<UnixListener> {
-        let listener = unsafe { UnixListener::from_raw_fd(self.socket.as_raw_fd()) };
-        Ok(listener)
+        Ok(UnixListener::from(self.socket.try_clone()?))
     }
 }
 
