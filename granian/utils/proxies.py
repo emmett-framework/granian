@@ -1,9 +1,10 @@
 import ipaddress
 from functools import wraps as _wraps
+from typing import Optional, Union
 
 
 class _Forwarders:
-    def __init__(self, trusted_hosts: list[str] | str) -> None:
+    def __init__(self, trusted_hosts: Union[list[str], str]) -> None:
         self.always_trust: bool = trusted_hosts in ('*', ['*'])
         self.literals: set[str] = set()
         self.hosts: set[ipaddress.IPv4Address | ipaddress.IPv6Address] = set()
@@ -24,7 +25,7 @@ class _Forwarders:
             except ValueError:
                 self.literals.add(host)
 
-    def __contains__(self, host: str | None) -> bool:
+    def __contains__(self, host: Optional[str]) -> bool:
         if self.always_trust:
             return True
 
@@ -56,7 +57,7 @@ def _parse_raw_hosts(value: str) -> list[str]:
     return [item.strip() for item in value.split(',')]
 
 
-def wrap_asgi_with_proxy_headers(app, trusted_hosts: list[str] | str = '127.0.0.1'):
+def wrap_asgi_with_proxy_headers(app, trusted_hosts: Union[list[str], str] = '127.0.0.1'):
     forwarders = _Forwarders(trusted_hosts)
 
     @_wraps(app)
@@ -86,7 +87,7 @@ def wrap_asgi_with_proxy_headers(app, trusted_hosts: list[str] | str = '127.0.0.
     return wrapped
 
 
-def wrap_wsgi_with_proxy_headers(app, trusted_hosts: list[str] | str = '127.0.0.1'):
+def wrap_wsgi_with_proxy_headers(app, trusted_hosts: Union[list[str], str] = '127.0.0.1'):
     forwarders = _Forwarders(trusted_hosts)
 
     @_wraps(app)
