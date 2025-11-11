@@ -20,7 +20,7 @@ jobs:
         command: sdist
         args: --out dist
     - name: Upload sdist
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: dist-sdist
         path: dist
@@ -123,7 +123,7 @@ jobs:
           container: ${{ matrix.container }}
           docker-options: -e CI
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist-${{ matrix.platform || matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}-${{ matrix.allocator || 'auto' }}
           path: dist
@@ -138,7 +138,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           pattern: dist-*
           merge-multiple: true

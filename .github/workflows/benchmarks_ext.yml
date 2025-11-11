@@ -24,7 +24,7 @@ jobs:
       run: |
         python external/tfb/loader.py > results/tfb.json
     - name: upload results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: results-tfb
         path: benchmarks/results/*
@@ -37,7 +37,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - uses: gi0baro/setup-noir@v1
-    - uses: actions/download-artifact@v5
+    - uses: actions/download-artifact@v6
       with:
         name: results-tfb
         path: benchmarks/results
