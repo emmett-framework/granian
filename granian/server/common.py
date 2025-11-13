@@ -598,10 +598,16 @@ class AbstractServer(Generic[WT]):
 
         if self.workers_lifetime is not None:
             if self.reload_on_changes:
+                self.workers_lifetime = None
                 logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
             if self.workers_lifetime < 60:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
+
+        if self.workers_rss is not None:
+            if self.reload_on_changes:
+                self.workers_rss = None
+                logger.info('The resource monitor is not available in combination with changes reloader, ignoring')
 
         if self.blocking_threads_idle_timeout < 10 or self.blocking_threads_idle_timeout > 600:
             logger.error('Blocking threads idle timeout must be between 10 and 600 seconds')
