@@ -279,10 +279,6 @@ Options:
                                   Verify clients SSL certificates  [env var:
                                   GRANIAN_SSL_CLIENT_VERIFY; default:
                                   (disabled)]
-  --ssl-protocol-version [auto|1.2|1.3]
-                                  Override the supported ssl protocol versions
-                                  and pin to the one specified.  [env var:
-                                  GRANIAN_SSL_PROTOCOL_VERSION; default: auto]
   --url-path-prefix TEXT          URL path prefix the app is mounted on  [env
                                   var: GRANIAN_URL_PATH_PREFIX]
   --respawn-failed-workers / --no-respawn-failed-workers
