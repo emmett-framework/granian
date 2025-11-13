@@ -439,8 +439,38 @@ class AbstractServer(Generic[WT]):
         self._call_hooks(self.hooks_reload)
         return self._respawn_workers(workers, spawn_target, target_loader, delay=self.respawn_interval)
 
+    def _handle_lifetime_signal(self, spawn_target, target_loader):
+        ttl = self.workers_lifetime * 0.95
+        now = time.monotonic()
+        etas = [self.workers_lifetime]
+        for worker in list(self.wrks):
+            if (now - worker.birth) >= ttl:
+                logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
+                self._respawn_workers([worker.idx], spawn_target, target_loader, delay=self.respawn_interval)
+            else:
+                elapsed = now - worker.birth
+                remaining = self.workers_lifetime - elapsed
+                etas.append(max(60, int(remaining)))
+        return min(etas)
+
     def _handle_rss_signal(self, spawn_target, target_loader):
         raise NotImplementedError
+
+    def _handle_signals(self, spawn_target, target_loader):
+        if self.reload_signal:
+            self._reload(spawn_target, target_loader)
+
+        if self.lifetime_signal:
+            self.lifetime_signal = False
+            self.main_loop_interrupt.clear()
+            next_tick = self._handle_lifetime_signal(spawn_target, target_loader)
+            self._watch_workers_lifetime(next_tick)
+
+        if self.rss_signal:
+            self.rss_signal = False
+            self.main_loop_interrupt.clear()
+            self._handle_rss_signal(spawn_target, target_loader)
+            self._watch_workers_rss()
 
     def _serve_loop(self, spawn_target, target_loader):
         while True:
@@ -463,34 +493,7 @@ class AbstractServer(Generic[WT]):
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, spawn_target, target_loader)
 
-            if self.reload_signal:
-                self._reload(spawn_target, target_loader)
-
-            if self.lifetime_signal or self.rss_signal:
-                self.main_loop_interrupt.clear()
-
-                if self.lifetime_signal:
-                    self.lifetime_signal = False
-                    ttl = self.workers_lifetime * 0.95
-                    now = time.monotonic()
-                    etas = [self.workers_lifetime]
-                    for worker in list(self.wrks):
-                        if (now - worker.birth) >= ttl:
-                            logger.info(f'worker-{worker.idx + 1} lifetime expired, gracefully respawning..')
-                            self._respawn_workers(
-                                [worker.idx], spawn_target, target_loader, delay=self.respawn_interval
-                            )
-                        else:
-                            elapsed = now - worker.birth
-                            remaining = self.workers_lifetime - elapsed
-                            etas.append(max(60, int(remaining)))
-                    next_tick = min(etas)
-                    self._watch_workers_lifetime(next_tick)
-
-                if self.rss_signal:
-                    self.rss_signal = False
-                    self._handle_rss_signal(spawn_target, target_loader)
-                    self._watch_workers_rss()
+            self._handle_signals(spawn_target, target_loader)
 
     def _serve(self, spawn_target, target_loader):
         self.startup(spawn_target, target_loader)
@@ -535,8 +538,8 @@ class AbstractServer(Generic[WT]):
             except StopIteration:
                 pass
 
-            if self.reload_signal:
-                self._reload(spawn_target, target_loader)
+            if any([self.reload_signal, self.lifetime_signal, self.rss_signal]):
+                self._handle_signals(spawn_target, target_loader)
             else:
                 serve_loop = False
 
@@ -597,8 +600,6 @@ class AbstractServer(Generic[WT]):
             raise ConfigurationError('env_files')
 
         if self.workers_lifetime is not None:
-            if self.reload_on_changes:
-                logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
             if self.workers_lifetime < 60:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
