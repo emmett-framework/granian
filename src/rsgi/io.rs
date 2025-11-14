@@ -11,7 +11,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::{
     errors::{error_proto, error_stream},
-    types::{PyResponse, PyResponseBody, PyResponseFile},
+    types::{PyResponse, PyResponseBody, PyResponseFile, PyResponseFileRange},
 };
 use crate::{
     conversion::FutureResultToPy,
@@ -175,6 +175,26 @@ impl RSGIHTTPProtocol {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
+    }
+
+    #[pyo3(signature = (status, headers, file, start, end))]
+    fn response_file_range(
+        &self,
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        file: String,
+        start: u64,
+        end: u64,
+    ) -> PyResult<()> {
+        if start >= end {
+            return Err(pyo3::exceptions::PyValueError::new_err("Invalid range"));
+        }
+        if let Some(tx) = self.tx.lock().unwrap().take() {
+            _ = tx.send(PyResponse::FileRange(PyResponseFileRange::new(
+                status, headers, file, start, end,
+            )));
+        }
+        Ok(())
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]

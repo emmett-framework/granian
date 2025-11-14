@@ -125,7 +125,7 @@ async def test_rsgi(rsgi_server, runtime_mode, http_client):
     data = res.json()
     assert data['proto'] == 'http'
     assert data['http_version'] == '1.1'
-    assert data['rsgi_version'] == '1.5'
+    assert data['rsgi_version'] == '1.6'
     assert data['scheme'] == 'http'
     assert data['method'] == 'GET'
     assert data['path'] == '/info'
