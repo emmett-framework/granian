@@ -1,6 +1,6 @@
 # RSGI Specification
 
-**Version:** 1.5
+**Version:** 1.6
 
 ## Abstract
 
@@ -174,6 +174,7 @@ HTTP protocol object implements two awaitable methods to receive the request bod
 - `response_str` to send back a response with a `str` body
 - `response_bytes` to send back a response with `bytes` body
 - `response_file` to send back a file response (from its path)
+- `response_file_range` to send back a file range response (from its path)
 - `response_stream` to start a stream response
 
 All the upper-mentioned response methods accepts an integer `status` parameter, a list of string tuples for the `headers` parameter, and the relevant typed `body` parameter (if applicable):
@@ -186,8 +187,13 @@ function response_empty(status, headers)
 function response_str(status, headers, body)
 function response_bytes(status, headers, body)
 function response_file(status, headers, file)
+function response_file_range(status, headers, file, start, end)
 function response_stream(status, headers) -> transport
 ```
+
+The `response_file_range` method accepts the additional `start` and `end` parameters, which represent the initial and final positions of the range to read from the file. The range is inclusive of the start and exclusive of the end (as the stdlib `range` function).
+
+> **Note:** for both `response_file` and `response_file_range` methods, the RSGI protocol delegates the responsibility of producing correct headers to the application.
 
 The `response_stream` method will return a *transport object*, which implements the async messaging interfaces, specifically:
 

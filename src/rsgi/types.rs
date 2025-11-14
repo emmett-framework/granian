@@ -19,7 +19,7 @@ use crate::{
     net::SockAddr,
 };
 
-const RSGI_PROTO_VERSION: &str = "1.5";
+const RSGI_PROTO_VERSION: &str = "1.6";
 
 #[pyclass(frozen, module = "granian._granian")]
 #[derive(Clone)]
