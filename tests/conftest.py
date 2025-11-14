@@ -70,6 +70,7 @@ async def _server(
 
     if not succeeded:
         raise RuntimeError('Cannot bind server')
+
     try:
         yield port
     finally:

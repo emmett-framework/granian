@@ -72,9 +72,9 @@ class _LoggingProto:
         self.status = status
         return self.inner.response_file(status, headers, file)
 
-    def response_file_partial(self, status, headers, file, start, end):
+    def response_file_range(self, status, headers, file, start, end):
         self.status = status
-        return self.inner.response_file_partial(status, headers, file, start, end)
+        return self.inner.response_file_range(status, headers, file, start, end)
 
     def response_stream(self, status, headers):
         self.status = status
