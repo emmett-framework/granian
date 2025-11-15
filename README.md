@@ -171,9 +171,9 @@ Options:
                                   Number of runtime I/O blocking threads (per
                                   worker)  [env var:
                                   GRANIAN_RUNTIME_BLOCKING_THREADS; x>=1]
-  --runtime-mode [mt|st]          Runtime mode to use (single/multi threaded)
+  --runtime-mode [auto|mt|st]     Runtime mode to use (single/multi threaded)
                                   [env var: GRANIAN_RUNTIME_MODE; default:
-                                  (st)]
+                                  (auto)]
   --loop [auto|asyncio|rloop|uvloop|winloop]
                                   Event loop implementation  [env var:
                                   GRANIAN_LOOP; default: (auto)]
