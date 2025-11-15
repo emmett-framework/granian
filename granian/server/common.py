@@ -116,6 +116,7 @@ class AbstractServer(Generic[WT]):
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         rss_sample_interval: int = 30,
+        rss_samples: int = 1,
         workers_lifetime: Optional[int] = None,
         workers_max_rss: Optional[int] = None,
         workers_kill_timeout: Optional[int] = None,
@@ -170,6 +171,8 @@ class AbstractServer(Generic[WT]):
         self.reload_on_changes = reload
         self.respawn_interval = respawn_interval
         self.rss_sample_interval = rss_sample_interval
+        self.rss_samples = rss_samples
+        self._rss_wrk_samples = {}
         self.workers_lifetime = workers_lifetime
         self.workers_rss = workers_max_rss * 1024 * 1024 if workers_max_rss else None
         self.workers_kill_timeout = workers_kill_timeout

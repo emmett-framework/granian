@@ -314,12 +314,21 @@ class MPServer(AbstractServer[WorkerProcess]):
             logger.warning('Unable to collect resource usage for workers')
             return
         logger.debug(f'Collected resource usages for workers: {rss_data}')
+        cycle_samples = {}
         to_restart = []
         for wpid, wmem in rss_data.items():
             if wmem >= self.workers_rss:
-                wrk = wpids[wpid]
-                logger.info(f'worker-{wrk.idx + 1} RSS over threshold, gracefully respawning..')
-                to_restart.append(wrk.idx)
+                samples = self._rss_wrk_samples.get(wpid, 0) + 1
+                if samples >= self.rss_samples:
+                    wrk = wpids[wpid]
+                    logger.info(f'worker-{wrk.idx + 1} RSS over threshold, gracefully respawning..')
+                    to_restart.append(wrk.idx)
+                else:
+                    cycle_samples[wpid] = samples
+            else:
+                cycle_samples[wpid] = 0
+        self._rss_wrk_samples.clear()
+        self._rss_wrk_samples.update(cycle_samples)
         if to_restart:
             self._respawn_workers(to_restart, spawn_target, target_loader, delay=self.respawn_interval)
 
