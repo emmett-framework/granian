@@ -292,6 +292,9 @@ Options:
                                   readable duration) for the resource monitor
                                   [env var: GRANIAN_RSS_SAMPLE_INTERVAL;
                                   default: 30; 10<=x<=300]
+  --rss-samples INTEGER RANGE     The number of consecutive samples to
+                                  consider a worker over resource limit  [env
+                                  var: GRANIAN_RSS_SAMPLES; default: 1; x>=1]
   --workers-lifetime DURATION     The maximum amount of time in seconds (or a
                                   human-readable duration) a worker will be
                                   kept alive before respawn  [env var:
