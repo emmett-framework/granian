@@ -20,6 +20,7 @@ class HTTPModes(StrEnum):
 
 
 class RuntimeModes(StrEnum):
+    auto = 'auto'
     mt = 'mt'
     st = 'st'
 

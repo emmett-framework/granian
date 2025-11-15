@@ -91,7 +91,7 @@ class AbstractServer(Generic[WT]):
         blocking_threads_idle_timeout: int = 30,
         runtime_threads: int = 1,
         runtime_blocking_threads: Optional[int] = None,
-        runtime_mode: RuntimeModes = RuntimeModes.st,
+        runtime_mode: RuntimeModes = RuntimeModes.auto,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
@@ -626,6 +626,13 @@ class AbstractServer(Generic[WT]):
                 'Mind that Rust threads are not involved in Python code execution, and they almost never be the '
                 'limiting factor in scaling. Consider configuring the amount of blocking threads instead'
             )
+
+        if self.runtime_mode == RuntimeModes.auto:
+            self.runtime_mode = RuntimeModes.st
+            if self.interface == Interfaces.WSGI:
+                self.runtime_mode = RuntimeModes.mt
+            if self.http == HTTPModes.http2:
+                self.runtime_mode = RuntimeModes.mt
 
         if self.task_impl == TaskImpl.rust:
             if _PYV >= _PY_312:
