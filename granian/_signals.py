@@ -5,12 +5,15 @@ import threading
 from ._granian import WorkerSignal, WorkerSignalSync
 
 
-def set_main_signals(interrupt_handler, reload_handler=None):
-    signals = [signal.SIGINT, signal.SIGTERM]
+def _get_signals():
+    rv = [signal.SIGINT, signal.SIGTERM]
     if sys.platform == 'win32':
-        signals.append(signal.SIGBREAK)
+        rv.append(signal.SIGBREAK)
+    return rv
 
-    for sig in signals:
+
+def set_main_signals(interrupt_handler, reload_handler=None):
+    for sig in _get_signals():
         signal.signal(sig, interrupt_handler)
 
     if reload_handler is not None and sys.platform != 'win32':
@@ -23,8 +26,7 @@ def set_loop_signals(loop):
     def signal_handler(signum, frame):
         signal_event.set()
 
-    signals = [signal.SIGINT, signal.SIGTERM]
-
+    signals = _get_signals()
     try:
         for sigval in signals:
             loop.add_signal_handler(sigval, signal_handler, sigval, None)
