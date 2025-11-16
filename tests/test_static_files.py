@@ -5,9 +5,10 @@ import pytest
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_static_files', ['asgi', 'rsgi', 'wsgi'], indirect=True)
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_static_files(server_static_files, runtime_mode):
+@pytest.mark.parametrize('file_name', ['media.png', 'こんにちは.png'])
+async def test_static_files(server_static_files, runtime_mode, file_name):
     async with server_static_files(runtime_mode, ws=False) as port:
-        res = httpx.get(f'http://localhost:{port}/static/media.png')
+        res = httpx.get(f'http://localhost:{port}/static/{file_name}')
 
     assert res.status_code == 200
     assert res.headers.get('content-type') == 'image/png'

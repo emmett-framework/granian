@@ -5,6 +5,7 @@ use hyper::{
     HeaderMap, StatusCode,
     header::{HeaderValue, SERVER as HK_SERVER},
 };
+use percent_encoding::percent_decode_str;
 use std::{io, path::Path};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
@@ -13,7 +14,8 @@ use crate::http::{HTTPResponse, HV_SERVER, response_404};
 
 #[inline(always)]
 pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<Result<String>> {
-    if let Some(file_path) = uri_path.strip_prefix(prefix) {
+    let decoded_uri_path = percent_decode_str(uri_path).decode_utf8_lossy();
+    if let Some(file_path) = decoded_uri_path.strip_prefix(prefix) {
         #[cfg(not(windows))]
         let fpath = format!("{mount_point}{file_path}");
         #[cfg(windows)]
