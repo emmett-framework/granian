@@ -1,5 +1,4 @@
 import asyncio
-import os
 
 import httpx
 import pytest
@@ -14,7 +13,7 @@ async def app(scope, protocol):
 
 @pytest.fixture(scope='function')
 def loop():
-    return asyncio.get_event_loop()
+    return asyncio.new_event_loop()
 
 
 @pytest.fixture(scope='function')
@@ -23,7 +22,6 @@ def embed_server(server_port):
 
 
 @pytest.mark.skipif(not BUILD_GIL, reason='free-threaded Python')
-@pytest.mark.skipif(bool(os.environ.get('GITHUB_WORKFLOW')), reason='CI')
 def test_embed_server(loop, server_port, embed_server):
     data = {}
 

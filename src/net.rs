@@ -164,7 +164,7 @@ impl UnixListenerSpec {
 #[cfg(not(any(windows, target_os = "linux", target_os = "freebsd")))]
 #[pyclass(frozen, module = "granian._granian")]
 pub struct SocketHolder {
-    socket: Socket,
+    socket: Option<Socket>,
     uds: bool,
 }
 
@@ -172,24 +172,37 @@ pub struct SocketHolder {
 impl SocketHolder {
     fn from_spec(spec: &ListenerSpec) -> Result<Self> {
         let socket = spec.as_socket()?;
-        Ok(Self { socket, uds: false })
+        Ok(Self {
+            socket: Some(socket),
+            uds: false,
+        })
     }
 
     fn from_unix_spec(spec: &UnixListenerSpec) -> Result<Self> {
         let socket = spec.as_socket()?;
-        Ok(Self { socket, uds: true })
+        Ok(Self {
+            socket: Some(socket),
+            uds: true,
+        })
     }
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_tcp_listener(&self) -> Result<TcpListener> {
-        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_raw_fd()) };
+        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_ref().unwrap().as_raw_fd()) };
         Ok(listener)
     }
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_unix_listener(&self) -> Result<UnixListener> {
-        let listener = unsafe { UnixListener::from_raw_fd(self.socket.as_raw_fd()) };
+        let listener = unsafe { UnixListener::from_raw_fd(self.socket.as_ref().unwrap().as_raw_fd()) };
         Ok(listener)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "freebsd")))]
+impl Drop for SocketHolder {
+    fn drop(&mut self) {
+        std::mem::forget(self.socket.take());
     }
 }
 
@@ -199,16 +212,19 @@ impl SocketHolder {
     #[new]
     pub fn new(fd: i32, uds: bool) -> Self {
         let socket = unsafe { Socket::from_raw_fd(fd) };
-        Self { socket, uds }
+        Self {
+            socket: Some(socket),
+            uds,
+        }
     }
 
     pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
-        let fd = self.socket.as_raw_fd();
+        let fd = self.socket.as_ref().unwrap().as_raw_fd();
         (fd, self.uds).into_py_any(py).unwrap()
     }
 
     pub fn get_fd(&self, py: Python) -> Py<PyAny> {
-        self.socket.as_raw_fd().into_py_any(py).unwrap()
+        self.socket.as_ref().unwrap().as_raw_fd().into_py_any(py).unwrap()
     }
 
     pub fn is_uds(&self) -> bool {
@@ -219,7 +235,7 @@ impl SocketHolder {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 #[pyclass(frozen, module = "granian._granian")]
 pub struct SocketHolder {
-    socket: Socket,
+    socket: Option<Socket>,
     uds: bool,
     backlog: i32,
 }
@@ -229,7 +245,7 @@ impl SocketHolder {
     fn from_spec(spec: &ListenerSpec) -> Result<Self> {
         let socket = spec.as_socket()?;
         Ok(Self {
-            socket,
+            socket: Some(socket),
             uds: false,
             backlog: spec.backlog,
         })
@@ -238,22 +254,31 @@ impl SocketHolder {
     fn from_unix_spec(spec: &UnixListenerSpec) -> Result<Self> {
         let socket = spec.as_socket()?;
         Ok(Self {
-            socket,
+            socket: Some(socket),
             uds: true,
             backlog: spec.backlog,
         })
     }
 
     pub fn as_tcp_listener(&self) -> Result<TcpListener> {
-        self.socket.listen(self.backlog)?;
-        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_raw_fd()) };
+        let socket = self.socket.as_ref().unwrap();
+        socket.listen(self.backlog)?;
+        let listener = unsafe { TcpListener::from_raw_fd(socket.as_raw_fd()) };
         Ok(listener)
     }
 
     pub fn as_unix_listener(&self) -> Result<UnixListener> {
-        self.socket.listen(self.backlog)?;
-        let listener = unsafe { UnixListener::from_raw_fd(self.socket.as_raw_fd()) };
+        let socket = self.socket.as_ref().unwrap();
+        socket.listen(self.backlog)?;
+        let listener = unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) };
         Ok(listener)
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+impl Drop for SocketHolder {
+    fn drop(&mut self) {
+        std::mem::forget(self.socket.take());
     }
 }
 
@@ -263,16 +288,20 @@ impl SocketHolder {
     #[new]
     pub fn new(fd: i32, uds: bool, backlog: i32) -> Self {
         let socket = unsafe { Socket::from_raw_fd(fd) };
-        Self { socket, uds, backlog }
+        Self {
+            socket: Some(socket),
+            uds,
+            backlog,
+        }
     }
 
     pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
-        let fd = self.socket.as_raw_fd();
+        let fd = self.socket.as_ref().unwrap().as_raw_fd();
         (fd, self.uds, self.backlog).into_py_any(py).unwrap()
     }
 
     pub fn get_fd(&self, py: Python) -> Py<PyAny> {
-        self.socket.as_raw_fd().into_py_any(py).unwrap()
+        self.socket.as_ref().unwrap().as_raw_fd().into_py_any(py).unwrap()
     }
 
     pub fn is_uds(&self) -> bool {
