@@ -2,18 +2,18 @@ import os
 import re
 import sys
 import traceback
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
-from typing import Callable, List, Optional
 
 from ._imports import dotenv
 
 
-def patch_pypath(wd: Optional[Path] = None):
+def patch_pypath(wd: Path | None = None):
     sys.path.insert(0, str(wd.resolve()) if wd else '')
 
 
-def get_import_components(path: str) -> List[Optional[str]]:
+def get_import_components(path: str) -> list[str | None]:
     return (re.split(r':(?![\\/])', path, maxsplit=1) + [None])[:2]
 
 
@@ -42,7 +42,7 @@ def prepare_import(path: str) -> str:
     return '.'.join(module_name[::-1])
 
 
-def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[ModuleType]:
+def load_module(module_name: str, raise_on_failure: bool = True) -> ModuleType | None:
     try:
         __import__(module_name)
     except ImportError:
@@ -57,7 +57,7 @@ def load_module(module_name: str, raise_on_failure: bool = True) -> Optional[Mod
     return sys.modules[module_name]
 
 
-def load_target(target: str, wd: Optional[Path] = None, factory: bool = False) -> Callable[..., None]:
+def load_target(target: str, wd: Path | None = None, factory: bool = False) -> Callable[..., None]:
     patch_pypath(wd)
     path, name = get_import_components(target)
     path = prepare_import(path) if path else None

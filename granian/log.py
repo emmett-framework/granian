@@ -4,7 +4,7 @@ import logging
 import logging.config
 import time
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class LogLevels(str, Enum):
@@ -59,7 +59,7 @@ logger = logging.getLogger('_granian')
 access_logger = logging.getLogger('granian.access')
 
 
-def configure_logging(level: LogLevels, config: Optional[Dict[str, Any]] = None, enabled: bool = True):
+def configure_logging(level: LogLevels, config: dict[str, Any] | None = None, enabled: bool = True):
     log_config = copy.deepcopy(LOGGING_CONFIG)
 
     if config:

@@ -1,6 +1,6 @@
 import sys
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ._types import WebsocketMessage
 from .http import HTTP1Settings, HTTP2Settings
@@ -10,9 +10,9 @@ BUILD_GIL: bool
 
 class RSGIHeaders:
     def __contains__(self, key: str) -> bool: ...
-    def keys(self) -> List[str]: ...
-    def values(self) -> List[str]: ...
-    def items(self) -> List[Tuple[str, str]]: ...
+    def keys(self) -> list[str]: ...
+    def values(self) -> list[str]: ...
+    def items(self) -> list[tuple[str, str]]: ...
     def get(self, key: str, default: Any = None) -> Any: ...
 
 class RSGIHTTPStreamTransport:
@@ -23,14 +23,12 @@ class RSGIHTTPProtocol:
     async def __call__(self) -> bytes: ...
     def __aiter__(self) -> Any: ...
     async def client_disconnect(self) -> None: ...
-    def response_empty(self, status: int, headers: List[Tuple[str, str]]) -> None: ...
-    def response_str(self, status: int, headers: List[Tuple[str, str]], body: str) -> None: ...
-    def response_bytes(self, status: int, headers: List[Tuple[str, str]], body: bytes) -> None: ...
-    def response_file(self, status: int, headers: List[Tuple[str, str]], file: str) -> None: ...
-    def response_file_range(
-        self, status: int, headers: List[Tuple[str, str]], file: str, start: int, end: int
-    ) -> None: ...
-    def response_stream(self, status: int, headers: List[Tuple[str, str]]) -> RSGIHTTPStreamTransport: ...
+    def response_empty(self, status: int, headers: list[tuple[str, str]]) -> None: ...
+    def response_str(self, status: int, headers: list[tuple[str, str]], body: str) -> None: ...
+    def response_bytes(self, status: int, headers: list[tuple[str, str]], body: bytes) -> None: ...
+    def response_file(self, status: int, headers: list[tuple[str, str]], file: str) -> None: ...
+    def response_file_range(self, status: int, headers: list[tuple[str, str]], file: str, start: int, end: int) -> None: ...
+    def response_stream(self, status: int, headers: list[tuple[str, str]]) -> RSGIHTTPStreamTransport: ...
 
 class RSGIWebsocketTransport:
     async def receive(self) -> WebsocketMessage: ...
@@ -39,13 +37,13 @@ class RSGIWebsocketTransport:
 
 class RSGIWebsocketProtocol:
     async def accept(self) -> RSGIWebsocketTransport: ...
-    def close(self, status: Optional[int]) -> Tuple[int, bool]: ...
+    def close(self, status: int | None) -> tuple[int, bool]: ...
 
 class RSGIProtocolError(RuntimeError): ...
 class RSGIProtocolClosed(RuntimeError): ...
 
 class WSGIScope:
-    def to_environ(self, environ: Dict[str, Any]) -> Dict[str, Any]: ...
+    def to_environ(self, environ: dict[str, Any]) -> dict[str, Any]: ...
 
 class WorkerSignal:
     def __init__(self) -> None: ...
@@ -68,17 +66,17 @@ class ASGIWorker:
         py_threads_idle_timeout: int,
         backpressure: int,
         http_mode: str,
-        http1_opts: Optional[HTTP1Settings],
-        http2_opts: Optional[HTTP2Settings],
+        http1_opts: HTTP1Settings | None,
+        http2_opts: HTTP2Settings | None,
         websockets_enabled: bool,
-        static_files: Optional[Tuple[str, str, str]],
+        static_files: tuple[str, str, str] | None,
         ssl_enabled: bool,
-        ssl_cert: Optional[str],
-        ssl_key: Optional[str],
-        ssl_key_password: Optional[str],
+        ssl_cert: str | None,
+        ssl_key: str | None,
+        ssl_key_password: str | None,
         ssl_protocol_min: str,
-        ssl_ca: Optional[str],
-        ssl_crl: List[str],
+        ssl_ca: str | None,
+        ssl_crl: list[str],
         ssl_client_verify: bool,
     ) -> ASGIWorker: ...
 
@@ -93,16 +91,16 @@ class WSGIWorker:
         py_threads_idle_timeout: int,
         backpressure: int,
         http_mode: str,
-        http1_opts: Optional[HTTP1Settings],
-        http2_opts: Optional[HTTP2Settings],
-        static_files: Optional[Tuple[str, str, str]],
+        http1_opts: HTTP1Settings | None,
+        http2_opts: HTTP2Settings | None,
+        static_files: tuple[str, str, str] | None,
         ssl_enabled: bool,
-        ssl_cert: Optional[str],
-        ssl_key: Optional[str],
-        ssl_key_password: Optional[str],
+        ssl_cert: str | None,
+        ssl_key: str | None,
+        ssl_key_password: str | None,
         ssl_protocol_min: str,
-        ssl_ca: Optional[str],
-        ssl_crl: List[str],
+        ssl_ca: str | None,
+        ssl_crl: list[str],
         ssl_client_verify: bool,
     ) -> WSGIWorker: ...
 
@@ -117,17 +115,17 @@ class RSGIWorker:
         py_threads_idle_timeout: int,
         backpressure: int,
         http_mode: str,
-        http1_opts: Optional[HTTP1Settings],
-        http2_opts: Optional[HTTP2Settings],
+        http1_opts: HTTP1Settings | None,
+        http2_opts: HTTP2Settings | None,
         websockets_enabled: bool,
-        static_files: Optional[Tuple[str, str, str]],
+        static_files: tuple[str, str, str] | None,
         ssl_enabled: bool,
-        ssl_cert: Optional[str],
-        ssl_key: Optional[str],
-        ssl_key_password: Optional[str],
+        ssl_cert: str | None,
+        ssl_key: str | None,
+        ssl_key_password: str | None,
         ssl_protocol_min: str,
-        ssl_ca: Optional[str],
-        ssl_crl: List[str],
+        ssl_ca: str | None,
+        ssl_crl: list[str],
         ssl_client_verify: bool,
     ) -> RSGIWorker: ...
 
@@ -147,10 +145,10 @@ class CallbackScheduler:
 
 class ProcInfoCollector:
     def __init__(self) -> None: ...
-    def memory(self, pids: Optional[List[int]] = None) -> int: ...
+    def memory(self, pids: list[int] | None = None) -> int: ...
 
 if sys.platform != 'win32':
     class UnixListenerSpec:
-        def __new__(cls, bind: str, backlog: int, permissions: Optional[int]) -> UnixListenerSpec: ...
+        def __new__(cls, bind: str, backlog: int, permissions: int | None) -> UnixListenerSpec: ...
         def build(self) -> SocketHolder: ...
         def is_uds(self) -> bool: ...
