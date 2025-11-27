@@ -7,9 +7,10 @@ import ssl
 import sys
 import threading
 import time
+from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .._compat import _PY_312, _PYV
 from .._imports import dotenv, setproctitle, watchfiles
@@ -83,59 +84,59 @@ class AbstractServer(Generic[WT]):
         target: str,
         address: str = '127.0.0.1',
         port: int = 8000,
-        uds: Optional[Path] = None,
-        uds_permissions: Optional[int] = None,
+        uds: Path | None = None,
+        uds_permissions: int | None = None,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
-        blocking_threads: Optional[int] = None,
+        blocking_threads: int | None = None,
         blocking_threads_idle_timeout: int = 30,
         runtime_threads: int = 1,
-        runtime_blocking_threads: Optional[int] = None,
+        runtime_blocking_threads: int | None = None,
         runtime_mode: RuntimeModes = RuntimeModes.auto,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
-        backpressure: Optional[int] = None,
-        http1_settings: Optional[HTTP1Settings] = None,
-        http2_settings: Optional[HTTP2Settings] = None,
+        backpressure: int | None = None,
+        http1_settings: HTTP1Settings | None = None,
+        http2_settings: HTTP2Settings | None = None,
         log_enabled: bool = True,
         log_level: LogLevels = LogLevels.info,
-        log_dictconfig: Optional[Dict[str, Any]] = None,
+        log_dictconfig: dict[str, Any] | None = None,
         log_access: bool = False,
-        log_access_format: Optional[str] = None,
-        ssl_cert: Optional[Path] = None,
-        ssl_key: Optional[Path] = None,
-        ssl_key_password: Optional[str] = None,
+        log_access_format: str | None = None,
+        ssl_cert: Path | None = None,
+        ssl_key: Path | None = None,
+        ssl_key_password: str | None = None,
         ssl_protocol_min: SSLProtocols = SSLProtocols.tls13,
-        ssl_ca: Optional[Path] = None,
-        ssl_crl: Optional[List[Path]] = None,
+        ssl_ca: Path | None = None,
+        ssl_crl: list[Path] | None = None,
         ssl_client_verify: bool = False,
-        url_path_prefix: Optional[str] = None,
+        url_path_prefix: str | None = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         rss_sample_interval: int = 30,
         rss_samples: int = 1,
-        workers_lifetime: Optional[int] = None,
-        workers_max_rss: Optional[int] = None,
-        workers_kill_timeout: Optional[int] = None,
+        workers_lifetime: int | None = None,
+        workers_max_rss: int | None = None,
+        workers_kill_timeout: int | None = None,
         factory: bool = False,
-        working_dir: Optional[Path] = None,
-        env_files: Optional[Sequence[Path]] = None,
+        working_dir: Path | None = None,
+        env_files: Sequence[Path] | None = None,
         static_path_route: str = '/static',
-        static_path_mount: Optional[Path] = None,
+        static_path_mount: Path | None = None,
         static_path_expires: int = 86400,
         reload: bool = False,
-        reload_paths: Optional[Sequence[Path]] = None,
-        reload_ignore_dirs: Optional[Sequence[str]] = None,
-        reload_ignore_patterns: Optional[Sequence[str]] = None,
-        reload_ignore_paths: Optional[Sequence[Path]] = None,
-        reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
+        reload_paths: Sequence[Path] | None = None,
+        reload_ignore_dirs: Sequence[str] | None = None,
+        reload_ignore_patterns: Sequence[str] | None = None,
+        reload_ignore_paths: Sequence[Path] | None = None,
+        reload_filter: type[watchfiles.BaseFilter] | None = None,
         reload_tick: int = 50,
         reload_ignore_worker_failure: bool = False,
-        process_name: Optional[str] = None,
-        pid_file: Optional[Path] = None,
+        process_name: str | None = None,
+        pid_file: Path | None = None,
     ):
         self.target = target
         self.bind_addr = address
@@ -210,7 +211,7 @@ class AbstractServer(Generic[WT]):
         self._ssp = None
         self._shd = None
         self._sfd = None
-        self.wrks: List[WT] = []
+        self.wrks: list[WT] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
         self.interrupt_children = []
@@ -223,12 +224,12 @@ class AbstractServer(Generic[WT]):
 
     def build_ssl_context(
         self,
-        cert: Optional[Path],
-        key: Optional[Path],
-        password: Optional[str],
+        cert: Path | None,
+        key: Path | None,
+        password: str | None,
         proto: SSLProtocols,
-        ca: Optional[Path],
-        crl: List[Path],
+        ca: Path | None,
+        crl: list[Path],
         client_verify: bool,
     ):
         if not (cert and key):
@@ -547,8 +548,8 @@ class AbstractServer(Generic[WT]):
 
     def serve(
         self,
-        spawn_target: Optional[Callable[..., None]] = None,
-        target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
+        spawn_target: Callable[..., None] | None = None,
+        target_loader: Callable[..., Callable[..., Any]] | None = None,
         wrap_loader: bool = True,
     ):
         default_spawners = {
