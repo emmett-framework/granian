@@ -9,7 +9,7 @@ Run at: {{ =datetime.datetime.fromtimestamp(_common_data.run_at).strftime('%a %d
 Environment: {{ =benv }} (CPUs: {{ =_common_data.cpu }})    
 Granian version: {{ =_common_data.granian }}
 
-*Note: unless otherwise specified, all benchmarks are run with 1 server worker and 1 thread.*
+Same methodology of the main benchmarks applies.
 
 ### Event loops
 
@@ -32,7 +32,7 @@ Comparison between Granian Rust AsyncIO task implementation and stdlib one on AS
 
 | Python version | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- | --- |
-{{ for pykey in ["309", "310", "311"]: }}
+{{ for pykey in ["310", "311"]: }}
 {{ _data = globals().get(f"datat{pykey}") }}
 {{ if not _data: }}
 {{ continue }}
