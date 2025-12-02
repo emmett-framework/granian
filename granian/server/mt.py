@@ -1,7 +1,8 @@
 import sys
 import threading
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WorkerSignalSync, WSGIWorker
@@ -78,19 +79,19 @@ class MTServer(AbstractServer[WorkerThread]):
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
 
@@ -123,19 +124,19 @@ class MTServer(AbstractServer[WorkerThread]):
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
     ):
         lifespan_handler = LifespanProtocol(callback)
         wcallback = _future_watcher_wrapper(
@@ -177,19 +178,19 @@ class MTServer(AbstractServer[WorkerThread]):
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
@@ -225,19 +226,19 @@ class MTServer(AbstractServer[WorkerThread]):
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
     ):
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
 
@@ -310,8 +311,8 @@ class MTServer(AbstractServer[WorkerThread]):
 
     def serve(
         self,
-        spawn_target: Optional[Callable[..., None]] = None,
-        target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
+        spawn_target: Callable[..., None] | None = None,
+        target_loader: Callable[..., Callable[..., Any]] | None = None,
         wrap_loader: bool = True,
     ):
         logger.warning('free-threaded Python support is experimental!')

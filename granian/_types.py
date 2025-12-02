@@ -1,9 +1,6 @@
-from typing import List, Optional, Tuple, Union
-
-
 class WebsocketMessage:
     kind: int
-    data: Union[bytes, str]
+    data: bytes | str
 
 
-SSLCtx = Tuple[bool, Optional[str], Optional[str], Optional[str], str, Optional[str], List[str], bool]
+SSLCtx = tuple[bool, str | None, str | None, str | None, str, str | None, list[str], bool]

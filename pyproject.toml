@@ -109,6 +109,7 @@ extend-select = [
     'RUF100', # ruff (unused noqa)
     'S',      # flake8-bandit
     'W',      # pycodestyle
+    'UP',     # pyupgrade
 ]
 extend-ignore = [
     'B008', # function calls in args defaults are fine
