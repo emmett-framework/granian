@@ -404,6 +404,10 @@ The following atoms are available for use:
 | scheme | Request scheme |
 | protocol | HTTP protocol version |
 
+### SSL/TLS
+
+When configuring SSL/TLS, the private key file must be in PKCS#8 format. PKCS#1 format is not supported.
+
 ### Workers and threads
 
 Granian offers different options to configure the number of workers and threads to be run, in particular:
