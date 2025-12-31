@@ -353,6 +353,9 @@ pub(crate) struct ASGIWebsocketProtocol {
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
+    http_response_started: atomic::AtomicBool,
+    http_response_intent: Mutex<Option<(u16, HeaderMap)>>,
+    sent_response_code: atomic::AtomicU16,
 }
 
 impl ASGIWebsocketProtocol {
@@ -373,6 +376,9 @@ impl ASGIWebsocketProtocol {
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
+            http_response_started: false.into(),
+            http_response_intent: Mutex::new(None),
+            sent_response_code: atomic::AtomicU16::new(101),
         }
     }
 
@@ -452,6 +458,53 @@ impl ASGIWebsocketProtocol {
         self.upgrade.lock().unwrap().is_none()
     }
 
+    #[inline(always)]
+    fn http_response_start<'p>(&self, py: Python<'p>, status: u16, headers: HeaderMap) -> PyResult<Bound<'p, PyAny>> {
+        if self
+            .http_response_started
+            .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
+            .is_err()
+        {
+            return err_future_into_py(py, error_flow!("HTTP response already started"));
+        }
+        self.sent_response_code.store(status, atomic::Ordering::Relaxed);
+        *self.http_response_intent.lock().unwrap() = Some((status, headers));
+        empty_future_into_py(py)
+    }
+
+    #[inline(always)]
+    fn http_response_body<'p>(&self, py: Python<'p>, body: Box<[u8]>, more: bool) -> PyResult<Bound<'p, PyAny>> {
+        if more {
+            return err_future_into_py(py, error_flow!("Streaming not supported for WebSocket denial response"));
+        }
+        if !self.http_response_started.load(atomic::Ordering::Relaxed) {
+            return err_future_into_py(py, error_flow!("HTTP response not started"));
+        }
+
+        let upgrade = self.upgrade.lock().unwrap().take();
+        let intent = self.http_response_intent.lock().unwrap().take();
+
+        future_into_py_futlike(self.rt.clone(), py, async move {
+            if let (Some(mut upgrade), Some((status, headers))) = (upgrade, intent) {
+                let response_body = http_body_util::Full::new(body::Bytes::from(body))
+                    .map_err(|e| match e {})
+                    .boxed();
+                if upgrade
+                    .send_http_response(
+                        StatusCode::from_u16(status).unwrap_or(StatusCode::FORBIDDEN),
+                        headers,
+                        response_body,
+                    )
+                    .await
+                    .is_ok()
+                {
+                    return FutureResultToPy::None;
+                }
+            }
+            FutureResultToPy::Err(error_flow!("Failed to send HTTP denial response"))
+        })
+    }
+
     pub fn tx(
         &self,
     ) -> (
@@ -519,8 +572,17 @@ impl ASGIWebsocketProtocol {
             Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
             Ok(ASGIMessageType::WSClose(frame)) => self.close(py, frame),
             Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
+            Ok(ASGIMessageType::WSHTTPResponseStart((status, headers))) => {
+                self.http_response_start(py, status, headers)
+            }
+            Ok(ASGIMessageType::WSHTTPResponseBody((body, more))) => self.http_response_body(py, body, more),
             _ => err_future_into_py(py, error_message!()),
         }
+    }
+
+    #[getter(sent_response_code)]
+    fn get_sent_response_code(&self) -> u16 {
+        self.sent_response_code.load(atomic::Ordering::Relaxed)
     }
 }
 
@@ -561,6 +623,11 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     })))
                 }
                 "websocket.send" => Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?)),
+                "websocket.http.response.start" => Ok(ASGIMessageType::WSHTTPResponseStart((
+                    adapt_status_code(py, message)?,
+                    adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
+                ))),
+                "websocket.http.response.body" => Ok(ASGIMessageType::WSHTTPResponseBody(adapt_body(py, message))),
                 _ => error_message!(),
             }
         }

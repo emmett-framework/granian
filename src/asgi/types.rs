@@ -11,4 +11,6 @@ pub(crate) enum ASGIMessageType {
     WSConnect,
     WSClose(Option<CloseFrame>),
     WSMessage(Message),
+    WSHTTPResponseStart((u16, HeaderMap)),
+    WSHTTPResponseBody((Box<[u8]>, bool)),
 }
