@@ -1,7 +1,11 @@
+from unittest.mock import patch
+
 import click
 import pytest
 
+from granian import Granian
 from granian.cli import Duration
+from granian.errors import ConfigurationError
 
 
 @pytest.mark.parametrize(
@@ -47,3 +51,22 @@ def test_duration_convert_out_of_range(value: str, error_message: str) -> None:
     duration_type = Duration(10, 100)
     with pytest.raises(click.BadParameter, match=error_message):
         duration_type.convert(value, None, None)
+
+
+def test_workers_lifetime_with_reload() -> None:
+    """Test that workers_lifetime with reload=True doesn't raise TypeError.
+
+    Regression test for when workers_lifetime was set to None before the < 60 check,
+    causing a TypeError when comparing None < 60.
+    """
+    server = Granian('tests.apps.asgi:app', interface='asgi', reload=True, workers_lifetime=100)
+    with patch.object(server, '_serve_loop'), patch.object(server, '_serve_with_reloader'):
+        server.serve()
+    assert server.workers_lifetime is None
+
+
+def test_workers_lifetime_below_minimum() -> None:
+    """Test that workers_lifetime below 60 raises ConfigurationError."""
+    server = Granian('tests.apps.asgi:app', interface='asgi', workers_lifetime=30)
+    with pytest.raises(ConfigurationError):
+        server.serve()
