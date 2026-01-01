@@ -104,7 +104,7 @@ jobs:
           container: ${{ matrix.container }}
           docker-options: -e CI
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: dist-${{ matrix.platform || matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}-${{ matrix.allocator || 'auto' }}
           path: dist
