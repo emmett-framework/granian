@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -15,7 +14,7 @@ class HTTP2Settings:
     adaptive_window: bool = False
     initial_connection_window_size: int = 1024 * 1024
     initial_stream_window_size: int = 1024 * 1024
-    keep_alive_interval: Optional[int] = None
+    keep_alive_interval: int | None = None
     keep_alive_timeout: int = 20
     max_concurrent_streams: int = 200
     max_frame_size: int = 1024 * 16

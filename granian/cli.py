@@ -1,8 +1,9 @@
 import json
 import pathlib
 import re
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, List, Optional, Type, TypeVar, Union
+from typing import Any, TypeVar
 
 import click
 
@@ -14,7 +15,7 @@ from .server import Server
 
 
 _AnyCallable = Callable[..., Any]
-FC = TypeVar('FC', bound=Union[_AnyCallable, click.Command])
+FC = TypeVar('FC', bound=_AnyCallable | click.Command)
 
 
 class Duration(click.IntRange):
@@ -27,10 +28,10 @@ class Duration(click.IntRange):
     _multipliers = {'s': 1, 'm': 60, 'h': 60 * 60, 'd': 60 * 60 * 24}
     _pattern = re.compile(r'^(?:(?P<d>\d+)d)?(?:(?P<h>\d+)h)?(?:(?P<m>\d+)m)?(?:(?P<s>\d+)s)?$')
 
-    def __init__(self, min: Optional[int] = None, max: Optional[int] = None) -> None:
+    def __init__(self, min: int | None = None, max: int | None = None) -> None:
         super().__init__(min, max, min_open=False, max_open=False, clamp=False)
 
-    def convert(self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]) -> Any:
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:
         if value is None:
             return value
 
@@ -65,7 +66,7 @@ class EnumType(click.Choice):
         self.__enum = enum
         super().__init__(choices=[item.value for item in enum], case_sensitive=case_sensitive)
 
-    def convert(self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]) -> Enum:
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Enum:
         if value is None or isinstance(value, Enum):
             return value
 
@@ -90,7 +91,7 @@ class OctalIntType(click.ParamType):
             self.fail(str(e))
 
 
-def _pretty_print_default(value: Optional[bool]) -> Optional[str]:
+def _pretty_print_default(value: bool | None) -> str | None:
     if isinstance(value, bool):
         return 'enabled' if value else 'disabled'
     if isinstance(value, Enum):
@@ -98,7 +99,7 @@ def _pretty_print_default(value: Optional[bool]) -> Optional[str]:
     return value
 
 
-def option(*param_decls: str, cls: Optional[Type[click.Option]] = None, **attrs: Any) -> Callable[[FC], FC]:
+def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: Any) -> Callable[[FC], FC]:
     attrs['show_envvar'] = True
     if 'default' in attrs:
         attrs['show_default'] = _pretty_print_default(attrs['default'])
@@ -418,21 +419,21 @@ def cli(
     app: str,
     host: str,
     port: int,
-    uds: Optional[pathlib.Path],
-    uds_permissions: Optional[int],
+    uds: pathlib.Path | None,
+    uds_permissions: int | None,
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
     workers: int,
-    blocking_threads: Optional[int],
+    blocking_threads: int | None,
     blocking_threads_idle_timeout: int,
     runtime_threads: int,
-    runtime_blocking_threads: Optional[int],
+    runtime_blocking_threads: int | None,
     runtime_mode: RuntimeModes,
     loop: Loops,
     task_impl: TaskImpl,
     backlog: int,
-    backpressure: Optional[int],
+    backpressure: int | None,
     http1_buffer_size: int,
     http1_header_read_timeout: int,
     http1_keep_alive: bool,
@@ -440,7 +441,7 @@ def cli(
     http2_adaptive_window: bool,
     http2_initial_connection_window_size: int,
     http2_initial_stream_window_size: int,
-    http2_keep_alive_interval: Optional[int],
+    http2_keep_alive_interval: int | None,
     http2_keep_alive_timeout: int,
     http2_max_concurrent_streams: int,
     http2_max_frame_size: int,
@@ -448,39 +449,39 @@ def cli(
     http2_max_send_buffer_size: int,
     log_enabled: bool,
     log_access_enabled: bool,
-    log_access_fmt: Optional[str],
+    log_access_fmt: str | None,
     log_level: LogLevels,
-    log_config: Optional[pathlib.Path],
-    ssl_certificate: Optional[pathlib.Path],
-    ssl_keyfile: Optional[pathlib.Path],
-    ssl_keyfile_password: Optional[str],
+    log_config: pathlib.Path | None,
+    ssl_certificate: pathlib.Path | None,
+    ssl_keyfile: pathlib.Path | None,
+    ssl_keyfile_password: str | None,
     ssl_protocol_min: SSLProtocols,
-    ssl_ca: Optional[pathlib.Path],
-    ssl_crl: Optional[List[pathlib.Path]],
+    ssl_ca: pathlib.Path | None,
+    ssl_crl: list[pathlib.Path] | None,
     ssl_client_verify: bool,
-    url_path_prefix: Optional[str],
+    url_path_prefix: str | None,
     respawn_failed_workers: bool,
     respawn_interval: float,
     rss_sample_interval: int,
     rss_samples: int,
-    workers_lifetime: Optional[int],
-    workers_max_rss: Optional[int],
-    workers_kill_timeout: Optional[int],
+    workers_lifetime: int | None,
+    workers_max_rss: int | None,
+    workers_kill_timeout: int | None,
     factory: bool,
-    working_dir: Optional[pathlib.Path],
-    env_files: Optional[List[pathlib.Path]],
+    working_dir: pathlib.Path | None,
+    env_files: list[pathlib.Path] | None,
     static_path_route: str,
-    static_path_mount: Optional[pathlib.Path],
+    static_path_mount: pathlib.Path | None,
     static_path_expires: int,
     reload: bool,
-    reload_paths: Optional[List[pathlib.Path]],
-    reload_ignore_dirs: Optional[List[str]],
-    reload_ignore_patterns: Optional[List[str]],
-    reload_ignore_paths: Optional[List[pathlib.Path]],
+    reload_paths: list[pathlib.Path] | None,
+    reload_ignore_dirs: list[str] | None,
+    reload_ignore_patterns: list[str] | None,
+    reload_ignore_paths: list[pathlib.Path] | None,
     reload_tick: int,
     reload_ignore_worker_failure: bool,
-    process_name: Optional[str],
-    pid_file: Optional[pathlib.Path],
+    process_name: str | None,
+    pid_file: pathlib.Path | None,
 ) -> None:
     log_dictconfig = None
     if log_config:
