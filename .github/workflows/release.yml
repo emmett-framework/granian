@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: pyo3/maturin-action@v1
       with:
         rust-toolchain: stable
@@ -108,7 +108,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Set jemalloc for aarch64 Linux
         if: matrix.target == 'aarch64' && matrix.os == 'ubuntu'
         run: |
