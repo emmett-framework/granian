@@ -264,7 +264,7 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
 @option(
     '--ssl-keyfile',
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=pathlib.Path),
-    help='SSL key file',
+    help='SSL key file (PKCS#8 format only)',
 )
 @option('--ssl-keyfile-password', help='SSL key password')
 @option(

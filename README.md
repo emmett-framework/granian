@@ -265,7 +265,8 @@ Options:
                                   GRANIAN_LOG_ACCESS_FMT]
   --ssl-certificate FILE          SSL certificate file  [env var:
                                   GRANIAN_SSL_CERTIFICATE]
-  --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
+  --ssl-keyfile FILE              SSL key file (PKCS#8 format only)  [env var:
+                                  GRANIAN_SSL_KEYFILE]
   --ssl-keyfile-password TEXT     SSL key password  [env var:
                                   GRANIAN_SSL_KEYFILE_PASSWORD]
   --ssl-protocol-min [tls1.2|tls1.3]
@@ -291,7 +292,7 @@ Options:
   --rss-sample-interval DURATION  The sample rate in seconds (or a human-
                                   readable duration) for the resource monitor
                                   [env var: GRANIAN_RSS_SAMPLE_INTERVAL;
-                                  default: 30; 10<=x<=300]
+                                  default: 30; 1<=x<=300]
   --rss-samples INTEGER RANGE     The number of consecutive samples to
                                   consider a worker over resource limit  [env
                                   var: GRANIAN_RSS_SAMPLES; default: 1; x>=1]
