@@ -89,6 +89,21 @@ impl UpgradeData {
         }
         Err(anyhow::Error::msg("Already consumed"))
     }
+
+    pub async fn send_http_response(
+        &mut self,
+        status: StatusCode,
+        headers: hyper::HeaderMap,
+        body: super::http::HTTPResponseBody,
+    ) -> anyhow::Result<()> {
+        if let Some((_, tx)) = self.response.take() {
+            let mut res = Response::new(body);
+            *res.status_mut() = status;
+            *res.headers_mut() = headers;
+            return Ok(tx.send(res).await?);
+        }
+        Err(anyhow::Error::msg("Already consumed"))
+    }
 }
 
 #[inline]
