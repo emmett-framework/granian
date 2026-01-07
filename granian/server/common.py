@@ -601,12 +601,12 @@ class AbstractServer(Generic[WT]):
             raise ConfigurationError('env_files')
 
         if self.workers_lifetime is not None:
-            if self.reload_on_changes:
-                self.workers_lifetime = None
-                logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
             if self.workers_lifetime < 60:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
+            if self.reload_on_changes:
+                self.workers_lifetime = None
+                logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
 
         if self.workers_rss is not None:
             if self.reload_on_changes:
