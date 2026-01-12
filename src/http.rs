@@ -26,6 +26,19 @@ impl HTTPProto {
     }
 }
 
+pub(crate) fn response_403() -> HTTPResponse {
+    let mut builder = Response::builder().status(403);
+    let headers = builder.headers_mut().unwrap();
+    headers.insert(HK_SERVER, HV_SERVER);
+    builder
+        .body(
+            http_body_util::Full::new("Forbidden".into())
+                .map_err(|e| match e {})
+                .boxed(),
+        )
+        .unwrap()
+}
+
 pub(crate) fn response_404() -> HTTPResponse {
     let mut builder = Response::builder().status(404);
     let headers = builder.headers_mut().unwrap();

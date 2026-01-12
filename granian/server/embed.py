@@ -126,6 +126,7 @@ class Server(AbstractServer[AsyncWorker]):
         factory: bool = False,
         static_path_route: str = '/static',
         static_path_mount: Path | None = None,
+        static_path_index_file: str | None = None,
         static_path_expires: int = 86400,
     ):
         super().__init__(
@@ -161,6 +162,7 @@ class Server(AbstractServer[AsyncWorker]):
             factory=factory,
             static_path_route=static_path_route,
             static_path_mount=static_path_mount,
+            static_path_index_file=static_path_index_file,
             static_path_expires=static_path_expires,
         )
         self.main_loop_interrupt = asyncio.Event()
@@ -213,7 +215,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str] | None,
+        static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
@@ -259,7 +261,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str] | None,
+        static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
@@ -314,7 +316,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str] | None,
+        static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],

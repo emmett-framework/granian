@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use std::{
     marker::PhantomData,
+    path::Path,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -102,7 +103,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
-    pub static_files: Option<(String, String, Option<String>)>,
+    pub static_files: Option<(String, String, Option<String>, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
     pub metrics: (
         Option<std::time::Duration>,
@@ -134,7 +135,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
-        static_files: Option<(String, String, Option<String>)>,
+        static_files: Option<(String, String, Option<String>, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -266,6 +267,7 @@ pub(crate) struct WorkerCTXFiles<M> {
     pub metrics: M,
     pub static_prefix: String,
     pub static_mount: String,
+    pub static_index_file: Option<String>,
     pub static_expires: Option<String>,
 }
 
@@ -273,14 +275,15 @@ impl<M> WorkerCTXFiles<M> {
     pub fn new(
         callback: crate::callbacks::PyCBScheduler,
         metrics: M,
-        files: Option<(String, String, Option<String>)>,
+        files: Option<(String, String, Option<String>, Option<String>)>,
     ) -> Self {
-        let (static_prefix, static_mount, static_expires) = files.unwrap();
+        let (static_prefix, static_mount, static_index_file, static_expires) = files.unwrap();
         Self {
             callback: Arc::new(callback),
             metrics,
             static_prefix,
             static_mount,
+            static_index_file,
             static_expires,
         }
     }
@@ -408,9 +411,28 @@ macro_rules! service_impl {
                     if static_match.is_err() {
                         return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
                     }
+                    let static_match = static_match.unwrap();
+                    let static_path = Path::new(&static_match);
+                    if !static_path.exists() {
+                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
+                    }
                     let expires = self.ctx.static_expires.clone();
+                    if static_path.is_dir() {
+                        if let Some(index_file) = self.ctx.static_index_file.as_ref() {
+                            let index_path = static_path.join(index_file);
+                            if index_path.exists() {
+                                return Box::pin(async move {
+                                    Ok::<_, hyper::Error>(
+                                        crate::files::serve_static_file(index_path.display().to_string(), expires)
+                                            .await,
+                                    )
+                                });
+                            }
+                        }
+                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_403()) });
+                    }
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match, expires).await)
                     });
                 }
 
