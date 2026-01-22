@@ -22,6 +22,12 @@ pub trait JoinError {
     fn is_panic(&self) -> bool;
 }
 
+impl RuntimeRef {
+    pub fn worker_id(&self) -> i32 {
+        self.worker_id
+    }
+}
+
 pub trait Runtime: Send + 'static {
     type JoinError: JoinError + Send;
     type JoinHandle: Future<Output = Result<(), Self::JoinError>> + Send;
@@ -43,6 +49,7 @@ pub(crate) struct RuntimeWrapper {
     pub inner: tokio::runtime::Runtime,
     br: Arc<BlockingRunner>,
     pr: Arc<Py<PyAny>>,
+    worker_id: i32,
 }
 
 impl RuntimeWrapper {
@@ -51,11 +58,13 @@ impl RuntimeWrapper {
         py_threads: usize,
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
+        worker_id: i32,
     ) -> Self {
         Self {
             inner: default_runtime(blocking_threads),
             br: BlockingRunner::new(py_threads, py_threads_idle_timeout).into(),
             pr: py_loop,
+            worker_id,
         }
     }
 
@@ -64,16 +73,23 @@ impl RuntimeWrapper {
         py_threads: usize,
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
+        worker_id: i32,
     ) -> Self {
         Self {
             inner: rt,
             br: BlockingRunner::new(py_threads, py_threads_idle_timeout).into(),
             pr: py_loop,
+            worker_id,
         }
     }
 
     pub fn handler(&self) -> RuntimeRef {
-        RuntimeRef::new(self.inner.handle().clone(), self.br.clone(), self.pr.clone())
+        RuntimeRef::new(
+            self.inner.handle().clone(),
+            self.br.clone(),
+            self.pr.clone(),
+            self.worker_id,
+        )
     }
 }
 
@@ -82,14 +98,16 @@ pub struct RuntimeRef {
     pub inner: tokio::runtime::Handle,
     innerb: Arc<BlockingRunner>,
     innerp: Arc<Py<PyAny>>,
+    worker_id: i32,
 }
 
 impl RuntimeRef {
-    pub fn new(rt: tokio::runtime::Handle, br: Arc<BlockingRunner>, pyloop: Arc<Py<PyAny>>) -> Self {
+    pub fn new(rt: tokio::runtime::Handle, br: Arc<BlockingRunner>, pyloop: Arc<Py<PyAny>>, worker_id: i32) -> Self {
         Self {
             inner: rt,
             innerb: br,
             innerp: pyloop,
+            worker_id,
         }
     }
 }
@@ -140,6 +158,7 @@ pub(crate) fn init_runtime_mt(
     py_threads: usize,
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
+    worker_id: i32,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         RuntimeBuilder::new_multi_thread()
@@ -151,6 +170,7 @@ pub(crate) fn init_runtime_mt(
         py_threads,
         py_threads_idle_timeout,
         py_loop,
+        worker_id,
     )
 }
 
@@ -159,8 +179,15 @@ pub(crate) fn init_runtime_st(
     py_threads: usize,
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
+    worker_id: i32,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop)
+    RuntimeWrapper::new(
+        blocking_threads,
+        py_threads,
+        py_threads_idle_timeout,
+        py_loop,
+        worker_id,
+    )
 }
 
 #[inline(always)]

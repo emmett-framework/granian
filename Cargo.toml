@@ -42,6 +42,10 @@ hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 itertools = "0.14"
 log = "0.4"
 mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls", "v3"], optional = true }
+metrics = "0.24"
+metrics-exporter-prometheus = "0.17"
+metrics-util = "0.20"
+metrics_ipc_collector = "0.2"
 mime_guess = "=2.0"
 pem = "=3.0"
 percent-encoding = "=2.3"
@@ -55,6 +59,7 @@ sysinfo = "=0.37"
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
 tokio = { version = "1.45", features = ["full"] }
+tokio-metrics = { version = "0.4", features = ["metrics-rs-integration"] }
 tokio-stream = "0.1"
 tokio-tungstenite = "=0.28"
 tokio-util = { version = "0.7", features = ["codec", "rt"] }

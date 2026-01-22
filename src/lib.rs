@@ -16,6 +16,7 @@ mod callbacks;
 mod conversion;
 mod files;
 mod http;
+mod metrics;
 mod net;
 mod rsgi;
 mod runtime;
@@ -50,5 +51,6 @@ fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     sys::init_pymodule(module)?;
     net::init_pymodule(module)?;
     workers::init_pymodule(module)?;
+    metrics::init_pymodule(module)?;
     Ok(())
 }
