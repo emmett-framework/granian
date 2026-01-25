@@ -17,7 +17,15 @@ def _serve(**kwargs):
 
 @asynccontextmanager
 async def _server(
-    interface, port, runtime_mode, ws=True, tls=False, tls_proto=None, task_impl='asyncio', static_mount=False
+    interface,
+    port,
+    runtime_mode,
+    ws=True,
+    tls=False,
+    tls_proto=None,
+    task_impl='asyncio',
+    static_mount=False,
+    static_precompressed=False,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -43,6 +51,7 @@ async def _server(
 
     if static_mount:
         kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
+        kwargs['static_path_precompressed'] = static_precompressed
 
     succeeded, spawn_failures = False, 0
     while spawn_failures < 3:
@@ -116,3 +125,8 @@ def server_tls(server_port, request, tls=True, **extras):
 @pytest.fixture(scope='function')
 def server_static_files(server_port, request):
     return partial(_server, request.param, server_port, static_mount=True)
+
+
+@pytest.fixture(scope='function')
+def server_static_files_precompressed(server_port, request):
+    return partial(_server, request.param, server_port, static_mount=True, static_precompressed=True)

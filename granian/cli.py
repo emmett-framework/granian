@@ -361,6 +361,11 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     help='Cache headers expiration (in seconds or a human-readable duration) for static file serving. 0 to disable.',
 )
 @option(
+    '--static-path-precompressed/--no-static-path-precompressed',
+    default=False,
+    help='Enable serving precompressed static files with .br, .gz, or .zst extensions',
+)
+@option(
     '--reload/--no-reload',
     default=False,
     help="Enable auto reload on application's files changes (requires granian[reload] extra)",
@@ -473,6 +478,7 @@ def cli(
     static_path_route: str,
     static_path_mount: pathlib.Path | None,
     static_path_expires: int,
+    static_path_precompressed: bool,
     reload: bool,
     reload_paths: list[pathlib.Path] | None,
     reload_ignore_dirs: list[str] | None,
@@ -558,6 +564,7 @@ def cli(
         static_path_route=static_path_route,
         static_path_mount=static_path_mount,
         static_path_expires=static_path_expires,
+        static_path_precompressed=static_path_precompressed,
         reload=reload,
         reload_paths=reload_paths,
         reload_ignore_paths=reload_ignore_paths,
