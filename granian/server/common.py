@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from .._compat import _PY_312, _PYV
+from .._granian import MetricsAggregator
 from .._imports import dotenv, setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
@@ -20,6 +21,7 @@ from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
+from ..metrics import MainMetrics
 from ..net import SocketSpec, UnixSocketSpec
 
 
@@ -127,6 +129,10 @@ class AbstractServer(Generic[WT]):
         static_path_route: str = '/static',
         static_path_mount: Path | None = None,
         static_path_expires: int = 86400,
+        metrics: bool = False,
+        metrics_scrape_interval: int = 15,
+        metrics_address: str = '127.0.0.1',
+        metrics_port: int = 9090,
         reload: bool = False,
         reload_paths: Sequence[Path] | None = None,
         reload_ignore_dirs: Sequence[str] | None = None,
@@ -189,6 +195,10 @@ class AbstractServer(Generic[WT]):
             if static_path_mount
             else None
         )
+        self.metrics = metrics
+        self.metrics_scrape_interval = metrics_scrape_interval
+        self.metrics_address = metrics_address
+        self.metrics_port = metrics_port
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
@@ -211,6 +221,8 @@ class AbstractServer(Generic[WT]):
         self._ssp = None
         self._shd = None
         self._sfd = None
+        self._metrics = MetricsAggregator(self.workers)
+        self._metrics_data = MainMetrics()
         self.wrks: list[WT] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
@@ -219,6 +231,7 @@ class AbstractServer(Generic[WT]):
         self.reload_signal = False
         self.lifetime_signal = False
         self.rss_signal = False
+        self.metrics_signal = False
         self.pid = None
         self._env_loader = build_env_loader()
 
@@ -347,12 +360,21 @@ class AbstractServer(Generic[WT]):
         self.rss_signal = True
         self.main_loop_interrupt.set()
 
+    def _metrics_watcher(self):
+        time.sleep(self.metrics_scrape_interval)
+        self.metrics_signal = True
+        self.main_loop_interrupt.set()
+
     def _watch_workers_lifetime(self, ttl):
         waker = threading.Thread(target=self._workers_lifetime_watcher, args=(ttl,), daemon=True)
         waker.start()
 
     def _watch_workers_rss(self):
         waker = threading.Thread(target=self._workers_rss_watcher, daemon=True)
+        waker.start()
+
+    def _watch_metrics(self):
+        waker = threading.Thread(target=self._metrics_watcher, daemon=True)
         waker.start()
 
     def _write_pid(self):
@@ -404,12 +426,28 @@ class AbstractServer(Generic[WT]):
         if file_pid == self.pid:
             self.pid_file.unlink()
 
+    def _start_ipc(self):
+        pass
+
+    def _stop_ipc(self):
+        pass
+
+    def _start_metrics(self):
+        # TODO
+        #   - spawn http server
+        self._watch_metrics()
+
+    def _stop_metrics(self):
+        # TODO: stop http server
+        pass
+
     def startup(self, spawn_target, target_loader):
         self.pid = os.getpid()
         logger.info(f'Starting granian (main PID: {self.pid})')
         self._write_pidfile()
         set_main_signals(self.signal_handler_interrupt, self.signal_handler_reload)
         self._init_shared_socket()
+        self._start_ipc()
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self._bind_addr_fmt}')
 
@@ -421,10 +459,14 @@ class AbstractServer(Generic[WT]):
             self._watch_workers_lifetime(self.workers_lifetime)
         if self.workers_rss is not None:
             self._watch_workers_rss()
+        if self.metrics:
+            self._start_metrics()
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
+        self._stop_metrics()
         self._stop_workers()
+        self._stop_ipc()
         self._call_hooks(self.hooks_shutdown)
         self._unlink_pidfile()
         if not exit_code and self.interrupt_children:
@@ -446,6 +488,20 @@ class AbstractServer(Generic[WT]):
     def _handle_rss_signal(self, spawn_target, target_loader):
         raise NotImplementedError
 
+    def _handle_metrics_signal(self):
+        now = time.monotonic()
+        wrk_lifetimes = []
+        for worker in list(self.wrks):
+            wrk_lifetimes.append(int(now - worker.birth))
+
+        self._metrics.update_main(
+            self._metrics_data.spawn,
+            self._metrics_data.respawn_err,
+            self._metrics_data.respawn_ttl,
+            self._metrics_data.respawn_rss,
+            wrk_lifetimes,
+        )
+
     def _serve_loop(self, spawn_target, target_loader):
         while True:
             self.main_loop_interrupt.wait()
@@ -466,6 +522,7 @@ class AbstractServer(Generic[WT]):
                 self.respawned_wrks.clear()
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, spawn_target, target_loader)
+                self._metrics_data.respawn_err += 1
 
             if self.reload_signal:
                 self._reload(spawn_target, target_loader)
@@ -484,6 +541,7 @@ class AbstractServer(Generic[WT]):
                             self._respawn_workers(
                                 [worker.idx], spawn_target, target_loader, delay=self.respawn_interval
                             )
+                            self._metrics_data.respawn_ttl += 1
                         else:
                             elapsed = now - worker.birth
                             remaining = self.workers_lifetime - elapsed
@@ -495,6 +553,12 @@ class AbstractServer(Generic[WT]):
                     self.rss_signal = False
                     self._handle_rss_signal(spawn_target, target_loader)
                     self._watch_workers_rss()
+
+            if self.metrics_signal:
+                self.main_loop_interrupt.clear()
+                self.metrics_signal = False
+                self._handle_metrics_signal()
+                self._watch_metrics()
 
     def _serve(self, spawn_target, target_loader):
         self.startup(spawn_target, target_loader)

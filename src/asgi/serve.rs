@@ -19,6 +19,7 @@ impl ASGIWorker {
         signature = (
             worker_id,
             sock,
+            ipc,
             threads=1,
             blocking_threads=512,
             py_threads=1,
@@ -37,12 +38,14 @@ impl ASGIWorker {
             ssl_ca=None,
             ssl_crl=vec![],
             ssl_client_verify=false,
+            metrics=(None, None),
         )
     )]
     fn new(
         py: Python,
         worker_id: i32,
         sock: Py<SocketHolder>,
+        ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,
@@ -61,11 +64,13 @@ impl ASGIWorker {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
                 worker_id,
                 sock,
+                ipc,
                 threads,
                 blocking_threads,
                 py_threads,
@@ -84,6 +89,7 @@ impl ASGIWorker {
                 ssl_ca,
                 ssl_crl,
                 ssl_client_verify,
+                metrics,
             ),
         })
     }
