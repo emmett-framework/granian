@@ -360,6 +360,16 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     default=86400,
     help='Cache headers expiration (in seconds or a human-readable duration) for static file serving. 0 to disable.',
 )
+@option('--metrics/--no-metrics', 'metrics_enabled', default=False, help='Enable the prometheus metrics exporter.')
+@option(
+    '--metrics-scrape-interval', default=15, type=Duration(1, 60), help='Configure the interval for metrics collection.'
+)
+@option(
+    '--metrics-address',
+    default='127.0.0.1',
+    help='Metrics exporter host address to bind to',
+)
+@option('--metrics-port', type=int, default=9090, help='Metrics exporter port to bind to.')
 @option(
     '--reload/--no-reload',
     default=False,
@@ -473,6 +483,10 @@ def cli(
     static_path_route: str,
     static_path_mount: pathlib.Path | None,
     static_path_expires: int,
+    metrics_enabled: bool,
+    metrics_scrape_interval: int,
+    metrics_address: str,
+    metrics_port: int,
     reload: bool,
     reload_paths: list[pathlib.Path] | None,
     reload_ignore_dirs: list[str] | None,
@@ -558,6 +572,10 @@ def cli(
         static_path_route=static_path_route,
         static_path_mount=static_path_mount,
         static_path_expires=static_path_expires,
+        metrics_enabled=metrics_enabled,
+        metrics_scrape_interval=metrics_scrape_interval,
+        metrics_address=metrics_address,
+        metrics_port=metrics_port,
         reload=reload,
         reload_paths=reload_paths,
         reload_ignore_paths=reload_ignore_paths,

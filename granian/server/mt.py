@@ -92,12 +92,14 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
 
         worker = ASGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -109,6 +111,7 @@ class MTServer(AbstractServer[WorkerThread]):
             websockets,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -137,6 +140,7 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         lifespan_handler = LifespanProtocol(callback)
         wcallback = _future_watcher_wrapper(
@@ -151,6 +155,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -162,6 +167,7 @@ class MTServer(AbstractServer[WorkerThread]):
             websockets,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -191,6 +197,7 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
@@ -199,6 +206,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker = RSGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -210,6 +218,7 @@ class MTServer(AbstractServer[WorkerThread]):
             websockets,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -239,12 +248,14 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
 
         worker = WSGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -255,6 +266,7 @@ class MTServer(AbstractServer[WorkerThread]):
             http2_settings,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -288,6 +300,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
+                (self.metrics_scrape_interval if self.metrics_enabled else None, self._metrics),
             ),
             sig=sig,
         )

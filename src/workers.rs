@@ -6,6 +6,7 @@ use std::{
 };
 
 use super::asgi::serve::ASGIWorker;
+use super::metrics;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{
     load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
@@ -90,6 +91,8 @@ pub(crate) struct HTTP2Config {
 pub(crate) struct WorkerConfig {
     pub id: i32,
     sock: Py<crate::net::SocketHolder>,
+    #[cfg(not(Py_GIL_DISABLED))]
+    pub ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
     pub threads: usize,
     pub blocking_threads: usize,
     pub py_threads: usize,
@@ -101,6 +104,10 @@ pub(crate) struct WorkerConfig {
     pub websockets_enabled: bool,
     pub static_files: Option<(String, String, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
+    pub metrics: (
+        Option<std::time::Duration>,
+        Option<Py<crate::metrics::MetricsAggregator>>,
+    ),
 }
 
 #[derive(Clone)]
@@ -117,6 +124,7 @@ impl WorkerConfig {
     pub fn new(
         id: i32,
         sock: Py<crate::net::SocketHolder>,
+        #[allow(unused_variables)] ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,
@@ -135,6 +143,7 @@ impl WorkerConfig {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
     ) -> Self {
         let tls_opts = match ssl_enabled {
             true => Some(WorkerTlsConfig {
@@ -151,6 +160,8 @@ impl WorkerConfig {
         Self {
             id,
             sock,
+            #[cfg(not(Py_GIL_DISABLED))]
+            ipc,
             threads,
             blocking_threads,
             py_threads,
@@ -162,6 +173,7 @@ impl WorkerConfig {
             websockets_enabled,
             static_files,
             tls_opts,
+            metrics: (metrics.0.map(std::time::Duration::from_secs), metrics.1),
         }
     }
 
@@ -234,31 +246,39 @@ pub(crate) struct WorkerMarkerConnNoUpgrades;
 pub(crate) struct WorkerMarkerConnUpgrades;
 
 #[derive(Clone)]
-pub(crate) struct WorkerCTXBase {
+pub(crate) struct WorkerCTXBase<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
+    pub metrics: M,
 }
 
-impl WorkerCTXBase {
-    pub fn new(callback: crate::callbacks::PyCBScheduler) -> Self {
+impl<M> WorkerCTXBase<M> {
+    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M) -> Self {
         Self {
             callback: Arc::new(callback),
+            metrics,
         }
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct WorkerCTXFiles {
+pub(crate) struct WorkerCTXFiles<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
+    pub metrics: M,
     pub static_prefix: String,
     pub static_mount: String,
     pub static_expires: Option<String>,
 }
 
-impl WorkerCTXFiles {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, Option<String>)>) -> Self {
+impl<M> WorkerCTXFiles<M> {
+    pub fn new(
+        callback: crate::callbacks::PyCBScheduler,
+        metrics: M,
+        files: Option<(String, String, Option<String>)>,
+    ) -> Self {
         let (static_prefix, static_mount, static_expires) = files.unwrap();
         Self {
             callback: Arc::new(callback),
+            metrics,
             static_prefix,
             static_mount,
             static_expires,
@@ -267,16 +287,17 @@ impl WorkerCTXFiles {
 }
 
 #[derive(Clone)]
-pub(crate) struct Worker<C, A, H, F> {
+pub(crate) struct Worker<C, A, H, F, M> {
     ctx: C,
     acceptor: A,
     handler: H,
     rt: crate::runtime::RuntimeRef,
     pub tasks: tokio_util::task::TaskTracker,
     target: F,
+    metrics: M,
 }
 
-impl<C, A, H, F, Ret> Worker<C, A, H, F>
+impl<C, A, H, F, M, Ret> Worker<C, A, H, F, M>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
@@ -290,7 +311,7 @@ where
         + Copy,
     Ret: Future<Output = crate::http::HTTPResponse>,
 {
-    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: F) -> Self {
+    pub fn new(ctx: C, acceptor: A, handler: H, rt: crate::runtime::RuntimeRef, target: F, metrics: M) -> Self {
         Self {
             ctx,
             acceptor,
@@ -298,6 +319,7 @@ where
             rt,
             tasks: tokio_util::task::TaskTracker::new(),
             target,
+            metrics,
         }
     }
 }
@@ -313,9 +335,25 @@ struct WorkerSvc<F, C, P> {
     _proto: PhantomData<P>,
 }
 
+macro_rules! service_proto_fut {
+    ($proto:expr, $self:expr, $req:expr) => {{
+        let fut = ($self.f)(
+            $self.rt.clone(),
+            $self.disconnect_guard.clone(),
+            $self.ctx.callback.clone(),
+            $self.addr_local.clone(),
+            $self.addr_remote.clone(),
+            $req,
+            $proto,
+        );
+        Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+    }};
+}
+
 macro_rules! service_impl {
-    ($marker:ty, $proto:expr) => {
-        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest> for WorkerSvc<F, WorkerCTXBase, $marker>
+    ($proto_marker:ty, $proto:expr) => {
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
+            for WorkerSvc<F, WorkerCTXBase<()>, $proto_marker>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -337,20 +375,12 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
-                let fut = (self.f)(
-                    self.rt.clone(),
-                    self.disconnect_guard.clone(),
-                    self.ctx.callback.clone(),
-                    self.addr_local.clone(),
-                    self.addr_remote.clone(),
-                    req,
-                    $proto,
-                );
-                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+                service_proto_fut!($proto, self, req)
             }
         }
 
-        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest> for WorkerSvc<F, WorkerCTXFiles, $marker>
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
+            for WorkerSvc<F, WorkerCTXFiles<()>, $proto_marker>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -384,16 +414,90 @@ macro_rules! service_impl {
                     });
                 }
 
-                let fut = (self.f)(
-                    self.rt.clone(),
-                    self.disconnect_guard.clone(),
-                    self.ctx.callback.clone(),
-                    self.addr_local.clone(),
-                    self.addr_remote.clone(),
-                    req,
-                    $proto,
-                );
-                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+                service_proto_fut!($proto, self, req)
+            }
+        }
+
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
+            for WorkerSvc<F, WorkerCTXBase<crate::metrics::ArcWorkerMetrics>, $proto_marker>
+        where
+            F: Fn(
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy
+                + Send
+                + Sync
+                + 'static,
+            Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
+        {
+            type Response = crate::http::HTTPResponse;
+            type Error = hyper::Error;
+            type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+            fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
+                self.ctx
+                    .metrics
+                    .req_handled
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                service_proto_fut!($proto, self, req)
+            }
+        }
+
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
+            for WorkerSvc<F, WorkerCTXFiles<crate::metrics::ArcWorkerMetrics>, $proto_marker>
+        where
+            F: Fn(
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy
+                + Send
+                + Sync
+                + 'static,
+            Ret: Future<Output = crate::http::HTTPResponse> + Send + 'static,
+        {
+            type Response = crate::http::HTTPResponse;
+            type Error = hyper::Error;
+            type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+            fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
+                self.ctx
+                    .metrics
+                    .req_handled
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+
+                if let Some(static_match) =
+                    crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
+                {
+                    self.ctx
+                        .metrics
+                        .req_static_handled
+                        .fetch_add(1, std::sync::atomic::Ordering::Release);
+                    if static_match.is_err() {
+                        self.ctx
+                            .metrics
+                            .req_static_err
+                            .fetch_add(1, std::sync::atomic::Ordering::Release);
+                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
+                    }
+                    let expires = self.ctx.static_expires.clone();
+                    return Box::pin(async move {
+                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                    });
+                }
+
+                service_proto_fut!($proto, self, req)
             }
         }
     };
@@ -421,38 +525,44 @@ macro_rules! conn_builder_h1u {
 }
 
 #[derive(Clone)]
-pub(crate) struct WorkerHandlerH1<U> {
+pub(crate) struct WorkerHandlerH1<U, M> {
     pub opts: HTTP1Config,
+    pub metrics: M,
     pub _upgrades: PhantomData<U>,
 }
 
 #[derive(Clone)]
-pub(crate) struct WorkerHandlerH2 {
+pub(crate) struct WorkerHandlerH2<M> {
     pub opts: HTTP2Config,
+    pub metrics: M,
 }
 
 #[derive(Clone)]
-pub(crate) struct WorkerHandlerHA<U> {
+pub(crate) struct WorkerHandlerHA<U, M> {
     pub opts_h1: HTTP1Config,
     pub opts_h2: HTTP2Config,
+    pub metrics: M,
     pub _upgrades: PhantomData<U>,
 }
 
-struct WorkerHandleH1<U> {
+struct WorkerHandleH1<U, M> {
     opts: HTTP1Config,
     guard: Arc<tokio::sync::Notify>,
+    metrics: M,
     _upgrades: PhantomData<U>,
 }
 
-struct WorkerHandleH2 {
+struct WorkerHandleH2<M> {
     opts: HTTP2Config,
     guard: Arc<tokio::sync::Notify>,
+    metrics: M,
 }
 
-struct WorkerHandleHA<U> {
+struct WorkerHandleHA<U, M> {
     opts_h1: HTTP1Config,
     opts_h2: HTTP2Config,
     guard: Arc<tokio::sync::Notify>,
+    metrics: M,
     _upgrades: PhantomData<U>,
 }
 
@@ -460,82 +570,97 @@ trait WorkerHandleBuilder<I, S> {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S>;
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnNoUpgrades>, F>
+impl<C, A, F, M, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnNoUpgrades, M>, F, M>
 where
+    M: Clone,
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    WorkerHandleH1<WorkerMarkerConnNoUpgrades, M>: WorkerHandle<I, S>,
 {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
         WorkerHandleH1 {
             opts: self.handler.opts.clone(),
             guard,
+            metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnNoUpgrades>,
         }
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnUpgrades>, F>
+impl<C, A, F, M, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnUpgrades, M>, F, M>
 where
+    M: Clone,
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    WorkerHandleH1<WorkerMarkerConnUpgrades, M>: WorkerHandle<I, S>,
 {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
         WorkerHandleH1 {
             opts: self.handler.opts.clone(),
             guard,
+            metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnUpgrades>,
         }
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH2, F>
+impl<C, A, F, M, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH2<M>, F, M>
 where
+    M: Clone,
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    WorkerHandleH2<M>: WorkerHandle<I, S>,
 {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
         WorkerHandleH2 {
             opts: self.handler.opts.clone(),
             guard,
+            metrics: self.handler.metrics.clone(),
         }
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnNoUpgrades>, F>
+impl<C, A, F, M, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnNoUpgrades, M>, F, M>
 where
+    M: Clone,
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    WorkerHandleHA<WorkerMarkerConnNoUpgrades, M>: WorkerHandle<I, S>,
 {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
         WorkerHandleHA {
             opts_h1: self.handler.opts_h1.clone(),
             opts_h2: self.handler.opts_h2.clone(),
             guard,
+            metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnNoUpgrades>,
         }
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnUpgrades>, F>
+impl<C, A, F, M, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnUpgrades, M>, F, M>
 where
+    M: Clone,
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    WorkerHandleHA<WorkerMarkerConnUpgrades, M>: WorkerHandle<I, S>,
 {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
         WorkerHandleHA {
             opts_h1: self.handler.opts_h1.clone(),
             opts_h2: self.handler.opts_h2.clone(),
             guard,
+            metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnUpgrades>,
         }
     }
@@ -551,6 +676,109 @@ trait WorkerHandle<I, S> {
     ) -> impl Future<Output = ()> + Send + 'static;
 }
 
+macro_rules! conn_handle_h1_impl {
+    ($cb:tt, $self:expr, $svc:expr, $stream:expr, $permit:expr, $sig:expr) => {{
+        let mut done = false;
+        let conn = $cb!($self.opts, hyper_util::rt::TokioIo::new($stream), $svc);
+        tokio::pin!(conn);
+
+        tokio::select! {
+            biased;
+            _ = conn.as_mut() => {
+                done = true;
+            },
+            _ = $sig.notified() => {
+                conn.as_mut().graceful_shutdown();
+            }
+        }
+        if !done {
+            _ = conn.as_mut().await;
+        }
+
+        $self.guard.notify_one();
+        drop($permit);
+    }};
+}
+
+macro_rules! conn_handle_ha_impl {
+    ($conn_method:ident, $self:expr, $svc:expr, $stream:expr, $permit:expr, $sig:expr) => {{
+        let mut done = false;
+        let mut connb = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+        connb
+            .http1()
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
+            .header_read_timeout($self.opts_h1.header_read_timeout)
+            .keep_alive($self.opts_h1.keep_alive)
+            .max_buf_size($self.opts_h1.max_buffer_size)
+            .pipeline_flush($self.opts_h1.pipeline_flush);
+        connb
+            .http2()
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
+            .adaptive_window($self.opts_h2.adaptive_window)
+            .initial_connection_window_size($self.opts_h2.initial_connection_window_size)
+            .initial_stream_window_size($self.opts_h2.initial_stream_window_size)
+            .keep_alive_interval($self.opts_h2.keep_alive_interval)
+            .keep_alive_timeout($self.opts_h2.keep_alive_timeout)
+            .max_concurrent_streams($self.opts_h2.max_concurrent_streams)
+            .max_frame_size($self.opts_h2.max_frame_size)
+            .max_header_list_size($self.opts_h2.max_headers_size)
+            .max_send_buf_size($self.opts_h2.max_send_buffer_size);
+        let conn = connb.$conn_method(hyper_util::rt::TokioIo::new($stream), $svc);
+        tokio::pin!(conn);
+
+        tokio::select! {
+            biased;
+            _ = conn.as_mut() => {
+                done = true;
+            },
+            _ = $sig.notified() => {
+                conn.as_mut().graceful_shutdown();
+            }
+        }
+        if !done {
+            _ = conn.as_mut().await;
+        }
+
+        $self.guard.notify_one();
+        drop($permit);
+    }};
+}
+
+macro_rules! conn_handle_h2_impl {
+    ($self:expr, $svc:expr, $stream:expr, $permit:expr, $sig:expr) => {{
+        let mut done = false;
+        let conn = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .timer(hyper_util::rt::tokio::TokioTimer::new())
+            .adaptive_window($self.opts.adaptive_window)
+            .initial_connection_window_size($self.opts.initial_connection_window_size)
+            .initial_stream_window_size($self.opts.initial_stream_window_size)
+            .keep_alive_interval($self.opts.keep_alive_interval)
+            .keep_alive_timeout($self.opts.keep_alive_timeout)
+            .max_concurrent_streams($self.opts.max_concurrent_streams)
+            .max_frame_size($self.opts.max_frame_size)
+            .max_header_list_size($self.opts.max_headers_size)
+            .max_send_buf_size($self.opts.max_send_buffer_size)
+            .serve_connection(hyper_util::rt::TokioIo::new($stream), $svc);
+        tokio::pin!(conn);
+
+        tokio::select! {
+            biased;
+            _ = conn.as_mut() => {
+                done = true;
+            },
+            () = $sig.notified() => {
+                conn.as_mut().graceful_shutdown();
+            }
+        }
+        if !done {
+            _ = conn.as_mut().await;
+        }
+
+        $self.guard.notify_one();
+        drop($permit);
+    }};
+}
+
 macro_rules! conn_handle_h1 {
     ($cb:tt) => {
         async fn call(
@@ -560,25 +788,24 @@ macro_rules! conn_handle_h1 {
             permit: tokio::sync::OwnedSemaphorePermit,
             sig: Arc<tokio::sync::Notify>,
         ) {
-            let mut done = false;
-            let conn = $cb!(self.opts, hyper_util::rt::TokioIo::new(stream), svc);
-            tokio::pin!(conn);
-
-            tokio::select! {
-                biased;
-                _ = conn.as_mut() => {
-                    done = true;
-                },
-                _ = sig.notified() => {
-                    conn.as_mut().graceful_shutdown();
-                }
-            }
-            if !done {
-                _ = conn.as_mut().await;
-            }
-
-            self.guard.notify_one();
-            drop(permit);
+            conn_handle_h1_impl!($cb, self, svc, stream, permit, sig)
+        }
+    };
+    (metrics $cb:tt) => {
+        async fn call(
+            self,
+            svc: S,
+            stream: I,
+            permit: tokio::sync::OwnedSemaphorePermit,
+            sig: Arc<tokio::sync::Notify>,
+        ) {
+            self.metrics
+                .conn_active
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            conn_handle_h1_impl!($cb, self, svc, stream, permit, sig);
+            self.metrics
+                .conn_active
+                .fetch_sub(1, std::sync::atomic::Ordering::Release);
         }
     };
 }
@@ -592,45 +819,24 @@ macro_rules! conn_handle_ha {
             permit: tokio::sync::OwnedSemaphorePermit,
             sig: Arc<tokio::sync::Notify>,
         ) {
-            let mut done = false;
-            let mut connb = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
-            connb
-                .http1()
-                .timer(hyper_util::rt::tokio::TokioTimer::new())
-                .header_read_timeout(self.opts_h1.header_read_timeout)
-                .keep_alive(self.opts_h1.keep_alive)
-                .max_buf_size(self.opts_h1.max_buffer_size)
-                .pipeline_flush(self.opts_h1.pipeline_flush);
-            connb
-                .http2()
-                .timer(hyper_util::rt::tokio::TokioTimer::new())
-                .adaptive_window(self.opts_h2.adaptive_window)
-                .initial_connection_window_size(self.opts_h2.initial_connection_window_size)
-                .initial_stream_window_size(self.opts_h2.initial_stream_window_size)
-                .keep_alive_interval(self.opts_h2.keep_alive_interval)
-                .keep_alive_timeout(self.opts_h2.keep_alive_timeout)
-                .max_concurrent_streams(self.opts_h2.max_concurrent_streams)
-                .max_frame_size(self.opts_h2.max_frame_size)
-                .max_header_list_size(self.opts_h2.max_headers_size)
-                .max_send_buf_size(self.opts_h2.max_send_buffer_size);
-            let conn = connb.$conn_method(hyper_util::rt::TokioIo::new(stream), svc);
-            tokio::pin!(conn);
-
-            tokio::select! {
-                biased;
-                _ = conn.as_mut() => {
-                    done = true;
-                },
-                _ = sig.notified() => {
-                    conn.as_mut().graceful_shutdown();
-                }
-            }
-            if !done {
-                _ = conn.as_mut().await;
-            }
-
-            self.guard.notify_one();
-            drop(permit);
+            conn_handle_ha_impl!($conn_method, self, svc, stream, permit, sig)
+        }
+    };
+    (metrics $conn_method:ident) => {
+        async fn call(
+            self,
+            svc: S,
+            stream: I,
+            permit: tokio::sync::OwnedSemaphorePermit,
+            sig: Arc<tokio::sync::Notify>,
+        ) {
+            self.metrics
+                .conn_active
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            conn_handle_ha_impl!($conn_method, self, svc, stream, permit, sig);
+            self.metrics
+                .conn_active
+                .fetch_sub(1, std::sync::atomic::Ordering::Release);
         }
     };
 }
@@ -660,12 +866,41 @@ macro_rules! conn_handle_impl {
     };
 }
 
-conn_handle_impl!(h1 WorkerHandleH1<WorkerMarkerConnNoUpgrades>, conn_builder_h1);
-conn_handle_impl!(h1 WorkerHandleH1<WorkerMarkerConnUpgrades>, conn_builder_h1u);
-conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnNoUpgrades>, serve_connection);
-conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnUpgrades>, serve_connection_with_upgrades);
+macro_rules! conn_handle_metrics_impl {
+    (h1 $handle:ty, $cb:tt) => {
+        impl<I, S> WorkerHandle<I, S> for $handle
+        where
+            I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+            S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+            S::Future: Send + 'static,
+            S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+        {
+            conn_handle_h1!(metrics $cb);
+        }
+    };
+    (ha $handle:ty, $conn_method:ident) => {
+        impl<I, S> WorkerHandle<I, S> for $handle
+        where
+            I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+            S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+            S::Future: Send + 'static,
+            S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+        {
+            conn_handle_ha!(metrics $conn_method);
+        }
+    };
+}
 
-impl<I, S> WorkerHandle<I, S> for WorkerHandleH2
+conn_handle_impl!(h1 WorkerHandleH1<WorkerMarkerConnNoUpgrades, ()>, conn_builder_h1);
+conn_handle_impl!(h1 WorkerHandleH1<WorkerMarkerConnUpgrades, ()>, conn_builder_h1u);
+conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnNoUpgrades, ()>, serve_connection);
+conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnUpgrades, ()>, serve_connection_with_upgrades);
+conn_handle_metrics_impl!(h1 WorkerHandleH1<WorkerMarkerConnNoUpgrades, metrics::ArcWorkerMetrics>, conn_builder_h1);
+conn_handle_metrics_impl!(h1 WorkerHandleH1<WorkerMarkerConnUpgrades, metrics::ArcWorkerMetrics>, conn_builder_h1u);
+conn_handle_metrics_impl!(ha WorkerHandleHA<WorkerMarkerConnNoUpgrades, metrics::ArcWorkerMetrics>, serve_connection);
+conn_handle_metrics_impl!(ha WorkerHandleHA<WorkerMarkerConnUpgrades, metrics::ArcWorkerMetrics>, serve_connection_with_upgrades);
+
+impl<I, S> WorkerHandle<I, S> for WorkerHandleH2<()>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
@@ -673,36 +908,25 @@ where
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
     async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
-        let mut done = false;
-        let conn = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
-            .timer(hyper_util::rt::tokio::TokioTimer::new())
-            .adaptive_window(self.opts.adaptive_window)
-            .initial_connection_window_size(self.opts.initial_connection_window_size)
-            .initial_stream_window_size(self.opts.initial_stream_window_size)
-            .keep_alive_interval(self.opts.keep_alive_interval)
-            .keep_alive_timeout(self.opts.keep_alive_timeout)
-            .max_concurrent_streams(self.opts.max_concurrent_streams)
-            .max_frame_size(self.opts.max_frame_size)
-            .max_header_list_size(self.opts.max_headers_size)
-            .max_send_buf_size(self.opts.max_send_buffer_size)
-            .serve_connection(hyper_util::rt::TokioIo::new(stream), svc);
-        tokio::pin!(conn);
+        conn_handle_h2_impl!(self, svc, stream, permit, sig);
+    }
+}
 
-        tokio::select! {
-            biased;
-            _ = conn.as_mut() => {
-                done = true;
-            },
-            () = sig.notified() => {
-                conn.as_mut().graceful_shutdown();
-            }
-        }
-        if !done {
-            _ = conn.as_mut().await;
-        }
-
-        self.guard.notify_one();
-        drop(permit);
+impl<I, S> WorkerHandle<I, S> for WorkerHandleH2<metrics::ArcWorkerMetrics>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
+        self.metrics
+            .conn_active
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        conn_handle_h2_impl!(self, svc, stream, permit, sig);
+        self.metrics
+            .conn_active
+            .fetch_sub(1, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -733,9 +957,130 @@ pub(crate) trait WorkerAcceptor<L> {
     ) -> impl Future<Output = ()> + Send;
 }
 
+macro_rules! acceptor_impl_stream {
+    ($proto_marker:ty, $sockwrap:expr, $stream:expr, $addr_remote:expr, $self:expr, $addr_local:expr, $rt:expr, $tasks:expr, $permit:expr, $connsig:expr, $target:expr, $ctx:expr) => {{
+        let disconnect_guard = Arc::new(tokio::sync::Notify::new());
+        let handle = $self.handle(disconnect_guard.clone());
+        let svc = WorkerSvc {
+            f: $target,
+            ctx: $ctx,
+            rt: $rt,
+            disconnect_guard,
+            addr_local: $addr_local.clone(),
+            addr_remote: $sockwrap($addr_remote),
+            _proto: PhantomData::<$proto_marker>,
+        };
+        $tasks.spawn(handle.call(svc, $stream, $permit, $connsig));
+    }};
+}
+
+macro_rules! acceptor_impl_err {
+    ($err:expr, $permit:expr) => {{
+        log::info!("TCP handshake failed with error: {:?}", $err);
+        drop($permit);
+    }};
+}
+
+macro_rules! acceptor_impl_match {
+    ($proto_marker:ty, $sockwrap:expr, $event:expr, $self:expr, $addr_local:expr, $rt:expr, $tasks:expr, $permit:expr, $connsig:expr, $target:expr, $ctx:expr) => {{
+        match $event {
+            Ok((stream, addr_remote)) => acceptor_impl_stream!(
+                $proto_marker,
+                $sockwrap,
+                stream,
+                addr_remote,
+                $self,
+                $addr_local,
+                $rt,
+                $tasks,
+                $permit,
+                $connsig,
+                $target,
+                $ctx
+            ),
+            Err(err) => acceptor_impl_err!(err, $permit),
+        }
+    }};
+}
+
+macro_rules! acceptor_impl_match_metrics {
+    ($proto_marker:ty, $sockwrap:expr, $event:expr, $self:expr, $addr_local:expr, $rt:expr, $tasks:expr, $permit:expr, $connsig:expr, $target:expr, $ctx:expr) => {{
+        match $event {
+            Ok((stream, addr_remote)) => {
+                $self
+                    .metrics
+                    .conn_handled
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                acceptor_impl_stream!(
+                    $proto_marker,
+                    $sockwrap,
+                    stream,
+                    addr_remote,
+                    $self,
+                    $addr_local,
+                    $rt,
+                    $tasks,
+                    $permit,
+                    $connsig,
+                    $target,
+                    $ctx
+                )
+            }
+            Err(err) => {
+                $self
+                    .metrics
+                    .conn_err
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                acceptor_impl_err!(err, $permit)
+            }
+        }
+    }};
+}
+
+macro_rules! acceptor_impl_loop {
+    ($proto_marker:ty, $sockwrap:expr, $matchi:ident, $self:expr, $sig:expr, $backpressure:expr, $listener:expr, $addr_local:expr) => {{
+        let semaphore = Arc::new(tokio::sync::Semaphore::new($backpressure));
+        let connsig = Arc::new(tokio::sync::Notify::new());
+        let mut accept_loop = true;
+
+        while accept_loop {
+            let rt = $self.rt.clone();
+            let tasks = $self.tasks.clone();
+            let target = $self.target;
+            let ctx = $self.ctx.clone();
+            let semaphore = semaphore.clone();
+            let connsig = connsig.clone();
+
+            tokio::select! {
+                biased;
+                (permit, event) = async {
+                    let permit = semaphore.acquire_owned().await.unwrap();
+                    (permit, $listener.accept().await)
+                } => $matchi!(
+                    $proto_marker,
+                    $sockwrap,
+                    event,
+                    $self,
+                    $addr_local,
+                    rt,
+                    tasks,
+                    permit,
+                    connsig,
+                    target,
+                    ctx
+                ),
+                _ = $sig.changed() => {
+                    accept_loop = false;
+                    connsig.notify_waiters();
+                }
+            }
+        }
+    }};
+}
+
 macro_rules! acceptor_impl {
     ($target_plain:ty, $target_tls:ty, $listeneri:ty, $listenero:ty, $stream:ty, $tlswrap:expr, $sockwrap:expr) => {
-        impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_plain, H, F>
+        impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_plain, H, F, ()>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -753,7 +1098,7 @@ macro_rules! acceptor_impl {
             Ret: Future<Output = crate::http::HTTPResponse> + 'static,
             C: Clone + Send + Sync + 'static,
             H: Send + Sync + 'static,
-            Worker<C, $target_plain, H, F>: WorkerHandleBuilder<$stream, WorkerSvc<F, C, WorkerMarkerPlain>> + Clone,
+            Worker<C, $target_plain, H, F, ()>: WorkerHandleBuilder<$stream, WorkerSvc<F, C, WorkerMarkerPlain>> + Clone,
         {
             async fn listen(
                 &self,
@@ -763,55 +1108,12 @@ macro_rules! acceptor_impl {
             ) {
                 let listener = <$listenero>::from_std(listener).unwrap();
                 let addr_local = $sockwrap(listener.local_addr().unwrap());
-                let semaphore = Arc::new(tokio::sync::Semaphore::new(backpressure));
-                let connsig = Arc::new(tokio::sync::Notify::new());
-                let mut accept_loop = true;
 
-                while accept_loop {
-                    let rt = self.rt.clone();
-                    let tasks = self.tasks.clone();
-                    let target = self.target;
-                    let ctx = self.ctx.clone();
-                    let semaphore = semaphore.clone();
-                    let connsig = connsig.clone();
-
-                    tokio::select! {
-                        biased;
-                        (permit, event) = async {
-                            let permit = semaphore.acquire_owned().await.unwrap();
-                            (permit, listener.accept().await)
-                        } => {
-                            match event {
-                                Ok((stream, addr_remote)) => {
-                                    let disconnect_guard = Arc::new(tokio::sync::Notify::new());
-                                    let handle = self.handle(disconnect_guard.clone());
-                                    let svc = WorkerSvc {
-                                        f: target,
-                                        ctx,
-                                        rt,
-                                        disconnect_guard,
-                                        addr_local: addr_local.clone(),
-                                        addr_remote: $sockwrap(addr_remote),
-                                        _proto: PhantomData::<WorkerMarkerPlain>,
-                                    };
-                                    tasks.spawn(handle.call(svc, stream, permit, connsig));
-                                },
-                                Err(err) => {
-                                    log::info!("TCP handshake failed with error: {err:?}");
-                                    drop(permit);
-                                }
-                            }
-                        },
-                        _ = sig.changed() => {
-                            accept_loop = false;
-                            connsig.notify_waiters();
-                        }
-                    }
-                }
+                acceptor_impl_loop!(WorkerMarkerPlain, $sockwrap, acceptor_impl_match, self, sig, backpressure, listener, addr_local)
             }
         }
 
-        impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_tls, H, F>
+        impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_tls, H, F, ()>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -829,7 +1131,7 @@ macro_rules! acceptor_impl {
             Ret: Future<Output = crate::http::HTTPResponse> + 'static,
             C: Clone + Send + Sync + 'static,
             H: Send + Sync + 'static,
-            Worker<C, $target_tls, H, F>:
+            Worker<C, $target_tls, H, F, ()>:
                 WorkerHandleBuilder<tls_listener::rustls::server::TlsStream<$stream>, WorkerSvc<F, C, WorkerMarkerTls>> + Clone,
         {
             async fn listen(
@@ -840,51 +1142,75 @@ macro_rules! acceptor_impl {
             ) {
                 let tls_cfg = self.acceptor.opts.clone();
                 let (mut tls_listener, addr_local) = $tlswrap(tls_cfg, listener).unwrap();
-                let semaphore = Arc::new(tokio::sync::Semaphore::new(backpressure));
-                let connsig = Arc::new(tokio::sync::Notify::new());
-                let mut accept_loop = true;
 
-                while accept_loop {
-                    let rt = self.rt.clone();
-                    let tasks = self.tasks.clone();
-                    let target = self.target;
-                    let ctx = self.ctx.clone();
-                    let semaphore = semaphore.clone();
-                    let connsig = connsig.clone();
+                acceptor_impl_loop!(WorkerMarkerTls, $sockwrap, acceptor_impl_match, self, sig, backpressure, tls_listener, addr_local)
+            }
+        }
 
-                    tokio::select! {
-                        biased;
-                        (permit, event) = async {
-                            let permit = semaphore.acquire_owned().await.unwrap();
-                            (permit, tls_listener.accept().await)
-                        } => {
-                            match event {
-                                Ok((stream, addr_remote)) => {
-                                    let disconnect_guard = Arc::new(tokio::sync::Notify::new());
-                                    let handle = self.handle(disconnect_guard.clone());
-                                    let svc = WorkerSvc {
-                                        f: target,
-                                        ctx,
-                                        rt,
-                                        disconnect_guard,
-                                        addr_local: addr_local.clone(),
-                                        addr_remote: $sockwrap(addr_remote),
-                                        _proto: PhantomData::<WorkerMarkerTls>,
-                                    };
-                                    tasks.spawn(handle.call(svc, stream, permit, connsig));
-                                },
-                                Err(err) => {
-                                    log::info!("TCP handshake failed with error: {err:?}");
-                                    drop(permit);
-                                }
-                            }
-                        },
-                        _ = sig.changed() => {
-                            accept_loop = false;
-                            connsig.notify_waiters();
-                        }
-                    }
-                }
+        impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_plain, H, F, crate::metrics::ArcWorkerMetrics>
+        where
+            F: Fn(
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy
+                + Send
+                + Sync
+                + 'static,
+            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
+            C: Clone + Send + Sync + 'static,
+            H: Send + Sync + 'static,
+            Worker<C, $target_plain, H, F, crate::metrics::ArcWorkerMetrics>: WorkerHandleBuilder<$stream, WorkerSvc<F, C, WorkerMarkerPlain>> + Clone,
+        {
+            async fn listen(
+                &self,
+                mut sig: tokio::sync::watch::Receiver<bool>,
+                listener: $listeneri,
+                backpressure: usize,
+            ) {
+                let listener = <$listenero>::from_std(listener).unwrap();
+                let addr_local = $sockwrap(listener.local_addr().unwrap());
+
+                acceptor_impl_loop!(WorkerMarkerPlain, $sockwrap, acceptor_impl_match_metrics, self, sig, backpressure, listener, addr_local)
+            }
+        }
+
+        impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_tls, H, F, crate::metrics::ArcWorkerMetrics>
+        where
+            F: Fn(
+                    crate::runtime::RuntimeRef,
+                    Arc<tokio::sync::Notify>,
+                    crate::callbacks::ArcCBScheduler,
+                    crate::net::SockAddr,
+                    crate::net::SockAddr,
+                    crate::http::HTTPRequest,
+                    crate::http::HTTPProto,
+                ) -> Ret
+                + Copy
+                + Send
+                + Sync
+                + 'static,
+            Ret: Future<Output = crate::http::HTTPResponse> + 'static,
+            C: Clone + Send + Sync + 'static,
+            H: Send + Sync + 'static,
+            Worker<C, $target_tls, H, F, crate::metrics::ArcWorkerMetrics>:
+                WorkerHandleBuilder<tls_listener::rustls::server::TlsStream<$stream>, WorkerSvc<F, C, WorkerMarkerTls>> + Clone,
+        {
+            async fn listen(
+                &self,
+                mut sig: tokio::sync::watch::Receiver<bool>,
+                listener: $listeneri,
+                backpressure: usize,
+            ) {
+                let tls_cfg = self.acceptor.opts.clone();
+                let (mut tls_listener, addr_local) = $tlswrap(tls_cfg, listener).unwrap();
+
+                acceptor_impl_loop!(WorkerMarkerTls, $sockwrap, acceptor_impl_match_metrics, self, sig, backpressure, tls_listener, addr_local)
             }
         }
     };
@@ -912,11 +1238,12 @@ acceptor_impl!(
 
 macro_rules! serve_fn {
     (mt $name:ident, $listener:ty, $listener_gen:ident) => {
-        pub(crate) fn $name<C, A, H, F, Ret>(
+        pub(crate) fn $name<C, A, H, F, M, Ret>(
             cfg: &WorkerConfig,
             py: Python,
             event_loop: &Bound<PyAny>,
             signal: Py<WorkerSignal>,
+            metrics: (M, Option<crate::metrics::ArcWorkerMetrics>),
             ctx: C,
             acceptor: A,
             handler: H,
@@ -932,8 +1259,9 @@ macro_rules! serve_fn {
                     crate::http::HTTPProto,
                 ) -> Ret
                 + Copy,
+            M: Clone + Sync,
             Ret: Future<Output = crate::http::HTTPResponse>,
-            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Send + 'static,
+            Worker<C, A, H, F, M>: WorkerAcceptor<$listener> + Send + 'static,
         {
             _ = pyo3_log::try_init();
 
@@ -951,13 +1279,39 @@ macro_rules! serve_fn {
                     cfg.py_threads,
                     cfg.py_threads_idle_timeout,
                     rtpyloop,
+                    metrics.1.clone(),
                 )
             });
             let rth = rt.handler();
-
-            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
-            let tasks = wrk.tasks.clone();
             let srx = signal.get().rx.lock().unwrap().take().unwrap();
+            let mc_notify = Arc::new(tokio::sync::Notify::new());
+
+            if let Some(metrics_interval) = cfg.metrics.0 {
+                #[cfg(not(Py_GIL_DISABLED))]
+                crate::metrics::spawn_ipc_collector(
+                    rth.clone(),
+                    srx.clone(),
+                    mc_notify.clone(),
+                    metrics.1.clone().unwrap(),
+                    metrics_interval,
+                    cfg.ipc.as_ref().unwrap().clone_ref(py),
+                );
+                #[cfg(Py_GIL_DISABLED)]
+                crate::metrics::spawn_local_collector(
+                    rth.clone(),
+                    srx.clone(),
+                    mc_notify.clone(),
+                    metrics.1.clone().unwrap(),
+                    metrics_interval,
+                    (cfg.id - 1).try_into().unwrap(),
+                    cfg.metrics.1.as_ref().unwrap().clone_ref(py),
+                );
+            } else {
+                mc_notify.notify_one();
+            }
+
+            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
+            let tasks = wrk.tasks.clone();
 
             let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
                 wrk.listen(srx, listener, backpressure).await;
@@ -966,6 +1320,7 @@ macro_rules! serve_fn {
 
                 tasks.close();
                 tasks.wait().await;
+                mc_notify.notified().await;
 
                 Python::attach(|_| drop(wrk));
                 Ok(())
@@ -979,11 +1334,12 @@ macro_rules! serve_fn {
     };
 
     (st $name:ident, $listener:ty, $listener_gen:ident) => {
-        pub(crate) fn $name<C, A, H, F, Ret>(
+        pub(crate) fn $name<C, A, H, F, M, Ret>(
             cfg: &WorkerConfig,
             _py: (),
             event_loop: &Bound<PyAny>,
             signal: Py<WorkerSignal>,
+            metrics: (M, Option<crate::metrics::ArcWorkerMetrics>),
             ctx: C,
             acceptor: A,
             handler: H,
@@ -1004,7 +1360,8 @@ macro_rules! serve_fn {
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,
             H: Clone + Send + 'static,
-            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Send + 'static,
+            M: Clone + Send,
+            Worker<C, A, H, F, M>: WorkerAcceptor<$listener> + Send + 'static,
         {
             _ = pyo3_log::try_init();
 
@@ -1024,6 +1381,7 @@ macro_rules! serve_fn {
                 let py_threads = cfg.py_threads;
                 let py_threads_idle_timeout = cfg.py_threads_idle_timeout;
                 let backpressure = cfg.backpressure;
+                let metrics = metrics.clone();
                 let ctx = ctx.clone();
                 let acceptor = acceptor.clone();
                 let handler = handler.clone();
@@ -1032,10 +1390,15 @@ macro_rules! serve_fn {
                 let srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt =
-                        crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
+                    let rt = crate::runtime::init_runtime_st(
+                        blocking_threads,
+                        py_threads,
+                        py_threads_idle_timeout,
+                        py_loop,
+                        metrics.1.clone(),
+                    );
                     let rth = rt.handler();
-                    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
+                    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
                     let local = tokio::task::LocalSet::new();
                     let tasks = wrk.tasks.clone();
 
@@ -1054,8 +1417,34 @@ macro_rules! serve_fn {
                 }));
             }
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()));
+            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()), None);
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
+            let mc_notify = Arc::new(tokio::sync::Notify::new());
+
+            if let Some(metrics_interval) = cfg.metrics.0 {
+                #[cfg(not(Py_GIL_DISABLED))]
+                crate::metrics::spawn_ipc_collector(
+                    rtm.handler(),
+                    pyrx.clone(),
+                    mc_notify.clone(),
+                    metrics.1.clone().unwrap(),
+                    metrics_interval,
+                    cfg.ipc.as_ref().unwrap().clone_ref(event_loop.py()),
+                );
+                #[cfg(Py_GIL_DISABLED)]
+                crate::metrics::spawn_local_collector(
+                    rtm.handler(),
+                    pyrx.clone(),
+                    mc_notify.clone(),
+                    metrics.1.clone().unwrap(),
+                    metrics_interval,
+                    (cfg.id - 1).try_into().unwrap(),
+                    cfg.metrics.1.as_ref().unwrap().clone_ref(event_loop.py()),
+                );
+            } else {
+                mc_notify.notify_one();
+            }
+
             let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
@@ -1063,6 +1452,7 @@ macro_rules! serve_fn {
                 while let Some(worker) = workers.pop() {
                     worker.join().unwrap();
                 }
+                mc_notify.notified().await;
                 Ok(())
             });
 
@@ -1074,11 +1464,12 @@ macro_rules! serve_fn {
     };
 
     (fut $name:ident, $listener:ty, $listener_gen:ident) => {
-        pub(crate) fn $name<'p, C, A, H, F, Ret>(
+        pub(crate) fn $name<'p, C, A, H, F, M, Ret>(
             cfg: &WorkerConfig,
             _py: (),
             event_loop: &Bound<'p, PyAny>,
             signal: Py<WorkerSignal>,
+            metrics: (M, Option<crate::metrics::ArcWorkerMetrics>),
             ctx: C,
             acceptor: A,
             handler: H,
@@ -1100,7 +1491,8 @@ macro_rules! serve_fn {
             C: Clone + Send + 'static,
             A: Clone + Send + 'static,
             H: Clone + Send + 'static,
-            Worker<C, A, H, F>: WorkerAcceptor<$listener> + Send + 'static,
+            M: Clone + Send,
+            Worker<C, A, H, F, M>: WorkerAcceptor<$listener> + Send + 'static,
         {
             _ = pyo3_log::try_init();
 
@@ -1118,10 +1510,15 @@ macro_rules! serve_fn {
             let pyloop_r2 = pyloop_r1.clone();
 
             let worker = std::thread::spawn(move || {
-                let rt =
-                    crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, pyloop_r1);
+                let rt = crate::runtime::init_runtime_st(
+                    blocking_threads,
+                    py_threads,
+                    py_threads_idle_timeout,
+                    pyloop_r1,
+                    metrics.1.clone(),
+                );
                 let rth = rt.handler();
-                let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
+                let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
                 let tasks = wrk.tasks.clone();
 
                 rt.inner.block_on(async move {
@@ -1142,7 +1539,7 @@ macro_rules! serve_fn {
             let pyfut = ret.clone().unbind();
 
             std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop_r2.clone());
+                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop_r2.clone(), None);
                 let local = tokio::task::LocalSet::new();
 
                 let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
@@ -1182,8 +1579,8 @@ serve_fn!(st serve_st_uds, std::os::unix::net::UnixListener, uds_listener);
 #[cfg(unix)]
 serve_fn!(fut serve_fut_uds, std::os::unix::net::UnixListener, uds_listener);
 
-macro_rules! gen_serve_match {
-    ($sm:expr, $acceptor_plain:ident, $acceptor_tls:ident, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {
+macro_rules! gen_serve_match_inner {
+    ($sm:expr, $acceptor_plain:ident, $acceptor_tls:ident, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr, $metrics:expr, $metrics_opt:expr) => {
         match (
             &$self.config.http_mode[..],
             $self.config.tls_opts.is_some(),
@@ -1195,11 +1592,13 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1209,11 +1608,13 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1223,11 +1624,13 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1237,11 +1640,13 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1251,13 +1656,15 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1267,13 +1674,15 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1283,13 +1692,15 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1299,13 +1710,15 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1315,10 +1728,12 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1328,10 +1743,12 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1341,10 +1758,12 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1354,10 +1773,12 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1367,12 +1788,14 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1382,12 +1805,14 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target,
@@ -1397,12 +1822,14 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1412,12 +1839,14 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
+                    metrics: $metrics.clone(),
                     _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws,
@@ -1427,10 +1856,12 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                 },
                 $target,
             ),
@@ -1439,10 +1870,12 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_plain {},
                 crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                 },
                 $target,
             ),
@@ -1451,12 +1884,14 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXBase::new($callback),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                 },
                 $target,
             ),
@@ -1465,12 +1900,14 @@ macro_rules! gen_serve_match {
                 $py,
                 $event_loop,
                 $signal,
-                crate::workers::WorkerCTXFiles::new($callback, $self.config.static_files.clone()),
+                ($metrics.clone(), $metrics_opt),
+                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 crate::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 crate::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
                 },
                 $target,
             ),
@@ -1479,7 +1916,44 @@ macro_rules! gen_serve_match {
     };
 }
 
+macro_rules! gen_serve_match {
+    ($sm:expr, $acceptor_plain:ident, $acceptor_tls:ident, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {{
+        let metrics_obj = std::sync::Arc::new(crate::metrics::WorkerMetrics::new());
+        match $self.config.metrics.0.is_some() {
+            true => crate::workers::gen_serve_match_inner!(
+                $sm,
+                $acceptor_plain,
+                $acceptor_tls,
+                $self,
+                $py,
+                $callback,
+                $event_loop,
+                $signal,
+                $target,
+                $targetws,
+                metrics_obj.clone(),
+                Some(metrics_obj.clone())
+            ),
+            false => crate::workers::gen_serve_match_inner!(
+                $sm,
+                $acceptor_plain,
+                $acceptor_tls,
+                $self,
+                $py,
+                $callback,
+                $event_loop,
+                $signal,
+                $target,
+                $targetws,
+                (),
+                None
+            ),
+        }
+    }};
+}
+
 pub(crate) use gen_serve_match;
+pub(crate) use gen_serve_match_inner;
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<WorkerSignal>()?;
