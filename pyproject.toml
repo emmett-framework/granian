@@ -34,7 +34,7 @@ dynamic = [
 
 requires-python = '>=3.10'
 dependencies = [
-    'click>=8.0.0',
+    'click>=8.1.0',
 ]
 
 [project.optional-dependencies]
