@@ -347,6 +347,7 @@ pub(crate) struct ASGIWebsocketProtocol {
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
     websocket: Mutex<Option<HyperWebsocket>>,
     upgrade: Mutex<Option<UpgradeData>>,
+    response_intent: Mutex<Option<(u16, HeaderMap)>>,
     ws_rx: Arc<AsyncMutex<Option<WSRxStream>>>,
     ws_tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     init_rx: atomic::AtomicBool,
@@ -367,6 +368,7 @@ impl ASGIWebsocketProtocol {
             tx: Mutex::new(Some(tx)),
             websocket: Mutex::new(Some(websocket)),
             upgrade: Mutex::new(Some(upgrade)),
+            response_intent: Mutex::new(None),
             ws_rx: Arc::new(AsyncMutex::new(None)),
             ws_tx: Arc::new(AsyncMutex::new(None)),
             init_rx: false.into(),
@@ -387,11 +389,11 @@ impl ASGIWebsocketProtocol {
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
-                let upgrade_headers = match subproto {
-                    Some(v) => vec![(WS_SUBPROTO_HNAME.to_string(), v)],
-                    _ => vec![],
-                };
-                if (upgrade.send(Some(upgrade_headers)).await).is_ok()
+                let mut upgrade_headers = HeaderMap::new();
+                if let Some(v) = subproto {
+                    upgrade_headers.append(WS_SUBPROTO_HNAME, HeaderValue::from_str(&v).unwrap());
+                }
+                if (upgrade.send(None, Some(upgrade_headers), None).await).is_ok()
                     && let Some(websocket) = websocket
                     && let Ok(stream) = websocket.await
                 {
@@ -408,6 +410,44 @@ impl ASGIWebsocketProtocol {
             }
             FutureResultToPy::Err(error_flow!("Connection already upgraded"))
         })
+    }
+
+    #[inline(always)]
+    fn start_response<'p>(&self, py: Python<'p>, intent: (u16, HeaderMap)) -> PyResult<Bound<'p, PyAny>> {
+        if self.consumed() {
+            return err_future_into_py(py, error_flow!("Connection already upgraded"));
+        }
+
+        let mut resp_intent = self.response_intent.lock().unwrap();
+        if resp_intent.is_some() {
+            return err_future_into_py(py, error_flow!("Response already started"));
+        }
+
+        *resp_intent = Some(intent);
+        empty_future_into_py(py)
+    }
+
+    #[inline(always)]
+    fn send_response<'p>(&self, py: Python<'p>, body: Box<[u8]>, more: bool) -> PyResult<Bound<'p, PyAny>> {
+        if more {
+            return err_future_into_py(py, error_message!());
+        }
+
+        let intent = self.response_intent.lock().unwrap().take();
+        if intent.is_none() {
+            return err_future_into_py(py, error_flow!("Response not initialised"));
+        }
+
+        if let Some(mut upgrade) = self.upgrade.lock().unwrap().take() {
+            return future_into_py_futlike(self.rt.clone(), py, async move {
+                let (status, headers) = intent.unwrap();
+                if (upgrade.send(Some(status), Some(headers), Some(body.into())).await).is_ok() {
+                    return FutureResultToPy::None;
+                }
+                FutureResultToPy::Err(error_flow!("Connection already upgraded"))
+            });
+        }
+        err_future_into_py(py, error_flow!("Connection already upgraded"))
     }
 
     #[inline(always)]
@@ -519,6 +559,8 @@ impl ASGIWebsocketProtocol {
             Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
             Ok(ASGIMessageType::WSClose(frame)) => self.close(py, frame),
             Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
+            Ok(ASGIMessageType::HTTPResponseStart(intent)) => self.start_response(py, intent),
+            Ok(ASGIMessageType::HTTPResponseBody((body, more))) => self.send_response(py, body, more),
             _ => err_future_into_py(py, error_message!()),
         }
     }
@@ -530,11 +572,13 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
         Ok(Some(item)) => {
             let message_type: &str = item.extract()?;
             match message_type {
-                "http.response.start" => Ok(ASGIMessageType::HTTPResponseStart((
+                "http.response.start" | "websocket.http.response.start" => Ok(ASGIMessageType::HTTPResponseStart((
                     adapt_status_code(py, message)?,
                     adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
                 ))),
-                "http.response.body" => Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message))),
+                "http.response.body" | "websocket.http.response.body" => {
+                    Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message)))
+                }
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
                 "websocket.accept" => {
                     let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {

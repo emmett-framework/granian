@@ -33,6 +33,18 @@ async def test_reject(server, runtime_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_reject_custom(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode) as port:
+        with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
+            async with websockets.connect(f'ws://localhost:{port}/ws_rejectc'):
+                pass
+
+    assert exc.value.response.status_code == 403
+    assert exc.value.response.body == b'WebSocket connection denied by application'
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_asgi_scope(asgi_server, runtime_mode):
@@ -49,6 +61,7 @@ async def test_asgi_scope(asgi_server, runtime_mode):
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
     assert not data['subprotocols']
+    assert 'websocket.http.response' in data['extensions']
 
 
 @pytest.mark.asyncio
