@@ -6,7 +6,7 @@ use super::http::handle;
 
 use crate::{
     callbacks::CallbackScheduler,
-    conversion::{worker_http1_config_from_py, worker_http2_config_from_py},
+    conversion::{worker_http1_config_from_py, worker_http2_config_from_py, worker_static_files_config_from_py},
     http::HTTPProto,
     net::SocketHolder,
     workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync, gen_serve_match},
@@ -55,7 +55,7 @@ impl WSGIWorker {
         http_mode: &str,
         http1_opts: Option<Py<PyAny>>,
         http2_opts: Option<Py<PyAny>>,
-        static_files: Option<(String, String, Option<String>)>,
+        static_files: Option<Py<PyAny>>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -78,7 +78,7 @@ impl WSGIWorker {
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
                 false,
-                static_files,
+                worker_static_files_config_from_py(py, static_files)?,
                 ssl_enabled,
                 ssl_cert,
                 ssl_key,
