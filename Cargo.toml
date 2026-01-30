@@ -32,6 +32,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "=1.0"
+bytes = "1.11"
+ciborium = "=0.2"
 crossbeam-channel = "0.5"
 encoding_rs = "=0.8"
 futures = "=0.3"
@@ -39,6 +41,7 @@ futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }
 hyper = { version = "=1.8", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
+interprocess = { version = "=2.3", git = "https://github.com/kotauskas/interprocess.git", rev = "44351c4fe88c72ead4f3b0b762c4cf45beb90841", features = ["tokio"] }
 itertools = "0.14"
 log = "0.4"
 mimalloc = { version = "0.1.43", default-features = false, features = ["local_dynamic_tls", "v3"], optional = true }
@@ -50,6 +53,7 @@ pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.27", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
 pyo3-log = { version = "=0.13", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-027" }
 rustls-pemfile = "2.2"
+serde = { version = "1.0.228", features = ["derive"] }
 socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.37"
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }

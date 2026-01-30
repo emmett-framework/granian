@@ -13,9 +13,10 @@ use super::callbacks::PyFutureAwaitable;
 #[cfg(windows)]
 use super::callbacks::{PyFutureDoneCallback, PyFutureResultSetter};
 
-use super::blocking::BlockingRunner;
+use super::blocking;
 use super::callbacks::{PyDoneAwaitable, PyEmptyAwaitable, PyErrAwaitable, PyIterAwaitable};
 use super::conversion::FutureResultToPy;
+use super::metrics;
 
 pub trait JoinError {
     #[allow(dead_code)]
@@ -41,7 +42,7 @@ pub trait ContextExt: Runtime {
 
 pub(crate) struct RuntimeWrapper {
     pub inner: tokio::runtime::Runtime,
-    br: Arc<BlockingRunner>,
+    br: Arc<blocking::BlockingRunner>,
     pr: Arc<Py<PyAny>>,
 }
 
@@ -51,10 +52,15 @@ impl RuntimeWrapper {
         py_threads: usize,
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
+        metrics: Option<metrics::ArcWorkerMetrics>,
     ) -> Self {
+        let br = match metrics {
+            Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
+            None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout),
+        };
         Self {
             inner: default_runtime(blocking_threads),
-            br: BlockingRunner::new(py_threads, py_threads_idle_timeout).into(),
+            br: br.into(),
             pr: py_loop,
         }
     }
@@ -64,10 +70,15 @@ impl RuntimeWrapper {
         py_threads: usize,
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
+        metrics: Option<metrics::ArcWorkerMetrics>,
     ) -> Self {
+        let br = match metrics {
+            Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
+            None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout),
+        };
         Self {
             inner: rt,
-            br: BlockingRunner::new(py_threads, py_threads_idle_timeout).into(),
+            br: br.into(),
             pr: py_loop,
         }
     }
@@ -80,12 +91,12 @@ impl RuntimeWrapper {
 #[derive(Clone)]
 pub struct RuntimeRef {
     pub inner: tokio::runtime::Handle,
-    innerb: Arc<BlockingRunner>,
+    innerb: Arc<blocking::BlockingRunner>,
     innerp: Arc<Py<PyAny>>,
 }
 
 impl RuntimeRef {
-    pub fn new(rt: tokio::runtime::Handle, br: Arc<BlockingRunner>, pyloop: Arc<Py<PyAny>>) -> Self {
+    pub fn new(rt: tokio::runtime::Handle, br: Arc<blocking::BlockingRunner>, pyloop: Arc<Py<PyAny>>) -> Self {
         Self {
             inner: rt,
             innerb: br,
@@ -140,6 +151,7 @@ pub(crate) fn init_runtime_mt(
     py_threads: usize,
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
+    metrics: Option<metrics::ArcWorkerMetrics>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         RuntimeBuilder::new_multi_thread()
@@ -151,6 +163,7 @@ pub(crate) fn init_runtime_mt(
         py_threads,
         py_threads_idle_timeout,
         py_loop,
+        metrics,
     )
 }
 
@@ -159,8 +172,9 @@ pub(crate) fn init_runtime_st(
     py_threads: usize,
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
+    metrics: Option<metrics::ArcWorkerMetrics>,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop)
+    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop, metrics)
 }
 
 #[inline(always)]

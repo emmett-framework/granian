@@ -223,6 +223,7 @@ class Server(AbstractServer[AsyncWorker]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -234,6 +235,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             static_path,
             *ssl_ctx,
+            (None, None),
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -275,6 +277,7 @@ class Server(AbstractServer[AsyncWorker]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -286,6 +289,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             static_path,
             *ssl_ctx,
+            (None, None),
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -322,6 +326,7 @@ class Server(AbstractServer[AsyncWorker]):
         worker = RSGIWorker(
             worker_id,
             sock,
+            None,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -333,6 +338,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             static_path,
             *ssl_ctx,
+            (None, None),
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -433,6 +439,10 @@ class Server(AbstractServer[AsyncWorker]):
         if self.workers_rss:
             logger.error('The resource monitor is not supported in embedded mode')
             raise ConfigurationError('workers_max_rss')
+
+        if self.metrics_enabled:
+            logger.error('Metrics are not available in embedded mode')
+            raise ConfigurationError('metrics_enabled')
 
         if not spawn_target:
             spawn_target = default_spawners[self.interface]

@@ -329,6 +329,19 @@ Options:
                                   serving. 0 to disable.  [env var:
                                   GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
                                   x>=0]
+  --metrics / --no-metrics        Enable the prometheus metrics exporter.
+                                  [env var: GRANIAN_METRICS_ENABLED; default:
+                                  (disabled)]
+  --metrics-scrape-interval DURATION
+                                  Configure the interval for metrics
+                                  collection.  [env var:
+                                  GRANIAN_METRICS_SCRAPE_INTERVAL; default:
+                                  15; 1<=x<=60]
+  --metrics-address TEXT          Metrics exporter host address to bind to
+                                  [env var: GRANIAN_METRICS_ADDRESS; default:
+                                  (127.0.0.1)]
+  --metrics-port INTEGER          Metrics exporter port to bind to.  [env var:
+                                  GRANIAN_METRICS_PORT; default: 9090]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
@@ -443,6 +456,30 @@ Granian offers two different runtime threading paradigms, due to the fact the ru
 Given you specify N threads with the relevant option, in **st** mode Granian will spawn N single-threaded Rust runtimes, while in **mt** mode Granian will spawn a single multi-threaded runtime with N threads.
 
 Benchmarks suggests **st** mode to be more efficient with a small amount of processes, while **mt** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
+
+### Metrics
+
+Granian exposes the following runtime metrics in Prometheus format. All the metrics are prefixed with `granian_`, and ones marked with *worker* scope are tagged with a `worker` label containing the worker ID.
+
+| metric name | type | unit | scope | description |
+| --- | --- | --- | --- | --- |
+| `workers_spawns` | counter | absolute number | global | Number of times Granian spawned a worker |
+| `workers_respawns_for_err` | counter | absolute number | global | Number of times Granian respawned a worker due to an error |
+| `workers_respawns_for_lifetime` | counter | absolute number | global | Number of times Granian respawned a worker due to exceeding lifetime |
+| `workers_respawns_for_rss` | counter | absolute number | global | Number of times Granian respawned a worker due to exceeding resources usage |
+| `workers_respawns_for_lifetime` | counter | absolute number | global | Number of times Granian respawned a worker due to exceeding lifetime |
+| `worker_lifetime` | counter | seconds | worker | Current lifetime of the worker |
+| `connections_active` | gauge | absolute number | worker | Number of active connections |
+| `connections_handled` | counter | absolute number | worker | Number of accepted connections |
+| `connections_err` | gauge | absolute number | worker | Number of failed connections |
+| `requests_handled` | counter | absolute number | worker | Number of processed requests |
+| `static_requests_handled` | counter | absolute number | worker | Number of processed requests for static files |
+| `static_requests_err` | counter | absolute number | worker | Number of requests for static files resulted in a non 200 response code |
+| `blocking_threads` | gauge | absolute number | worker | Current number of blocking threads in the pool (on async protocols this is always 1) |
+| `blocking_queue` | gauge | absolute number | worker | Number of pending tasks for the blocking threadpool |
+| `blocking_idle_cumulative` | counter | microseconds | worker | Cumulative idle time spent in the blocking threadpool |
+| `blocking_busy_cumulative` | counter | microseconds | worker | Cumulative busy time spent in the blocking threadpool |
+| `py_wait_cumulative` | counter | microseconds | worker | Cumulative time spent waiting on GIL (on the free-threaded build this is always 0) |
 
 ### Proxies and forwarded headers
 
