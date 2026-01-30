@@ -5,7 +5,8 @@ use super::http::{handle, handle_ws};
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::net::SocketHolder;
-use crate::workers::{WorkerConfig, WorkerSignal, gen_serve_match};
+use crate::serve::gen_serve_match;
+use crate::workers::{WorkerConfig, WorkerSignal};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
@@ -102,7 +103,7 @@ impl ASGIWorker {
         signal: Py<WorkerSignal>,
     ) {
         gen_serve_match!(
-            crate::workers::serve_mt,
+            crate::serve::serve_mt,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
@@ -117,7 +118,7 @@ impl ASGIWorker {
 
     fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
-            crate::workers::serve_st,
+            crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
@@ -137,7 +138,7 @@ impl ASGIWorker {
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
         gen_serve_match!(
-            crate::workers::serve_fut,
+            crate::serve::serve_fut,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
@@ -159,7 +160,7 @@ impl ASGIWorker {
         signal: Py<WorkerSignal>,
     ) {
         gen_serve_match!(
-            crate::workers::serve_mt_uds,
+            crate::serve::serve_mt_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
@@ -175,7 +176,7 @@ impl ASGIWorker {
     #[cfg(unix)]
     fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
-            crate::workers::serve_st_uds,
+            crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
@@ -196,7 +197,7 @@ impl ASGIWorker {
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
         gen_serve_match!(
-            crate::workers::serve_fut_uds,
+            crate::serve::serve_fut_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,

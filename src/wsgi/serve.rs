@@ -9,7 +9,8 @@ use crate::{
     conversion::{worker_http1_config_from_py, worker_http2_config_from_py},
     http::HTTPProto,
     net::SocketHolder,
-    workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync, gen_serve_match},
+    serve::gen_serve_match,
+    workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync},
 };
 
 #[pyclass(frozen, module = "granian._granian")]

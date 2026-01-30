@@ -21,6 +21,7 @@ mod metrics;
 mod net;
 mod rsgi;
 mod runtime;
+mod serve;
 mod sys;
 mod tls;
 mod utils;
