@@ -121,14 +121,11 @@ impl BlockingRunnerMono<metrics::ArcWorkerMetrics> {
 }
 
 pub(crate) struct BlockingRunnerPool<M> {
-    birth: time::Instant,
     queue: channel::Sender<BlockingTask>,
     tq: channel::Receiver<BlockingTask>,
     threads: Arc<atomic::AtomicUsize>,
     tmax: usize,
     idle_timeout: time::Duration,
-    spawning: atomic::AtomicBool,
-    spawn_tick: atomic::AtomicU64,
     metrics: M,
 }
 
@@ -140,9 +137,6 @@ impl BlockingRunnerPool<()> {
             tq: qrx.clone(),
             threads: Arc::new(1.into()),
             tmax: max_threads,
-            birth: time::Instant::now(),
-            spawning: false.into(),
-            spawn_tick: 0.into(),
             idle_timeout: time::Duration::from_secs(idle_timeout),
             metrics: (),
         };
@@ -154,14 +148,15 @@ impl BlockingRunnerPool<()> {
     }
 
     #[inline(always)]
-    fn spawn_thread(&self) {
-        let tick = self.birth.elapsed().as_micros() as u64;
-        if tick - self.spawn_tick.load(atomic::Ordering::Relaxed) < 350 {
-            return;
-        }
+    fn spawn_thread(&self, current_count: usize) {
         if self
-            .spawning
-            .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
+            .threads
+            .compare_exchange(
+                current_count,
+                current_count + 1,
+                atomic::Ordering::Release,
+                atomic::Ordering::Relaxed,
+            )
             .is_err()
         {
             return;
@@ -170,15 +165,11 @@ impl BlockingRunnerPool<()> {
         let queue = self.tq.clone();
         let tcount = self.threads.clone();
         let timeout = self.idle_timeout;
+
         thread::spawn(move || {
-            tcount.fetch_add(1, atomic::Ordering::Release);
             blocking_worker_idle(queue, timeout);
             tcount.fetch_sub(1, atomic::Ordering::Release);
         });
-
-        self.spawn_tick
-            .store(self.birth.elapsed().as_micros() as u64, atomic::Ordering::Relaxed);
-        self.spawning.store(false, atomic::Ordering::Relaxed);
     }
 
     #[inline]
@@ -186,9 +177,11 @@ impl BlockingRunnerPool<()> {
     where
         T: FnOnce(Python) + Send + 'static,
     {
+        let threads = self.threads.load(atomic::Ordering::Acquire).cast_signed();
         self.queue.send(BlockingTask::new(task))?;
-        if self.queue.len() > 1 && self.threads.load(atomic::Ordering::Acquire) < self.tmax {
-            self.spawn_thread();
+        let overload = self.queue.len().cast_signed() - threads;
+        if (overload > 0) && (threads < self.tmax.cast_signed()) {
+            self.spawn_thread(threads.cast_unsigned());
         }
         Ok(())
     }
@@ -203,9 +196,6 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
             // NOTE: we use metrics in place of this atomic
             threads: Arc::new(0.into()),
             tmax: max_threads,
-            birth: time::Instant::now(),
-            spawning: false.into(),
-            spawn_tick: 0.into(),
             idle_timeout: time::Duration::from_secs(idle_timeout),
             metrics: metrics.clone(),
         };
@@ -218,14 +208,16 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
     }
 
     #[inline(always)]
-    fn spawn_thread(&self) {
-        let tick = self.birth.elapsed().as_micros() as u64;
-        if tick - self.spawn_tick.load(atomic::Ordering::Relaxed) < 350 {
-            return;
-        }
+    fn spawn_thread(&self, current_count: usize) {
         if self
-            .spawning
-            .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
+            .metrics
+            .blocking_threads
+            .compare_exchange(
+                current_count,
+                current_count + 1,
+                atomic::Ordering::Release,
+                atomic::Ordering::Relaxed,
+            )
             .is_err()
         {
             return;
@@ -233,17 +225,12 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
 
         let queue = self.tq.clone();
         let metrics = self.metrics.clone();
-
         let timeout = self.idle_timeout;
+
         thread::spawn(move || {
-            metrics.blocking_threads.fetch_add(1, atomic::Ordering::Release);
             blocking_worker_idle_with_metrics(queue, timeout, metrics.clone());
             metrics.blocking_threads.fetch_sub(1, atomic::Ordering::Release);
         });
-
-        self.spawn_tick
-            .store(self.birth.elapsed().as_micros() as u64, atomic::Ordering::Relaxed);
-        self.spawning.store(false, atomic::Ordering::Relaxed);
     }
 
     #[inline]
@@ -251,10 +238,16 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
     where
         T: FnOnce(Python) + Send + 'static,
     {
+        let threads = self
+            .metrics
+            .blocking_threads
+            .load(atomic::Ordering::Acquire)
+            .cast_signed();
         self.queue.send(BlockingTask::new(task))?;
-        let qlen = self.metrics.blocking_queue.fetch_add(1, atomic::Ordering::Release);
-        if qlen > 0 && self.metrics.blocking_threads.load(atomic::Ordering::Acquire) < self.tmax {
-            self.spawn_thread();
+        self.metrics.blocking_queue.fetch_add(1, atomic::Ordering::Release);
+        let overload = self.queue.len().cast_signed() - threads;
+        if (overload > 0) && (threads < self.tmax.cast_signed()) {
+            self.spawn_thread(threads.cast_unsigned());
         }
         Ok(())
     }
