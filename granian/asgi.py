@@ -120,13 +120,9 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
             access_log(rt, mt, scope, proto.sent_response_code)
         return rv
 
-    async def _ws_logger(scope, proto):
-        rt, mt = time.time(), time.perf_counter()
-        try:
-            rv = await _runner(scope, proto)
-        finally:
-            access_log(rt, mt, scope, proto.sent_response_code)
-        return rv
+    def _ws_logger(scope, proto):
+        access_log(time.time(), time.perf_counter(), scope, 101)
+        return _runner(scope, proto)
 
     def _logger(scope, proto):
         if scope['type'] == 'http':

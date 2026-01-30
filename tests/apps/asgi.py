@@ -70,15 +70,13 @@ async def ws_reject(scope, receive, send):
     return
 
 
-async def ws_deny_http(scope, receive, send):
+async def ws_reject_custom(scope, receive, send):
     await receive()
     await send(
         {
             'type': 'websocket.http.response.start',
             'status': 403,
-            'headers': [
-                [b'content-type', b'text/plain; charset=utf-8'],
-            ],
+            'headers': [[b'content-type', b'text/plain; charset=utf-8']],
         }
     )
     await send(
@@ -105,7 +103,7 @@ async def ws_info(scope, receive, send):
                     'query_string': scope['query_string'].decode('latin-1'),
                     'headers': {k.decode('utf8'): v.decode('utf8') for k, v in scope['headers']},
                     'subprotocols': scope['subprotocols'],
-                    'extensions': {k: dict(v) for k, v in scope['extensions'].items()},
+                    'extensions': scope['extensions'],
                 }
             ),
         }
@@ -207,7 +205,7 @@ def app(scope, receive, send):
         '/echo': echo,
         '/file': pathsend,
         '/ws_reject': ws_reject,
-        '/ws_deny_http': ws_deny_http,
+        '/ws_rejectc': ws_reject_custom,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
         '/ws_push': ws_push,

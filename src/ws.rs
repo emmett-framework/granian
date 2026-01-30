@@ -1,7 +1,7 @@
 use http_body_util::BodyExt;
 use hyper::{
     Request, Response, StatusCode,
-    header::{CONNECTION, HeaderName, HeaderValue, UPGRADE},
+    header::{CONNECTION, UPGRADE},
     http::response::Builder,
 };
 use pin_project_lite::pin_project;
@@ -71,35 +71,30 @@ impl UpgradeData {
         }
     }
 
-    pub async fn send(&mut self, headers: Option<Vec<(String, String)>>) -> anyhow::Result<()> {
+    pub async fn send(
+        &mut self,
+        status: Option<u16>,
+        headers: Option<hyper::HeaderMap>,
+        body: Option<hyper::body::Bytes>,
+    ) -> anyhow::Result<()> {
         if let Some((mut builder, tx)) = self.response.take() {
-            if let Some(headers) = headers {
+            if let Some(status) = status {
+                builder = builder.status(status);
+            }
+            if let Some(mut headers) = headers {
                 let rheaders = builder.headers_mut().unwrap();
-                for (key, val) in &headers {
-                    rheaders.append(
-                        HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                        HeaderValue::from_str(val).unwrap(),
-                    );
+                for (key, val) in headers.drain() {
+                    rheaders.append(key.unwrap(), val);
                 }
             }
-            let res = builder
-                .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
-                .unwrap();
-            return Ok(tx.send(res).await?);
-        }
-        Err(anyhow::Error::msg("Already consumed"))
-    }
-
-    pub async fn send_http_response(
-        &mut self,
-        status: StatusCode,
-        headers: hyper::HeaderMap,
-        body: super::http::HTTPResponseBody,
-    ) -> anyhow::Result<()> {
-        if let Some((_, tx)) = self.response.take() {
-            let mut res = Response::new(body);
-            *res.status_mut() = status;
-            *res.headers_mut() = headers;
+            let res = match body {
+                Some(bytes) => builder
+                    .body(http_body_util::Full::new(bytes).map_err(|e| match e {}).boxed())
+                    .unwrap(),
+                _ => builder
+                    .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
+                    .unwrap(),
+            };
             return Ok(tx.send(res).await?);
         }
         Err(anyhow::Error::msg("Already consumed"))

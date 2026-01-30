@@ -12,7 +12,6 @@ use crate::{http::HTTPProto, net::SockAddr};
 
 static ASGI_VERSION: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static ASGI_EXTENSIONS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-static ASGI_WS_EXTENSIONS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 macro_rules! scope_set {
     ($py:expr, $scope:expr, $key:expr, $val:expr) => {
@@ -48,6 +47,7 @@ macro_rules! build_scope_common {
                 .get_or_try_init($py, || {
                     let rv = PyDict::new($py);
                     rv.set_item("http.response.pathsend", PyDict::new($py))?;
+                    rv.set_item("websocket.http.response", PyDict::new($py))?;
                     Ok::<Py<PyAny>, PyErr>(rv.into())
                 })?
                 .bind($py)
@@ -113,19 +113,6 @@ pub(super) fn build_scope_ws(
         HTTPProto::Tls => "wss",
     };
     build_scope_common!(py, scope, req, server, client, ws_scheme, "websocket");
-    scope_set!(
-        py,
-        scope,
-        "extensions",
-        ASGI_WS_EXTENSIONS
-            .get_or_try_init(py, || {
-                let rv = PyDict::new(py);
-                rv.set_item("http.response.pathsend", PyDict::new(py))?;
-                rv.set_item("websocket.http.response", PyDict::new(py))?;
-                Ok::<Py<PyAny>, PyErr>(rv.into())
-            })?
-            .bind(py)
-    );
     scope_set!(
         py,
         scope,

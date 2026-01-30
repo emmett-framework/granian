@@ -33,12 +33,11 @@ async def test_reject(server, runtime_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_asgi_ws_denial_response(asgi_server, runtime_mode):
+async def test_asgi_reject_custom(asgi_server, runtime_mode):
     async with asgi_server(runtime_mode) as port:
         with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
-            async with websockets.connect(f'ws://localhost:{port}/ws_deny_http'):
+            async with websockets.connect(f'ws://localhost:{port}/ws_rejectc'):
                 pass
 
     assert exc.value.response.status_code == 403

@@ -347,15 +347,13 @@ pub(crate) struct ASGIWebsocketProtocol {
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
     websocket: Mutex<Option<HyperWebsocket>>,
     upgrade: Mutex<Option<UpgradeData>>,
+    response_intent: Mutex<Option<(u16, HeaderMap)>>,
     ws_rx: Arc<AsyncMutex<Option<WSRxStream>>>,
     ws_tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     init_rx: atomic::AtomicBool,
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
-    http_response_started: atomic::AtomicBool,
-    http_response_intent: Mutex<Option<(u16, HeaderMap)>>,
-    sent_response_code: atomic::AtomicU16,
 }
 
 impl ASGIWebsocketProtocol {
@@ -370,15 +368,13 @@ impl ASGIWebsocketProtocol {
             tx: Mutex::new(Some(tx)),
             websocket: Mutex::new(Some(websocket)),
             upgrade: Mutex::new(Some(upgrade)),
+            response_intent: Mutex::new(None),
             ws_rx: Arc::new(AsyncMutex::new(None)),
             ws_tx: Arc::new(AsyncMutex::new(None)),
             init_rx: false.into(),
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
-            http_response_started: false.into(),
-            http_response_intent: Mutex::new(None),
-            sent_response_code: atomic::AtomicU16::new(101),
         }
     }
 
@@ -393,11 +389,11 @@ impl ASGIWebsocketProtocol {
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
-                let upgrade_headers = match subproto {
-                    Some(v) => vec![(WS_SUBPROTO_HNAME.to_string(), v)],
-                    _ => vec![],
-                };
-                if (upgrade.send(Some(upgrade_headers)).await).is_ok()
+                let mut upgrade_headers = HeaderMap::new();
+                if let Some(v) = subproto {
+                    upgrade_headers.append(WS_SUBPROTO_HNAME, HeaderValue::from_str(&v).unwrap());
+                }
+                if (upgrade.send(None, Some(upgrade_headers), None).await).is_ok()
                     && let Some(websocket) = websocket
                     && let Ok(stream) = websocket.await
                 {
@@ -414,6 +410,44 @@ impl ASGIWebsocketProtocol {
             }
             FutureResultToPy::Err(error_flow!("Connection already upgraded"))
         })
+    }
+
+    #[inline(always)]
+    fn start_response<'p>(&self, py: Python<'p>, intent: (u16, HeaderMap)) -> PyResult<Bound<'p, PyAny>> {
+        if self.consumed() {
+            return err_future_into_py(py, error_flow!("Connection already upgraded"));
+        }
+
+        let mut resp_intent = self.response_intent.lock().unwrap();
+        if resp_intent.is_some() {
+            return err_future_into_py(py, error_flow!("Response already started"));
+        }
+
+        *resp_intent = Some(intent);
+        empty_future_into_py(py)
+    }
+
+    #[inline(always)]
+    fn send_response<'p>(&self, py: Python<'p>, body: Box<[u8]>, more: bool) -> PyResult<Bound<'p, PyAny>> {
+        if more {
+            return err_future_into_py(py, error_message!());
+        }
+
+        let intent = self.response_intent.lock().unwrap().take();
+        if intent.is_none() {
+            return err_future_into_py(py, error_flow!("Response not initialised"));
+        }
+
+        if let Some(mut upgrade) = self.upgrade.lock().unwrap().take() {
+            return future_into_py_futlike(self.rt.clone(), py, async move {
+                let (status, headers) = intent.unwrap();
+                if (upgrade.send(Some(status), Some(headers), Some(body.into())).await).is_ok() {
+                    return FutureResultToPy::None;
+                }
+                FutureResultToPy::Err(error_flow!("Connection already upgraded"))
+            });
+        }
+        err_future_into_py(py, error_flow!("Connection already upgraded"))
     }
 
     #[inline(always)]
@@ -456,53 +490,6 @@ impl ASGIWebsocketProtocol {
 
     fn consumed(&self) -> bool {
         self.upgrade.lock().unwrap().is_none()
-    }
-
-    #[inline(always)]
-    fn http_response_start<'p>(&self, py: Python<'p>, status: u16, headers: HeaderMap) -> PyResult<Bound<'p, PyAny>> {
-        if self
-            .http_response_started
-            .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
-            .is_err()
-        {
-            return err_future_into_py(py, error_flow!("HTTP response already started"));
-        }
-        self.sent_response_code.store(status, atomic::Ordering::Relaxed);
-        *self.http_response_intent.lock().unwrap() = Some((status, headers));
-        empty_future_into_py(py)
-    }
-
-    #[inline(always)]
-    fn http_response_body<'p>(&self, py: Python<'p>, body: Box<[u8]>, more: bool) -> PyResult<Bound<'p, PyAny>> {
-        if more {
-            return err_future_into_py(py, error_flow!("Streaming not supported for WebSocket denial response"));
-        }
-        if !self.http_response_started.load(atomic::Ordering::Relaxed) {
-            return err_future_into_py(py, error_flow!("HTTP response not started"));
-        }
-
-        let upgrade = self.upgrade.lock().unwrap().take();
-        let intent = self.http_response_intent.lock().unwrap().take();
-
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            if let (Some(mut upgrade), Some((status, headers))) = (upgrade, intent) {
-                let response_body = http_body_util::Full::new(body::Bytes::from(body))
-                    .map_err(|e| match e {})
-                    .boxed();
-                if upgrade
-                    .send_http_response(
-                        StatusCode::from_u16(status).unwrap_or(StatusCode::FORBIDDEN),
-                        headers,
-                        response_body,
-                    )
-                    .await
-                    .is_ok()
-                {
-                    return FutureResultToPy::None;
-                }
-            }
-            FutureResultToPy::Err(error_flow!("Failed to send HTTP denial response"))
-        })
     }
 
     pub fn tx(
@@ -572,17 +559,10 @@ impl ASGIWebsocketProtocol {
             Ok(ASGIMessageType::WSAccept(subproto)) => self.accept(py, subproto),
             Ok(ASGIMessageType::WSClose(frame)) => self.close(py, frame),
             Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
-            Ok(ASGIMessageType::WSHTTPResponseStart((status, headers))) => {
-                self.http_response_start(py, status, headers)
-            }
-            Ok(ASGIMessageType::WSHTTPResponseBody((body, more))) => self.http_response_body(py, body, more),
+            Ok(ASGIMessageType::HTTPResponseStart(intent)) => self.start_response(py, intent),
+            Ok(ASGIMessageType::HTTPResponseBody((body, more))) => self.send_response(py, body, more),
             _ => err_future_into_py(py, error_message!()),
         }
-    }
-
-    #[getter(sent_response_code)]
-    fn get_sent_response_code(&self) -> u16 {
-        self.sent_response_code.load(atomic::Ordering::Relaxed)
     }
 }
 
@@ -592,11 +572,13 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
         Ok(Some(item)) => {
             let message_type: &str = item.extract()?;
             match message_type {
-                "http.response.start" => Ok(ASGIMessageType::HTTPResponseStart((
+                "http.response.start" | "websocket.http.response.start" => Ok(ASGIMessageType::HTTPResponseStart((
                     adapt_status_code(py, message)?,
                     adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
                 ))),
-                "http.response.body" => Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message))),
+                "http.response.body" | "websocket.http.response.body" => {
+                    Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message)))
+                }
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
                 "websocket.accept" => {
                     let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {
@@ -623,11 +605,6 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     })))
                 }
                 "websocket.send" => Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?)),
-                "websocket.http.response.start" => Ok(ASGIMessageType::WSHTTPResponseStart((
-                    adapt_status_code(py, message)?,
-                    adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
-                ))),
-                "websocket.http.response.body" => Ok(ASGIMessageType::WSHTTPResponseBody(adapt_body(py, message))),
                 _ => error_message!(),
             }
         }
