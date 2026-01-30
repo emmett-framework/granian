@@ -1,9 +1,9 @@
 #[cfg(not(Py_GIL_DISABLED))]
 #[cfg(unix)]
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 #[cfg(not(Py_GIL_DISABLED))]
 #[cfg(windows)]
-use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+use std::os::windows::io::{FromRawHandle, OwnedHandle};
 
 #[cfg(not(Py_GIL_DISABLED))]
 use anyhow::Result;
@@ -28,18 +28,15 @@ use pyo3::prelude::*;
 pub(crate) struct IPCReceiverHandle {
     pub id: usize,
     #[cfg(unix)]
-    pub fd: OwnedFd,
+    pub fd: std::sync::Mutex<Option<OwnedFd>>,
     #[cfg(windows)]
-    pub fd: OwnedHandle,
+    pub fd: std::sync::Mutex<Option<OwnedHandle>>,
 }
 
 #[cfg(not(Py_GIL_DISABLED))]
 impl IPCReceiverHandle {
     fn to_receiver(&self) -> Arc<Mutex<unnamed_pipe::tokio::Recver>> {
-        #[cfg(unix)]
-        let fd: OwnedFd = unsafe { OwnedFd::from_raw_fd(self.fd.as_raw_fd()) };
-        #[cfg(windows)]
-        let fd: OwnedHandle = unsafe { OwnedHandle::from_raw_handle(self.fd.as_raw_handle()) };
+        let fd = self.fd.lock().unwrap().take().unwrap();
         let receiver = unnamed_pipe::tokio::Recver::try_from(fd).unwrap();
         Arc::new(Mutex::new(receiver))
     }
@@ -52,14 +49,20 @@ impl IPCReceiverHandle {
     #[new]
     pub fn new(id: usize, fd: RawFd) -> Self {
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        Self { id, fd }
+        Self {
+            id,
+            fd: std::sync::Mutex::new(Some(fd)),
+        }
     }
 
     #[cfg(windows)]
     #[new]
     pub fn new(id: usize, fd: Py<PyAny>) -> Self {
         let fd = unsafe { OwnedHandle::from_raw_handle(pyo3::ffi::PyLong_AsVoidPtr(fd.as_ptr())) };
-        Self { id, fd }
+        Self {
+            id,
+            fd: std::sync::Mutex::new(Some(fd)),
+        }
     }
 
     fn run(
@@ -123,29 +126,19 @@ impl IPCReceiverHandle {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct IPCSenderHandle {
     #[cfg(unix)]
-    pub fd: OwnedFd,
+    pub fd: std::sync::Mutex<Option<OwnedFd>>,
     #[cfg(windows)]
-    pub fd: OwnedHandle,
+    pub fd: std::sync::Mutex<Option<OwnedHandle>>,
 }
 
 #[cfg(not(Py_GIL_DISABLED))]
 impl IPCSenderHandle {
     pub(crate) fn to_sender(&self) -> Arc<Mutex<unnamed_pipe::tokio::Sender>> {
-        #[cfg(unix)]
-        let fd: OwnedFd = unsafe { OwnedFd::from_raw_fd(self.fd.as_raw_fd()) };
-        #[cfg(windows)]
-        let fd: OwnedHandle = unsafe { OwnedHandle::from_raw_handle(self.fd.as_raw_handle()) };
+        let fd = self.fd.lock().unwrap().take().unwrap();
         let sender = unnamed_pipe::tokio::Sender::try_from(fd).unwrap();
         Arc::new(Mutex::new(sender))
     }
 }
-
-// FIXME: we should find a way to prevent Rust from closing the FD.
-// impl Drop for IPCSenderHandle {
-//     fn drop(&mut self) {
-//         std::mem::forget(self.fd);
-//     }
-// }
 
 #[cfg(not(Py_GIL_DISABLED))]
 #[cfg(unix)]
@@ -154,7 +147,9 @@ impl IPCSenderHandle {
     #[new]
     pub fn new(fd: RawFd) -> Self {
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        Self { fd }
+        Self {
+            fd: std::sync::Mutex::new(Some(fd)),
+        }
     }
 }
 
@@ -165,7 +160,9 @@ impl IPCSenderHandle {
     #[new]
     pub fn new(fd: Py<PyAny>) -> Self {
         let fd = unsafe { OwnedHandle::from_raw_handle(pyo3::ffi::PyLong_AsVoidPtr(fd.as_ptr())) };
-        Self { fd }
+        Self {
+            fd: std::sync::Mutex::new(Some(fd)),
+        }
     }
 }
 

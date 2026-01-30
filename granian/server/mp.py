@@ -81,8 +81,10 @@ class WorkerProcess(AbstractWorker):
             sock, _sso = sock
             if sys.platform == 'win32':
                 sock = SocketHolder(_sso.fileno())
-            else:
-                _ipc_handle = IPCSenderHandle(ipc.fileno()) if ipc else None
+            elif ipc:
+                _ipc_fd = os.dup(ipc.fileno())
+                os.set_blocking(_ipc_fd, False)
+                _ipc_handle = IPCSenderHandle(_ipc_fd)
 
             loop = loops.get(loop_impl)
             callback = callback_loader()
@@ -354,11 +356,11 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         for idx in range(self.workers):
             rx, tx = multiprocessing.Pipe(False)
+            rxd = os.dup(rx.fileno())
             # WARN: on Windows, `os.set_blocking` is available only on Py >= 3.12.
             #       Doesn't really matter, given the call fails when available U.U
-            os.set_blocking(rx.fileno(), False)
-            os.set_blocking(tx.fileno(), False)
-            self._ipc[idx] = (IPCReceiverHandle(idx, rx.fileno()), tx, rx)
+            os.set_blocking(rxd, False)
+            self._ipc[idx] = (IPCReceiverHandle(idx, rxd), tx, rx)
 
         # NOTE: given we use IPC only for metrics right now, let's run the receivers
         #       only if metrics collection is actually enabled.

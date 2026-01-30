@@ -302,7 +302,10 @@ pub(crate) fn spawn_ipc_collector(
                 _ = sig.changed() => break,
             }
         }
-        Python::attach(|_| drop(ipc));
+        Python::attach(|_| {
+            drop(collector);
+            drop(ipc);
+        });
         notify.notify_one();
     });
 }
