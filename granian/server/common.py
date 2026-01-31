@@ -125,8 +125,8 @@ class AbstractServer(Generic[WT]):
         factory: bool = False,
         working_dir: Path | None = None,
         env_files: Sequence[Path] | None = None,
-        static_path_route: str = '/static',
-        static_path_mount: Path | None = None,
+        static_path_route: Sequence[str] | None = None,
+        static_path_mount: Sequence[Path] | None = None,
         static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
         metrics_enabled: bool = False,
@@ -186,16 +186,7 @@ class AbstractServer(Generic[WT]):
         self.factory = factory
         self.working_dir = working_dir
         self.env_files = env_files or ()
-        self.static_path = (
-            (
-                static_path_route,
-                str(static_path_mount.resolve()),
-                static_path_dir_to_file,
-                (str(static_path_expires) if static_path_expires else None),
-            )
-            if static_path_mount
-            else None
-        )
+        self.static_path = None
         self.metrics_enabled = metrics_enabled
         self.metrics_scrape_interval = metrics_scrape_interval
         self.metrics_address = metrics_address
@@ -216,6 +207,13 @@ class AbstractServer(Generic[WT]):
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
+        if static_path_mount:
+            self._init_static_mounts(
+                static_path_route or [],
+                static_path_mount,
+                static_path_dir_to_file,
+                (str(static_path_expires) if static_path_expires else None),
+            )
         self.build_ssl_context(
             ssl_cert, ssl_key, ssl_key_password, ssl_protocol_min, ssl_ca, ssl_crl or [], ssl_client_verify
         )
@@ -234,6 +232,31 @@ class AbstractServer(Generic[WT]):
         self.rss_signal = False
         self.pid = None
         self._env_loader = build_env_loader()
+
+    def _init_static_mounts(
+        self,
+        routes: Sequence[str],
+        paths: Sequence[Path],
+        dir_to_file: str | None,
+        expires: str | None,
+    ):
+        if not paths:
+            return
+        if len(paths) == 1 and not routes:
+            self.static_path = (
+                [('/static', str(paths[0].resolve()))],
+                dir_to_file,
+                expires,
+            )
+            return
+        if len(paths) != len(routes):
+            logger.error('Static path routes and mounts should have the same length')
+            raise ConfigurationError('static_path')
+        self.static_path = (
+            [(routes[idx], str(path.resolve())) for idx, path in enumerate(paths)],
+            dir_to_file,
+            expires,
+        )
 
     def build_ssl_context(
         self,

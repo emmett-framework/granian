@@ -59,7 +59,7 @@ impl WSGIWorker {
         http_mode: &str,
         http1_opts: Option<Py<PyAny>>,
         http2_opts: Option<Py<PyAny>>,
-        static_files: Option<(String, String, Option<String>, Option<String>)>,
+        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
