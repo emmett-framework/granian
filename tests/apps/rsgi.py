@@ -43,7 +43,7 @@ async def stream(_, protocol: HTTPProtocol):
 
 
 async def file(scope: Scope, protocol: HTTPProtocol):
-    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'media.png'
+    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'static' / 'media.png'
     protocol.response_file(200, [('content-type', 'image/png'), ('content-length', '95')], str(path))
 
 
