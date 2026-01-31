@@ -127,6 +127,7 @@ class AbstractServer(Generic[WT]):
         env_files: Sequence[Path] | None = None,
         static_path_route: str = '/static',
         static_path_mount: Path | None = None,
+        static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
         metrics_enabled: bool = False,
         metrics_scrape_interval: int = 15,
@@ -189,6 +190,7 @@ class AbstractServer(Generic[WT]):
             (
                 static_path_route,
                 str(static_path_mount.resolve()),
+                static_path_dir_to_file,
                 (str(static_path_expires) if static_path_expires else None),
             )
             if static_path_mount

@@ -61,7 +61,7 @@ async def echo(scope, receive, send):
 
 
 async def pathsend(scope, receive, send):
-    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'media.png'
+    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'static' / 'media.png'
     await send(MEDIA_RESPONSE)
     await send({'type': 'http.response.pathsend', 'path': str(path)})
 

@@ -324,6 +324,9 @@ Options:
                                   (/static)]
   --static-path-mount DIRECTORY   Path to mount for static file serving  [env
                                   var: GRANIAN_STATIC_PATH_MOUNT]
+  --static-path-dir-to-file TEXT  Serve the specified file as the index for
+                                  directory listings  [env var:
+                                  GRANIAN_STATIC_PATH_DIR_TO_FILE]
   --static-path-expires DURATION  Cache headers expiration (in seconds or a
                                   human-readable duration) for static file
                                   serving. 0 to disable.  [env var:

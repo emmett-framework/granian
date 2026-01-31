@@ -13,7 +13,12 @@ use tokio_util::io::ReaderStream;
 use crate::http::{HTTPResponse, HV_SERVER, response_404};
 
 #[inline(always)]
-pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<Result<String>> {
+pub(crate) fn match_static_file(
+    uri_path: &str,
+    prefix: &str,
+    mount_point: &str,
+    dir_to_file: Option<&String>,
+) -> Option<Result<String>> {
     let decoded_uri_path = percent_decode_str(uri_path).decode_utf8_lossy();
     if let Some(file_path) = decoded_uri_path.strip_prefix(prefix) {
         #[cfg(not(windows))]
@@ -21,7 +26,15 @@ pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str)
         #[cfg(windows)]
         let fpath = format!("{mount_point}{}", file_path.replace("/", "\\"));
         match Path::new(&fpath).canonicalize() {
-            Ok(full_path) => {
+            Ok(mut full_path) => {
+                if full_path.is_dir() {
+                    match dir_to_file {
+                        Some(rewrite_file) => {
+                            full_path = full_path.join(rewrite_file);
+                        }
+                        None => return Some(Err(anyhow::anyhow!("dir"))),
+                    }
+                }
                 #[cfg(windows)]
                 let full_path = &full_path.display().to_string()[4..];
                 if full_path.starts_with(mount_point) {

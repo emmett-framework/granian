@@ -129,7 +129,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str | None] | None,
+        static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
