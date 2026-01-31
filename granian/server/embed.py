@@ -2,7 +2,7 @@ import asyncio
 import multiprocessing
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -124,8 +124,8 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_client_verify: bool = False,
         url_path_prefix: str | None = None,
         factory: bool = False,
-        static_path_route: str = '/static',
-        static_path_mount: Path | None = None,
+        static_path_route: Sequence[str] | None = None,
+        static_path_mount: Sequence[Path] | None = None,
         static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
     ):

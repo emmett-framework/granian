@@ -50,7 +50,11 @@ async def _server(
             kwargs['ssl_protocol_min'] = tls_proto
 
     if static_mount:
-        kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures' / 'static'
+        if static_mount is True:
+            kwargs['static_path_mount'] = [Path.cwd() / 'tests' / 'fixtures' / 'static']
+        else:
+            kwargs['static_path_route'] = [v[0] for v in static_mount]
+            kwargs['static_path_mount'] = [(Path.cwd() / 'tests' / 'fixtures' / v[1]) for v in static_mount]
         if static_rewrite:
             kwargs['static_path_dir_to_file'] = 'index.txt'
 
@@ -124,5 +128,5 @@ def server_tls(server_port, request, tls=True, **extras):
 
 
 @pytest.fixture(scope='function')
-def server_static_files(server_port, request, **extras):
-    return partial(_server, request.param, server_port, static_mount=True, **extras)
+def server_static_files(server_port, request, static_mount=True, **extras):
+    return partial(_server, request.param, server_port, static_mount=static_mount, **extras)

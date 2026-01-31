@@ -346,13 +346,15 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
 )
 @option(
     '--static-path-route',
-    default='/static',
-    help='Route for static file serving',
+    multiple=True,
+    show_default='/static',
+    help='Route(s) for static file serving',
 )
 @option(
     '--static-path-mount',
     type=click.Path(exists=True, file_okay=False, dir_okay=True, readable=True, path_type=pathlib.Path),
-    help='Path to mount for static file serving',
+    multiple=True,
+    help='Path(s) to mount for static file serving',
 )
 @option(
     '--static-path-dir-to-file',
@@ -485,8 +487,8 @@ def cli(
     factory: bool,
     working_dir: pathlib.Path | None,
     env_files: list[pathlib.Path] | None,
-    static_path_route: str,
-    static_path_mount: pathlib.Path | None,
+    static_path_route: list[str],
+    static_path_mount: list[pathlib.Path],
     static_path_dir_to_file: str | None,
     static_path_expires: int,
     metrics_enabled: bool,

@@ -102,7 +102,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
-    pub static_files: Option<(String, String, Option<String>, Option<String>)>,
+    pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
     pub metrics: (
         Option<std::time::Duration>,
@@ -134,7 +134,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
-        static_files: Option<(String, String, Option<String>, Option<String>)>,
+        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -264,8 +264,7 @@ impl<M> WorkerCTXBase<M> {
 pub(crate) struct WorkerCTXFiles<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
     pub metrics: M,
-    pub static_prefix: String,
-    pub static_mount: String,
+    pub static_mounts: Vec<(String, String)>,
     pub static_dir_to_file: Option<String>,
     pub static_expires: Option<String>,
 }
@@ -274,14 +273,13 @@ impl<M> WorkerCTXFiles<M> {
     pub fn new(
         callback: crate::callbacks::PyCBScheduler,
         metrics: M,
-        files: Option<(String, String, Option<String>, Option<String>)>,
+        files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     ) -> Self {
-        let (static_prefix, static_mount, static_dir_to_file, static_expires) = files.unwrap();
+        let (static_mounts, static_dir_to_file, static_expires) = files.unwrap();
         Self {
             callback: Arc::new(callback),
             metrics,
-            static_prefix,
-            static_mount,
+            static_mounts,
             static_dir_to_file,
             static_expires,
         }
@@ -406,8 +404,7 @@ macro_rules! service_impl {
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
                 if let Some(static_match) = crate::files::match_static_file(
                     req.uri().path(),
-                    &self.ctx.static_prefix,
-                    &self.ctx.static_mount,
+                    &self.ctx.static_mounts,
                     self.ctx.static_dir_to_file.as_ref(),
                 ) {
                     if static_match.is_err() {
@@ -484,8 +481,7 @@ macro_rules! service_impl {
 
                 if let Some(static_match) = crate::files::match_static_file(
                     req.uri().path(),
-                    &self.ctx.static_prefix,
-                    &self.ctx.static_mount,
+                    &self.ctx.static_mounts,
                     self.ctx.static_dir_to_file.as_ref(),
                 ) {
                     self.ctx

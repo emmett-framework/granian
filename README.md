@@ -319,11 +319,11 @@ Options:
   --env-files FILE                Environment file(s) to load (requires
                                   granian[dotenv] extra)  [env var:
                                   GRANIAN_ENV_FILES]
-  --static-path-route TEXT        Route for static file serving  [env var:
+  --static-path-route TEXT        Route(s) for static file serving  [env var:
                                   GRANIAN_STATIC_PATH_ROUTE; default:
                                   (/static)]
-  --static-path-mount DIRECTORY   Path to mount for static file serving  [env
-                                  var: GRANIAN_STATIC_PATH_MOUNT]
+  --static-path-mount DIRECTORY   Path(s) to mount for static file serving
+                                  [env var: GRANIAN_STATIC_PATH_MOUNT]
   --static-path-dir-to-file TEXT  Serve the specified file as the index for
                                   directory listings  [env var:
                                   GRANIAN_STATIC_PATH_DIR_TO_FILE]
