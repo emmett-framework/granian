@@ -677,9 +677,13 @@ class AbstractServer(Generic[WT]):
 
         if self.runtime_mode == RuntimeModes.auto:
             self.runtime_mode = RuntimeModes.st
-            if self.interface == Interfaces.WSGI:
-                self.runtime_mode = RuntimeModes.mt
-            if self.http == HTTPModes.http2:
+            if any(
+                [
+                    self.interface != Interfaces.RSGI,
+                    self.runtime_threads > 1,
+                    self.http == HTTPModes.http2,
+                ]
+            ):
                 self.runtime_mode = RuntimeModes.mt
 
         if self.task_impl == TaskImpl.rust:
