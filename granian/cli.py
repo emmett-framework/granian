@@ -355,9 +355,9 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     help='Path to mount for static file serving',
 )
 @option(
-    '--static-path-index-file',
+    '--static-path-dir-to-file',
     default=None,
-    help='If provided, serve this file as the index file for directory listings',
+    help='Serve the specified file as the index for directory listings',
 )
 @option(
     '--static-path-expires',
@@ -487,7 +487,7 @@ def cli(
     env_files: list[pathlib.Path] | None,
     static_path_route: str,
     static_path_mount: pathlib.Path | None,
-    static_path_index_file: str | None,
+    static_path_dir_to_file: str | None,
     static_path_expires: int,
     metrics_enabled: bool,
     metrics_scrape_interval: int,
@@ -577,7 +577,7 @@ def cli(
         env_files=env_files,
         static_path_route=static_path_route,
         static_path_mount=static_path_mount,
-        static_path_index_file=static_path_index_file,
+        static_path_dir_to_file=static_path_dir_to_file,
         static_path_expires=static_path_expires,
         metrics_enabled=metrics_enabled,
         metrics_scrape_interval=metrics_scrape_interval,

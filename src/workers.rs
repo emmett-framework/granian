@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 use std::{
     marker::PhantomData,
-    path::Path,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -267,7 +266,7 @@ pub(crate) struct WorkerCTXFiles<M> {
     pub metrics: M,
     pub static_prefix: String,
     pub static_mount: String,
-    pub static_index_file: Option<String>,
+    pub static_dir_to_file: Option<String>,
     pub static_expires: Option<String>,
 }
 
@@ -277,13 +276,13 @@ impl<M> WorkerCTXFiles<M> {
         metrics: M,
         files: Option<(String, String, Option<String>, Option<String>)>,
     ) -> Self {
-        let (static_prefix, static_mount, static_index_file, static_expires) = files.unwrap();
+        let (static_prefix, static_mount, static_dir_to_file, static_expires) = files.unwrap();
         Self {
             callback: Arc::new(callback),
             metrics,
             static_prefix,
             static_mount,
-            static_index_file,
+            static_dir_to_file,
             static_expires,
         }
     }
@@ -405,34 +404,18 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
-                if let Some(static_match) =
-                    crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
-                {
+                if let Some(static_match) = crate::files::match_static_file(
+                    req.uri().path(),
+                    &self.ctx.static_prefix,
+                    &self.ctx.static_mount,
+                    self.ctx.static_dir_to_file.as_ref(),
+                ) {
                     if static_match.is_err() {
                         return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
                     }
-                    let static_match = static_match.unwrap();
-                    let static_path = Path::new(&static_match);
-                    if !static_path.exists() {
-                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
-                    }
                     let expires = self.ctx.static_expires.clone();
-                    if static_path.is_dir() {
-                        if let Some(index_file) = self.ctx.static_index_file.as_ref() {
-                            let index_path = static_path.join(index_file);
-                            if index_path.exists() {
-                                return Box::pin(async move {
-                                    Ok::<_, hyper::Error>(
-                                        crate::files::serve_static_file(index_path.display().to_string(), expires)
-                                            .await,
-                                    )
-                                });
-                            }
-                        }
-                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_403()) });
-                    }
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match, expires).await)
+                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
                     });
                 }
 
@@ -499,9 +482,12 @@ macro_rules! service_impl {
                     .req_handled
                     .fetch_add(1, std::sync::atomic::Ordering::Release);
 
-                if let Some(static_match) =
-                    crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
-                {
+                if let Some(static_match) = crate::files::match_static_file(
+                    req.uri().path(),
+                    &self.ctx.static_prefix,
+                    &self.ctx.static_mount,
+                    self.ctx.static_dir_to_file.as_ref(),
+                ) {
                     self.ctx
                         .metrics
                         .req_static_handled

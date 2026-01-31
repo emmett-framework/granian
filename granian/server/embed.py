@@ -126,7 +126,7 @@ class Server(AbstractServer[AsyncWorker]):
         factory: bool = False,
         static_path_route: str = '/static',
         static_path_mount: Path | None = None,
-        static_path_index_file: str | None = None,
+        static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
     ):
         super().__init__(
@@ -162,7 +162,7 @@ class Server(AbstractServer[AsyncWorker]):
             factory=factory,
             static_path_route=static_path_route,
             static_path_mount=static_path_mount,
-            static_path_index_file=static_path_index_file,
+            static_path_dir_to_file=static_path_dir_to_file,
             static_path_expires=static_path_expires,
         )
         self.main_loop_interrupt = asyncio.Event()

@@ -25,7 +25,7 @@ async def _server(
     tls_proto=None,
     task_impl='asyncio',
     static_mount=False,
-    static_index=False,
+    static_rewrite=False,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -50,9 +50,9 @@ async def _server(
             kwargs['ssl_protocol_min'] = tls_proto
 
     if static_mount:
-        kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures'
-        if static_index:
-            kwargs['static_path_index_file'] = 'index.html'
+        kwargs['static_path_mount'] = Path.cwd() / 'tests' / 'fixtures' / 'static'
+        if static_rewrite:
+            kwargs['static_path_dir_to_file'] = 'index.txt'
 
     succeeded, spawn_failures = False, 0
     while spawn_failures < 3:
@@ -124,10 +124,5 @@ def server_tls(server_port, request, tls=True, **extras):
 
 
 @pytest.fixture(scope='function')
-def server_static_files(server_port, request):
-    return partial(_server, request.param, server_port, static_mount=True)
-
-
-@pytest.fixture(scope='function')
-def server_static_files_with_index(server_port, request):
-    return partial(_server, request.param, server_port, static_mount=True, static_index=True)
+def server_static_files(server_port, request, **extras):
+    return partial(_server, request.param, server_port, static_mount=True, **extras)
