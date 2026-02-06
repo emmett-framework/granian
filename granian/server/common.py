@@ -7,11 +7,13 @@ import ssl
 import sys
 import threading
 import time
+from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .._compat import _PY_312, _PYV
+from .._granian import MetricsAggregator, MetricsExporter, WorkerSignal
 from .._imports import dotenv, setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
@@ -83,59 +85,64 @@ class AbstractServer(Generic[WT]):
         target: str,
         address: str = '127.0.0.1',
         port: int = 8000,
-        uds: Optional[Path] = None,
-        uds_permissions: Optional[int] = None,
+        uds: Path | None = None,
+        uds_permissions: int | None = None,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
-        blocking_threads: Optional[int] = None,
+        blocking_threads: int | None = None,
         blocking_threads_idle_timeout: int = 30,
         runtime_threads: int = 1,
-        runtime_blocking_threads: Optional[int] = None,
+        runtime_blocking_threads: int | None = None,
         runtime_mode: RuntimeModes = RuntimeModes.auto,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
         backlog: int = 1024,
-        backpressure: Optional[int] = None,
-        http1_settings: Optional[HTTP1Settings] = None,
-        http2_settings: Optional[HTTP2Settings] = None,
+        backpressure: int | None = None,
+        http1_settings: HTTP1Settings | None = None,
+        http2_settings: HTTP2Settings | None = None,
         log_enabled: bool = True,
         log_level: LogLevels = LogLevels.info,
-        log_dictconfig: Optional[Dict[str, Any]] = None,
+        log_dictconfig: dict[str, Any] | None = None,
         log_access: bool = False,
-        log_access_format: Optional[str] = None,
-        ssl_cert: Optional[Path] = None,
-        ssl_key: Optional[Path] = None,
-        ssl_key_password: Optional[str] = None,
+        log_access_format: str | None = None,
+        ssl_cert: Path | None = None,
+        ssl_key: Path | None = None,
+        ssl_key_password: str | None = None,
         ssl_protocol_min: SSLProtocols = SSLProtocols.tls13,
-        ssl_ca: Optional[Path] = None,
-        ssl_crl: Optional[List[Path]] = None,
+        ssl_ca: Path | None = None,
+        ssl_crl: list[Path] | None = None,
         ssl_client_verify: bool = False,
-        url_path_prefix: Optional[str] = None,
+        url_path_prefix: str | None = None,
         respawn_failed_workers: bool = False,
         respawn_interval: float = 3.5,
         rss_sample_interval: int = 30,
         rss_samples: int = 1,
-        workers_lifetime: Optional[int] = None,
-        workers_max_rss: Optional[int] = None,
-        workers_kill_timeout: Optional[int] = None,
+        workers_lifetime: int | None = None,
+        workers_max_rss: int | None = None,
+        workers_kill_timeout: int | None = None,
         factory: bool = False,
-        working_dir: Optional[Path] = None,
-        env_files: Optional[Sequence[Path]] = None,
-        static_path_route: str = '/static',
-        static_path_mount: Optional[Path] = None,
+        working_dir: Path | None = None,
+        env_files: Sequence[Path] | None = None,
+        static_path_route: Sequence[str] | None = None,
+        static_path_mount: Sequence[Path] | None = None,
+        static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
+        metrics_enabled: bool = False,
+        metrics_scrape_interval: int = 15,
+        metrics_address: str = '127.0.0.1',
+        metrics_port: int = 9090,
         reload: bool = False,
-        reload_paths: Optional[Sequence[Path]] = None,
-        reload_ignore_dirs: Optional[Sequence[str]] = None,
-        reload_ignore_patterns: Optional[Sequence[str]] = None,
-        reload_ignore_paths: Optional[Sequence[Path]] = None,
-        reload_filter: Optional[Type[watchfiles.BaseFilter]] = None,
+        reload_paths: Sequence[Path] | None = None,
+        reload_ignore_dirs: Sequence[str] | None = None,
+        reload_ignore_patterns: Sequence[str] | None = None,
+        reload_ignore_paths: Sequence[Path] | None = None,
+        reload_filter: type[watchfiles.BaseFilter] | None = None,
         reload_tick: int = 50,
         reload_ignore_worker_failure: bool = False,
-        process_name: Optional[str] = None,
-        pid_file: Optional[Path] = None,
+        process_name: str | None = None,
+        pid_file: Path | None = None,
     ):
         self.target = target
         self.bind_addr = address
@@ -179,15 +186,11 @@ class AbstractServer(Generic[WT]):
         self.factory = factory
         self.working_dir = working_dir
         self.env_files = env_files or ()
-        self.static_path = (
-            (
-                static_path_route,
-                str(static_path_mount.resolve()),
-                (str(static_path_expires) if static_path_expires else None),
-            )
-            if static_path_mount
-            else None
-        )
+        self.static_path = None
+        self.metrics_enabled = metrics_enabled
+        self.metrics_scrape_interval = metrics_scrape_interval
+        self.metrics_address = metrics_address
+        self.metrics_port = metrics_port
         self.reload_paths = reload_paths or [Path.cwd()]
         self.reload_ignore_paths = reload_ignore_paths or ()
         self.reload_ignore_dirs = reload_ignore_dirs or ()
@@ -204,13 +207,22 @@ class AbstractServer(Generic[WT]):
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
+        if static_path_mount:
+            self._init_static_mounts(
+                static_path_route or [],
+                static_path_mount,
+                static_path_dir_to_file,
+                (str(static_path_expires) if static_path_expires else None),
+            )
         self.build_ssl_context(
             ssl_cert, ssl_key, ssl_key_password, ssl_protocol_min, ssl_ca, ssl_crl or [], ssl_client_verify
         )
         self._ssp = None
         self._shd = None
         self._sfd = None
-        self.wrks: List[WT] = []
+        self._metrics = MetricsAggregator(self.workers)
+        self._metrics_exporter = MetricsExporter(self._metrics)
+        self.wrks: list[WT] = []
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
         self.interrupt_children = []
@@ -221,14 +233,39 @@ class AbstractServer(Generic[WT]):
         self.pid = None
         self._env_loader = build_env_loader()
 
+    def _init_static_mounts(
+        self,
+        routes: Sequence[str],
+        paths: Sequence[Path],
+        dir_to_file: str | None,
+        expires: str | None,
+    ):
+        if not paths:
+            return
+        if len(paths) == 1 and not routes:
+            self.static_path = (
+                [('/static', str(paths[0].resolve()))],
+                dir_to_file,
+                expires,
+            )
+            return
+        if len(paths) != len(routes):
+            logger.error('Static path routes and mounts should have the same length')
+            raise ConfigurationError('static_path')
+        self.static_path = (
+            [(routes[idx], str(path.resolve())) for idx, path in enumerate(paths)],
+            dir_to_file,
+            expires,
+        )
+
     def build_ssl_context(
         self,
-        cert: Optional[Path],
-        key: Optional[Path],
-        password: Optional[str],
+        cert: Path | None,
+        key: Path | None,
+        password: str | None,
         proto: SSLProtocols,
-        ca: Optional[Path],
-        crl: List[Path],
+        ca: Path | None,
+        crl: list[Path],
         client_verify: bool,
     ):
         if not (cert and key):
@@ -297,6 +334,7 @@ class AbstractServer(Generic[WT]):
             wrk = self._spawn_worker(idx=idx, target=spawn_target, callback_loader=target_loader)
             wrk.start()
             self.wrks.append(wrk)
+        self._metrics.incr_spawn(self.workers)
 
     def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):
         for idx in workers:
@@ -318,6 +356,7 @@ class AbstractServer(Generic[WT]):
                     logger.warning(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
                     old_wrk.kill()
                     old_wrk.join()
+        self._metrics.incr_spawn(len(workers))
 
     def _stop_workers(self):
         for wrk in self.wrks:
@@ -403,12 +442,29 @@ class AbstractServer(Generic[WT]):
         if file_pid == self.pid:
             self.pid_file.unlink()
 
+    def _start_ipc(self):
+        pass
+
+    def _stop_ipc(self):
+        pass
+
+    def _start_metrics(self):
+        self._metrics_sig = WorkerSignal()
+        self._metrics_exporter.run(
+            SocketSpec(self.metrics_address, self.metrics_port, 128).build(),
+            self._metrics_sig,
+        )
+
+    def _stop_metrics(self):
+        self._metrics_sig.set()
+
     def startup(self, spawn_target, target_loader):
         self.pid = os.getpid()
         logger.info(f'Starting granian (main PID: {self.pid})')
         self._write_pidfile()
         set_main_signals(self.signal_handler_interrupt, self.signal_handler_reload)
         self._init_shared_socket()
+        self._start_ipc()
         proto = 'https' if self.ssl_ctx[0] else 'http'
         logger.info(f'Listening at: {proto}://{self._bind_addr_fmt}')
 
@@ -420,10 +476,15 @@ class AbstractServer(Generic[WT]):
             self._watch_workers_lifetime(self.workers_lifetime)
         if self.workers_rss is not None:
             self._watch_workers_rss()
+        if self.metrics_enabled:
+            self._start_metrics()
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
+        if self.metrics_enabled:
+            self._stop_metrics()
         self._stop_workers()
+        self._stop_ipc()
         self._call_hooks(self.hooks_shutdown)
         self._unlink_pidfile()
         if not exit_code and self.interrupt_children:
@@ -465,6 +526,7 @@ class AbstractServer(Generic[WT]):
                 self.respawned_wrks.clear()
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, spawn_target, target_loader)
+                self._metrics.incr_respawn_err(1)
 
             if self.reload_signal:
                 self._reload(spawn_target, target_loader)
@@ -483,6 +545,7 @@ class AbstractServer(Generic[WT]):
                             self._respawn_workers(
                                 [worker.idx], spawn_target, target_loader, delay=self.respawn_interval
                             )
+                            self._metrics.incr_respawn_ttl(1)
                         else:
                             elapsed = now - worker.birth
                             remaining = self.workers_lifetime - elapsed
@@ -547,8 +610,8 @@ class AbstractServer(Generic[WT]):
 
     def serve(
         self,
-        spawn_target: Optional[Callable[..., None]] = None,
-        target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
+        spawn_target: Callable[..., None] | None = None,
+        target_loader: Callable[..., Callable[..., Any]] | None = None,
         wrap_loader: bool = True,
     ):
         default_spawners = {
@@ -600,20 +663,25 @@ class AbstractServer(Generic[WT]):
             raise ConfigurationError('env_files')
 
         if self.workers_lifetime is not None:
-            if self.reload_on_changes:
-                self.workers_lifetime = None
-                logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
             if self.workers_lifetime < 60:
                 logger.error('Workers lifetime cannot be less than 60 seconds')
                 raise ConfigurationError('workers_lifetime')
+            if self.reload_on_changes:
+                self.workers_lifetime = None
+                logger.info('Workers lifetime is not available in combination with changes reloader, ignoring')
 
         if self.workers_rss is not None:
             if self.reload_on_changes:
                 self.workers_rss = None
                 logger.info('The resource monitor is not available in combination with changes reloader, ignoring')
 
-        if self.blocking_threads_idle_timeout < 10 or self.blocking_threads_idle_timeout > 600:
-            logger.error('Blocking threads idle timeout must be between 10 and 600 seconds')
+        if self.metrics_enabled:
+            if self.reload_on_changes:
+                self.metrics_enabled = False
+                logger.info('Metrics are not available in combination with changes reloader, ignoring')
+
+        if self.blocking_threads_idle_timeout < 5 or self.blocking_threads_idle_timeout > 600:
+            logger.error('Blocking threads idle timeout must be between 5 and 600 seconds')
             raise ConfigurationError('blocking_threads_idle_timeout')
 
         cpus = multiprocessing.cpu_count()
@@ -632,9 +700,13 @@ class AbstractServer(Generic[WT]):
 
         if self.runtime_mode == RuntimeModes.auto:
             self.runtime_mode = RuntimeModes.st
-            if self.interface == Interfaces.WSGI:
-                self.runtime_mode = RuntimeModes.mt
-            if self.http == HTTPModes.http2:
+            if any(
+                [
+                    self.interface != Interfaces.RSGI,
+                    self.runtime_threads > 1,
+                    self.http == HTTPModes.http2,
+                ]
+            ):
                 self.runtime_mode = RuntimeModes.mt
 
         if self.task_impl == TaskImpl.rust:

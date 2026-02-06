@@ -162,7 +162,7 @@ Options:
                                   human-readable duration) an idle blocking
                                   thread will be kept alive  [env var:
                                   GRANIAN_BLOCKING_THREADS_IDLE_TIMEOUT;
-                                  default: 30; 10<=x<=600]
+                                  default: 30; 5<=x<=600]
   --runtime-threads INTEGER RANGE
                                   Number of runtime threads (per worker)  [env
                                   var: GRANIAN_RUNTIME_THREADS; default: 1;
@@ -265,7 +265,8 @@ Options:
                                   GRANIAN_LOG_ACCESS_FMT]
   --ssl-certificate FILE          SSL certificate file  [env var:
                                   GRANIAN_SSL_CERTIFICATE]
-  --ssl-keyfile FILE              SSL key file  [env var: GRANIAN_SSL_KEYFILE]
+  --ssl-keyfile FILE              SSL key file (PKCS#8 format only)  [env var:
+                                  GRANIAN_SSL_KEYFILE]
   --ssl-keyfile-password TEXT     SSL key password  [env var:
                                   GRANIAN_SSL_KEYFILE_PASSWORD]
   --ssl-protocol-min [tls1.2|tls1.3]
@@ -291,7 +292,7 @@ Options:
   --rss-sample-interval DURATION  The sample rate in seconds (or a human-
                                   readable duration) for the resource monitor
                                   [env var: GRANIAN_RSS_SAMPLE_INTERVAL;
-                                  default: 30; 10<=x<=300]
+                                  default: 30; 1<=x<=300]
   --rss-samples INTEGER RANGE     The number of consecutive samples to
                                   consider a worker over resource limit  [env
                                   var: GRANIAN_RSS_SAMPLES; default: 1; x>=1]
@@ -318,16 +319,32 @@ Options:
   --env-files FILE                Environment file(s) to load (requires
                                   granian[dotenv] extra)  [env var:
                                   GRANIAN_ENV_FILES]
-  --static-path-route TEXT        Route for static file serving  [env var:
+  --static-path-route TEXT        Route(s) for static file serving  [env var:
                                   GRANIAN_STATIC_PATH_ROUTE; default:
                                   (/static)]
-  --static-path-mount DIRECTORY   Path to mount for static file serving  [env
-                                  var: GRANIAN_STATIC_PATH_MOUNT]
+  --static-path-mount DIRECTORY   Path(s) to mount for static file serving
+                                  [env var: GRANIAN_STATIC_PATH_MOUNT]
+  --static-path-dir-to-file TEXT  Serve the specified file as the index for
+                                  directory listings  [env var:
+                                  GRANIAN_STATIC_PATH_DIR_TO_FILE]
   --static-path-expires DURATION  Cache headers expiration (in seconds or a
                                   human-readable duration) for static file
                                   serving. 0 to disable.  [env var:
                                   GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
                                   x>=0]
+  --metrics / --no-metrics        Enable the prometheus metrics exporter.
+                                  [env var: GRANIAN_METRICS_ENABLED; default:
+                                  (disabled)]
+  --metrics-scrape-interval DURATION
+                                  Configure the interval for metrics
+                                  collection.  [env var:
+                                  GRANIAN_METRICS_SCRAPE_INTERVAL; default:
+                                  15; 1<=x<=60]
+  --metrics-address TEXT          Metrics exporter host address to bind to
+                                  [env var: GRANIAN_METRICS_ADDRESS; default:
+                                  (127.0.0.1)]
+  --metrics-port INTEGER          Metrics exporter port to bind to.  [env var:
+                                  GRANIAN_METRICS_PORT; default: 9090]
   --reload / --no-reload          Enable auto reload on application's files
                                   changes (requires granian[reload] extra)
                                   [env var: GRANIAN_RELOAD; default:
@@ -433,7 +450,7 @@ While on asynchronous protocols, the default value for the backpressure should w
 
 In general, think of backpressure as the maximum amount of concurrency you want to handle (per worker) in your application, after which Granian will halt and wait before pushing more work.
 
-> **Warning**: since backpressure interacts with the accept loop, it will limit connections, not the single requests. Kept-alive connections will handle multiple requests within a single connection, but Granian won't count those requests in the *actual pressure*. This also means, if you typically have several long-running kept-alive connections to your service (for example, if you run behind a reverse proxy), a backpressure value can prevent Granian to accept new connections once the amount of kept-alive connections reaches that limit. Under this circumstances, you want to ensure the configured backpressure is higher than the expected amount of kept-alive connections, and if you're trying to limit the concurrency, it's probably better to configure the blocking threads number rather than the backpressure itself.
+> **Warning**: since backpressure interacts with the accept loop, it will limit connections, not the single requests. Keep-alive connections will handle multiple requests within a single connection, but Granian won't count those requests in the *actual pressure*. This also means, if you typically have several long-running keep-alive connections to your service (for example, if you run behind a reverse proxy), a backpressure value can prevent Granian to accept new connections once the amount of keep-alive connections reaches that limit. Under this circumstances, you want to ensure the configured backpressure is higher than the expected amount of keep-alive connections, and if you're trying to limit the concurrency, it's probably better to configure the blocking threads number rather than the backpressure itself.
 
 ### Runtime mode
 
@@ -442,6 +459,61 @@ Granian offers two different runtime threading paradigms, due to the fact the ru
 Given you specify N threads with the relevant option, in **st** mode Granian will spawn N single-threaded Rust runtimes, while in **mt** mode Granian will spawn a single multi-threaded runtime with N threads.
 
 Benchmarks suggests **st** mode to be more efficient with a small amount of processes, while **mt** mode seems to scale more efficiently where you have a large number of CPUs. Real performance will though depend on specific application code, and thus *your mileage might vary*.
+
+By default (**auto** mode), Granian will pick the best option based on the rest of its configuration.
+
+### Metrics
+
+Granian exposes the following runtime metrics in Prometheus format. All the metrics are prefixed with `granian_`, and the ones marked with *worker* scope are tagged with a `worker` label containing the worker ID.
+
+| metric name | type | unit | scope | description |
+| --- | --- | --- | --- | --- |
+| `workers_spawns` | counter | absolute number | global | Number of times Granian spawned a worker |
+| `workers_respawns_for_err` | counter | absolute number | global | Number of times Granian respawned a worker due to an error |
+| `workers_respawns_for_lifetime` | counter | absolute number | global | Number of times Granian respawned a worker due to exceeding lifetime |
+| `workers_respawns_for_rss` | counter | absolute number | global | Number of times Granian respawned a worker due to exceeding resources usage |
+| `workers_respawns_for_lifetime` | counter | absolute number | global | Number of times Granian respawned a worker due to exceeding lifetime |
+| `worker_lifetime` | counter | seconds | worker | Current lifetime of the worker |
+| `connections_active` | gauge | absolute number | worker | Number of active connections |
+| `connections_handled` | counter | absolute number | worker | Number of accepted connections |
+| `connections_err` | gauge | absolute number | worker | Number of failed connections |
+| `requests_handled` | counter | absolute number | worker | Number of processed requests |
+| `static_requests_handled` | counter | absolute number | worker | Number of processed requests for static files |
+| `static_requests_err` | counter | absolute number | worker | Number of requests for static files resulted in a non 200 response code |
+| `blocking_threads` | gauge | absolute number | worker | Current number of blocking threads in the pool (on async protocols this is always 1) |
+| `blocking_queue` | gauge | absolute number | worker | Number of pending tasks for the blocking threadpool |
+| `blocking_idle_cumulative` | counter | microseconds | worker | Cumulative idle time spent in the blocking threadpool |
+| `blocking_busy_cumulative` | counter | microseconds | worker | Cumulative busy time spent in the blocking threadpool |
+| `py_wait_cumulative` | counter | microseconds | worker | Cumulative time spent waiting on GIL (on the free-threaded build this is always 0) |
+
+### Static files
+
+Granian offers the ability to *offload* static files serving directly to the server, without calling your Python application in the process.
+
+The `--static-path-route` and `--static-path-mount` options accept multiple values, thus you can serve an arbitrary number of static *locations* in your application, the only condition being the number of routes and mounts specified should be the same:
+
+```
+$ granian \
+    --static-path-route /static \
+    --static-path-mount assets/static \
+    --static-path-route /media \
+    --static-path-mount assets/media \
+    package:app
+```
+
+#### Serving a specific file for directory listings
+
+Granian also provides the option to *rewrite* a static location pointing to a directory to a file contained in such directory. This allows you to serve, for example, an `index.html` file in the static path tree:
+
+```
+$ granian \
+    --static-path-route /docs \
+    --static-path-mount generated/docs \
+    --static-path-dir-to-file index.html \
+    package:app
+```
+
+> **Note:** while Granian performs a rewrite on the target directory, the file will still be served if the request path points to it directly (in the example above, requests pointing to `/docs/somefolder` and `/docs/somefolder/index.html` will both respond with the contents of `index.html` – if present). Also, the option will enable this behavior on all the static paths defined.
 
 ### Proxies and forwarded headers
 

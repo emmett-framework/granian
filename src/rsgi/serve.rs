@@ -5,7 +5,8 @@ use super::http::{handle, handle_ws};
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::net::SocketHolder;
-use crate::workers::{WorkerConfig, WorkerSignal, gen_serve_match};
+use crate::serve::gen_serve_match;
+use crate::workers::{WorkerConfig, WorkerSignal};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct RSGIWorker {
@@ -19,6 +20,7 @@ impl RSGIWorker {
         signature = (
             worker_id,
             sock,
+            ipc,
             threads=1,
             blocking_threads=512,
             py_threads=1,
@@ -37,12 +39,14 @@ impl RSGIWorker {
             ssl_ca=None,
             ssl_crl=vec![],
             ssl_client_verify=false,
+            metrics=(None, None),
         )
     )]
     fn new(
         py: Python,
         worker_id: i32,
         sock: Py<SocketHolder>,
+        ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
         py_threads: usize,
@@ -52,7 +56,7 @@ impl RSGIWorker {
         http1_opts: Option<Py<PyAny>>,
         http2_opts: Option<Py<PyAny>>,
         websockets_enabled: bool,
-        static_files: Option<(String, String, Option<String>)>,
+        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -61,11 +65,13 @@ impl RSGIWorker {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
                 worker_id,
                 sock,
+                ipc,
                 threads,
                 blocking_threads,
                 py_threads,
@@ -84,6 +90,7 @@ impl RSGIWorker {
                 ssl_ca,
                 ssl_crl,
                 ssl_client_verify,
+                metrics,
             ),
         })
     }
@@ -96,7 +103,7 @@ impl RSGIWorker {
         signal: Py<WorkerSignal>,
     ) {
         gen_serve_match!(
-            crate::workers::serve_mt,
+            crate::serve::serve_mt,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
@@ -111,7 +118,7 @@ impl RSGIWorker {
 
     fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
-            crate::workers::serve_st,
+            crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
@@ -131,7 +138,7 @@ impl RSGIWorker {
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
         gen_serve_match!(
-            crate::workers::serve_fut,
+            crate::serve::serve_fut,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
@@ -153,7 +160,7 @@ impl RSGIWorker {
         signal: Py<WorkerSignal>,
     ) {
         gen_serve_match!(
-            crate::workers::serve_mt_uds,
+            crate::serve::serve_mt_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
@@ -169,7 +176,7 @@ impl RSGIWorker {
     #[cfg(unix)]
     fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
-            crate::workers::serve_st_uds,
+            crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
@@ -190,7 +197,7 @@ impl RSGIWorker {
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
         gen_serve_match!(
-            crate::workers::serve_fut_uds,
+            crate::serve::serve_fut_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,

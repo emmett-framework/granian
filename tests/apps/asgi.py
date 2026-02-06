@@ -62,13 +62,31 @@ async def echo(scope, receive, send):
 
 
 async def pathsend(scope, receive, send):
-    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'media.png'
+    path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'static' / 'media.png'
     await send(MEDIA_RESPONSE)
     await send({'type': 'http.response.pathsend', 'path': str(path)})
 
 
 async def ws_reject(scope, receive, send):
     return
+
+
+async def ws_reject_custom(scope, receive, send):
+    await receive()
+    await send(
+        {
+            'type': 'websocket.http.response.start',
+            'status': 403,
+            'headers': [[b'content-type', b'text/plain; charset=utf-8']],
+        }
+    )
+    await send(
+        {
+            'type': 'websocket.http.response.body',
+            'body': b'WebSocket connection denied by application',
+            'more_body': False,
+        }
+    )
 
 
 async def ws_info(scope, receive, send):
@@ -86,6 +104,7 @@ async def ws_info(scope, receive, send):
                     'query_string': scope['query_string'].decode('latin-1'),
                     'headers': {k.decode('utf8'): v.decode('utf8') for k, v in scope['headers']},
                     'subprotocols': scope['subprotocols'],
+                    'extensions': scope['extensions'],
                 }
             ),
         }
@@ -196,6 +215,7 @@ def app(scope, receive, send):
         '/echo': echo,
         '/file': pathsend,
         '/ws_reject': ws_reject,
+        '/ws_rejectc': ws_reject_custom,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
         '/ws_server_close': ws_server_close,

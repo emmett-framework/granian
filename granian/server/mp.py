@@ -1,11 +1,22 @@
 import multiprocessing
+import os
 import socket
 import sys
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, ProcInfoCollector, RSGIWorker, SocketHolder, WSGIWorker
+from .._granian import (
+    ASGIWorker,
+    IPCReceiverHandle,
+    IPCSenderHandle,
+    ProcInfoCollector,
+    RSGIWorker,
+    SocketHolder,
+    WorkerSignal,
+    WSGIWorker,
+)
 from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -49,6 +60,7 @@ class WorkerProcess(AbstractWorker):
             process_name,
             callback_loader,
             sock,
+            ipc,
             loop_impl,
             log_enabled,
             log_level,
@@ -65,13 +77,18 @@ class WorkerProcess(AbstractWorker):
             configure_logging(log_level, log_config, log_enabled)
             load_env(env_files)
 
+            _ipc_handle = None
             sock, _sso = sock
             if sys.platform == 'win32':
                 sock = SocketHolder(_sso.fileno())
+            elif ipc:
+                _ipc_fd = os.dup(ipc.fileno())
+                os.set_blocking(_ipc_fd, False)
+                _ipc_handle = IPCSenderHandle(_ipc_fd)
 
             loop = loops.get(loop_impl)
             callback = callback_loader()
-            return target(worker_id, callback, sock, loop, *args, **kwargs)
+            return target(worker_id, callback, sock, _ipc_handle, loop, *args, **kwargs)
 
         return wrapped
 
@@ -99,22 +116,24 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         from granian._signals import set_loop_signals
 
@@ -124,6 +143,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            ipc,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -135,6 +155,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             websockets,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -146,22 +167,24 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         from granian._signals import set_loop_signals
 
@@ -179,6 +202,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            ipc,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -190,6 +214,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             websockets,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -202,22 +227,24 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         from granian._signals import set_loop_signals
 
@@ -229,6 +256,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = RSGIWorker(
             worker_id,
             sock,
+            ipc,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -240,6 +268,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             websockets,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -252,22 +281,24 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
-        runtime_blocking_threads: Optional[int],
+        runtime_blocking_threads: int | None,
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
         task_impl: TaskImpl,
         http_mode: HTTPModes,
-        http1_settings: Optional[HTTP1Settings],
-        http2_settings: Optional[HTTP2Settings],
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: Optional[Tuple[str, str, Optional[str]]],
-        log_access_fmt: Optional[str],
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
-        scope_opts: Dict[str, Any],
+        scope_opts: dict[str, Any],
+        metrics: Any,
     ):
         from granian._signals import set_sync_signals
 
@@ -277,6 +308,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = WSGIWorker(
             worker_id,
             sock,
+            ipc,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -287,6 +319,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             http2_settings,
             static_path,
             *ssl_ctx,
+            metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -305,6 +338,38 @@ class MPServer(AbstractServer[WorkerProcess]):
     def _unlink_pidfile(self):
         self._sso.detach()
         super()._unlink_pidfile()
+
+    def _start_ipc(self):
+        self._ipc = {}
+        self._ipc_sig = WorkerSignal()
+
+        # NOTE: for "reasons", on Windows the call to `os.set_blocking` fails with an OS err 9.
+        #       I'm not sure what the problem is, thus on Windows we just disable
+        #       IPC – and, consequentially, metrics – entirely; or, at least,
+        #       until until someone finds out a way to make that call work.
+        #       And, to quote John Malkovich: "fuck Microsoft!"
+        #       (https://www.youtube.com/watch?v=2zpCOYkdvTQ)
+        if sys.platform == 'win32':
+            for idx in range(self.workers):
+                self._ipc[idx] = (None, None)
+            return
+
+        for idx in range(self.workers):
+            rx, tx = multiprocessing.Pipe(False)
+            rxd = os.dup(rx.fileno())
+            # WARN: on Windows, `os.set_blocking` is available only on Py >= 3.12.
+            #       Doesn't really matter, given the call fails when available U.U
+            os.set_blocking(rxd, False)
+            self._ipc[idx] = (IPCReceiverHandle(idx, rxd), tx, rx)
+
+        # NOTE: given we use IPC only for metrics right now, let's run the receivers
+        #       only if metrics collection is actually enabled.
+        if self.metrics_enabled:
+            for pipe in self._ipc.values():
+                pipe[0].run(self._ipc_sig, self._metrics)
+
+    def _stop_ipc(self):
+        self._ipc_sig.set()
 
     def _handle_rss_signal(self, spawn_target, target_loader):
         wpids = {wrk._id(): wrk for wrk in self.wrks}
@@ -331,6 +396,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         self._rss_wrk_samples.update(cycle_samples)
         if to_restart:
             self._respawn_workers(to_restart, spawn_target, target_loader, delay=self.respawn_interval)
+            self._metrics.incr_respawn_rss(len(to_restart))
 
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerProcess:
         return WorkerProcess(
@@ -342,6 +408,9 @@ class MPServer(AbstractServer[WorkerProcess]):
                 self.process_name,
                 callback_loader,
                 (self._shd, self._sso),
+                # NOTE: given we use IPC only for metrics right now, let's share the pipe
+                #       only if metrics collection is actually enabled.
+                self._ipc[idx][1] if self.metrics_enabled else None,
                 self.loop,
                 self.log_enabled,
                 self.log_level,
@@ -362,13 +431,14 @@ class MPServer(AbstractServer[WorkerProcess]):
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
+                (self.metrics_scrape_interval if self.metrics_enabled else None, None),
             ),
         )
 
     def serve(
         self,
-        spawn_target: Optional[Callable[..., None]] = None,
-        target_loader: Optional[Callable[..., Callable[..., Any]]] = None,
+        spawn_target: Callable[..., None] | None = None,
+        target_loader: Callable[..., Callable[..., Any]] | None = None,
         wrap_loader: bool = True,
     ):
         if self.interface == Interfaces.WSGI:
@@ -380,5 +450,9 @@ class MPServer(AbstractServer[WorkerProcess]):
                     'the concurrency on the Python interpreter. '
                     'If this configuration is intentional, you can safely ignore this message.'
                 )
+
+        if self.metrics_enabled and sys.platform == 'win32':
+            self.metrics_enabled = False
+            logger.warn('Metrics are not available in Windows, ignoring.')
 
         super().serve(spawn_target, target_loader, wrap_loader)

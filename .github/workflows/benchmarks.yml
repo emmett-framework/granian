@@ -15,7 +15,7 @@ jobs:
     - run: |
         git clone https://github.com/gi0baro/rewrk.git
         cd rewrk && cargo build --release
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: rewrk
         path: rewrk/target/release/rewrk
@@ -25,11 +25,11 @@ jobs:
     needs: [toolchain]
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: rewrk
     - run: |
@@ -49,7 +49,7 @@ jobs:
       run: |
         python benchmarks.py
     - name: upload results
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: results-base
         path: benchmarks/results/*
@@ -59,11 +59,11 @@ jobs:
     needs: [toolchain]
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: rewrk
     - run: |
@@ -87,7 +87,7 @@ jobs:
       run: |
         python benchmarks.py vs
     - name: upload results
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: results-vs
         path: benchmarks/results/*
@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
@@ -119,7 +119,7 @@ jobs:
       run: |
         python benchmarks.py vs_ws
     - name: upload results
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: results-ws
         path: benchmarks/results/*
@@ -129,7 +129,7 @@ jobs:
     needs: [toolchain]
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: |
@@ -137,7 +137,7 @@ jobs:
           3.11
           3.12
           3.13
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: rewrk
     - run: |
@@ -171,7 +171,7 @@ jobs:
         BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv313/bin ${{ github.workspace }}/.venv313/bin/python benchmarks.py interfaces
         mv results/data.json results/py313.json
     - name: upload results
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: results-pyver
         path: benchmarks/results/*
@@ -181,27 +181,27 @@ jobs:
     needs: [benchmark-base, benchmark-vs, benchmark-ws, benchmark-pyver]
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: gi0baro/setup-noir@v1
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: results-base
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/base.json
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: results-vs
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/vs.json
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: results-ws
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/ws.json
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: results-pyver
         path: benchmarks/results
@@ -218,7 +218,7 @@ jobs:
           -v pyvb=310 -v 'benv=GHA Linux x86_64' \
           templates/pyver.md > pyver.md
     - name: open PR
-      uses: peter-evans/create-pull-request@v7
+      uses: peter-evans/create-pull-request@v8
       with:
         branch: benchmarks-update
         branch-suffix: timestamp

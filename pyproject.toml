@@ -34,7 +34,7 @@ dynamic = [
 
 requires-python = '>=3.10'
 dependencies = [
-    'click>=8.0.0',
+    'click>=8.1.0',
 ]
 
 [project.optional-dependencies]
@@ -109,6 +109,7 @@ extend-select = [
     'RUF100', # ruff (unused noqa)
     'S',      # flake8-bandit
     'W',      # pycodestyle
+    'UP',     # pyupgrade
 ]
 extend-ignore = [
     'B008', # function calls in args defaults are fine
@@ -120,7 +121,7 @@ extend-ignore = [
     'S110', # except pass is fine
 ]
 flake8-quotes = { inline-quotes = 'single', multiline-quotes = 'double' }
-mccabe = { max-complexity = 26 }
+mccabe = { max-complexity = 28 }
 
 [tool.ruff.format]
 quote-style = 'single'

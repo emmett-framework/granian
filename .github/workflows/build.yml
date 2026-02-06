@@ -89,7 +89,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Set jemalloc for aarch64 Linux
         if: matrix.target == 'aarch64' && matrix.os == 'ubuntu'
         run: |
@@ -104,7 +104,7 @@ jobs:
           container: ${{ matrix.container }}
           docker-options: -e CI
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: dist-${{ matrix.platform || matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}-${{ matrix.allocator || 'auto' }}
           path: dist

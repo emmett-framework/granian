@@ -1,7 +1,6 @@
 import time
 from enum import Enum
 from functools import wraps
-from typing import Optional, Union
 
 from ._granian import (
     RSGIHeaders as Headers,
@@ -23,7 +22,7 @@ class Scope:
     method: str
     path: str
     query_string: str
-    authority: Optional[str]
+    authority: str | None
 
     @property
     def headers(self) -> Headers: ...
@@ -37,7 +36,7 @@ class WebsocketMessageType(int, Enum):
 
 class WebsocketMessage:
     kind: WebsocketMessageType
-    data: Union[bytes, str]
+    data: bytes | str
 
 
 class _LoggingProto:

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
@@ -24,7 +24,7 @@ jobs:
       run: |
         python external/tfb/loader.py > results/tfb.json
     - name: upload results
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: results-tfb
         path: benchmarks/results/*
@@ -35,9 +35,9 @@ jobs:
     needs: [tfb]
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: gi0baro/setup-noir@v1
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         name: results-tfb
         path: benchmarks/results
@@ -46,7 +46,7 @@ jobs:
       run: |
         noir -c data:results/tfb.json templates/external/tfb.md > external/tfb.md
     - name: open PR
-      uses: peter-evans/create-pull-request@v7
+      uses: peter-evans/create-pull-request@v8
       with:
         branch: benchmarks-ext-update
         branch-suffix: timestamp

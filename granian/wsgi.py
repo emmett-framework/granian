@@ -1,8 +1,9 @@
 import os
 import sys
 import time
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 
 from .log import log_request_builder
 
@@ -14,7 +15,7 @@ class Response:
         self.status = 200
         self.headers = []
 
-    def __call__(self, status: str, headers: List[Tuple[str, str]], exc_info: Any = None):
+    def __call__(self, status: str, headers: list[tuple[str, str]], exc_info: Any = None):
         self.status = int(status.split(' ', 1)[0])
         self.headers = headers
 
@@ -30,8 +31,8 @@ class ResponseIterWrap:
         self.inner.close()
 
 
-def _callback_wrapper(callback: Callable[..., Any], scope_opts: Dict[str, Any], access_log_fmt=None):
-    basic_env: Dict[str, Any] = dict(os.environ)
+def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], access_log_fmt=None):
+    basic_env: dict[str, Any] = dict(os.environ)
     basic_env.update(
         {
             'GATEWAY_INTERFACE': 'CGI/1.1',
