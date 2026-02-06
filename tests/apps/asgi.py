@@ -1,6 +1,7 @@
 import asyncio
 import json
 import pathlib
+import tempfile
 
 import sniffio
 
@@ -109,6 +110,15 @@ async def ws_echo(scope, receive, send):
     await send({'type': 'websocket.close'})
 
 
+async def ws_server_close(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.accept'})
+    await receive()
+    await send({'type': 'websocket.close', 'code': 1000})
+    await asyncio.wait_for(receive(), timeout=5)
+    pathlib.Path(tempfile.gettempdir(), 'granian_ws_test_result').touch()
+
+
 async def ws_push(scope, receive, send):
     await send({'type': 'websocket.accept'})
 
@@ -188,6 +198,7 @@ def app(scope, receive, send):
         '/ws_reject': ws_reject,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
+        '/ws_server_close': ws_server_close,
         '/ws_push': ws_push,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,

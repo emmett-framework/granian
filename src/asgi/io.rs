@@ -434,13 +434,12 @@ impl ASGIWebsocketProtocol {
     #[inline(always)]
     fn close<'p>(&self, py: Python<'p>, frame: Option<wsframe::CloseFrame>) -> PyResult<Bound<'p, PyAny>> {
         let closed = self.closed.clone();
-        let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
                 closed.store(true, atomic::Ordering::Release);
-                WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx), frame)
+                WebsocketDetachedTransport::new(true, None, Some(tx), frame)
                     .close()
                     .await;
             }
