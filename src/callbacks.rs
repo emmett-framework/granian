@@ -499,23 +499,16 @@ impl PyFutureAwaitable {
             return;
         }
 
-        {
-            // IMPORTANT: do not hold `ack` lock across `call_soon_threadsafe`.
-            // If `call_soon_threadsafe` ever blocks (e.g. write-to-self), holding the lock can
-            // deadlock the event loop thread when it tries to register the callback.
-            let cb_ctx = {
-                let ack = rself.ack.read().unwrap();
-                ack.as_ref()
-                    .map(|(cb, ctx)| (cb.clone_ref(py), ctx.clone_ref(py)))
-            };
-            if let Some((cb, ctx)) = cb_ctx {
-                _ = rself.event_loop.clone_ref(py).call_method(
-                    py,
-                    pyo3::intern!(py, "call_soon_threadsafe"),
-                    (cb, pyself.clone_ref(py)),
-                    Some(ctx.bind(py)),
-                );
-            }
+        if let Some((cb, ctx)) = {
+            let ack = rself.ack.read().unwrap();
+            ack.as_ref().map(|(cb, ctx)| (cb.clone_ref(py), ctx.clone_ref(py)))
+        } {
+            _ = rself.event_loop.clone_ref(py).call_method(
+                py,
+                pyo3::intern!(py, "call_soon_threadsafe"),
+                (cb, pyself.clone_ref(py)),
+                Some(ctx.bind(py)),
+            );
         }
         pyself.drop_ref(py);
     }
