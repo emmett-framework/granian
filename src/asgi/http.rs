@@ -81,13 +81,15 @@ macro_rules! handle_request_with_ws {
                         let (restx, mut resrx) = mpsc::channel(1);
                         let (parts, _) = req.into_parts();
                         let rth = rt.clone();
+                        let cancel_sig = Arc::new(Notify::new());
 
-                        rt.spawn(async move {
+                        rt.spawn_cancellable(cancel_sig.clone(), async move {
                             let tx_ref = restx.clone();
 
                             match $handler_ws(
                                 callback,
                                 rth,
+                                cancel_sig,
                                 server_addr,
                                 client_addr,
                                 scheme,

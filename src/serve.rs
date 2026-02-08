@@ -80,11 +80,12 @@ macro_rules! serve_fn {
             let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
             let tasks = wrk.tasks.clone();
 
-            let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
+            let main_loop = crate::runtime::run_until_complete(&rt, event_loop.clone(), async move {
                 wrk.listen(srx, listener, backpressure).await;
 
                 log::info!("Stopping worker-{worker_id}");
 
+                wrk.rt.close();
                 tasks.close();
                 tasks.wait().await;
                 mc_notify.notified().await;
@@ -92,6 +93,8 @@ macro_rules! serve_fn {
                 Python::attach(|_| drop(wrk));
                 Ok(())
             });
+
+            drop(rt);
 
             if let Err(err) = main_loop {
                 log::error!("{err}");
@@ -174,6 +177,7 @@ macro_rules! serve_fn {
 
                         log::info!("Stopping worker-{} runtime-{}", worker_id, thread_id + 1);
 
+                        wrk.rt.close();
                         tasks.close();
                         tasks.wait().await;
 
@@ -212,7 +216,7 @@ macro_rules! serve_fn {
                 mc_notify.notify_one();
             }
 
-            let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
+            let main_loop = crate::runtime::run_until_complete(&rtm, event_loop.clone(), async move {
                 let _ = pyrx.changed().await;
                 stx.send(true).unwrap();
                 log::info!("Stopping worker-{worker_id}");
@@ -222,6 +226,8 @@ macro_rules! serve_fn {
                 mc_notify.notified().await;
                 Ok(())
             });
+
+            drop(rtm);
 
             if let Err(err) = main_loop {
                 log::error!("{err}");
@@ -293,6 +299,7 @@ macro_rules! serve_fn {
 
                     log::info!("Stopping worker-{worker_id}");
 
+                    wrk.rt.close();
                     tasks.close();
                     tasks.wait().await;
 

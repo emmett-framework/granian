@@ -34,6 +34,10 @@ pub trait Runtime: Send + 'static {
     fn spawn_blocking<F>(&self, task: F)
     where
         F: FnOnce(Python) + Send + 'static;
+
+    fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
+    where
+        F: Future<Output = ()> + Send + 'static;
 }
 
 pub trait ContextExt: Runtime {
@@ -44,6 +48,7 @@ pub(crate) struct RuntimeWrapper {
     pub inner: tokio::runtime::Runtime,
     br: Arc<blocking::BlockingRunner>,
     pr: Arc<Py<PyAny>>,
+    sig: Arc<tokio::sync::Notify>,
 }
 
 impl RuntimeWrapper {
@@ -62,6 +67,7 @@ impl RuntimeWrapper {
             inner: default_runtime(blocking_threads),
             br: br.into(),
             pr: py_loop,
+            sig: tokio::sync::Notify::new().into(),
         }
     }
 
@@ -80,11 +86,17 @@ impl RuntimeWrapper {
             inner: rt,
             br: br.into(),
             pr: py_loop,
+            sig: tokio::sync::Notify::new().into(),
         }
     }
 
     pub fn handler(&self) -> RuntimeRef {
-        RuntimeRef::new(self.inner.handle().clone(), self.br.clone(), self.pr.clone())
+        RuntimeRef::new(
+            self.inner.handle().clone(),
+            self.br.clone(),
+            self.pr.clone(),
+            self.sig.clone(),
+        )
     }
 }
 
@@ -93,15 +105,26 @@ pub struct RuntimeRef {
     pub inner: tokio::runtime::Handle,
     innerb: Arc<blocking::BlockingRunner>,
     innerp: Arc<Py<PyAny>>,
+    sig: Arc<tokio::sync::Notify>,
 }
 
 impl RuntimeRef {
-    pub fn new(rt: tokio::runtime::Handle, br: Arc<blocking::BlockingRunner>, pyloop: Arc<Py<PyAny>>) -> Self {
+    pub fn new(
+        rt: tokio::runtime::Handle,
+        br: Arc<blocking::BlockingRunner>,
+        pyloop: Arc<Py<PyAny>>,
+        sig: Arc<tokio::sync::Notify>,
+    ) -> Self {
         Self {
             inner: rt,
             innerb: br,
             innerp: pyloop,
+            sig,
         }
+    }
+
+    pub fn close(&self) {
+        self.sig.notify_waiters();
     }
 }
 
@@ -128,6 +151,23 @@ impl Runtime for RuntimeRef {
         F: FnOnce(Python) + Send + 'static,
     {
         _ = self.innerb.run(task);
+    }
+
+    fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let sig = self.sig.clone();
+
+        self.inner.spawn(async move {
+            tokio::select! {
+                biased;
+                () = fut => {},
+                () = sig.notified() => {
+                    on_cancel.notify_one();
+                }
+            };
+        })
     }
 }
 
@@ -293,7 +333,7 @@ where
 }
 
 #[allow(unused_must_use)]
-pub(crate) fn run_until_complete<F>(rt: RuntimeWrapper, event_loop: Bound<PyAny>, fut: F) -> PyResult<()>
+pub(crate) fn run_until_complete<F>(rt: &RuntimeWrapper, event_loop: Bound<PyAny>, fut: F) -> PyResult<()>
 where
     F: Future<Output = PyResult<()>> + Send + 'static,
 {

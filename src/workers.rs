@@ -291,7 +291,7 @@ pub(crate) struct Worker<C, A, H, F, M> {
     ctx: C,
     acceptor: A,
     handler: H,
-    rt: crate::runtime::RuntimeRef,
+    pub rt: crate::runtime::RuntimeRef,
     pub tasks: tokio_util::task::TaskTracker,
     target: F,
     metrics: M,

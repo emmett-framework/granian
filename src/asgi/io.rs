@@ -345,6 +345,7 @@ impl WebsocketDetachedTransport {
 pub(crate) struct ASGIWebsocketProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
+    disconnect_guard: Arc<Notify>,
     websocket: Mutex<Option<HyperWebsocket>>,
     upgrade: Mutex<Option<UpgradeData>>,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
@@ -362,10 +363,12 @@ impl ASGIWebsocketProtocol {
         tx: oneshot::Sender<WebsocketDetachedTransport>,
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
+        disconnect_guard: Arc<Notify>,
     ) -> Self {
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
+            disconnect_guard,
             websocket: Mutex::new(Some(websocket)),
             upgrade: Mutex::new(Some(upgrade)),
             response_intent: Mutex::new(None),
@@ -526,6 +529,7 @@ impl ASGIWebsocketProtocol {
         let accepted_ev = self.init_event.clone();
         let closed = self.closed.clone();
         let transport = self.ws_rx.clone();
+        let guard_disconnect = self.disconnect_guard.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if !accepted.load(atomic::Ordering::Acquire) {
@@ -534,7 +538,11 @@ impl ASGIWebsocketProtocol {
             }
 
             if let Some(ws) = &mut *(transport.lock().await) {
-                while let Some(recv) = ws.next().await {
+                while let Some(recv) = tokio::select! {
+                    biased;
+                    recv = ws.next() => recv,
+                    () = guard_disconnect.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
+                } {
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message @ Message::Close(_)) => {

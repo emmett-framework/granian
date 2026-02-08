@@ -226,14 +226,16 @@ impl RSGIHTTPProtocol {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
     rt: RuntimeRef,
+    dg: Arc<Notify>,
     tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     rx: Arc<AsyncMutex<WSRxStream>>,
 }
 
 impl RSGIWebsocketTransport {
-    pub fn new(rt: RuntimeRef, tx: Arc<AsyncMutex<Option<WSTxStream>>>, rx: WSRxStream) -> Self {
+    pub fn new(rt: RuntimeRef, dg: Arc<Notify>, tx: Arc<AsyncMutex<Option<WSTxStream>>>, rx: WSRxStream) -> Self {
         Self {
             rt,
+            dg,
             tx,
             rx: Arc::new(AsyncMutex::new(rx)),
         }
@@ -244,9 +246,15 @@ impl RSGIWebsocketTransport {
 impl RSGIWebsocketTransport {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.rx.clone();
+        let dg = self.dg.clone();
+
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
-                while let Some(recv) = stream.next().await {
+                while let Some(recv) = tokio::select! {
+                    biased;
+                    recv = stream.next() => recv,
+                    () = dg.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
+                } {
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message) => return FutureResultToPy::RSGIWSMessage(message),
@@ -297,6 +305,7 @@ impl RSGIWebsocketTransport {
 pub(crate) struct RSGIWebsocketProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
+    disconnect_guard: Arc<Notify>,
     websocket: Arc<AsyncMutex<HyperWebsocket>>,
     upgrade: RwLock<Option<UpgradeData>>,
     transport: Arc<AsyncMutex<Option<WSTxStream>>>,
@@ -308,10 +317,12 @@ impl RSGIWebsocketProtocol {
         tx: oneshot::Sender<WebsocketDetachedTransport>,
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
+        disconnect_guard: Arc<Notify>,
     ) -> Self {
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
+            disconnect_guard,
             websocket: Arc::new(AsyncMutex::new(websocket)),
             upgrade: RwLock::new(Some(upgrade)),
             transport: Arc::new(AsyncMutex::new(None)),
@@ -341,9 +352,11 @@ impl RSGIWebsocketProtocol {
 
     fn accept<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let rth = self.rt.clone();
+        let dg = self.disconnect_guard.clone();
         let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
         let transport = self.websocket.clone();
         let itransport = self.transport.clone();
+
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut ws = transport.lock().await;
             match upgrade.send(None, None, None).await {
@@ -354,11 +367,7 @@ impl RSGIWebsocketProtocol {
                             let mut guard = itransport.lock().await;
                             *guard = Some(stx);
                         }
-                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(
-                            rth.clone(),
-                            itransport.clone(),
-                            srx,
-                        ))
+                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(rth, dg, itransport, srx))
                     }
                     _ => FutureResultToPy::Err(error_proto!()),
                 },

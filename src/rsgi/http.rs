@@ -82,11 +82,13 @@ macro_rules! handle_request_with_ws {
                         let scope = build_scope!(WebsocketScope, server_addr, client_addr, parts, scheme);
                         let (restx, mut resrx) = mpsc::channel(1);
                         let rth = rt.clone();
+                        let cancel_sig = Arc::new(Notify::new());
 
-                        rt.spawn(async move {
+                        rt.spawn_cancellable(cancel_sig.clone(), async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(callback, rth, ws, UpgradeData::new(res, restx), scope).await {
+                            match $handler_ws(callback, rth, cancel_sig, ws, UpgradeData::new(res, restx), scope).await
+                            {
                                 Ok((status, consumed, stream)) => match (consumed, stream) {
                                     (false, _) => {
                                         let _ = tx_ref

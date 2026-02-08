@@ -138,12 +138,13 @@ pub(crate) fn call_http(
 pub(crate) fn call_ws(
     cb: ArcCBScheduler,
     rt: RuntimeRef,
+    disconnect_guard: Arc<Notify>,
     ws: HyperWebsocket,
     upgrade: UpgradeData,
     scope: WebsocketScope,
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
     let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade);
+    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard);
 
     rt.spawn_blocking(move |py| {
         if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope) {
