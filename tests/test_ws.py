@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 
@@ -38,12 +39,15 @@ async def test_asgi_server_close(asgi_server, runtime_mode, tmp_path):
     target = tmp_path / 'ws_result'
 
     async with asgi_server(runtime_mode) as port:
-        ws = await websockets.connect(f'ws://localhost:{port}/ws_close')
-        await ws.send(str(target.resolve()))
-        try:
-            await ws.recv()
-        except Exception:
-            pass
+        async with websockets.connect(f'ws://localhost:{port}/ws_close') as ws:
+            await ws.send(str(target.resolve()))
+            try:
+                await ws.recv()
+            except Exception:
+                pass
+
+        # reduce flakyness
+        await asyncio.sleep(0.1)
 
     assert target.exists()
 
