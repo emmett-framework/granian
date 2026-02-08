@@ -1,8 +1,5 @@
-import asyncio
 import json
 import os
-import pathlib
-import tempfile
 
 import pytest
 import websockets
@@ -37,24 +34,18 @@ async def test_reject(server, runtime_mode):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_server_initiated_close(asgi_server, runtime_mode):
-    result_path = pathlib.Path(tempfile.gettempdir(), 'granian_ws_test_result')
-    result_path.unlink(missing_ok=True)
+async def test_asgi_server_close(asgi_server, runtime_mode, tmp_path):
+    target = tmp_path / 'ws_result'
 
     async with asgi_server(runtime_mode) as port:
-        ws = await websockets.connect(f'ws://localhost:{port}/ws_server_close')
-        await ws.send('hello')
-        for _ in range(50):
-            if result_path.exists():
-                break
-            await asyncio.sleep(0.1)
+        ws = await websockets.connect(f'ws://localhost:{port}/ws_close')
+        await ws.send(str(target.resolve()))
         try:
-            await ws.close()
+            await ws.recv()
         except Exception:
             pass
 
-    assert result_path.exists(), 'Server did not write result file'
-    result_path.unlink(missing_ok=True)
+    assert target.exists()
 
 
 @pytest.mark.asyncio

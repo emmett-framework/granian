@@ -1,7 +1,6 @@
 import asyncio
 import json
 import pathlib
-import tempfile
 
 import sniffio
 
@@ -129,15 +128,6 @@ async def ws_echo(scope, receive, send):
     await send({'type': 'websocket.close'})
 
 
-async def ws_server_close(scope, receive, send):
-    await receive()
-    await send({'type': 'websocket.accept'})
-    await receive()
-    await send({'type': 'websocket.close', 'code': 1000})
-    await asyncio.wait_for(receive(), timeout=5)
-    pathlib.Path(tempfile.gettempdir(), 'granian_ws_test_result').touch()
-
-
 async def ws_push(scope, receive, send):
     await send({'type': 'websocket.accept'})
 
@@ -146,6 +136,17 @@ async def ws_push(scope, receive, send):
             await send({'type': 'websocket.send', 'text': 'ping'})
     except Exception:
         pass
+
+
+async def ws_close(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.accept'})
+    msg = await receive()
+    fpath = msg.get('text') or msg['bytes'].decode('utf8')
+    await send({'type': 'websocket.close', 'code': 1000})
+    msg = await receive()
+    if msg['type'] == 'websocket.disconnect':
+        pathlib.Path(fpath).touch()
 
 
 async def err_app(scope, receive, send):
@@ -218,7 +219,7 @@ def app(scope, receive, send):
         '/ws_rejectc': ws_reject_custom,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
-        '/ws_server_close': ws_server_close,
+        '/ws_close': ws_close,
         '/ws_push': ws_push,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,
