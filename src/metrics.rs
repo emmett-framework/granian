@@ -382,8 +382,12 @@ fn spawn_exporter(
                                 _ = connb.serve_connection(io, hyper::service::service_fn(move |_req| {
                                     let data = exp.get().data();
                                     async move {
+                                        let response = hyper::Response::builder()
+                                            .header(hyper::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
+                                            .body(http_body_util::Full::new(hyper::body::Bytes::from(data)))
+                                            .unwrap();
                                         Ok::<hyper::Response<http_body_util::Full<hyper::body::Bytes>>, std::convert::Infallible>(
-                                            hyper::Response::new(http_body_util::Full::new(hyper::body::Bytes::from(data)))
+                                            response
                                         )
                                     }
                                 })).await;
