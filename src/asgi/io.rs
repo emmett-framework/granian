@@ -618,6 +618,7 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     })))
                 }
                 "websocket.send" => Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?)),
+                "websocket.ping" => Ok(ASGIMessageType::WSMessage(Message::Ping(bytes::Bytes::new()))),
                 _ => error_message!(),
             }
         }
