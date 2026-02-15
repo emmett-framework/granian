@@ -323,6 +323,15 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     help='The maximum amount of memory (in MiB) a worker can consume before respawn',
 )
 @option(
+    '--graceful-shutdown-timeout',
+    type=Duration(0, 1800),
+    help=(
+        'The maximum amount of time in seconds (or a human-readable duration) to wait for active connections '
+        'to close during shutdown before force-closing them'
+    ),
+    show_default='disabled',
+)
+@option(
     '--workers-kill-timeout',
     type=Duration(1, 1800),
     help='The amount of time in seconds (or a human-readable duration) to wait for killing workers that refused to gracefully stop',
@@ -483,6 +492,7 @@ def cli(
     rss_samples: int,
     workers_lifetime: int | None,
     workers_max_rss: int | None,
+    graceful_shutdown_timeout: int | None,
     workers_kill_timeout: int | None,
     factory: bool,
     working_dir: pathlib.Path | None,
@@ -573,6 +583,7 @@ def cli(
         rss_samples=rss_samples,
         workers_lifetime=workers_lifetime,
         workers_max_rss=workers_max_rss,
+        graceful_shutdown_timeout=graceful_shutdown_timeout,
         workers_kill_timeout=workers_kill_timeout,
         factory=factory,
         working_dir=working_dir,

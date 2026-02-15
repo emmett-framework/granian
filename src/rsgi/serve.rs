@@ -40,6 +40,7 @@ impl RSGIWorker {
             ssl_crl=vec![],
             ssl_client_verify=false,
             metrics=(None, None),
+            graceful_shutdown_timeout=None,
         )
     )]
     fn new(
@@ -66,6 +67,7 @@ impl RSGIWorker {
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
+        graceful_shutdown_timeout: Option<u64>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -77,6 +79,7 @@ impl RSGIWorker {
                 py_threads,
                 py_threads_idle_timeout,
                 backpressure,
+                graceful_shutdown_timeout,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,

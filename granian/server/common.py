@@ -121,6 +121,7 @@ class AbstractServer(Generic[WT]):
         rss_samples: int = 1,
         workers_lifetime: int | None = None,
         workers_max_rss: int | None = None,
+        graceful_shutdown_timeout: int | None = None,
         workers_kill_timeout: int | None = None,
         factory: bool = False,
         working_dir: Path | None = None,
@@ -182,6 +183,7 @@ class AbstractServer(Generic[WT]):
         self._rss_wrk_samples = {}
         self.workers_lifetime = workers_lifetime
         self.workers_rss = workers_max_rss * 1024 * 1024 if workers_max_rss else None
+        self.graceful_shutdown_timeout = graceful_shutdown_timeout
         self.workers_kill_timeout = workers_kill_timeout
         self.factory = factory
         self.working_dir = working_dir

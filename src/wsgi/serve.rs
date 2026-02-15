@@ -44,6 +44,7 @@ impl WSGIWorker {
             ssl_crl=vec![],
             ssl_client_verify=false,
             metrics=(None, None),
+            graceful_shutdown_timeout=None,
         )
     )]
     fn new(
@@ -69,6 +70,7 @@ impl WSGIWorker {
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
+        graceful_shutdown_timeout: Option<u64>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -80,6 +82,7 @@ impl WSGIWorker {
                 py_threads,
                 py_threads_idle_timeout,
                 backpressure,
+                graceful_shutdown_timeout,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
@@ -259,7 +262,15 @@ macro_rules! serve_fn {
                 mc_notify.notify_one();
             }
 
-            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
+            let wrk = crate::workers::Worker::new(
+                ctx,
+                acceptor,
+                handler,
+                rth,
+                target,
+                metrics.0,
+                cfg.graceful_shutdown_timeout,
+            );
 
             let main_loop: JoinHandle<anyhow::Result<()>> = rt.inner.spawn(async move {
                 wrk.clone().listen(srx, listener, backpressure).await;
@@ -393,6 +404,7 @@ macro_rules! serve_fn {
                 let target = target.clone();
                 let py_loop = py_loop.clone();
                 let srx = srx.clone();
+                let graceful_shutdown_timeout = cfg.graceful_shutdown_timeout;
 
                 workers.push(std::thread::spawn(move || {
                     let rt = crate::runtime::init_runtime_st(
@@ -403,7 +415,15 @@ macro_rules! serve_fn {
                         metrics.1.clone(),
                     );
                     let rth = rt.handler();
-                    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
+                    let wrk = crate::workers::Worker::new(
+                        ctx,
+                        acceptor,
+                        handler,
+                        rth,
+                        target,
+                        metrics.0,
+                        graceful_shutdown_timeout,
+                    );
                     let local = tokio::task::LocalSet::new();
 
                     crate::runtime::block_on_local(&rt, local, async move {
