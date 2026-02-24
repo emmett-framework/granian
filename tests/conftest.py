@@ -26,7 +26,6 @@ async def _server(
     task_impl='asyncio',
     static_mount=False,
     static_rewrite=False,
-    **extra_kwargs,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -37,7 +36,6 @@ async def _server(
         'runtime_mode': runtime_mode,
         'task_impl': task_impl,
         'websockets': ws,
-        **extra_kwargs,
     }
     if tls:
         if tls == 'private':
