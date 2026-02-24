@@ -40,6 +40,11 @@ async def test_asgi_scope(asgi_server, runtime_mode):
         async with websockets.connect(f'ws://localhost:{port}/ws_info?test=true') as ws:
             res = await ws.recv()
 
+        async with websockets.connect(
+            f'ws://localhost:{port}/ws_info?test=true', subprotocols=['proto1', 'proto2']
+        ) as ws:
+            res2 = await ws.recv()
+
     data = json.loads(res)
     assert data['asgi'] == {'version': '3.0', 'spec_version': '2.3'}
     assert data['type'] == 'websocket'
@@ -50,20 +55,8 @@ async def test_asgi_scope(asgi_server, runtime_mode):
     assert data['headers']['host'] == f'localhost:{port}'
     assert not data['subprotocols']
 
-
-@pytest.mark.asyncio
-@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
-@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_asgi_ws_subprotocols(asgi_server, runtime_mode):
-    async with asgi_server(runtime_mode) as port:
-        async with websockets.connect(
-            f'ws://localhost:{port}/ws_info',
-            subprotocols=['proto1', 'proto2'],
-        ) as ws:
-            res = await ws.recv()
-
-    data = json.loads(res)
-    assert data['subprotocols'] == ['proto1', 'proto2']
+    data2 = json.loads(res2)
+    assert data2['subprotocols'] == ['proto1', 'proto2']
 
 
 @pytest.mark.asyncio
