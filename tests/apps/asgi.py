@@ -70,6 +70,12 @@ async def ws_reject(scope, receive, send):
     return
 
 
+async def ws_reject_explicit(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.close'})
+    await receive()
+
+
 async def ws_reject_custom(scope, receive, send):
     await receive()
     await send(
@@ -216,6 +222,7 @@ def app(scope, receive, send):
         '/echo': echo,
         '/file': pathsend,
         '/ws_reject': ws_reject,
+        '/ws_rejecte': ws_reject_explicit,
         '/ws_rejectc': ws_reject_custom,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
