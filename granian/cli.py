@@ -367,6 +367,11 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     default=86400,
     help='Cache headers expiration (in seconds or a human-readable duration) for static file serving. 0 to disable.',
 )
+@option(
+    '--static-path-precompressed/--no-static-path-precompressed',
+    default=False,
+    help='Enable serving precompressed static files with .br, .gz, or .zst extensions',
+)
 @option('--metrics/--no-metrics', 'metrics_enabled', default=False, help='Enable the prometheus metrics exporter.')
 @option(
     '--metrics-scrape-interval', default=15, type=Duration(1, 60), help='Configure the interval for metrics collection.'
@@ -491,6 +496,7 @@ def cli(
     static_path_mount: list[pathlib.Path],
     static_path_dir_to_file: str | None,
     static_path_expires: int,
+    static_path_precompressed: bool,
     metrics_enabled: bool,
     metrics_scrape_interval: int,
     metrics_address: str,
@@ -581,6 +587,7 @@ def cli(
         static_path_mount=static_path_mount,
         static_path_dir_to_file=static_path_dir_to_file,
         static_path_expires=static_path_expires,
+        static_path_precompressed=static_path_precompressed,
         metrics_enabled=metrics_enabled,
         metrics_scrape_interval=metrics_scrape_interval,
         metrics_address=metrics_address,

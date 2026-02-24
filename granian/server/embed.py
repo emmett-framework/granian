@@ -14,6 +14,7 @@ from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
+from ..files import StaticFilesSettings
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
 from .common import (
     _PY_312,
@@ -128,6 +129,7 @@ class Server(AbstractServer[AsyncWorker]):
         static_path_mount: Sequence[Path] | None = None,
         static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
+        static_path_precompressed: bool = False,
     ):
         super().__init__(
             target=target,
@@ -164,6 +166,7 @@ class Server(AbstractServer[AsyncWorker]):
             static_path_mount=static_path_mount,
             static_path_dir_to_file=static_path_dir_to_file,
             static_path_expires=static_path_expires,
+            static_path_precompressed=static_path_precompressed,
         )
         self.main_loop_interrupt = asyncio.Event()
 
@@ -189,7 +192,7 @@ class Server(AbstractServer[AsyncWorker]):
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
-                self.static_path,
+                self.static_files,
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
@@ -215,7 +218,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str | None, str | None] | None,
+        static_files: StaticFilesSettings | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
@@ -235,7 +238,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
-            static_path,
+            static_files,
             *ssl_ctx,
             (None, None),
         )
@@ -261,7 +264,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str | None, str | None] | None,
+        static_files: StaticFilesSettings | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
@@ -289,7 +292,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
-            static_path,
+            static_files,
             *ssl_ctx,
             (None, None),
         )
@@ -316,7 +319,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
-        static_path: tuple[str, str, str | None, str | None] | None,
+        static_files: StaticFilesSettings | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
@@ -338,7 +341,7 @@ class Server(AbstractServer[AsyncWorker]):
             http1_settings,
             http2_settings,
             websockets,
-            static_path,
+            static_files,
             *ssl_ctx,
             (None, None),
         )

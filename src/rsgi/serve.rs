@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
-use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
+use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py, worker_static_files_config_from_py};
 use crate::net::SocketHolder;
 use crate::serve::gen_serve_match;
 use crate::workers::{WorkerConfig, WorkerSignal};
@@ -56,7 +56,7 @@ impl RSGIWorker {
         http1_opts: Option<Py<PyAny>>,
         http2_opts: Option<Py<PyAny>>,
         websockets_enabled: bool,
-        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+        static_files: Option<Py<PyAny>>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -81,7 +81,7 @@ impl RSGIWorker {
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
                 websockets_enabled,
-                static_files,
+                worker_static_files_config_from_py(py, static_files)?,
                 ssl_enabled,
                 ssl_cert,
                 ssl_key,
