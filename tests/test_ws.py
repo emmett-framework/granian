@@ -4,6 +4,7 @@ import os
 
 import pytest
 import websockets
+import websockets.exceptions
 
 
 @pytest.mark.asyncio
@@ -50,6 +51,17 @@ async def test_asgi_server_close(asgi_server, runtime_mode, tmp_path):
         await asyncio.sleep(0.1)
 
     assert target.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_reject_explicit(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode) as port:
+        with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
+            async with websockets.connect(f'ws://localhost:{port}/ws_rejecte'):
+                pass
+
+    assert exc.value.response.status_code == 403
 
 
 @pytest.mark.asyncio
