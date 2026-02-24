@@ -84,6 +84,11 @@ async def test_asgi_scope(asgi_server, runtime_mode):
         async with websockets.connect(f'ws://localhost:{port}/ws_info?test=true') as ws:
             res = await ws.recv()
 
+        async with websockets.connect(
+            f'ws://localhost:{port}/ws_info?test=true', subprotocols=['proto1', 'proto2']
+        ) as ws:
+            res2 = await ws.recv()
+
     data = json.loads(res)
     assert data['asgi'] == {'version': '3.0', 'spec_version': '2.3'}
     assert data['type'] == 'websocket'
@@ -94,6 +99,9 @@ async def test_asgi_scope(asgi_server, runtime_mode):
     assert data['headers']['host'] == f'localhost:{port}'
     assert not data['subprotocols']
     assert 'websocket.http.response' in data['extensions']
+
+    data2 = json.loads(res2)
+    assert data2['subprotocols'] == ['proto1', 'proto2']
 
 
 @pytest.mark.asyncio
