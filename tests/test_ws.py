@@ -54,6 +54,21 @@ async def test_asgi_scope(asgi_server, runtime_mode):
 @pytest.mark.asyncio
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_ws_subprotocols(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode) as port:
+        async with websockets.connect(
+            f'ws://localhost:{port}/ws_info',
+            subprotocols=['proto1', 'proto2'],
+        ) as ws:
+            res = await ws.recv()
+
+    data = json.loads(res)
+    assert data['subprotocols'] == ['proto1', 'proto2']
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_rsgi_scope(rsgi_server, runtime_mode):
     async with rsgi_server(runtime_mode) as port:
         async with websockets.connect(f'ws://localhost:{port}/ws_info?test=true') as ws:
