@@ -48,7 +48,7 @@ impl SockAddr {
     }
 }
 
-#[pyclass(frozen, module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian", from_py_object)]
 #[derive(Clone)]
 pub struct ListenerSpec {
     inp: (String, u16, i32),
@@ -58,7 +58,7 @@ pub struct ListenerSpec {
 }
 
 #[cfg(unix)]
-#[pyclass(frozen, module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian", from_py_object)]
 #[derive(Clone)]
 pub struct UnixListenerSpec {
     inp: (String, i32),
