@@ -78,17 +78,25 @@ class WorkerProcess(AbstractWorker):
             load_env(env_files)
 
             _ipc_handle = None
-            sock, _sso = sock
-            if sys.platform == 'win32':
-                sock = SocketHolder(_sso.fileno())
-            elif ipc:
+            sock_tcp, sock_uds = sock
+            _sock_tcp = _sock_uds = None
+
+            if sock_tcp[0]:
+                _sock_tcp, _sso = sock_tcp
+                if sys.platform == 'win32':
+                    _sock_tcp = SocketHolder(_sso.fileno())
+
+            if sock_uds[0]:
+                _sock_uds, _ = sock_uds
+
+            if ipc:
                 _ipc_fd = os.dup(ipc.fileno())
                 os.set_blocking(_ipc_fd, False)
                 _ipc_handle = IPCSenderHandle(_ipc_fd)
 
             loop = loops.get(loop_impl)
             callback = callback_loader()
-            return target(worker_id, callback, sock, _ipc_handle, loop, *args, **kwargs)
+            return target(worker_id, callback, _sock_tcp, _sock_uds, _ipc_handle, loop, *args, **kwargs)
 
         return wrapped
 
@@ -116,6 +124,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
@@ -143,6 +152,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            uds_sock,
             ipc,
             runtime_threads,
             runtime_blocking_threads,
@@ -157,7 +167,12 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
@@ -167,6 +182,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
@@ -202,6 +218,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = ASGIWorker(
             worker_id,
             sock,
+            uds_sock,
             ipc,
             runtime_threads,
             runtime_blocking_threads,
@@ -216,7 +233,12 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
@@ -227,6 +249,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
@@ -256,6 +279,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = RSGIWorker(
             worker_id,
             sock,
+            uds_sock,
             ipc,
             runtime_threads,
             runtime_blocking_threads,
@@ -270,7 +294,12 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         callback_del(loop)
@@ -281,6 +310,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker_id: int,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         ipc: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
@@ -308,6 +338,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         worker = WSGIWorker(
             worker_id,
             sock,
+            uds_sock,
             ipc,
             runtime_threads,
             runtime_blocking_threads,
@@ -321,22 +352,40 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
     def _init_shared_socket(self):
         super()._init_shared_socket()
-        sock = socket.socket(fileno=self._sfd)
-        sock.set_inheritable(True)
-        self._sso = sock
+        if self._sfd:
+            sock = socket.socket(fileno=self._sfd)
+            sock.set_inheritable(True)
+            self._sso = sock
+        else:
+            self._sso = None
+
+        if self._sfd_uds:
+            sock = socket.socket(fileno=self._sfd_uds)
+            sock.set_inheritable(True)
+            self._sso_uds = sock
+        else:
+            self._sso_uds = None
 
     def _write_pidfile(self):
         super()._write_pidfile()
         self._rss_collector = ProcInfoCollector()
 
     def _unlink_pidfile(self):
-        self._sso.detach()
+        if self._sso:
+            self._sso.detach()
+        if self._sso_uds:
+            self._sso_uds.detach()
         super()._unlink_pidfile()
 
     def _start_ipc(self):
@@ -407,7 +456,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 idx + 1,
                 self.process_name,
                 callback_loader,
-                (self._shd, self._sso),
+                ((self._shd, self._sso), (self._shd_uds, self._sso_uds)),
                 # NOTE: given we use IPC only for metrics right now, let's share the pipe
                 #       only if metrics collection is actually enabled.
                 self._ipc[idx][1] if self.metrics_enabled else None,

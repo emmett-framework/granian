@@ -62,6 +62,8 @@ class ASGIWorker:
         cls,
         worker_id: int,
         sock: Any,
+        uds_sock: Any,
+        ipc: Any,
         threads: int,
         blocking_threads: int,
         py_threads: int,
@@ -71,7 +73,7 @@ class ASGIWorker:
         http1_opts: HTTP1Settings | None,
         http2_opts: HTTP2Settings | None,
         websockets_enabled: bool,
-        static_files: tuple[str, str, str | None, str | None] | None,
+        static_files: tuple[list[tuple[str, str]], str | None, str | None] | None,
         ssl_enabled: bool,
         ssl_cert: str | None,
         ssl_key: str | None,
@@ -80,6 +82,7 @@ class ASGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        metrics: Any,
     ) -> ASGIWorker: ...
 
 class WSGIWorker:
@@ -87,6 +90,8 @@ class WSGIWorker:
         cls,
         worker_id: int,
         sock: Any,
+        uds_sock: Any,
+        ipc: Any,
         threads: int,
         blocking_threads: int,
         py_threads: int,
@@ -95,7 +100,7 @@ class WSGIWorker:
         http_mode: str,
         http1_opts: HTTP1Settings | None,
         http2_opts: HTTP2Settings | None,
-        static_files: tuple[str, str, str | None, str | None] | None,
+        static_files: tuple[list[tuple[str, str]], str | None, str | None] | None,
         ssl_enabled: bool,
         ssl_cert: str | None,
         ssl_key: str | None,
@@ -104,6 +109,7 @@ class WSGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        metrics: Any,
     ) -> WSGIWorker: ...
 
 class RSGIWorker:
@@ -111,6 +117,8 @@ class RSGIWorker:
         cls,
         worker_id: int,
         sock: Any,
+        uds_sock: Any,
+        ipc: Any,
         threads: int,
         blocking_threads: int,
         py_threads: int,
@@ -120,7 +128,7 @@ class RSGIWorker:
         http1_opts: HTTP1Settings | None,
         http2_opts: HTTP2Settings | None,
         websockets_enabled: bool,
-        static_files: tuple[str, str, str | None, str | None] | None,
+        static_files: tuple[list[tuple[str, str]], str | None, str | None] | None,
         ssl_enabled: bool,
         ssl_cert: str | None,
         ssl_key: str | None,
@@ -129,6 +137,7 @@ class RSGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        metrics: Any,
     ) -> RSGIWorker: ...
 
 class SocketHolder:
