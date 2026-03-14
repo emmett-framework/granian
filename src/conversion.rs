@@ -1,6 +1,6 @@
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::workers::{HTTP1Config, HTTP2Config};
+use crate::workers::{HTTP1Config, HTTP2Config, StaticFilesConfig};
 
 pub(crate) struct Utf8BytesToPy(pub tokio_tungstenite::tungstenite::Utf8Bytes);
 
@@ -91,6 +91,23 @@ pub(crate) fn worker_http2_config_from_py(py: Python, cfg: Option<Py<PyAny>>) ->
             max_headers_size: 16 * 1024 * 1024,
             max_send_buffer_size: 1024 * 400,
         },
+    };
+    Ok(ret)
+}
+
+pub(crate) fn worker_static_files_config_from_py(
+    py: Python,
+    cfg: Option<Py<PyAny>>,
+) -> PyResult<Option<StaticFilesConfig>> {
+    let ret = match cfg {
+        Some(cfg) => Some(StaticFilesConfig {
+            mounts: cfg.getattr(py, "mounts")?.extract(py)?,
+            dir_to_file: cfg.getattr(py, "dir_to_file")?.extract(py)?,
+            expires: cfg.getattr(py, "expires")?.extract(py)?,
+            precompressed: cfg.getattr(py, "precompressed")?.extract(py)?,
+            sidecar_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+        }),
+        None => None,
     };
     Ok(ret)
 }
