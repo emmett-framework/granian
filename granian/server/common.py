@@ -19,6 +19,7 @@ from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
 from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
 from ..errors import ConfigurationError, PidFileError
+from ..files import StaticFilesSettings
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
 from ..net import SocketSpec, UnixSocketSpec
@@ -129,6 +130,7 @@ class AbstractServer(Generic[WT]):
         static_path_mount: Sequence[Path] | None = None,
         static_path_dir_to_file: str | None = None,
         static_path_expires: int = 86400,
+        static_path_precompressed: bool = False,
         metrics_enabled: bool = False,
         metrics_scrape_interval: int = 15,
         metrics_address: str = '127.0.0.1',
@@ -186,7 +188,8 @@ class AbstractServer(Generic[WT]):
         self.factory = factory
         self.working_dir = working_dir
         self.env_files = env_files or ()
-        self.static_path = None
+        self.static_files = None
+        self.static_path_precompressed = static_path_precompressed
         self.metrics_enabled = metrics_enabled
         self.metrics_scrape_interval = metrics_scrape_interval
         self.metrics_address = metrics_address
@@ -243,19 +246,21 @@ class AbstractServer(Generic[WT]):
         if not paths:
             return
         if len(paths) == 1 and not routes:
-            self.static_path = (
-                [('/static', str(paths[0].resolve()))],
-                dir_to_file,
-                expires,
+            self.static_files = StaticFilesSettings(
+                mounts=[('/static', str(paths[0].resolve()))],
+                dir_to_file=dir_to_file,
+                expires=expires,
+                precompressed=self.static_path_precompressed,
             )
             return
         if len(paths) != len(routes):
             logger.error('Static path routes and mounts should have the same length')
             raise ConfigurationError('static_path')
-        self.static_path = (
-            [(routes[idx], str(path.resolve())) for idx, path in enumerate(paths)],
-            dir_to_file,
-            expires,
+        self.static_files = StaticFilesSettings(
+            mounts=[(routes[idx], str(path.resolve())) for idx, path in enumerate(paths)],
+            dir_to_file=dir_to_file,
+            expires=expires,
+            precompressed=self.static_path_precompressed,
         )
 
     def build_ssl_context(

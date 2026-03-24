@@ -88,6 +88,15 @@ pub(crate) struct HTTP2Config {
     pub max_send_buffer_size: usize,
 }
 
+#[derive(Clone)]
+pub(crate) struct StaticFilesConfig {
+    pub mounts: Vec<(String, String)>,
+    pub dir_to_file: Option<String>,
+    pub expires: Option<String>,
+    pub precompressed: bool,
+    pub sidecar_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, bool>>>,
+}
+
 pub(crate) struct WorkerConfig {
     pub id: i32,
     sock: Py<crate::net::SocketHolder>,
@@ -102,7 +111,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
-    pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+    pub static_files: Option<StaticFilesConfig>,
     pub tls_opts: Option<WorkerTlsConfig>,
     pub metrics: (
         Option<std::time::Duration>,
@@ -134,7 +143,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
-        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+        static_files: Option<StaticFilesConfig>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -264,24 +273,15 @@ impl<M> WorkerCTXBase<M> {
 pub(crate) struct WorkerCTXFiles<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
     pub metrics: M,
-    pub static_mounts: Vec<(String, String)>,
-    pub static_dir_to_file: Option<String>,
-    pub static_expires: Option<String>,
+    pub config: StaticFilesConfig,
 }
 
 impl<M> WorkerCTXFiles<M> {
-    pub fn new(
-        callback: crate::callbacks::PyCBScheduler,
-        metrics: M,
-        files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
-    ) -> Self {
-        let (static_mounts, static_dir_to_file, static_expires) = files.unwrap();
+    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M, config: Option<StaticFilesConfig>) -> Self {
         Self {
             callback: Arc::new(callback),
             metrics,
-            static_mounts,
-            static_dir_to_file,
-            static_expires,
+            config: config.unwrap(),
         }
     }
 }
@@ -402,17 +402,14 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
-                if let Some(static_match) = crate::files::match_static_file(
-                    req.uri().path(),
-                    &self.ctx.static_mounts,
-                    self.ctx.static_dir_to_file.as_ref(),
-                ) {
+                let config = self.ctx.config.clone();
+                if let Some(static_match) = crate::files::match_static_file(&config, &req) {
                     if static_match.is_err() {
                         return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
                     }
-                    let expires = self.ctx.static_expires.clone();
+                    let (path, encoding) = static_match.unwrap();
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                        Ok::<_, hyper::Error>(crate::files::serve_static_file(&config, path, encoding).await)
                     });
                 }
 
@@ -479,11 +476,8 @@ macro_rules! service_impl {
                     .req_handled
                     .fetch_add(1, std::sync::atomic::Ordering::Release);
 
-                if let Some(static_match) = crate::files::match_static_file(
-                    req.uri().path(),
-                    &self.ctx.static_mounts,
-                    self.ctx.static_dir_to_file.as_ref(),
-                ) {
+                let config = self.ctx.config.clone();
+                if let Some(static_match) = crate::files::match_static_file(&config, &req) {
                     self.ctx
                         .metrics
                         .req_static_handled
@@ -495,9 +489,9 @@ macro_rules! service_impl {
                             .fetch_add(1, std::sync::atomic::Ordering::Release);
                         return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
                     }
-                    let expires = self.ctx.static_expires.clone();
+                    let (path, encoding) = static_match.unwrap();
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                        Ok::<_, hyper::Error>(crate::files::serve_static_file(&config, path, encoding).await)
                     });
                 }
 

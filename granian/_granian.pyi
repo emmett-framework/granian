@@ -3,6 +3,7 @@ import threading
 from typing import Any
 
 from ._types import WebsocketMessage
+from .files import StaticFilesSettings
 from .http import HTTP1Settings, HTTP2Settings
 
 __version__: str
@@ -71,7 +72,7 @@ class ASGIWorker:
         http1_opts: HTTP1Settings | None,
         http2_opts: HTTP2Settings | None,
         websockets_enabled: bool,
-        static_files: tuple[str, str, str | None, str | None] | None,
+        static_files: StaticFilesSettings | None,
         ssl_enabled: bool,
         ssl_cert: str | None,
         ssl_key: str | None,
@@ -95,7 +96,7 @@ class WSGIWorker:
         http_mode: str,
         http1_opts: HTTP1Settings | None,
         http2_opts: HTTP2Settings | None,
-        static_files: tuple[str, str, str | None, str | None] | None,
+        static_files: StaticFilesSettings | None,
         ssl_enabled: bool,
         ssl_cert: str | None,
         ssl_key: str | None,
@@ -120,7 +121,7 @@ class RSGIWorker:
         http1_opts: HTTP1Settings | None,
         http2_opts: HTTP2Settings | None,
         websockets_enabled: bool,
-        static_files: tuple[str, str, str | None, str | None] | None,
+        static_files: StaticFilesSettings | None,
         ssl_enabled: bool,
         ssl_cert: str | None,
         ssl_key: str | None,
