@@ -144,4 +144,5 @@ def log_request_builder(fmt):
                 log_dict[f'resp_header:{hname}'] = get_resp_header(hname) or '-'
         access_logger.info(transformed_fmt, log_dict)
 
+    log_request.needs_resp_headers = bool(required_resp_headers)
     return log_request

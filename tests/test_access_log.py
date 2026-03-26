@@ -92,21 +92,21 @@ def test_log_request_missing_user_agent_dash(caplog):
 
 
 def test_asgi_access_log_user_agent(caplog):
-    access_log = asgi_build_access_logger(_FMT)
+    access_log, _ = asgi_build_access_logger(_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _asgi_scope(b'curl/7.88'), 200)
     assert 'curl/7.88' in _log_message(caplog)
 
 
 def test_asgi_access_log_absent_user_agent_defaults_to_dash(caplog):
-    access_log = asgi_build_access_logger(_FMT)
+    access_log, _ = asgi_build_access_logger(_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _asgi_scope(user_agent=None), 200)
     assert _log_message(caplog).endswith(' -')
 
 
 def test_asgi_access_log_user_agent_latin1_decoded(caplog):
-    access_log = asgi_build_access_logger(_FMT)
+    access_log, _ = asgi_build_access_logger(_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _asgi_scope(b'Agent/\xe9'), 200)
     assert 'Agent/\xe9' in _log_message(caplog)
@@ -118,14 +118,14 @@ def test_asgi_access_log_user_agent_latin1_decoded(caplog):
 
 
 def test_rsgi_access_log_user_agent(caplog):
-    access_log = rsgi_build_access_logger(_FMT)
+    access_log, _ = rsgi_build_access_logger(_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _rsgi_scope('Go-http-client/2.0'), 200)
     assert 'Go-http-client/2.0' in _log_message(caplog)
 
 
 def test_rsgi_access_log_absent_user_agent_defaults_to_dash(caplog):
-    access_log = rsgi_build_access_logger(_FMT)
+    access_log, _ = rsgi_build_access_logger(_FMT)
     scope = _rsgi_scope()
     scope.headers.get.return_value = None
     with caplog.at_level(logging.INFO, logger='granian.access'):
@@ -139,14 +139,14 @@ def test_rsgi_access_log_absent_user_agent_defaults_to_dash(caplog):
 
 
 def test_wsgi_access_log_user_agent(caplog):
-    access_log = wsgi_build_access_logger(_FMT)
+    access_log, _ = wsgi_build_access_logger(_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _wsgi_scope('python-httpx/0.27'), 200)
     assert 'python-httpx/0.27' in _log_message(caplog)
 
 
 def test_wsgi_access_log_absent_user_agent_defaults_to_dash(caplog):
-    access_log = wsgi_build_access_logger(_FMT)
+    access_log, _ = wsgi_build_access_logger(_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _wsgi_scope(user_agent=None), 200)
     assert _log_message(caplog).endswith(' -')
@@ -191,7 +191,7 @@ def test_log_request_header_name_case_insensitive(caplog):
 
 
 def test_asgi_access_log_arbitrary_header(caplog):
-    access_log = asgi_build_access_logger(_HEADER_FMT)
+    access_log, _ = asgi_build_access_logger(_HEADER_FMT)
     scope = _asgi_scope()
     scope['headers'] = [
         (b'user-agent', b'test'),
@@ -206,14 +206,14 @@ def test_asgi_access_log_arbitrary_header(caplog):
 
 
 def test_asgi_access_log_absent_arbitrary_header_defaults_to_dash(caplog):
-    access_log = asgi_build_access_logger(_HEADER_FMT)
+    access_log, _ = asgi_build_access_logger(_HEADER_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _asgi_scope(), 200)
     assert _log_message(caplog).endswith('- -')
 
 
 def test_rsgi_access_log_arbitrary_header(caplog):
-    access_log = rsgi_build_access_logger(_HEADER_FMT)
+    access_log, _ = rsgi_build_access_logger(_HEADER_FMT)
     scope = _rsgi_scope()
     scope.headers.get.side_effect = lambda name: {
         'user-agent': 'test',
@@ -228,7 +228,7 @@ def test_rsgi_access_log_arbitrary_header(caplog):
 
 
 def test_wsgi_access_log_arbitrary_header(caplog):
-    access_log = wsgi_build_access_logger(_HEADER_FMT)
+    access_log, _ = wsgi_build_access_logger(_HEADER_FMT)
     scope = _wsgi_scope()
     scope['HTTP_X_REQUEST_ID'] = 'wsgi-321'
     scope['HTTP_X_FORWARDED_FOR'] = '10.10.0.1'
@@ -240,7 +240,7 @@ def test_wsgi_access_log_arbitrary_header(caplog):
 
 
 def test_wsgi_access_log_absent_arbitrary_header_defaults_to_dash(caplog):
-    access_log = wsgi_build_access_logger(_HEADER_FMT)
+    access_log, _ = wsgi_build_access_logger(_HEADER_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _wsgi_scope(), 200)
     assert _log_message(caplog).endswith('- -')
@@ -284,7 +284,7 @@ def test_log_request_response_header_name_case_insensitive(caplog):
 
 
 def test_asgi_access_log_response_header(caplog):
-    access_log = asgi_build_access_logger(_RESP_HEADER_FMT)
+    access_log, _ = asgi_build_access_logger(_RESP_HEADER_FMT)
     scope = _asgi_scope()
     resp_headers = [(b'x-trace-id', b'asgi-trace'), (b'content-type', b'text/plain')]
     with caplog.at_level(logging.INFO, logger='granian.access'):
@@ -295,14 +295,14 @@ def test_asgi_access_log_response_header(caplog):
 
 
 def test_asgi_access_log_absent_response_header_defaults_to_dash(caplog):
-    access_log = asgi_build_access_logger(_RESP_HEADER_FMT)
+    access_log, _ = asgi_build_access_logger(_RESP_HEADER_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _asgi_scope(), 200, ())
     assert _log_message(caplog).endswith('- -')
 
 
 def test_rsgi_access_log_response_header(caplog):
-    access_log = rsgi_build_access_logger(_RESP_HEADER_FMT)
+    access_log, _ = rsgi_build_access_logger(_RESP_HEADER_FMT)
     scope = _rsgi_scope()
     resp_headers = [('x-trace-id', 'rsgi-trace'), ('content-type', 'application/json')]
     with caplog.at_level(logging.INFO, logger='granian.access'):
@@ -313,14 +313,14 @@ def test_rsgi_access_log_response_header(caplog):
 
 
 def test_rsgi_access_log_absent_response_header_defaults_to_dash(caplog):
-    access_log = rsgi_build_access_logger(_RESP_HEADER_FMT)
+    access_log, _ = rsgi_build_access_logger(_RESP_HEADER_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _rsgi_scope(), 200, ())
     assert _log_message(caplog).endswith('- -')
 
 
 def test_wsgi_access_log_response_header(caplog):
-    access_log = wsgi_build_access_logger(_RESP_HEADER_FMT)
+    access_log, _ = wsgi_build_access_logger(_RESP_HEADER_FMT)
     resp_headers = [('X-Trace-Id', 'wsgi-trace'), ('Content-Type', 'text/html')]
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _wsgi_scope(), 200, resp_headers)
@@ -330,7 +330,7 @@ def test_wsgi_access_log_response_header(caplog):
 
 
 def test_wsgi_access_log_absent_response_header_defaults_to_dash(caplog):
-    access_log = wsgi_build_access_logger(_RESP_HEADER_FMT)
+    access_log, _ = wsgi_build_access_logger(_RESP_HEADER_FMT)
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _wsgi_scope(), 200, ())
     assert _log_message(caplog).endswith('- -')
