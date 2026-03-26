@@ -114,14 +114,23 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
 
     async def _http_logger(scope, proto):
         rt, mt = time.time(), time.perf_counter()
+        resp_headers_raw = []
+        original_send = proto.send
+
+        async def capturing_send(message):
+            if message.get('type') == 'http.response.start':
+                resp_headers_raw.extend(message.get('headers', ()))
+            return await original_send(message)
+
         try:
-            rv = await _runner(scope, proto)
+            scope.update(root_path=root_url_path, state=state.copy())
+            rv = await callback(scope, proto.receive, capturing_send)
         finally:
-            access_log(rt, mt, scope, proto.sent_response_code)
+            access_log(rt, mt, scope, proto.sent_response_code, resp_headers_raw)
         return rv
 
     def _ws_logger(scope, proto):
-        access_log(time.time(), time.perf_counter(), scope, 101)
+        access_log(time.time(), time.perf_counter(), scope, 101, ())
         return _runner(scope, proto)
 
     def _logger(scope, proto):
@@ -139,7 +148,19 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(rt, mt, scope, resp_code):
+    def access_log(rt, mt, scope, resp_code, resp_headers_raw=()):
+        user_agent = '-'
+        headers_dict = {}
+        for hname_b, hval_b in scope.get('headers', ()):
+            hname = hname_b.decode('latin-1').lower()
+            hval = hval_b.decode('latin-1')
+            headers_dict[hname] = hval
+            if hname == 'user-agent':
+                user_agent = hval
+        resp_headers_dict = {
+            hname_b.decode('latin-1').lower(): hval_b.decode('latin-1')
+            for hname_b, hval_b in resp_headers_raw
+        }
         logger(
             rt,
             mt,
@@ -150,6 +171,9 @@ def _build_access_logger(fmt):
                 'qs': scope['query_string'],
                 'method': scope.get('method', '-'),
                 'scheme': scope['scheme'],
+                'user_agent': user_agent,
+                'get_header': headers_dict.get,
+                'get_response_header': resp_headers_dict.get,
             },
             resp_code,
         )

@@ -28,7 +28,24 @@ class ResponseIterWrap:
         self.__next__ = iter(inner).__next__
 
     def close(self):
-        self.inner.close()
+        if hasattr(self.inner, 'close'):
+            self.inner.close()
+
+
+class _LoggingProto:
+    __slots__ = ['inner', 'resp_headers']
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.resp_headers = ()
+
+    def response_bytes(self, status, headers, body):
+        self.resp_headers = headers
+        return self.inner.response_bytes(status, headers, body)
+
+    def response_iter(self, status, headers, body):
+        self.resp_headers = headers
+        return self.inner.response_iter(status, headers, body)
 
 
 def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], access_log_fmt=None):
@@ -63,11 +80,12 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], 
 
     def _logger(proto, scope):
         rt, mt = time.time(), time.perf_counter()
+        lproto = _LoggingProto(proto)
         try:
-            status = _runner(proto, scope)
-            access_log(rt, mt, scope, status)
+            status = _runner(lproto, scope)
+            access_log(rt, mt, scope, status, lproto.resp_headers)
         except BaseException:
-            access_log(rt, mt, scope, 500)
+            access_log(rt, mt, scope, 500, lproto.resp_headers)
             raise
         return status
 
@@ -80,7 +98,13 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], 
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(rt, mt, scope, resp_code):
+    def access_log(rt, mt, scope, resp_code, resp_headers=()):
+        def get_header(name):
+            return scope.get('HTTP_' + name.upper().replace('-', '_'))
+
+        # WSGI response headers are [(str, str)] e.g. [('Content-Type', 'application/json')]
+        resp_headers_dict = {hname.lower(): hval for hname, hval in resp_headers}
+
         logger(
             rt,
             mt,
@@ -91,6 +115,9 @@ def _build_access_logger(fmt):
                 'qs': scope['QUERY_STRING'],
                 'method': scope['REQUEST_METHOD'],
                 'scheme': scope['wsgi.url_scheme'],
+                'user_agent': scope.get('HTTP_USER_AGENT', '-'),
+                'get_header': get_header,
+                'get_response_header': resp_headers_dict.get,
             },
             resp_code,
         )
