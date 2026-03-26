@@ -40,11 +40,12 @@ class WebsocketMessage:
 
 
 class _LoggingProto:
-    __slots__ = ['inner', 'status']
+    __slots__ = ['inner', 'status', 'resp_headers']
 
     def __init__(self, inner):
         self.inner = inner
         self.status = 500
+        self.resp_headers = ()
 
     def __call__(self):
         return self.inner()
@@ -57,26 +58,32 @@ class _LoggingProto:
 
     def response_empty(self, status, headers):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_empty(status, headers)
 
     def response_str(self, status, headers, body):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_str(status, headers, body)
 
     def response_bytes(self, status, headers, body):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_bytes(status, headers, body)
 
     def response_file(self, status, headers, file):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_file(status, headers, file)
 
     def response_file_range(self, status, headers, file, start, end):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_file_range(status, headers, file, start, end)
 
     def response_stream(self, status, headers):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_stream(status, headers)
 
 
@@ -95,11 +102,11 @@ def _callback_wrapper(callback, access_log_fmt=False):
         try:
             rv = await callback(scope, proto)
         finally:
-            access_log(rt, mt, scope, proto.status)
+            access_log(rt, mt, scope, proto.status, proto.resp_headers)
         return rv
 
     def _ws_logger(scope, proto):
-        access_log(time.time(), time.perf_counter(), scope, 101)
+        access_log(time.time(), time.perf_counter(), scope, 101, ())
         return callback(scope, proto)
 
     def _logger(scope, proto):
@@ -118,7 +125,9 @@ def _callback_wrapper(callback, access_log_fmt=False):
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(rt, mt, scope, resp_code):
+    def access_log(rt, mt, scope, resp_code, resp_headers=()):
+        # RSGI response headers are (str, str) tuples
+        resp_headers_dict = {hname.lower(): hval for hname, hval in resp_headers}
         logger(
             rt,
             mt,
@@ -129,6 +138,9 @@ def _build_access_logger(fmt):
                 'qs': scope.query_string,
                 'method': scope.method,
                 'scheme': scope.scheme,
+                'user_agent': scope.headers.get('user-agent') or '-',
+                'get_header': scope.headers.get,
+                'get_response_header': resp_headers_dict.get,
             },
             resp_code,
         )
