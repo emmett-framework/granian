@@ -10,6 +10,7 @@ class Interfaces(StrEnum):
     ASGI = 'asgi'
     ASGINL = 'asginl'
     RSGI = 'rsgi'
+    RSGI2 = 'rsgi2'
     WSGI = 'wsgi'
 
 
@@ -23,6 +24,12 @@ class RuntimeModes(StrEnum):
     auto = 'auto'
     mt = 'mt'
     st = 'st'
+
+
+class PyRuntimes(StrEnum):
+    asyncio = 'asyncio'
+    tonio = 'tonio'
+    threading = 'threading'
 
 
 class Loops(StrEnum):

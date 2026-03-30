@@ -5,13 +5,13 @@ create_exception!(_granian, RSGIProtocolClosed, PyRuntimeError, "RSGIProtocolClo
 
 macro_rules! error_proto {
     () => {
-        Err(super::errors::RSGIProtocolError::new_err("RSGI protocol error").into())
+        Err(crate::rsgi::errors::RSGIProtocolError::new_err("RSGI protocol error").into())
     };
 }
 
 macro_rules! error_stream {
     () => {
-        Err(super::errors::RSGIProtocolClosed::new_err("RSGI transport is closed").into())
+        Err(crate::rsgi::errors::RSGIProtocolClosed::new_err("RSGI transport is closed").into())
     };
 }
 

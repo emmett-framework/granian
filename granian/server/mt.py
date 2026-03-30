@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import threading
 from collections.abc import Callable
@@ -5,13 +6,14 @@ from functools import wraps
 from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WorkerSignalSync, WSGIWorker
+from .._granian import ASGIWorker, RSGI2Worker, RSGIWorker, WorkerSignal, WSGIWorker
 from .._loops import loops
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
 from ..wsgi import _callback_wrapper as _wsgi_call_wrap
+from ._runtimes import _tonio_runtime_async_post, _tonio_runtime_async_pre
 from .common import (
     WORKERS_METHODS,
     AbstractServer,
@@ -20,6 +22,7 @@ from .common import (
     HTTP2Settings,
     HTTPModes,
     Interfaces,
+    PyRuntimes,
     RuntimeModes,
     TaskImpl,
     logger,
@@ -201,6 +204,19 @@ class MTServer(AbstractServer[WorkerThread]):
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
         callback_init(loop)
 
         worker = RSGIWorker(
@@ -223,7 +239,69 @@ class MTServer(AbstractServer[WorkerThread]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         callback_del(loop)
+
+    @staticmethod
+    @WorkerThread.wrap_target
+    def _spawn_rsgi2_tonio_worker(
+        worker_id: int,
+        shutdown_event: Any,
+        callback: Any,
+        sock: Any,
+        loop: Any,
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: int | None,
+        blocking_threads: int,
+        blocking_threads_idle_timeout: int,
+        backpressure: int,
+        task_impl: TaskImpl,
+        http_mode: HTTPModes,
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
+        websockets: bool,
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
+        ssl_ctx: SSLCtx,
+        scope_opts: dict[str, Any],
+        metrics: Any,
+    ):
+        import tonio.colored as tonio
+
+        from granian.rsgi2 import TonioRSGIApp
+
+        rsgi_app = TonioRSGIApp(callback)
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
+
+        worker = RSGI2Worker(
+            worker_id,
+            sock,
+            None,
+            runtime_threads,
+            runtime_blocking_threads,
+            blocking_threads,
+            blocking_threads_idle_timeout,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            static_path,
+            *ssl_ctx,
+            metrics,
+        )
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve(rsgi_app.rsgi(), None, shutdown_event)
+        _main()
 
     @staticmethod
     @WorkerThread.wrap_target
@@ -272,8 +350,24 @@ class MTServer(AbstractServer[WorkerThread]):
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
+    _default_spawners = {
+        Interfaces.ASGI: {
+            PyRuntimes.asyncio: (_spawn_asgi_lifespan_worker, None),
+        },
+        Interfaces.ASGINL: {PyRuntimes.asyncio: (_spawn_asgi_worker, None)},
+        Interfaces.RSGI: {
+            PyRuntimes.asyncio: (_spawn_rsgi_worker, None),
+        },
+        Interfaces.WSGI: {
+            PyRuntimes.threading: (_spawn_wsgi_worker, None),
+        },
+        Interfaces.RSGI2: {
+            PyRuntimes.tonio: (_spawn_rsgi2_tonio_worker, (_tonio_runtime_async_pre, _tonio_runtime_async_post))
+        },
+    }
+
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerThread:
-        sig = WorkerSignalSync(threading.Event()) if self.interface == Interfaces.WSGI else WorkerSignal()
+        sig = WorkerSignal()
 
         return WorkerThread(
             parent=self,

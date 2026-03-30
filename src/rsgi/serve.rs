@@ -116,13 +116,19 @@ impl RSGIWorker {
         );
     }
 
-    fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         gen_serve_match!(
             crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -133,6 +139,7 @@ impl RSGIWorker {
 
     fn serve_async<'p>(
         &self,
+        py: Python,
         callback: Py<CallbackScheduler>,
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
@@ -142,7 +149,7 @@ impl RSGIWorker {
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -174,13 +181,19 @@ impl RSGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str_uds(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         gen_serve_match!(
             crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -192,6 +205,7 @@ impl RSGIWorker {
     #[cfg(unix)]
     fn serve_async_uds<'p>(
         &self,
+        py: Python,
         callback: Py<CallbackScheduler>,
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
@@ -201,7 +215,7 @@ impl RSGIWorker {
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,

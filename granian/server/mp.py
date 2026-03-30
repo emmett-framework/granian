@@ -1,7 +1,9 @@
+import asyncio
 import multiprocessing
 import os
 import socket
 import sys
+import threading
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -12,6 +14,7 @@ from .._granian import (
     IPCReceiverHandle,
     IPCSenderHandle,
     ProcInfoCollector,
+    RSGI2Worker,
     RSGIWorker,
     SocketHolder,
     WorkerSignal,
@@ -30,6 +33,7 @@ from .common import (
     HTTP2Settings,
     HTTPModes,
     Interfaces,
+    PyRuntimes,
     RuntimeModes,
     TaskImpl,
     configure_logging,
@@ -88,6 +92,7 @@ class WorkerProcess(AbstractWorker):
 
             loop = loops.get(loop_impl)
             callback = callback_loader()
+            print(target)
             return target(worker_id, callback, sock, _ipc_handle, loop, *args, **kwargs)
 
         return wrapped
@@ -139,6 +144,18 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
         shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = ASGIWorker(
             worker_id,
@@ -160,6 +177,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
 
     @staticmethod
     @WorkerProcess.wrap_target
@@ -193,6 +211,18 @@ class MPServer(AbstractServer[WorkerProcess]):
             _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
         )
         shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         loop.run_until_complete(lifespan_handler.startup())
         if lifespan_handler.interrupt:
@@ -219,6 +249,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
@@ -251,6 +282,19 @@ class MPServer(AbstractServer[WorkerProcess]):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
         shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
         callback_init(loop)
 
         worker = RSGIWorker(
@@ -273,7 +317,133 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         callback_del(loop)
+
+    @staticmethod
+    @WorkerProcess.wrap_target
+    def _spawn_rsgi2_asyncio_worker(
+        worker_id: int,
+        callback: Any,
+        sock: Any,
+        ipc: Any,
+        loop: Any,
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: int | None,
+        blocking_threads: int,
+        blocking_threads_idle_timeout: int,
+        backpressure: int,
+        task_impl: TaskImpl,
+        http_mode: HTTPModes,
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
+        websockets: bool,
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
+        ssl_ctx: SSLCtx,
+        scope_opts: dict[str, Any],
+        metrics: Any,
+    ):
+        from granian._signals import set_loop_signals
+        from granian.rsgi2 import AsyncioRSGIApp
+
+        rsgi_app = AsyncioRSGIApp(callback, loop)
+        shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
+        worker = RSGI2Worker(
+            worker_id,
+            sock,
+            ipc,
+            runtime_threads,
+            runtime_blocking_threads,
+            blocking_threads,
+            blocking_threads_idle_timeout,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            static_path,
+            *ssl_ctx,
+            metrics,
+        )
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve(rsgi_app.rsgi(), None, shutdown_event)
+        loop.run_until_complete(_main())
+
+    @staticmethod
+    @WorkerProcess.wrap_target
+    def _spawn_rsgi2_sync_worker(
+        worker_id: int,
+        callback: Any,
+        sock: Any,
+        ipc: Any,
+        loop: Any,
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: int | None,
+        blocking_threads: int,
+        blocking_threads_idle_timeout: int,
+        backpressure: int,
+        task_impl: TaskImpl,
+        http_mode: HTTPModes,
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
+        websockets: bool,
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
+        ssl_ctx: SSLCtx,
+        scope_opts: dict[str, Any],
+        metrics: Any,
+    ):
+        from granian._signals import set_sync_signals
+        from granian.rsgi2 import SyncRSGIApp
+
+        rsgi_app = SyncRSGIApp(callback)
+        shutdown_event = set_sync_signals()
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
+
+        worker = RSGI2Worker(
+            worker_id,
+            sock,
+            ipc,
+            runtime_threads,
+            runtime_blocking_threads,
+            blocking_threads,
+            blocking_threads_idle_timeout,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            static_path,
+            *ssl_ctx,
+            metrics,
+        )
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve(rsgi_app.rsgi(), None, shutdown_event)
+        _main()
 
     @staticmethod
     @WorkerProcess.wrap_target
@@ -304,6 +474,15 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
         shutdown_event = set_sync_signals()
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = WSGIWorker(
             worker_id,
@@ -324,6 +503,24 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        _main()
+
+    _default_spawners = {
+        Interfaces.ASGI: {
+            PyRuntimes.asyncio: (_spawn_asgi_lifespan_worker, None),
+        },
+        Interfaces.ASGINL: {PyRuntimes.asyncio: (_spawn_asgi_worker, None)},
+        Interfaces.RSGI: {
+            PyRuntimes.asyncio: (_spawn_rsgi_worker, None),
+        },
+        Interfaces.WSGI: {
+            PyRuntimes.threading: (_spawn_wsgi_worker, None),
+        },
+        Interfaces.RSGI2: {
+            PyRuntimes.asyncio: (_spawn_rsgi2_asyncio_worker, None),
+            PyRuntimes.threading: (_spawn_rsgi2_sync_worker, None),
+        },
+    }
 
     def _init_shared_socket(self):
         super()._init_shared_socket()

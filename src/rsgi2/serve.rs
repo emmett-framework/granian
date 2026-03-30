@@ -1,7 +1,224 @@
 use pyo3::prelude::*;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 
-use super::workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignal};
+use super::http::handle;
+
+// use crate::callbacks::CallbackScheduler;
+use super::workers::{Worker, WorkerAcceptor};
+use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
+use crate::net::SocketHolder;
+use crate::workers::{WorkerConfig, WorkerSignal};
+
+#[pyclass(frozen, module = "granian._granian")]
+pub struct RSGI2Worker {
+    config: WorkerConfig,
+}
+
+#[pymethods]
+impl RSGI2Worker {
+    #[new]
+    #[pyo3(
+        signature = (
+            worker_id,
+            sock,
+            ipc,
+            threads=1,
+            blocking_threads=512,
+            py_threads=1,
+            py_threads_idle_timeout=30,
+            backpressure=256,
+            http_mode="1",
+            http1_opts=None,
+            http2_opts=None,
+            websockets_enabled=false,
+            static_files=None,
+            ssl_enabled=false,
+            ssl_cert=None,
+            ssl_key=None,
+            ssl_key_password=None,
+            ssl_protocol_min="1.3",
+            ssl_ca=None,
+            ssl_crl=vec![],
+            ssl_client_verify=false,
+            metrics=(None, None),
+        )
+    )]
+    fn new(
+        py: Python,
+        worker_id: i32,
+        sock: Py<SocketHolder>,
+        ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
+        threads: usize,
+        blocking_threads: usize,
+        py_threads: usize,
+        py_threads_idle_timeout: u64,
+        backpressure: usize,
+        http_mode: &str,
+        http1_opts: Option<Py<PyAny>>,
+        http2_opts: Option<Py<PyAny>>,
+        websockets_enabled: bool,
+        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+        ssl_enabled: bool,
+        ssl_cert: Option<String>,
+        ssl_key: Option<String>,
+        ssl_key_password: Option<String>,
+        ssl_protocol_min: &str,
+        ssl_ca: Option<String>,
+        ssl_crl: Vec<String>,
+        ssl_client_verify: bool,
+        metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
+    ) -> PyResult<Self> {
+        Ok(Self {
+            config: WorkerConfig::new(
+                worker_id,
+                sock,
+                ipc,
+                threads,
+                blocking_threads,
+                py_threads,
+                py_threads_idle_timeout,
+                backpressure,
+                http_mode,
+                worker_http1_config_from_py(py, http1_opts)?,
+                worker_http2_config_from_py(py, http2_opts)?,
+                websockets_enabled,
+                static_files,
+                ssl_enabled,
+                ssl_cert,
+                ssl_key,
+                ssl_key_password,
+                ssl_protocol_min,
+                ssl_ca,
+                ssl_crl,
+                ssl_client_verify,
+                metrics,
+            ),
+        })
+    }
+
+    fn serve_mtr(&self, py: Python, app: Py<super::app::RSGIApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        gen_serve_match!(
+            serve_mt,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
+            self,
+            py,
+            app.get().clone(),
+            event_loop,
+            signal,
+            handle,
+            // FIXME: handle_ws
+            handle
+        );
+    }
+
+    fn serve_str(&self, py: Python, app: Py<super::app::RSGIApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        gen_serve_match!(
+            serve_st,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
+            self,
+            py,
+            app.get().clone(),
+            event_loop,
+            signal,
+            handle,
+            // FIXME: handle_ws
+            handle
+        );
+    }
+
+    // fn serve_async<'p>(
+    //     &self,
+    //     app: Py<super::app::RSGIApp>,
+    //     event_loop: &Bound<'p, PyAny>,
+    //     signal: Py<WorkerSignal>,
+    // ) -> Bound<'p, PyAny> {
+    //     gen_serve_match!(
+    //         serve_fut,
+    //         WorkerAcceptorTcpPlain,
+    //         WorkerAcceptorTcpTls,
+    //         self,
+    //         (),
+    //         app.get().clone(),
+    //         event_loop,
+    //         signal,
+    //         handle,
+    //         // FIXME: handle_ws
+    //         handle
+    //     )
+    // }
+
+    #[cfg(unix)]
+    fn serve_mtr_uds(
+        &self,
+        py: Python,
+        app: Py<super::app::RSGIApp>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
+        gen_serve_match!(
+            serve_mt_uds,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            py,
+            app.get().clone(),
+            event_loop,
+            signal,
+            handle,
+            // FIXME: handle_ws
+            handle
+        );
+    }
+
+    #[cfg(unix)]
+    fn serve_str_uds(
+        &self,
+        py: Python,
+        app: Py<super::app::RSGIApp>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
+        gen_serve_match!(
+            serve_st_uds,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            py,
+            app.get().clone(),
+            event_loop,
+            signal,
+            handle,
+            // FIXME: handle_ws
+            handle
+        );
+    }
+
+    // #[cfg(unix)]
+    // fn serve_async_uds<'p>(
+    //     &self,
+    //     app: Py<super::app::RSGIApp>,
+    //     event_loop: &Bound<'p, PyAny>,
+    //     signal: Py<WorkerSignal>,
+    // ) -> Bound<'p, PyAny> {
+    //     gen_serve_match!(
+    //         serve_fut_uds,
+    //         WorkerAcceptorUdsPlain,
+    //         WorkerAcceptorUdsTls,
+    //         self,
+    //         (),
+    //         app.get().clone(),
+    //         event_loop,
+    //         signal,
+    //         handle,
+    //         // FIXME: handle_ws
+    //         handle
+    //     )
+    // }
+}
+
+// TODO: remove pyloop run_until_complete!
 
 macro_rules! serve_fn {
     (mt $name:ident, $listener:ty, $listener_gen:ident) => {
@@ -17,9 +234,8 @@ macro_rules! serve_fn {
             target: F,
         ) where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -78,7 +294,7 @@ macro_rules! serve_fn {
                 mc_notify.notify_one();
             }
 
-            let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
+            let wrk = super::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
             let tasks = wrk.tasks.clone();
 
             let ml_cvar = cvar.clone();
@@ -132,9 +348,8 @@ macro_rules! serve_fn {
             target: F,
         ) where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -230,7 +445,7 @@ macro_rules! serve_fn {
                         metrics.1.clone(),
                     );
                     let rth = rt.handler();
-                    let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
+                    let wrk = super::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
                     let local = tokio::task::LocalSet::new();
                     let tasks = wrk.tasks.clone();
 
@@ -271,117 +486,17 @@ macro_rules! serve_fn {
             });
         }
     };
-
-    (fut $name:ident, $listener:ty, $listener_gen:ident) => {
-        pub(crate) fn $name<'p, C, A, H, F, M, Ret>(
-            cfg: &WorkerConfig,
-            py: Python,
-            event_loop: &Bound<'p, PyAny>,
-            signal: Py<WorkerSignal>,
-            metrics: (M, Option<crate::metrics::ArcWorkerMetrics>),
-            ctx: C,
-            acceptor: A,
-            handler: H,
-            target: F,
-        ) -> Bound<'p, PyAny>
-        where
-            F: Fn(
-                    crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
-                    crate::net::SockAddr,
-                    crate::net::SockAddr,
-                    crate::http::HTTPRequest,
-                    crate::http::HTTPProto,
-                ) -> Ret
-                + Copy
-                + Send,
-            Ret: Future<Output = crate::http::HTTPResponse>,
-            C: Clone + Send + 'static,
-            A: Clone + Send + 'static,
-            H: Clone + Send + 'static,
-            M: Clone + Send,
-            Worker<C, A, H, F, M>: WorkerAcceptor<$listener> + Send + 'static,
-        {
-            _ = pyo3_log::try_init();
-
-            let worker_id = cfg.id;
-            log::info!("Started worker-{worker_id}");
-
-            let tcp_listener = cfg.$listener_gen();
-            let blocking_threads = cfg.blocking_threads;
-            let py_threads = cfg.py_threads;
-            let py_threads_idle_timeout = cfg.py_threads_idle_timeout;
-            let backpressure = cfg.backpressure;
-
-            let (stx, srx) = tokio::sync::watch::channel(false);
-            let pyloop_r1 = Arc::new(event_loop.clone().unbind());
-            let pyloop_r2 = pyloop_r1.clone();
-
-            let worker = std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(
-                    blocking_threads,
-                    py_threads,
-                    py_threads_idle_timeout,
-                    pyloop_r1,
-                    metrics.1.clone(),
-                );
-                let rth = rt.handler();
-                let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
-                let tasks = wrk.tasks.clone();
-
-                rt.inner.block_on(async move {
-                    wrk.listen(srx, tcp_listener, backpressure).await;
-
-                    log::info!("Stopping worker-{worker_id}");
-
-                    tasks.close();
-                    tasks.wait().await;
-
-                    Python::attach(|_| drop(wrk));
-                });
-
-                Python::attach(|_| drop(rt));
-            });
-
-            let ret = event_loop.call_method0("create_future").unwrap();
-            let pyfut = ret.clone().unbind();
-
-            let pysig = signal.clone_ref(py);
-            std::thread::spawn(move || {
-                let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
-                _ = pyrx.recv();
-                let foo = stx.send(true);
-                println!("sig res {:?}", foo);
-                worker.join().unwrap();
-
-                Python::attach(|py| {
-                    let cb = pyfut.getattr(py, "set_result").unwrap();
-                    _ = pyloop_r2.call_method1(
-                        py,
-                        "call_soon_threadsafe",
-                        (crate::callbacks::PyFutureResultSetter, cb, py.None()),
-                    );
-                    drop(pyfut);
-                    drop(pyloop_r2);
-                    drop(signal);
-                });
-            });
-
-            ret
-        }
-    };
 }
 
 serve_fn!(mt serve_mt, std::net::TcpListener, tcp_listener);
 serve_fn!(st serve_st, std::net::TcpListener, tcp_listener);
-serve_fn!(fut serve_fut, std::net::TcpListener, tcp_listener);
+// serve_fn!(fut serve_fut, std::net::TcpListener, tcp_listener);
 #[cfg(unix)]
 serve_fn!(mt serve_mt_uds, std::os::unix::net::UnixListener, uds_listener);
 #[cfg(unix)]
 serve_fn!(st serve_st_uds, std::os::unix::net::UnixListener, uds_listener);
-#[cfg(unix)]
-serve_fn!(fut serve_fut_uds, std::os::unix::net::UnixListener, uds_listener);
+// #[cfg(unix)]
+// serve_fn!(fut serve_fut_uds, std::os::unix::net::UnixListener, uds_listener);
 
 macro_rules! gen_serve_impl {
     ($sm:expr, $self:expr, $py:expr, $event_loop:expr, $signal:expr, $metrics:expr, $metrics_opt:expr, $ctx:expr, $acceptor:expr, $proto:expr, $target:expr) => {{
@@ -402,7 +517,7 @@ macro_rules! gen_serve_impl {
 macro_rules! gen_serve_match_proto {
     ($sm:expr, $self:expr, $py:expr, $event_loop:expr, $signal:expr, $metrics:expr, $metrics_opt:expr, $ctx:expr, $acceptor:expr, $target:expr, $targetws:expr) => {{
         match (&$self.config.http_mode[..], $self.config.websockets_enabled) {
-            ("auto", false) => crate::serve::gen_serve_impl!(
+            ("auto", false) => gen_serve_impl!(
                 $sm,
                 $self,
                 $py,
@@ -412,15 +527,15 @@ macro_rules! gen_serve_match_proto {
                 $metrics_opt,
                 $ctx,
                 $acceptor,
-                crate::workers::WorkerHandlerHA {
+                super::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                     metrics: $metrics.clone(),
-                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
+                    _upgrades: std::marker::PhantomData::<super::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target
             ),
-            ("auto", true) => crate::serve::gen_serve_impl!(
+            ("auto", true) => gen_serve_impl!(
                 $sm,
                 $self,
                 $py,
@@ -430,15 +545,15 @@ macro_rules! gen_serve_match_proto {
                 $metrics_opt,
                 $ctx,
                 $acceptor,
-                crate::workers::WorkerHandlerHA {
+                super::workers::WorkerHandlerHA {
                     opts_h1: $self.config.http1_opts.clone(),
                     opts_h2: $self.config.http2_opts.clone(),
                     metrics: $metrics.clone(),
-                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
+                    _upgrades: std::marker::PhantomData::<super::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws
             ),
-            ("1", false) => crate::serve::gen_serve_impl!(
+            ("1", false) => gen_serve_impl!(
                 $sm,
                 $self,
                 $py,
@@ -448,14 +563,14 @@ macro_rules! gen_serve_match_proto {
                 $metrics_opt,
                 $ctx,
                 $acceptor,
-                crate::workers::WorkerHandlerH1 {
+                super::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
                     metrics: $metrics.clone(),
-                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnNoUpgrades>,
+                    _upgrades: std::marker::PhantomData::<super::workers::WorkerMarkerConnNoUpgrades>,
                 },
                 $target
             ),
-            ("1", true) => crate::serve::gen_serve_impl!(
+            ("1", true) => gen_serve_impl!(
                 $sm,
                 $self,
                 $py,
@@ -465,14 +580,14 @@ macro_rules! gen_serve_match_proto {
                 $metrics_opt,
                 $ctx,
                 $acceptor,
-                crate::workers::WorkerHandlerH1 {
+                super::workers::WorkerHandlerH1 {
                     opts: $self.config.http1_opts.clone(),
                     metrics: $metrics.clone(),
-                    _upgrades: std::marker::PhantomData::<crate::workers::WorkerMarkerConnUpgrades>,
+                    _upgrades: std::marker::PhantomData::<super::workers::WorkerMarkerConnUpgrades>,
                 },
                 $targetws
             ),
-            ("2", _) => crate::serve::gen_serve_impl!(
+            ("2", _) => gen_serve_impl!(
                 $sm,
                 $self,
                 $py,
@@ -482,7 +597,7 @@ macro_rules! gen_serve_match_proto {
                 $metrics_opt,
                 $ctx,
                 $acceptor,
-                crate::workers::WorkerHandlerH2 {
+                super::workers::WorkerHandlerH2 {
                     opts: $self.config.http2_opts.clone(),
                     metrics: $metrics.clone(),
                 },
@@ -496,7 +611,7 @@ macro_rules! gen_serve_match_proto {
 macro_rules! gen_serve_match_tls {
     ($sm:expr, $self:expr, $py:expr, $event_loop:expr, $signal:expr, $metrics:expr, $metrics_opt:expr, $ctx:expr, $acceptor_plain:ident, $acceptor_tls:ident, $target:expr, $targetws:expr) => {{
         match $self.config.tls_opts.is_some() {
-            false => crate::serve::gen_serve_match_proto!(
+            false => gen_serve_match_proto!(
                 $sm,
                 $self,
                 $py,
@@ -505,11 +620,11 @@ macro_rules! gen_serve_match_tls {
                 $metrics,
                 $metrics_opt,
                 $ctx,
-                crate::workers::$acceptor_plain {},
+                super::workers::$acceptor_plain {},
                 $target,
                 $targetws
             ),
-            true => crate::serve::gen_serve_match_proto!(
+            true => gen_serve_match_proto!(
                 $sm,
                 $self,
                 $py,
@@ -518,7 +633,7 @@ macro_rules! gen_serve_match_tls {
                 $metrics,
                 $metrics_opt,
                 $ctx,
-                crate::workers::$acceptor_tls {
+                super::workers::$acceptor_tls {
                     opts: $self.config.tls_cfg().into(),
                 },
                 $target,
@@ -531,7 +646,7 @@ macro_rules! gen_serve_match_tls {
 macro_rules! gen_serve_match_files {
     ($sm:expr, $self:expr, $py:expr, $event_loop:expr, $signal:expr, $metrics:expr, $metrics_opt:expr, $callback:expr, $acceptor_plain:ident, $acceptor_tls:ident, $target:expr, $targetws:expr) => {{
         match $self.config.static_files.is_some() {
-            false => crate::serve::gen_serve_match_tls!(
+            false => gen_serve_match_tls!(
                 $sm,
                 $self,
                 $py,
@@ -539,13 +654,13 @@ macro_rules! gen_serve_match_files {
                 $signal,
                 $metrics,
                 $metrics_opt,
-                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
+                super::workers::WorkerCTXBase::new($callback, $metrics.clone()),
                 $acceptor_plain,
                 $acceptor_tls,
                 $target,
                 $targetws
             ),
-            true => crate::serve::gen_serve_match_tls!(
+            true => gen_serve_match_tls!(
                 $sm,
                 $self,
                 $py,
@@ -553,7 +668,7 @@ macro_rules! gen_serve_match_files {
                 $signal,
                 $metrics,
                 $metrics_opt,
-                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
+                super::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
                 $acceptor_plain,
                 $acceptor_tls,
                 $target,
@@ -567,7 +682,7 @@ macro_rules! gen_serve_match {
     ($sm:expr, $acceptor_plain:ident, $acceptor_tls:ident, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {{
         let metrics_obj = std::sync::Arc::new(crate::metrics::WorkerMetrics::new());
         match $self.config.metrics.0.is_some() {
-            false => crate::serve::gen_serve_match_files!(
+            false => gen_serve_match_files!(
                 $sm,
                 $self,
                 $py,
@@ -581,7 +696,7 @@ macro_rules! gen_serve_match {
                 $target,
                 $targetws
             ),
-            true => crate::serve::gen_serve_match_files!(
+            true => gen_serve_match_files!(
                 $sm,
                 $self,
                 $py,

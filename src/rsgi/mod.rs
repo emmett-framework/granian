@@ -2,11 +2,11 @@ use pyo3::prelude::*;
 
 mod callbacks;
 pub(crate) mod conversion;
-mod errors;
+pub(crate) mod errors;
 mod http;
 pub(crate) mod io;
 pub(crate) mod serve;
-mod types;
+pub(crate) mod types;
 
 pub(crate) fn init_pymodule(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("RSGIProtocolError", py.get_type::<errors::RSGIProtocolError>())?;
