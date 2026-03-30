@@ -1,11 +1,11 @@
 import asyncio
 import time
-from functools import wraps
 
+from ._interop import App as _App
 from .log import log_request_builder, logger
 
 
-class LifespanProtocol:
+class AsyncIOLifespanProtocol:
     error_transition = 'Invalid lifespan state transition'
 
     def __init__(self, callable):
@@ -105,37 +105,6 @@ class LifespanProtocol:
         handler(self, message)
 
 
-def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
-    root_url_path = scope_opts.get('url_path_prefix') or ''
-
-    def _runner(scope, proto):
-        scope.update(root_path=root_url_path, state=state.copy())
-        return callback(scope, proto.receive, proto.send)
-
-    async def _http_logger(scope, proto):
-        rt, mt = time.time(), time.perf_counter()
-        try:
-            rv = await _runner(scope, proto)
-        finally:
-            access_log(rt, mt, scope, proto.sent_response_code)
-        return rv
-
-    def _ws_logger(scope, proto):
-        access_log(time.time(), time.perf_counter(), scope, 101)
-        return _runner(scope, proto)
-
-    def _logger(scope, proto):
-        if scope['type'] == 'http':
-            return _http_logger(scope, proto)
-        return _ws_logger(scope, proto)
-
-    access_log = _build_access_logger(access_log_fmt)
-    wrapper = _logger if access_log_fmt else _runner
-    wraps(callback)(wrapper)
-
-    return wrapper
-
-
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
@@ -163,3 +132,56 @@ def _build_access_logger(fmt):
         logger(rt, mt, data, resp_code)
 
     return _access_log_with_headers if logger.parse_headers else _access_log
+
+
+class AsyncIOASGIApp(_App):
+    __slots__ = ['_inner', '_loop', '_tasks', '_state', '_log', '_root_path']
+
+    def __init__(self, app, loop, state, scope_opts=None, access_log_fmt=None):
+        self._inner = app
+        self._loop = loop
+        self._tasks = set()
+        self._log = _build_access_logger(access_log_fmt)
+        self._state = state
+        self._root_path = (scope_opts or {}).get('url_path_prefix') or ''
+
+    async def _asgi(self, proto, scope):
+        scope.update(root_path=self._root_path, state=self._state.copy())
+        try:
+            await self._inner(scope, proto.receive, proto.send)
+        except BaseException:
+            logger.error('Application callable raised an exception', exc_info=True)
+        finally:
+            proto._close()
+
+    async def _http_wlog(self, proto, scope):
+        scope.update(root_path=self._root_path, state=self._state.copy())
+        rt, mt = time.time(), time.perf_counter()
+        try:
+            await self._inner(scope, proto.receive, proto.send)
+        except BaseException:
+            logger.error('Application callable raised an exception', exc_info=True)
+        finally:
+            proto._close()
+            self._log(rt, mt, scope, proto.sent_response_code)
+
+    def _ws_wlog(self, proto, scope):
+        self._log(time.time(), time.perf_counter(), scope, 101)
+        return self._asgi(proto, scope)
+
+    def _crate_task(self, method, proto, scope):
+        task = self._loop.create_task(method(proto, scope))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    def on_request(self, proto, scope):
+        self._loop.call_soon_threadsafe(self._crate_task, self._asgi, proto, scope)
+
+    def on_websocket(self, proto, scope):
+        self._loop.call_soon_threadsafe(self._crate_task, self._asgi, proto, scope)
+
+    def on_request_wlog(self, proto, scope):
+        self._loop.call_soon_threadsafe(self._crate_task, self._http_wlog, proto, scope)
+
+    def on_websocket_wlog(self, proto, scope):
+        self._loop.call_soon_threadsafe(self._crate_task, self._ws_wlog, proto, scope)

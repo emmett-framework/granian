@@ -7,14 +7,13 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
 from .._imports import dotenv
 from .._internal import load_env
 from .._types import SSLCtx
-from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
+from ..asgi import AsyncIOASGIApp, AsyncIOLifespanProtocol
 from ..errors import ConfigurationError, FatalError
-from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
+from ..rsgi import AsyncIORSGIApp, _callbacks_from_target as _rsgi_cbs_from_target
 from .common import (
     _PY_312,
     _PYV,
@@ -184,7 +183,7 @@ class Server(AbstractServer[AsyncWorker]):
                 self.blocking_threads,
                 self.blocking_threads_idle_timeout,
                 self.backpressure,
-                self.task_impl,
+                # self.task_impl,
                 self.http,
                 self.http1_settings,
                 self.http2_settings,
@@ -210,7 +209,7 @@ class Server(AbstractServer[AsyncWorker]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -220,7 +219,7 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
     ):
-        wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
+        app_builder = AsyncIOASGIApp(callback, loop, {}, scope_opts, log_access_fmt)
         fut = loop.create_future()
 
         def shutdown_glue():
@@ -239,6 +238,7 @@ class Server(AbstractServer[AsyncWorker]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -249,8 +249,7 @@ class Server(AbstractServer[AsyncWorker]):
             (None, None),
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(app_builder.build(bool(log_access_fmt)), loop, shutdown_event)
         await fut
 
     @staticmethod
@@ -266,7 +265,7 @@ class Server(AbstractServer[AsyncWorker]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -276,10 +275,8 @@ class Server(AbstractServer[AsyncWorker]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
     ):
-        lifespan_handler = LifespanProtocol(callback)
-        wcallback = _future_watcher_wrapper(
-            _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
-        )
+        lifespan_handler = AsyncIOLifespanProtocol(callback)
+        app_builder = AsyncIOASGIApp(callback, loop, lifespan_handler.state, scope_opts, log_access_fmt)
 
         await lifespan_handler.startup()
         if lifespan_handler.interrupt:
@@ -304,6 +301,7 @@ class Server(AbstractServer[AsyncWorker]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -314,8 +312,7 @@ class Server(AbstractServer[AsyncWorker]):
             (None, None),
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(app_builder.build(bool(log_access_fmt)), loop, shutdown_event)
         await fut
         await lifespan_handler.shutdown()
 
@@ -332,7 +329,7 @@ class Server(AbstractServer[AsyncWorker]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -343,7 +340,7 @@ class Server(AbstractServer[AsyncWorker]):
         scope_opts: dict[str, Any],
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
-        wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
+        rsgi_app = AsyncIORSGIApp(callback, loop, log_access_fmt)
         fut = loop.create_future()
 
         def shutdown_glue():
@@ -364,6 +361,7 @@ class Server(AbstractServer[AsyncWorker]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -374,8 +372,7 @@ class Server(AbstractServer[AsyncWorker]):
             (None, None),
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(rsgi_app.build(bool(log_access_fmt)), None, shutdown_event)
         await fut
         callback_del(loop)
 

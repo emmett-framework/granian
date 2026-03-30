@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404},
+    http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404, response_500},
     runtime::{
         Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
     },
@@ -360,6 +360,12 @@ impl ASGIHTTPProtocol {
         }
     }
 
+    fn _close(&self) {
+        if let Some(tx) = self.tx() {
+            _ = tx.send(response_500());
+        }
+    }
+
     #[getter(sent_response_code)]
     fn get_sent_response_code(&self) -> u16 {
         self.sent_response_code.load(atomic::Ordering::Relaxed)
@@ -655,6 +661,12 @@ impl ASGIWebsocketProtocol {
             Ok(ASGIMessageType::HTTPResponseStart(intent)) => self.start_response(py, intent),
             Ok(ASGIMessageType::HTTPResponseBody((body, more))) => self.send_response(py, body, more),
             _ => err_future_into_py(py, error_message!()),
+        }
+    }
+
+    fn _close(&self) {
+        if let (Some(tx), res) = self.tx() {
+            _ = tx.send(res);
         }
     }
 }

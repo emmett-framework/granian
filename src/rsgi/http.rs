@@ -5,13 +5,13 @@ use std::sync::Arc;
 use tokio::sync::{Notify, mpsc};
 
 use super::{
-    callbacks::{call_http, call_ws},
+    interop::{call_http, call_ws},
     types::{PyResponse, RSGIHTTPScope as HTTPScope, RSGIWebsocketScope as WebsocketScope},
 };
 use crate::{
-    callbacks::ArcCBScheduler,
     http::{HTTPProto, HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
     net::SockAddr,
+    py::interop::ArcApp,
     runtime::{Runtime, RuntimeRef},
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
@@ -49,7 +49,7 @@ macro_rules! handle_request {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            callback: ArcCBScheduler,
+            callback: ArcApp,
             server_addr: SockAddr,
             client_addr: SockAddr,
             req: HTTPRequest,
@@ -67,7 +67,7 @@ macro_rules! handle_request_with_ws {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            callback: ArcCBScheduler,
+            callback: ArcApp,
             server_addr: SockAddr,
             client_addr: SockAddr,
             mut req: HTTPRequest,

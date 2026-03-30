@@ -18,7 +18,7 @@ macro_rules! serve_fn {
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -45,6 +45,7 @@ macro_rules! serve_fn {
                     cfg.py_threads,
                     cfg.py_threads_idle_timeout,
                     rtpyloop,
+                    cfg.py_loopback_thread,
                     metrics.1.clone(),
                 )
             });
@@ -134,7 +135,7 @@ macro_rules! serve_fn {
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -170,7 +171,7 @@ macro_rules! serve_fn {
                 let py_loop = py_loop.clone();
 
                 let thread = std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(1, 0, 0, py_loop, None);
+                    let rt = crate::runtime::init_runtime_st(1, 0, 0, py_loop, false, None);
                     let local = tokio::task::LocalSet::new();
 
                     #[cfg(not(Py_GIL_DISABLED))]
@@ -212,6 +213,7 @@ macro_rules! serve_fn {
                 let blocking_threads = cfg.blocking_threads;
                 let py_threads = cfg.py_threads;
                 let py_threads_idle_timeout = cfg.py_threads_idle_timeout;
+                let py_loopback_thread = cfg.py_loopback_thread;
                 let backpressure = cfg.backpressure;
                 let metrics = metrics.clone();
                 let ctx = ctx.clone();
@@ -227,6 +229,7 @@ macro_rules! serve_fn {
                         py_threads,
                         py_threads_idle_timeout,
                         py_loop,
+                        py_loopback_thread,
                         metrics.1.clone(),
                     );
                     let rth = rt.handler();
@@ -286,7 +289,7 @@ macro_rules! serve_fn {
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -310,6 +313,7 @@ macro_rules! serve_fn {
             let blocking_threads = cfg.blocking_threads;
             let py_threads = cfg.py_threads;
             let py_threads_idle_timeout = cfg.py_threads_idle_timeout;
+            let py_loopback_thread = cfg.py_loopback_thread;
             let backpressure = cfg.backpressure;
 
             let (stx, srx) = tokio::sync::watch::channel(false);
@@ -321,6 +325,7 @@ macro_rules! serve_fn {
                     py_threads,
                     py_threads_idle_timeout,
                     py_loop,
+                    py_loopback_thread,
                     metrics.1.clone(),
                 );
                 let rth = rt.handler();

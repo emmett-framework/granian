@@ -1,6 +1,4 @@
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tokio::sync::{Notify, SetOnce, oneshot};
 
 use super::{
@@ -8,143 +6,17 @@ use super::{
     utils::{build_scope_http, build_scope_ws},
 };
 use crate::{
-    callbacks::ArcCBScheduler,
-    http::{HTTPProto, HTTPResponse, response_500},
+    http::{HTTPProto, HTTPResponse},
     net::SockAddr,
+    py::interop::ArcApp,
     runtime::{Runtime, RuntimeRef},
-    utils::{GuardedReceiver, log_application_callable_exception},
+    utils::GuardedReceiver,
     ws::{HyperWebsocket, UpgradeData},
 };
 
-macro_rules! callback_impl_done_http {
-    ($self:expr) => {
-        if let Some(tx) = $self.proto.get().tx() {
-            let _ = tx.send(response_500());
-        }
-    };
-}
-
-macro_rules! callback_impl_done_ws {
-    ($self:expr) => {
-        if let (Some(tx), res) = $self.proto.get().tx() {
-            let _ = tx.send(res);
-        }
-    };
-}
-
-macro_rules! callback_impl_done_err {
-    ($self:expr, $py:expr, $err:expr) => {
-        $self.done();
-        log_application_callable_exception($py, $err);
-    };
-}
-
-macro_rules! callback_impl_taskref {
-    ($self:expr, $py:expr, $task:expr) => {
-        let _ = $self.aio_taskref.set($task.clone_ref($py));
-    };
-}
-
-#[pyclass(frozen)]
-pub(crate) struct CallbackWatcherHTTP {
-    #[pyo3(get)]
-    proto: Py<HTTPProtocol>,
-    #[pyo3(get)]
-    scope: Py<PyDict>,
-    aio_taskref: OnceLock<Py<PyAny>>,
-}
-
-impl CallbackWatcherHTTP {
-    pub fn new(py: Python, proto: HTTPProtocol, scope: Bound<PyDict>) -> PyResult<Py<Self>> {
-        Py::new(
-            py,
-            Self {
-                proto: Py::new(py, proto)?,
-                scope: scope.unbind(),
-                aio_taskref: OnceLock::new(),
-            },
-        )
-    }
-}
-
-#[pymethods]
-impl CallbackWatcherHTTP {
-    fn done(&self) {
-        callback_impl_done_http!(self);
-    }
-
-    fn err(&self, py: Python, err: Bound<PyAny>) {
-        callback_impl_done_err!(self, py, &PyErr::from_value(err));
-    }
-
-    fn taskref(&self, py: Python, task: Py<PyAny>) {
-        callback_impl_taskref!(self, py, task);
-    }
-}
-
-#[pyclass(frozen)]
-pub(crate) struct CallbackWatcherWebsocket {
-    #[pyo3(get)]
-    proto: Py<WebsocketProtocol>,
-    #[pyo3(get)]
-    scope: Py<PyDict>,
-    aio_taskref: OnceLock<Py<PyAny>>,
-}
-
-impl CallbackWatcherWebsocket {
-    pub fn new(py: Python, proto: WebsocketProtocol, scope: Bound<PyDict>) -> PyResult<Py<Self>> {
-        Py::new(
-            py,
-            Self {
-                proto: Py::new(py, proto)?,
-                scope: scope.unbind(),
-                aio_taskref: OnceLock::new(),
-            },
-        )
-    }
-}
-
-#[pymethods]
-impl CallbackWatcherWebsocket {
-    fn done(&self) {
-        callback_impl_done_ws!(self);
-    }
-
-    fn err(&self, py: Python, err: Bound<PyAny>) {
-        callback_impl_done_err!(self, py, &PyErr::from_value(err));
-    }
-
-    fn taskref(&self, py: Python, task: Py<PyAny>) {
-        callback_impl_taskref!(self, py, task);
-    }
-}
-
-// NOTE: we cannot use single `impl` function as structs with pyclass won't handle
-//       dyn fields easily.
-// pub(crate) async fn call(
-//     cb: CallbackWrapper,
-//     protocol: impl ASGIProtocol + IntoPy<Py<PyAny>>,
-//     scope: Scope
-// ) -> Result<(), ASGIFlowError> {
-//     let (tx, rx) = oneshot::channel();
-//     let callback = cb.callback.clone();
-//     Python::with_gil(|py| {
-//         callback.call1(py, (CallbackWatcher::new(py, cb, tx), scope, protocol))
-//     })?;
-
-//     match rx.await {
-//         Ok(true) => Ok(()),
-//         Ok(false) => {
-//             log::warn!("Application callable raised an exception");
-//             error_flow!()
-//         },
-//         _ => error_flow!()
-//     }
-// }
-
 #[inline]
 pub(crate) fn call_http(
-    cb: ArcCBScheduler,
+    app: ArcApp,
     rt: RuntimeRef,
     server_addr: SockAddr,
     client_addr: SockAddr,
@@ -157,10 +29,8 @@ pub(crate) fn call_http(
     let protocol = HTTPProtocol::new(rt.clone(), disconnect_guard.clone(), body, tx);
 
     rt.spawn_blocking(move |py| {
-        if let Ok(scope) = build_scope_http(py, req, server_addr, client_addr, scheme)
-            && let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope)
-        {
-            cb.get().schedule(py, watcher);
+        if let Ok(scope) = build_scope_http(py, req, server_addr, client_addr, scheme) {
+            app.get().handle_request(py, (protocol, scope));
         }
     });
 
@@ -169,7 +39,7 @@ pub(crate) fn call_http(
 
 #[inline]
 pub(crate) fn call_ws(
-    cb: ArcCBScheduler,
+    app: ArcApp,
     rt: RuntimeRef,
     disconnect_guard: Arc<Notify>,
     server_addr: SockAddr,
@@ -183,10 +53,8 @@ pub(crate) fn call_ws(
     let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard);
 
     rt.spawn_blocking(move |py| {
-        if let Ok(scope) = build_scope_ws(py, req, server_addr, client_addr, scheme)
-            && let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope)
-        {
-            cb.get().schedule(py, watcher);
+        if let Ok(scope) = build_scope_ws(py, req, server_addr, client_addr, scheme) {
+            app.get().handle_websocket(py, (protocol, scope));
         }
     });
 

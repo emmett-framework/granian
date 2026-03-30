@@ -25,6 +25,12 @@ class RuntimeModes(StrEnum):
     st = 'st'
 
 
+class PyRuntimes(StrEnum):
+    asyncio = 'asyncio'
+    tonio = 'tonio'
+    threading = 'threading'
+
+
 class Loops(StrEnum):
     auto = 'auto'
     asyncio = 'asyncio'

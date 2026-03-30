@@ -21,11 +21,11 @@ impl<'p> IntoPyObject<'p> for Utf8BytesToPy {
 pub(crate) enum FutureResultToPy {
     None,
     Err(PyResult<()>),
-    Bytes(hyper::body::Bytes),
+    // Bytes(hyper::body::Bytes),
     ASGIMessage(crate::asgi::types::ASGIMessageType),
     ASGIWSMessage(tokio_tungstenite::tungstenite::Message),
-    RSGIWSAccept(crate::rsgi::io::RSGIWebsocketTransport),
-    RSGIWSMessage(tokio_tungstenite::tungstenite::Message),
+    // RSGIWSAccept(crate::rsgi::io::RSGIWebsocketTransport),
+    // RSGIWSMessage(tokio_tungstenite::tungstenite::Message),
 }
 
 impl<'p> IntoPyObject<'p> for FutureResultToPy {
@@ -37,11 +37,11 @@ impl<'p> IntoPyObject<'p> for FutureResultToPy {
         match self {
             Self::None => Ok(py.None().into_bound(py)),
             Self::Err(res) => Err(res.err().unwrap()),
-            Self::Bytes(inner) => inner.into_bound_py_any(py),
+            // Self::Bytes(inner) => inner.into_bound_py_any(py),
             Self::ASGIMessage(message) => crate::asgi::conversion::message_into_py(py, message),
             Self::ASGIWSMessage(message) => crate::asgi::conversion::ws_message_into_py(py, message),
-            Self::RSGIWSAccept(obj) => obj.into_bound_py_any(py),
-            Self::RSGIWSMessage(message) => crate::rsgi::conversion::ws_message_into_py(py, message),
+            // Self::RSGIWSAccept(obj) => obj.into_bound_py_any(py),
+            // Self::RSGIWSMessage(message) => crate::rsgi::conversion::ws_message_into_py(py, message),
         }
     }
 }

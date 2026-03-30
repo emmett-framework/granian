@@ -30,6 +30,7 @@ lint-rust:
 		-A clippy::cast-possible-truncation \
 		-A clippy::cast-sign-loss \
 		-A clippy::declare-interior-mutable-const \
+		-A clippy::fn_params_excessive_bools \
 		-A clippy::inline-always \
 		-A clippy::match-bool \
 		-A clippy::match-same-arms \

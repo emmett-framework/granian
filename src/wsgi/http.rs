@@ -2,9 +2,9 @@ use hyper::Response;
 
 use super::callbacks::call_http;
 use crate::{
-    callbacks::ArcCBScheduler,
     http::{HTTPProto, HTTPRequest, HTTPResponse, HTTPResponseBody, response_500},
     net::SockAddr,
+    py::interop::ArcApp,
     runtime::RuntimeRef,
 };
 
@@ -19,14 +19,14 @@ fn build_response(status: u16, pyheaders: hyper::HeaderMap, body: HTTPResponseBo
 #[inline]
 pub(crate) async fn handle(
     rt: RuntimeRef,
-    callback: ArcCBScheduler,
+    callback: ArcApp,
     server_addr: SockAddr,
     client_addr: SockAddr,
     req: HTTPRequest,
     scheme: HTTPProto,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
-    if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
+    if let Ok((status, headers, body)) = call_http(callback, rt, server_addr, client_addr, scheme, parts, body).await {
         return build_response(status, headers, body);
     }
 

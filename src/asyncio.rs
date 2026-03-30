@@ -22,18 +22,18 @@ pub(crate) fn empty_context(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
         .bind(py))
 }
 
-#[cfg(not(PyPy))]
-#[inline(always)]
-pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
-    let ctx = unsafe {
-        let ptr = pyo3::ffi::PyContext_CopyCurrent();
-        Bound::from_owned_ptr(py, ptr)
-    };
-    ctx.unbind()
-}
+// #[cfg(not(PyPy))]
+// #[inline(always)]
+// pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
+//     let ctx = unsafe {
+//         let ptr = pyo3::ffi::PyContext_CopyCurrent();
+//         Bound::from_owned_ptr(py, ptr)
+//     };
+//     ctx.unbind()
+// }
 
-#[cfg(PyPy)]
-#[inline(always)]
-pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
-    contextvars(py).unwrap().call_method0("copy_context").unwrap().unbind()
-}
+// #[cfg(PyPy)]
+// #[inline(always)]
+// pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
+//     contextvars(py).unwrap().call_method0("copy_context").unwrap().unbind()
+// }
