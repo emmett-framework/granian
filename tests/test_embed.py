@@ -8,7 +8,7 @@ from granian.server.embed import Server as EmbeddedGranian
 
 
 async def app(scope, protocol):
-    protocol.response_str(200, [], 'hello')
+    protocol.write_str(200, [], 'hello')
 
 
 @pytest.fixture(scope='function')

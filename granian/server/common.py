@@ -17,11 +17,12 @@ from .._granian import MetricsAggregator, MetricsExporter, WorkerSignal
 from .._imports import dotenv, setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
-from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
+from ..constants import HTTPModes, Interfaces, Loops, PyRuntimes, RuntimeModes, SSLProtocols, TaskImpl
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
 from ..net import SocketSpec, UnixSocketSpec
+from ._runtimes import _wrap_runtime_hook
 
 
 WT = TypeVar('WT')
@@ -101,6 +102,8 @@ class AbstractServer(Generic[WT]):
         runtime_threads: int = 1,
         runtime_blocking_threads: int | None = None,
         runtime_mode: RuntimeModes = RuntimeModes.auto,
+        py_runtime: PyRuntimes | None = None,
+        py_runtime_threads: int = 1,
         loop: Loops = Loops.auto,
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
@@ -161,6 +164,13 @@ class AbstractServer(Generic[WT]):
         self.runtime_threads = max(1, runtime_threads)
         self.runtime_blocking_threads = 512 if runtime_blocking_threads is None else max(1, runtime_blocking_threads)
         self.runtime_mode = runtime_mode
+        self.pyruntime = py_runtime or {
+            Interfaces.ASGI: PyRuntimes.asyncio,
+            Interfaces.ASGINL: PyRuntimes.asyncio,
+            Interfaces.RSGI: PyRuntimes.asyncio,
+            Interfaces.WSGI: PyRuntimes.threading,
+        }.get(interface)
+        self.pyruntime_threads = max(1, py_runtime_threads)
         self.loop = loop
         self.task_impl = task_impl
         self.http = http
@@ -211,6 +221,8 @@ class AbstractServer(Generic[WT]):
         self.hooks_startup = []
         self.hooks_reload = []
         self.hooks_shutdown = []
+        self._hspawn_startup = None
+        self._hspawn_shutdown = None
 
         configure_logging(self.log_level, self.log_config, self.log_enabled)
 
@@ -301,9 +313,13 @@ class AbstractServer(Generic[WT]):
         return f'unix:{self.bind_uds}' if self.bind_uds else f'{self.bind_addr}:{self.bind_port}'
 
     @staticmethod
-    def _call_hooks(hooks):
+    def _call_hooks(hooks, pre=None, post=None):
+        if pre:
+            pre()
         for hook in hooks:
             hook()
+        if post:
+            post()
 
     def on_startup(self, hook: Callable[[], Any]) -> Callable[[], Any]:
         self.hooks_startup.append(hook)
@@ -490,7 +506,7 @@ class AbstractServer(Generic[WT]):
         logger.info(f'Listening at: {proto}://{self._bind_addr_fmt}')
 
         self._env_loader(self.env_files)
-        self._call_hooks(self.hooks_startup)
+        self._call_hooks(self.hooks_startup, pre=self._hspawn_startup)
         self._spawn_workers(spawn_target, target_loader)
 
         if self.workers_lifetime is not None:
@@ -507,7 +523,7 @@ class AbstractServer(Generic[WT]):
             self._stop_metrics()
         self._stop_workers()
         self._stop_ipc()
-        self._call_hooks(self.hooks_shutdown)
+        self._call_hooks(self.hooks_shutdown, post=self._hspawn_shutdown)
         self._unlink_pidfile()
 
         logger.info('Granian shutdown completed, see ya!')
@@ -639,13 +655,8 @@ class AbstractServer(Generic[WT]):
         spawn_target: Callable[..., None] | None = None,
         target_loader: Callable[..., Callable[..., Any]] | None = None,
         wrap_loader: bool = True,
+        _default_spawners=None,
     ):
-        default_spawners = {
-            Interfaces.ASGI: self._spawn_asgi_lifespan_worker,
-            Interfaces.ASGINL: self._spawn_asgi_worker,
-            Interfaces.RSGI: self._spawn_rsgi_worker,
-            Interfaces.WSGI: self._spawn_wsgi_worker,
-        }
         if target_loader:
             if wrap_loader:
                 target_loader = partial(target_loader, self.target)
@@ -653,7 +664,22 @@ class AbstractServer(Generic[WT]):
             target_loader = partial(load_target, self.target, wd=self.working_dir, factory=self.factory)
 
         if not spawn_target:
-            spawn_target = default_spawners[self.interface]
+            _default_spawners = _default_spawners or {}
+            try:
+                spawn_target, spawn_hooks = _default_spawners[self.interface][self.pyruntime]
+            except Exception:
+                logger.error(f'No implementation available for {self.interface} interface and {self.pyruntime} runtime')
+                raise ConfigurationError('py_runtime')
+
+            try:
+                hpre, hpost = spawn_hooks
+                if hpre:
+                    self._hspawn_startup = _wrap_runtime_hook(self, hpre)
+                if hpost:
+                    self._hspawn_shutdown = _wrap_runtime_hook(self, hpost)
+            except Exception:
+                pass
+
             if sys.platform == 'win32' and self.workers > 1:
                 self.workers = 1
                 logger.warn(
@@ -666,9 +692,9 @@ class AbstractServer(Generic[WT]):
             logger.error('Unix Domain sockets are not available on Windows')
             raise ConfigurationError('uds')
 
-        if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
-            logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
-            raise ConfigurationError('blocking_threads')
+        # if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
+        #     logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
+        #     raise ConfigurationError('blocking_threads')
 
         if self.websockets:
             if self.interface == Interfaces.WSGI:

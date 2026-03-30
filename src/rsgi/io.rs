@@ -12,19 +12,19 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, SetOnce, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
-    errors::{error_proto, error_stream},
+    conversion, errors,
     types::{PyResponse, PyResponseBody, PyResponseFile, PyResponseFileRange},
 };
 use crate::{
-    conversion::FutureResultToPy,
-    runtime::{Runtime, RuntimeRef, empty_future_into_py, err_future_into_py, future_into_py_futlike},
+    py::interop::PyAbortHandle,
+    runtime::{Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
 pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<WSTxStream>);
 
 struct ResponseBodyStream {
-    inner: mpsc::UnboundedReceiver<body::Bytes>,
+    inner: mpsc::Receiver<body::Bytes>,
     closed: Arc<SetOnce<()>>,
 }
 
@@ -57,8 +57,9 @@ impl body::Body for ResponseBodyStream {
 }
 
 impl ResponseBodyStream {
-    fn new(notify: Arc<SetOnce<()>>) -> (mpsc::UnboundedSender<body::Bytes>, Self) {
-        let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
+    fn new(notify: Arc<SetOnce<()>>) -> (mpsc::Sender<body::Bytes>, Self) {
+        //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
+        let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
         let slf = Self {
             inner: body_rx,
             closed: notify,
@@ -67,48 +68,16 @@ impl ResponseBodyStream {
     }
 }
 
-#[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct RSGIHTTPStreamTransport {
-    tx: mpsc::UnboundedSender<body::Bytes>,
-}
-
-impl RSGIHTTPStreamTransport {
-    pub fn new(transport: mpsc::UnboundedSender<body::Bytes>) -> Self {
-        Self { tx: transport }
-    }
-}
-
-// NOTE: the interface doesn't need to be async anymore.
-//       This would be a breaking change though; probably requires a major version bump in RSGI
-#[pymethods]
-impl RSGIHTTPStreamTransport {
-    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
-        let bdata = body::Bytes::from(std::convert::Into::<Box<[u8]>>::into(data));
-        match self.tx.send(bdata) {
-            Ok(()) => empty_future_into_py(py),
-            _ => err_future_into_py(py, error_stream!()),
-        }
-    }
-
-    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
-        match self.tx.send(body::Bytes::from(data)) {
-            Ok(()) => empty_future_into_py(py),
-            _ => err_future_into_py(py, error_stream!()),
-        }
-    }
-}
-
-#[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct RSGIHTTPProtocol {
+#[pyclass(frozen, module = "granian._granian", name = "RSGIHTTPProtocol")]
+pub(super) struct HTTPProtocol {
     rt: RuntimeRef,
     disconnect_guard: Arc<SetOnce<()>>,
     tx: Mutex<Option<oneshot::Sender<PyResponse>>>,
     body: Mutex<Option<body::Incoming>>,
-    body_stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
     disconnected: Arc<atomic::AtomicBool>,
 }
 
-impl RSGIHTTPProtocol {
+impl HTTPProtocol {
     pub fn new(
         rt: RuntimeRef,
         disconnect_guard: Arc<SetOnce<()>>,
@@ -120,7 +89,6 @@ impl RSGIHTTPProtocol {
             disconnect_guard,
             tx: Mutex::new(Some(tx)),
             body: Mutex::new(Some(body)),
-            body_stream: Arc::new(AsyncMutex::new(None)),
             disconnected: Arc::new(atomic::AtomicBool::new(false)),
         }
     }
@@ -131,73 +99,44 @@ impl RSGIHTTPProtocol {
 }
 
 #[pymethods]
-impl RSGIHTTPProtocol {
-    fn __call__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        if let Some(body) = self.body.lock().unwrap().take() {
-            return future_into_py_futlike(self.rt.clone(), py, async move {
-                match body.collect().await {
-                    Ok(data) => FutureResultToPy::Bytes(data.to_bytes()),
-                    _ => FutureResultToPy::Err(error_stream!()),
+impl HTTPProtocol {
+    fn read(&self, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> Option<PyAbortHandle> {
+        if let Some(rx) = self.body.lock().unwrap().take() {
+            let rt = self.rt.clone();
+            let task = self.rt.spawn(async move {
+                match rx.collect().await {
+                    Ok(data) => rt.spawn_blocking_loopback(move |py| {
+                        _ = cb_ok.call1(py, (data.to_bytes(),));
+                        drop(cb_err);
+                    }),
+                    _ => rt.spawn_blocking_loopback(move |py| {
+                        _ = cb_err.call0(py);
+                        drop(cb_ok);
+                    }),
                 }
             });
+            return Some(PyAbortHandle::new(task.abort_handle()));
         }
-        error_proto!()
+        None
     }
 
-    fn __aiter__(pyself: Py<Self>, py: Python) -> PyResult<Py<Self>> {
-        let inner = pyself.get();
-        if let Some(body) = inner.body.lock().unwrap().take() {
-            let mut stream = inner.body_stream.blocking_lock();
-            *stream = Some(http_body_util::BodyStream::new(body));
-            return Ok(pyself.clone_ref(py));
+    fn reader(&self) -> PyResult<HTTPReader> {
+        if let Some(rx) = self.body.lock().unwrap().take() {
+            let stream = http_body_util::BodyStream::new(rx);
+            return Ok(HTTPReader::new(self.rt.clone(), stream));
         }
-        error_proto!()
-    }
-
-    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        if self.body_stream.blocking_lock().is_none() {
-            return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
-        }
-
-        let body_stream = self.body_stream.clone();
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            let guard = &mut *body_stream.lock().await;
-            match guard.as_mut().unwrap().next().await {
-                Some(chunk) => {
-                    let chunk = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
-                    FutureResultToPy::Bytes(chunk)
-                }
-                _ => {
-                    _ = guard.take();
-                    FutureResultToPy::Bytes(body::Bytes::new())
-                }
-            }
-        })
-    }
-
-    fn client_disconnect<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        if self.disconnected.load(atomic::Ordering::Acquire) {
-            return empty_future_into_py(py);
-        }
-
-        let guard = self.disconnect_guard.clone();
-        let state = self.disconnected.clone();
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            guard.wait().await;
-            state.store(true, atomic::Ordering::Release);
-            FutureResultToPy::None
-        })
+        errors::error_proto!()
     }
 
     #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_empty(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) {
+    fn write(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
         }
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
-    fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
+    fn write_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(
                 status,
@@ -208,21 +147,21 @@ impl RSGIHTTPProtocol {
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
-    fn response_str(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) {
+    fn write_str(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
         }
     }
 
     #[pyo3(signature = (status, headers, file))]
-    fn response_file(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file: String) {
+    fn write_file(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
     }
 
     #[pyo3(signature = (status, headers, file, start, end))]
-    fn response_file_range(
+    fn write_file_range(
         &self,
         status: u16,
         headers: Vec<(PyBackedStr, PyBackedStr)>,
@@ -241,13 +180,7 @@ impl RSGIHTTPProtocol {
         Ok(())
     }
 
-    #[pyo3(signature = (status=200, headers=vec![]))]
-    fn response_stream<'p>(
-        &self,
-        py: Python<'p>,
-        status: u16,
-        headers: Vec<(PyBackedStr, PyBackedStr)>,
-    ) -> PyResult<Bound<'p, RSGIHTTPStreamTransport>> {
+    fn writer(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) -> PyResult<HTTPWriter> {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             let (body_tx, body_stream) = ResponseBodyStream::new(self.disconnect_guard.clone());
             _ = tx.send(PyResponse::Body(PyResponseBody::new(
@@ -255,113 +188,209 @@ impl RSGIHTTPProtocol {
                 headers,
                 BodyExt::boxed(body_stream),
             )));
-            let trx = Py::new(py, RSGIHTTPStreamTransport::new(body_tx))?;
-            return Ok(trx.into_bound(py));
+            return Ok(HTTPWriter::new(self.rt.clone(), body_tx));
         }
-        error_proto!()
+        errors::error_proto!()
+    }
+
+    fn watch(&self, cb: Py<PyAny>) -> Option<PyAbortHandle> {
+        if self.disconnected.load(atomic::Ordering::Acquire) {
+            return None;
+        }
+
+        let guard = self.disconnect_guard.clone();
+        let state = self.disconnected.clone();
+        let rt = self.rt.clone();
+        let task = self.rt.spawn(async move {
+            guard.wait().await;
+            state.store(true, atomic::Ordering::Release);
+            rt.spawn_blocking_loopback(move |py| {
+                _ = cb.call0(py);
+            });
+        });
+        Some(PyAbortHandle::new(task.abort_handle()))
+    }
+
+    fn close(&self) {
+        if let Some(tx) = self.tx() {
+            let _ = tx.send(PyResponse::Body(PyResponseBody::empty(500, Vec::new())));
+        }
+    }
+
+    fn _read_asyncio<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        if let Some(rx) = self.body.lock().unwrap().take() {
+            return crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+                match rx.collect().await {
+                    Ok(data) => crate::py::asyncio::FutureResultToPy::Bytes(data.to_bytes()),
+                    _ => crate::py::asyncio::FutureResultToPy::Err(errors::error_stream!()),
+                }
+            });
+        }
+        errors::error_proto!()
+    }
+
+    fn _watch_asyncio<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        if self.disconnected.load(atomic::Ordering::Acquire) {
+            return crate::py::asyncio::empty_future_into_asyncio(py);
+        }
+
+        let guard = self.disconnect_guard.clone();
+        let state = self.disconnected.clone();
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            guard.wait().await;
+            state.store(true, atomic::Ordering::Release);
+            crate::py::asyncio::FutureResultToPy::None
+        })
     }
 }
 
-#[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct RSGIWebsocketTransport {
+#[pyclass(frozen, module = "granian._granian", name = "RSGIHTTPReader")]
+pub(super) struct HTTPReader {
     rt: RuntimeRef,
-    dg: Arc<Notify>,
-    tx: Arc<AsyncMutex<Option<WSTxStream>>>,
-    rx: Arc<AsyncMutex<WSRxStream>>,
-    closed: Arc<atomic::AtomicBool>,
+    stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
 }
 
-impl RSGIWebsocketTransport {
-    pub fn new(
-        rt: RuntimeRef,
-        dg: Arc<Notify>,
-        tx: Arc<AsyncMutex<Option<WSTxStream>>>,
-        rx: WSRxStream,
-        closed: Arc<atomic::AtomicBool>,
-    ) -> Self {
+impl HTTPReader {
+    fn new(rt: RuntimeRef, stream: http_body_util::BodyStream<body::Incoming>) -> Self {
         Self {
             rt,
-            dg,
-            tx,
-            rx: Arc::new(AsyncMutex::new(rx)),
-            closed,
+            stream: Arc::new(AsyncMutex::new(Some(stream))),
         }
     }
 }
 
 #[pymethods]
-impl RSGIWebsocketTransport {
-    fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let transport = self.rx.clone();
-        let dg = self.dg.clone();
-
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Ok(mut stream) = transport.try_lock() {
-                while let Some(recv) = tokio::select! {
-                    biased;
-                    recv = stream.next() => recv,
-                    () = dg.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
-                } {
-                    match recv {
-                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
-                        Ok(message) => return FutureResultToPy::RSGIWSMessage(message),
-                        _ => break,
+impl HTTPReader {
+    fn read(&self, cb: Py<PyAny>) -> PyAbortHandle {
+        let rth = self.rt.clone();
+        let stream = self.stream.clone();
+        let task = self.rt.spawn(async move {
+            let guard = &mut stream.lock().await;
+            if let Some(stream) = guard.as_mut() {
+                match stream.next().await {
+                    Some(chunk) => {
+                        let chunk = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
+                        let eof = chunk.is_empty();
+                        rth.spawn_blocking_loopback(move |py| {
+                            _ = cb.call1(py, (chunk, eof));
+                        });
+                    }
+                    _ => {
+                        _ = guard.take();
+                        rth.spawn_blocking_loopback(move |py| {
+                            _ = cb.call1(py, (body::Bytes::new(), true));
+                        });
                     }
                 }
-                return FutureResultToPy::Err(error_stream!());
             }
-            FutureResultToPy::Err(error_proto!())
-        })
+        });
+        PyAbortHandle::new(task.abort_handle())
     }
 
-    fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
-        if self.closed.load(atomic::Ordering::Acquire) {
-            return err_future_into_py(py, error_proto!());
-        }
-
-        let transport = self.tx.clone();
-        let bdata: Box<[u8]> = data.into();
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Some(stream) = &mut *(transport.lock().await) {
-                return match stream.send(bdata[..].into()).await {
-                    Ok(()) => FutureResultToPy::None,
-                    _ => FutureResultToPy::Err(error_stream!()),
-                };
+    fn _read_asyncio<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let stream = self.stream.clone();
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            let guard = &mut *stream.lock().await;
+            if let Some(stream) = guard.as_mut() {
+                match stream.next().await {
+                    Some(chunk) => {
+                        let chunk = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
+                        return crate::py::asyncio::FutureResultToPy::BytesEof((chunk, false));
+                    }
+                    _ => {
+                        _ = guard.take();
+                        return crate::py::asyncio::FutureResultToPy::BytesEof((body::Bytes::new(), true));
+                    }
+                }
             }
-            FutureResultToPy::Err(error_proto!())
-        })
-    }
-
-    fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
-        if self.closed.load(atomic::Ordering::Acquire) {
-            return err_future_into_py(py, error_proto!());
-        }
-
-        let transport = self.tx.clone();
-        future_into_py_futlike(self.rt.clone(), py, async move {
-            if let Some(stream) = &mut *(transport.lock().await) {
-                return match stream.send(data.into()).await {
-                    Ok(()) => FutureResultToPy::None,
-                    _ => FutureResultToPy::Err(error_stream!()),
-                };
-            }
-            FutureResultToPy::Err(error_proto!())
+            crate::py::asyncio::FutureResultToPy::Err(errors::error_stream!())
         })
     }
 }
 
-#[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct RSGIWebsocketProtocol {
+#[pyclass(frozen, module = "granian._granian", name = "RSGIHTTPWriter")]
+pub(super) struct HTTPWriter {
+    rt: RuntimeRef,
+    stream: mpsc::Sender<body::Bytes>,
+}
+
+impl HTTPWriter {
+    fn new(rt: RuntimeRef, stream: mpsc::Sender<body::Bytes>) -> Self {
+        Self { rt, stream }
+    }
+
+    #[inline(always)]
+    fn write<T>(&self, frame: T, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle
+    where
+        bytes::Bytes: From<T>,
+        T: Send + 'static,
+    {
+        let rt = self.rt.clone();
+        let stream = self.stream.clone();
+        let task = self.rt.spawn(async move {
+            match stream.send(frame.into()).await {
+                Ok(()) => rt.spawn_blocking_loopback(move |py| {
+                    _ = cb_ok.call0(py);
+                    drop(cb_err);
+                }),
+                _ => rt.spawn_blocking_loopback(move |py| {
+                    _ = cb_err.call0(py);
+                    drop(cb_ok);
+                }),
+            }
+        });
+        PyAbortHandle::new(task.abort_handle())
+    }
+
+    #[inline(always)]
+    fn _write_asyncio<'p, T>(&self, py: Python<'p>, frame: T) -> PyResult<Bound<'p, PyAny>>
+    where
+        bytes::Bytes: From<T>,
+        T: Send + 'static,
+    {
+        let stream = self.stream.clone();
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            match stream.send(frame.into()).await {
+                Ok(()) => crate::py::asyncio::FutureResultToPy::None,
+                _ => crate::py::asyncio::FutureResultToPy::Err(errors::error_stream!()),
+            }
+        })
+    }
+}
+
+#[pymethods]
+impl HTTPWriter {
+    fn write_bytes(&self, data: Cow<[u8]>, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle {
+        let bdata: Box<[u8]> = data.into();
+        self.write(bdata, cb_ok, cb_err)
+    }
+
+    fn write_str(&self, data: String, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle {
+        self.write(data, cb_ok, cb_err)
+    }
+
+    fn _write_asyncio_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
+        let bdata: Box<[u8]> = data.into();
+        self._write_asyncio(py, bdata)
+    }
+
+    fn _write_asyncio_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
+        self._write_asyncio(py, data)
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian", name = "RSGIWebsocketProtocol")]
+pub(crate) struct WebsocketProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
     disconnect_guard: Arc<Notify>,
     websocket: Arc<AsyncMutex<HyperWebsocket>>,
     upgrade: RwLock<Option<UpgradeData>>,
-    closed: Arc<atomic::AtomicBool>,
+    // closed: Arc<atomic::AtomicBool>,
     transport: Arc<AsyncMutex<Option<WSTxStream>>>,
 }
 
-impl RSGIWebsocketProtocol {
+impl WebsocketProtocol {
     pub fn new(
         rt: RuntimeRef,
         tx: oneshot::Sender<WebsocketDetachedTransport>,
@@ -375,7 +404,7 @@ impl RSGIWebsocketProtocol {
             disconnect_guard,
             websocket: Arc::new(AsyncMutex::new(websocket)),
             upgrade: RwLock::new(Some(upgrade)),
-            closed: Arc::new(false.into()),
+            // closed: Arc::new(false.into()),
             transport: Arc::new(AsyncMutex::new(None)),
         }
     }
@@ -386,11 +415,11 @@ impl RSGIWebsocketProtocol {
 }
 
 #[pymethods]
-impl RSGIWebsocketProtocol {
+impl WebsocketProtocol {
     #[pyo3(signature = (status=None))]
     pub fn close(&self, status: Option<i32>) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            self.closed.store(true, atomic::Ordering::Release);
+            // self.closed.store(true, atomic::Ordering::Release);
             let transport = self.transport.clone();
             let consumed = self.consumed();
 
@@ -406,30 +435,228 @@ impl RSGIWebsocketProtocol {
         }
     }
 
-    fn accept<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+    fn accept(&self, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle {
         let rth = self.rt.clone();
         let dg = self.disconnect_guard.clone();
         let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
-        let closed = self.closed.clone();
         let transport = self.websocket.clone();
         let itransport = self.transport.clone();
 
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        let task = self.rt.spawn(async move {
             let mut ws = transport.lock().await;
-            match upgrade.send(None, None, None).await {
-                Ok(()) => match (&mut *ws).await {
-                    Ok(stream) => {
-                        let (stx, srx) = stream.split();
-                        {
-                            let mut guard = itransport.lock().await;
-                            *guard = Some(stx);
-                        }
-                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(rth, dg, itransport, srx, closed))
-                    }
-                    _ => FutureResultToPy::Err(error_proto!()),
-                },
-                _ => FutureResultToPy::Err(error_proto!()),
+            if let Ok(()) = upgrade.send(None, None, None).await
+                && let Ok(stream) = (&mut *ws).await
+            {
+                let (stx, srx) = stream.split();
+                {
+                    let mut guard = itransport.lock().await;
+                    *guard = Some(stx);
+                }
+                let rthr = rth.clone();
+                let rthw = rth.clone();
+                rth.spawn_blocking_loopback(move |py| {
+                    _ = cb_ok.call1(
+                        py,
+                        (
+                            WebsocketReader::new(rthr, dg, srx),
+                            WebsocketWriter::new(rthw, itransport),
+                        ),
+                    );
+                    drop(cb_err);
+                });
+                return;
             }
+            rth.spawn_blocking_loopback(move |py| {
+                _ = cb_err.call0(py);
+                drop(cb_ok);
+            });
+        });
+        PyAbortHandle::new(task.abort_handle())
+    }
+
+    fn _accept_asyncio<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let rth = self.rt.clone();
+        let dg = self.disconnect_guard.clone();
+        let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
+        let transport = self.websocket.clone();
+        let itransport = self.transport.clone();
+
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            let mut ws = transport.lock().await;
+            if let Ok(()) = upgrade.send(None, None, None).await
+                && let Ok(stream) = (&mut *ws).await
+            {
+                let (stx, srx) = stream.split();
+                {
+                    let mut guard = itransport.lock().await;
+                    *guard = Some(stx);
+                }
+                let rthr = rth.clone();
+                let rthw = rth.clone();
+                return crate::py::asyncio::FutureResultToPy::RSGIWSAccept((
+                    WebsocketReader::new(rthr, dg, srx),
+                    WebsocketWriter::new(rthw, itransport),
+                ));
+            }
+            crate::py::asyncio::FutureResultToPy::Err(errors::error_proto!())
+        })
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian", name = "RSGIWebsocketReader")]
+pub(crate) struct WebsocketReader {
+    rt: RuntimeRef,
+    dg: Arc<Notify>,
+    stream: Arc<AsyncMutex<WSRxStream>>,
+}
+
+impl WebsocketReader {
+    pub fn new(rt: RuntimeRef, dg: Arc<Notify>, stream: WSRxStream) -> Self {
+        Self {
+            rt,
+            dg,
+            stream: Arc::new(AsyncMutex::new(stream)),
+        }
+    }
+}
+
+#[pymethods]
+impl WebsocketReader {
+    fn read(&self, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle {
+        let rth = self.rt.clone();
+        let transport = self.stream.clone();
+        let dg = self.dg.clone();
+        let task = self.rt.spawn(async move {
+            if let Ok(mut stream) = transport.try_lock() {
+                while let Some(recv) = tokio::select! {
+                    biased;
+                    recv = stream.next() => recv,
+                    () = dg.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed))
+                } {
+                    match recv {
+                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
+                        Ok(message) => {
+                            rth.spawn_blocking_loopback(move |py| {
+                                _ = cb_ok.call1(py, (conversion::ws_message_into_py(py, message).unwrap(),));
+                                drop(cb_err);
+                            });
+                            return;
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            rth.spawn_blocking_loopback(move |py| {
+                _ = cb_err.call0(py);
+                drop(cb_ok);
+            });
+        });
+        PyAbortHandle::new(task.abort_handle())
+    }
+
+    fn _read_asyncio<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let transport = self.stream.clone();
+        let dg = self.dg.clone();
+
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            if let Ok(mut stream) = transport.try_lock() {
+                while let Some(recv) = tokio::select! {
+                    biased;
+                    recv = stream.next() => recv,
+                    () = dg.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
+                } {
+                    match recv {
+                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
+                        Ok(message) => return crate::py::asyncio::FutureResultToPy::RSGIWSMessage(message),
+                        _ => break,
+                    }
+                }
+                return crate::py::asyncio::FutureResultToPy::Err(errors::error_stream!());
+            }
+            crate::py::asyncio::FutureResultToPy::Err(errors::error_proto!())
+        })
+    }
+}
+
+#[pyclass(frozen, module = "granian._granian", name = "RSGIWebsocketWriter")]
+pub(crate) struct WebsocketWriter {
+    rt: RuntimeRef,
+    stream: Arc<AsyncMutex<Option<WSTxStream>>>,
+}
+
+impl WebsocketWriter {
+    pub fn new(rt: RuntimeRef, stream: Arc<AsyncMutex<Option<WSTxStream>>>) -> Self {
+        Self { rt, stream }
+    }
+}
+
+#[pymethods]
+impl WebsocketWriter {
+    fn write_bytes(&self, data: Cow<[u8]>, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle {
+        let rth = self.rt.clone();
+        let transport = self.stream.clone();
+        let bdata: Box<[u8]> = data.into();
+        let task = self.rt.spawn(async move {
+            if let Some(stream) = &mut *(transport.lock().await)
+                && let Ok(()) = stream.send(bdata[..].into()).await
+            {
+                rth.spawn_blocking_loopback(move |py| {
+                    _ = cb_ok.call0(py);
+                    drop(cb_err);
+                });
+                return;
+            }
+            rth.spawn_blocking_loopback(move |py| {
+                _ = cb_err.call0(py);
+                drop(cb_ok);
+            });
+        });
+        PyAbortHandle::new(task.abort_handle())
+    }
+
+    fn write_str(&self, data: String, cb_ok: Py<PyAny>, cb_err: Py<PyAny>) -> PyAbortHandle {
+        let rth = self.rt.clone();
+        let transport = self.stream.clone();
+        let task = self.rt.spawn(async move {
+            if let Some(stream) = &mut *(transport.lock().await)
+                && let Ok(()) = stream.send(data.into()).await
+            {
+                rth.spawn_blocking_loopback(move |py| {
+                    _ = cb_ok.call0(py);
+                    drop(cb_err);
+                });
+                return;
+            }
+            rth.spawn_blocking_loopback(move |py| {
+                _ = cb_err.call0(py);
+                drop(cb_ok);
+            });
+        });
+        PyAbortHandle::new(task.abort_handle())
+    }
+
+    fn _write_asyncio_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
+        let transport = self.stream.clone();
+        let bdata: Box<[u8]> = data.into();
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            if let Some(stream) = &mut *(transport.lock().await)
+                && let Ok(()) = stream.send(bdata[..].into()).await
+            {
+                return crate::py::asyncio::FutureResultToPy::None;
+            }
+            crate::py::asyncio::FutureResultToPy::Err(errors::error_stream!())
+        })
+    }
+
+    fn _write_asyncio_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
+        let transport = self.stream.clone();
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
+            if let Some(stream) = &mut *(transport.lock().await)
+                && let Ok(()) = stream.send(data.into()).await
+            {
+                return crate::py::asyncio::FutureResultToPy::None;
+            }
+            crate::py::asyncio::FutureResultToPy::Err(errors::error_stream!())
         })
     }
 }

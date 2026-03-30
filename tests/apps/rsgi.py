@@ -2,11 +2,11 @@ import json
 import os
 import pathlib
 
-from granian.rsgi import HTTPProtocol, Scope, WebsocketMessageType, WebsocketProtocol
+from granian.rsgi import AsyncIORSGIHTTPProtocol, AsyncIORSGIWebsocketProtocol, Scope, WebsocketMessageType
 
 
-async def info(scope: Scope, protocol: HTTPProtocol):
-    protocol.response_bytes(
+async def info(scope: Scope, protocol: AsyncIORSGIHTTPProtocol):
+    protocol.write_bytes(
         200,
         [('content-type', 'application/json')],
         json.dumps(
@@ -25,35 +25,35 @@ async def info(scope: Scope, protocol: HTTPProtocol):
     )
 
 
-async def echo(_, protocol: HTTPProtocol):
-    msg = await protocol()
-    protocol.response_bytes(200, [('content-type', 'text/plain; charset=utf-8')], msg)
+async def echo(_, protocol: AsyncIORSGIHTTPProtocol):
+    msg = await protocol.read()
+    protocol.write_bytes(200, [('content-type', 'text/plain; charset=utf-8')], msg)
 
 
-async def echo_stream(_, protocol: HTTPProtocol):
-    trx = protocol.response_stream(200, [('content-type', 'text/plain; charset=utf-8')])
-    async for msg in protocol:
-        await trx.send_bytes(msg)
+async def echo_stream(_, protocol: AsyncIORSGIHTTPProtocol):
+    trx = protocol.writer(200, [('content-type', 'text/plain; charset=utf-8')])
+    async for msg in protocol.reader():
+        await trx.write_bytes(msg)
 
 
-async def stream(_, protocol: HTTPProtocol):
-    trx = protocol.response_stream(200, [('content-type', 'text/plain; charset=utf-8')])
+async def stream(_, protocol: AsyncIORSGIHTTPProtocol):
+    trx = protocol.writer(200, [('content-type', 'text/plain; charset=utf-8')])
     for _ in range(0, 3):
-        await trx.send_bytes(b'test')
+        await trx.write_bytes(b'test')
 
 
-async def file(scope: Scope, protocol: HTTPProtocol):
+async def file(scope: Scope, protocol: AsyncIORSGIHTTPProtocol):
     path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'static' / 'media.png'
-    protocol.response_file(200, [('content-type', 'image/png'), ('content-length', '95')], str(path))
+    protocol.write_file(200, [('content-type', 'image/png'), ('content-length', '95')], str(path))
 
 
-async def file_range(scope: Scope, protocol: HTTPProtocol):
+async def file_range(scope: Scope, protocol: AsyncIORSGIHTTPProtocol):
     file_path = scope.headers.get('file-path')
     range_header: str = scope.headers.get('range')
     start, end = [int(v) for v in range_header.removeprefix('bytes=').split('-')]
     file_size = os.stat(file_path).st_size
     if start >= file_size:
-        return protocol.response_empty(416, [('content-range', f'bytes */{file_size}'), ('4xx-reason', 'out')])
+        return protocol.write(416, [('content-range', f'bytes */{file_size}'), ('4xx-reason', 'out')])
     if end >= file_size:
         end = file_size - 1
 
@@ -63,19 +63,19 @@ async def file_range(scope: Scope, protocol: HTTPProtocol):
         ('content-range', f'bytes {start}-{end}/{file_size}'),
     ]
     try:
-        protocol.response_file_range(206, headers, file_path, start, end + 1)
+        protocol.write_file_range(206, headers, file_path, start, end + 1)
     except ValueError:
-        protocol.response_empty(416, [('content-range', f'bytes */{file_size}'), ('4xx-reason', 'invalid')])
+        protocol.write(416, [('content-range', f'bytes */{file_size}'), ('4xx-reason', 'invalid')])
 
 
-async def ws_reject(_, protocol: WebsocketProtocol):
+async def ws_reject(_, protocol: AsyncIORSGIWebsocketProtocol):
     protocol.close(403)
 
 
-async def ws_info(scope: Scope, protocol: WebsocketProtocol):
-    trx = await protocol.accept()
+async def ws_info(scope: Scope, protocol: AsyncIORSGIWebsocketProtocol):
+    rx, tx = await protocol.accept()
 
-    await trx.send_str(
+    await tx.write_str(
         json.dumps(
             {
                 'proto': scope.proto,
@@ -91,41 +91,41 @@ async def ws_info(scope: Scope, protocol: WebsocketProtocol):
         )
     )
     while True:
-        message = await trx.receive()
+        message = await rx.read()
         if message.kind == WebsocketMessageType.close:
             break
 
     protocol.close()
 
 
-async def ws_echo(_, protocol: WebsocketProtocol):
-    trx = await protocol.accept()
+async def ws_echo(_, protocol: AsyncIORSGIWebsocketProtocol):
+    rx, tx = await protocol.accept()
 
     while True:
-        message = await trx.receive()
+        message = await rx.read()
         if message.kind == WebsocketMessageType.close:
             break
         elif message.kind == WebsocketMessageType.bytes:
-            await trx.send_bytes(message.data)
+            await tx.write_bytes(message.data)
         else:
-            await trx.send_str(message.data)
+            await tx.write_str(message.data)
 
     protocol.close()
 
 
-async def ws_push(_, protocol: WebsocketProtocol):
-    trx = await protocol.accept()
+async def ws_push(_, protocol: AsyncIORSGIWebsocketProtocol):
+    _rx, tx = await protocol.accept()
 
     try:
         while True:
-            await trx.send_str('ping')
+            await tx.write_str('ping')
     except Exception:
         pass
 
     protocol.close()
 
 
-async def err_app(scope: Scope, protocol: HTTPProtocol):
+async def err_app(scope: Scope, protocol: AsyncIORSGIHTTPProtocol):
     1 / 0
 
 

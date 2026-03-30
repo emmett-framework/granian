@@ -1,10 +1,9 @@
 import os
 import sys
 import time
-from collections.abc import Callable
-from functools import wraps
 from typing import Any
 
+from ._interop import App as _App
 from .log import log_request_builder
 
 
@@ -31,54 +30,6 @@ class ResponseIterWrap:
         self.inner.close()
 
 
-def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], access_log_fmt=None):
-    basic_env: dict[str, Any] = dict(os.environ)
-    basic_env.update(
-        {
-            'GATEWAY_INTERFACE': 'CGI/1.1',
-            'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
-            'SERVER_SOFTWARE': 'Granian',
-            'wsgi.errors': sys.stderr,
-            #: this is not in PEP333, but you know, werkzeug..
-            'wsgi.input_terminated': True,
-            'wsgi.multiprocess': False,
-            'wsgi.multithread': True,
-            'wsgi.run_once': False,
-            'wsgi.version': (1, 0),
-        }
-    )
-
-    def _runner(proto, scope):
-        resp = Response()
-        environ = basic_env | scope
-        if basic_env['SCRIPT_NAME']:
-            environ['PATH_INFO'] = scope['PATH_INFO'][len(basic_env['SCRIPT_NAME']) :] or '/'
-
-        rv = callback(environ, resp)
-
-        if isinstance(rv, list):
-            proto.response_bytes(resp.status, resp.headers, b''.join(rv))
-        else:
-            proto.response_iter(resp.status, resp.headers, ResponseIterWrap(rv))
-
-        return resp.status
-
-    def _logger(proto, scope):
-        rt, mt = time.time(), time.perf_counter()
-        try:
-            status = _runner(proto, scope)
-            access_log(rt, mt, scope, status)
-        except BaseException:
-            access_log(rt, mt, scope, 500)
-            raise
-        return status
-
-    access_log = _build_access_logger(access_log_fmt)
-    wrapper = _logger if access_log_fmt else _runner
-    wraps(callback)(wrapper)
-    return wrapper
-
-
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
@@ -101,3 +52,73 @@ def _build_access_logger(fmt):
         logger(rt, mt, data, resp_code)
 
     return _access_log_with_headers if logger.parse_headers else _access_log
+
+
+class WSGIApp(_App):
+    __slots__ = ['_inner', '_log', '_environ', '_prefix_len']
+
+    def __init__(self, app, scope_opts=None, access_log_fmt=None):
+        self._inner = app
+        self._log = _build_access_logger(access_log_fmt)
+        self._environ = self._build_basic_environ(scope_opts or {})
+        self._prefix_len = len(self._environ['SCRIPT_NAME'])
+
+    @staticmethod
+    def _build_basic_environ(scope_opts):
+        basic_env: dict[str, Any] = dict(os.environ)
+        basic_env.update(
+            {
+                'GATEWAY_INTERFACE': 'CGI/1.1',
+                'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
+                'SERVER_SOFTWARE': 'Granian',
+                'wsgi.errors': sys.stderr,
+                #: this is not in PEP333, but you know, werkzeug..
+                'wsgi.input_terminated': True,
+                'wsgi.multiprocess': False,
+                'wsgi.multithread': True,
+                'wsgi.run_once': False,
+                'wsgi.version': (1, 0),
+            }
+        )
+        return basic_env
+
+    def on_request(self, proto, scope):
+        resp = Response()
+        environ = self._environ | scope
+        if self._environ['SCRIPT_NAME']:
+            environ['PATH_INFO'] = scope['PATH_INFO'][self._prefix_len :] or '/'
+
+        try:
+            rv = self._inner(environ, resp)
+            if isinstance(rv, list):
+                proto.response_bytes(resp.status, resp.headers, b''.join(rv))
+            else:
+                proto.response_iter(resp.status, resp.headers, ResponseIterWrap(rv))
+        finally:
+            proto._close()
+
+    def on_request_wlog(self, proto, scope):
+        rt, mt = time.time(), time.perf_counter()
+        resp = Response()
+        environ = self._environ | scope
+        if self._environ['SCRIPT_NAME']:
+            environ['PATH_INFO'] = scope['PATH_INFO'][self._prefix_len :] or '/'
+
+        try:
+            rv = self._inner(environ, resp)
+            if isinstance(rv, list):
+                proto.response_bytes(resp.status, resp.headers, b''.join(rv))
+            else:
+                proto.response_iter(resp.status, resp.headers, ResponseIterWrap(rv))
+            self._log(rt, mt, scope, resp.status)
+        except BaseException:
+            self._log(rt, mt, scope, 500)
+            raise
+        finally:
+            proto._close()
+
+    def on_websocket(self, proto, scope):
+        raise NotImplementedError
+
+    def on_websocket_wlog(self, proto, scope):
+        raise NotImplementedError

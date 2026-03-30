@@ -18,34 +18,6 @@ impl<'p> IntoPyObject<'p> for Utf8BytesToPy {
     }
 }
 
-pub(crate) enum FutureResultToPy {
-    None,
-    Err(PyResult<()>),
-    Bytes(hyper::body::Bytes),
-    ASGIMessage(crate::asgi::types::ASGIMessageType),
-    ASGIWSMessage(tokio_tungstenite::tungstenite::Message),
-    RSGIWSAccept(crate::rsgi::io::RSGIWebsocketTransport),
-    RSGIWSMessage(tokio_tungstenite::tungstenite::Message),
-}
-
-impl<'p> IntoPyObject<'p> for FutureResultToPy {
-    type Target = PyAny;
-    type Output = Bound<'p, Self::Target>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'p>) -> Result<Self::Output, Self::Error> {
-        match self {
-            Self::None => Ok(py.None().into_bound(py)),
-            Self::Err(res) => Err(res.err().unwrap()),
-            Self::Bytes(inner) => inner.into_bound_py_any(py),
-            Self::ASGIMessage(message) => crate::asgi::conversion::message_into_py(py, message),
-            Self::ASGIWSMessage(message) => crate::asgi::conversion::ws_message_into_py(py, message),
-            Self::RSGIWSAccept(obj) => obj.into_bound_py_any(py),
-            Self::RSGIWSMessage(message) => crate::rsgi::conversion::ws_message_into_py(py, message),
-        }
-    }
-}
-
 pub(crate) fn worker_http1_config_from_py(py: Python, cfg: Option<Py<PyAny>>) -> PyResult<HTTP1Config> {
     let ret = match cfg {
         Some(cfg) => HTTP1Config {

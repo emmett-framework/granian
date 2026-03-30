@@ -2,9 +2,9 @@ use pyo3::prelude::*;
 
 use super::http::{handle, handle_ws};
 
-use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
 use crate::net::{ListenerSpec, SocketHolder};
+use crate::py::interop::PyApp;
 use crate::serve::gen_serve_match;
 use crate::workers::{WorkerConfig, WorkerSignal};
 
@@ -25,6 +25,7 @@ impl RSGIWorker {
             blocking_threads=512,
             py_threads=1,
             py_threads_idle_timeout=30,
+            py_loopback_thread=false,
             backpressure=256,
             http_mode="1",
             http1_opts=None,
@@ -51,6 +52,7 @@ impl RSGIWorker {
         blocking_threads: usize,
         py_threads: usize,
         py_threads_idle_timeout: u64,
+        py_loopback_thread: bool,
         backpressure: usize,
         http_mode: &str,
         http1_opts: Option<Py<PyAny>>,
@@ -76,6 +78,7 @@ impl RSGIWorker {
                 blocking_threads,
                 py_threads,
                 py_threads_idle_timeout,
+                py_loopback_thread,
                 backpressure,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,
@@ -95,13 +98,7 @@ impl RSGIWorker {
         })
     }
 
-    fn serve_mtr(
-        &self,
-        py: Python,
-        callback: Py<CallbackScheduler>,
-        event_loop: &Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
+    fn serve_mtr(&self, py: Python, callback: Py<PyApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::serve::serve_mt,
             WorkerAcceptorTcpPlain,
@@ -116,13 +113,7 @@ impl RSGIWorker {
         );
     }
 
-    fn serve_str(
-        &self,
-        py: Python,
-        callback: Py<CallbackScheduler>,
-        event_loop: &Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
+    fn serve_str(&self, py: Python, callback: Py<PyApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
@@ -137,13 +128,7 @@ impl RSGIWorker {
         );
     }
 
-    fn serve_async(
-        &self,
-        py: Python,
-        callback: Py<CallbackScheduler>,
-        event_loop: &Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
+    fn serve_async(&self, py: Python, callback: Py<PyApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::serve::serve_fut,
             WorkerAcceptorTcpPlain,
@@ -159,13 +144,7 @@ impl RSGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_mtr_uds(
-        &self,
-        py: Python,
-        callback: Py<CallbackScheduler>,
-        event_loop: &Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
+    fn serve_mtr_uds(&self, py: Python, callback: Py<PyApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::serve::serve_mt_uds,
             WorkerAcceptorUdsPlain,
@@ -181,13 +160,7 @@ impl RSGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_str_uds(
-        &self,
-        py: Python,
-        callback: Py<CallbackScheduler>,
-        event_loop: &Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
+    fn serve_str_uds(&self, py: Python, callback: Py<PyApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
@@ -203,13 +176,7 @@ impl RSGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_async_uds(
-        &self,
-        py: Python,
-        callback: Py<CallbackScheduler>,
-        event_loop: &Bound<PyAny>,
-        signal: Py<WorkerSignal>,
-    ) {
+    fn serve_async_uds(&self, py: Python, callback: Py<PyApp>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
         gen_serve_match!(
             crate::serve::serve_fut_uds,
             WorkerAcceptorUdsPlain,

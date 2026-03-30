@@ -5,7 +5,11 @@ use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{borrow::Cow, sync::Mutex};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{conversion::headers_from_py, http::HTTPResponseBody, utils::log_application_callable_exception};
+use crate::{
+    conversion::headers_from_py,
+    http::{HTTPResponseBody, empty_body},
+    utils::log_application_callable_exception,
+};
 
 // NOTE: for unknown reasons, under some circumstances (`threading` module usage in app?)
 //       this gets shared across threads. So it can't be `unsendable` (yet?).
@@ -22,14 +26,14 @@ impl WSGIProtocol {
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>> {
-        self.tx.lock().map_or(None, |mut v| v.take())
+        self.tx.lock().unwrap().take()
     }
 }
 
 #[pymethods]
 impl WSGIProtocol {
     fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
-        if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             let data: Box<[u8]> = body.into();
             let txbody = http_body_util::Full::new(body::Bytes::from(data))
                 .map_err(|e| match e {})
@@ -39,7 +43,7 @@ impl WSGIProtocol {
     }
 
     fn response_iter(&self, py: Python, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Bound<PyAny>) {
-        if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
+        if let Some(tx) = self.tx.lock().unwrap().take() {
             //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
             let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
 
@@ -90,6 +94,12 @@ impl WSGIProtocol {
                 }
                 break;
             }
+        }
+    }
+
+    fn _close(&self) {
+        if let Some(tx) = self.tx() {
+            let _ = tx.send((500, HeaderMap::new(), empty_body()));
         }
     }
 }

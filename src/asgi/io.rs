@@ -24,11 +24,8 @@ use super::{
     types::ASGIMessageType,
 };
 use crate::{
-    conversion::FutureResultToPy,
-    http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404},
-    runtime::{
-        Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
-    },
+    http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404, response_500},
+    runtime::{Runtime, RuntimeRef},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -150,7 +147,7 @@ impl ASGIHTTPProtocol {
                 let tx_waiter = self.flow_tx_waiter.clone();
                 let rx_closed = self.flow_rx_closed.clone();
 
-                return future_into_py_futlike(self.rt.clone(), py, async move {
+                return crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
                     match tx.send(frame).await {
                         Ok(()) => {
                             if close {
@@ -164,7 +161,7 @@ impl ASGIHTTPProtocol {
                             _ = tx_waiter.set(());
                         }
                     }
-                    FutureResultToPy::None
+                    crate::py::asyncio::FutureResultToPy::None
                 });
             }
             Err(err) => {
@@ -175,7 +172,7 @@ impl ASGIHTTPProtocol {
             }
         }
 
-        empty_future_into_py(py)
+        crate::py::asyncio::empty_future_into_asyncio(py)
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<HTTPResponse>> {
@@ -187,7 +184,7 @@ impl ASGIHTTPProtocol {
 impl ASGIHTTPProtocol {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         if self.flow_rx_closed.load(atomic::Ordering::Acquire) {
-            return done_future_into_py(
+            return crate::py::asyncio::done_future_into_asyncio(
                 py,
                 super::conversion::message_into_py(py, ASGIMessageType::HTTPDisconnect).map(Bound::unbind),
             );
@@ -197,12 +194,12 @@ impl ASGIHTTPProtocol {
             let guard_tx = self.flow_tx_waiter.clone();
             let guard_disconnect = self.disconnect_guard.clone();
             let disconnected = self.flow_rx_closed.clone();
-            return future_into_py_futlike(self.rt.clone(), py, async move {
+            return crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
                 tokio::select! {
                     () = guard_tx.wait() => {},
                     () = guard_disconnect.wait() => disconnected.store(true, atomic::Ordering::Release),
                 }
-                FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
+                crate::py::asyncio::FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
             });
         }
 
@@ -211,7 +208,7 @@ impl ASGIHTTPProtocol {
         let guard_disconnect = self.disconnect_guard.clone();
         let exhausted = self.flow_rx_exhausted.clone();
         let disconnected = self.flow_rx_closed.clone();
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
             let mut bodym = body_ref.lock().await;
             let body = &mut *bodym;
             let mut more_body = false;
@@ -236,10 +233,12 @@ impl ASGIHTTPProtocol {
             }
 
             match chunk {
-                Some(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((data, more_body))),
+                Some(data) => crate::py::asyncio::FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((
+                    data, more_body,
+                ))),
                 _ => {
                     _ = guard_tx.set(());
-                    FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
+                    crate::py::asyncio::FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
                 }
             }
         })
@@ -266,7 +265,7 @@ impl ASGIHTTPProtocol {
                 {
                     let mut response_intent = self.response_intent.lock().unwrap();
                     *response_intent = Some(intent);
-                    return empty_future_into_py(py);
+                    return crate::py::asyncio::empty_future_into_asyncio(py);
                 }
 
                 self.response_chunked.store(true, atomic::Ordering::Relaxed);
@@ -274,7 +273,7 @@ impl ASGIHTTPProtocol {
                 let (body_tx, body_stream) = ResponseBodyStream::new(self.disconnect_guard.clone());
                 *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                 self.send_response(status, headers, BodyExt::boxed(body_stream));
-                empty_future_into_py(py)
+                crate::py::asyncio::empty_future_into_asyncio(py)
             }
             Ok(ASGIMessageType::HTTPResponseBody((body, more))) => {
                 match (
@@ -292,7 +291,7 @@ impl ASGIHTTPProtocol {
                                     .boxed(),
                             );
                             _ = self.flow_tx_waiter.set(());
-                            empty_future_into_py(py)
+                            crate::py::asyncio::empty_future_into_asyncio(py)
                         }
                         _ => error_flow!("Response already finished"),
                     },
@@ -315,7 +314,7 @@ impl ASGIHTTPProtocol {
                             false => self.send_body(py, tx, body, true),
                             true => {
                                 _ = self.flow_tx_waiter.set(());
-                                empty_future_into_py(py)
+                                crate::py::asyncio::empty_future_into_asyncio(py)
                             }
                         },
                         _ => error_flow!("Transport not initialized or closed"),
@@ -351,12 +350,18 @@ impl ASGIHTTPProtocol {
                         let _ = tx.send(res);
                     });
                     _ = self.flow_tx_waiter.set(());
-                    empty_future_into_py(py)
+                    crate::py::asyncio::empty_future_into_asyncio(py)
                 }
                 _ => error_flow!("Response not started"),
             },
             Err(err) => Err(err.into()),
             _ => error_message!(),
+        }
+    }
+
+    fn _close(&self) {
+        if let Some(tx) = self.tx() {
+            _ = tx.send(response_500());
         }
     }
 
@@ -451,7 +456,7 @@ impl ASGIWebsocketProtocol {
         let rx = self.ws_rx.clone();
         let tx = self.ws_tx.clone();
 
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
                 let mut upgrade_headers = HeaderMap::new();
                 if let Some(v) = subproto {
@@ -469,78 +474,78 @@ impl ASGIWebsocketProtocol {
                     drop(wrx);
                     accepted.store(true, atomic::Ordering::Release);
                     accept_notify.notify_one();
-                    return FutureResultToPy::None;
+                    return crate::py::asyncio::FutureResultToPy::None;
                 }
 
                 // connection was closed before upgrade
                 closed.store(true, atomic::Ordering::Release);
                 accepted.store(true, atomic::Ordering::Release);
                 accept_notify.notify_one();
-                return FutureResultToPy::None;
+                return crate::py::asyncio::FutureResultToPy::None;
             }
-            FutureResultToPy::Err(error_flow!("Connection already upgraded"))
+            crate::py::asyncio::FutureResultToPy::Err(error_flow!("Connection already upgraded"))
         })
     }
 
     #[inline(always)]
     fn start_response<'p>(&self, py: Python<'p>, intent: (u16, HeaderMap)) -> PyResult<Bound<'p, PyAny>> {
         if self.consumed() {
-            return err_future_into_py(py, error_flow!("Connection already upgraded"));
+            return crate::py::asyncio::err_future_into_asyncio(py, error_flow!("Connection already upgraded"));
         }
 
         let mut resp_intent = self.response_intent.lock().unwrap();
         if resp_intent.is_some() {
-            return err_future_into_py(py, error_flow!("Response already started"));
+            return crate::py::asyncio::err_future_into_asyncio(py, error_flow!("Response already started"));
         }
 
         *resp_intent = Some(intent);
-        empty_future_into_py(py)
+        crate::py::asyncio::empty_future_into_asyncio(py)
     }
 
     #[inline(always)]
     fn send_response<'p>(&self, py: Python<'p>, body: Box<[u8]>, more: bool) -> PyResult<Bound<'p, PyAny>> {
         if more {
-            return err_future_into_py(py, error_message!());
+            return crate::py::asyncio::err_future_into_asyncio(py, error_message!());
         }
 
         let intent = self.response_intent.lock().unwrap().take();
         if intent.is_none() {
-            return err_future_into_py(py, error_flow!("Response not initialised"));
+            return crate::py::asyncio::err_future_into_asyncio(py, error_flow!("Response not initialised"));
         }
 
         if let Some(mut upgrade) = self.upgrade.lock().unwrap().take() {
-            return future_into_py_futlike(self.rt.clone(), py, async move {
+            return crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
                 let (status, headers) = intent.unwrap();
                 if (upgrade.send(Some(status), Some(headers), Some(body.into())).await).is_ok() {
-                    return FutureResultToPy::None;
+                    return crate::py::asyncio::FutureResultToPy::None;
                 }
-                FutureResultToPy::Err(error_flow!("Connection already upgraded"))
+                crate::py::asyncio::FutureResultToPy::Err(error_flow!("Connection already upgraded"))
             });
         }
-        err_future_into_py(py, error_flow!("Connection already upgraded"))
+        crate::py::asyncio::err_future_into_asyncio(py, error_flow!("Connection already upgraded"))
     }
 
     #[inline(always)]
     fn send_message<'p>(&self, py: Python<'p>, data: Message) -> PyResult<Bound<'p, PyAny>> {
         if self.closed.load(atomic::Ordering::Acquire) {
-            return err_future_into_py(py, error_flow!("Transport closed"));
+            return crate::py::asyncio::err_future_into_asyncio(py, error_flow!("Transport closed"));
         }
 
         let transport = self.ws_tx.clone();
         let closed = self.closed.clone();
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
             if let Some(ws) = &mut *(transport.lock().await) {
                 match ws.send(data).await {
-                    Ok(()) => return FutureResultToPy::None,
+                    Ok(()) => return crate::py::asyncio::FutureResultToPy::None,
                     _ => {
                         if closed.load(atomic::Ordering::Acquire) {
                             log::info!("Attempted to write to a closed websocket");
-                            return FutureResultToPy::None;
+                            return crate::py::asyncio::FutureResultToPy::None;
                         }
                     }
                 }
             }
-            FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
+            crate::py::asyncio::FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
         })
     }
 
@@ -551,7 +556,7 @@ impl ASGIWebsocketProtocol {
         let ws_tx = self.ws_tx.clone();
         self.closed.store(true, atomic::Ordering::Release);
 
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
                 WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx), frame)
                     .close()
@@ -559,7 +564,7 @@ impl ASGIWebsocketProtocol {
             } else {
                 init_ev.notify_one();
             }
-            FutureResultToPy::None
+            crate::py::asyncio::FutureResultToPy::None
         })
     }
 
@@ -594,12 +599,12 @@ impl ASGIWebsocketProtocol {
         {
             // unless the connection was closed
             if self.closed.load(atomic::Ordering::Acquire) {
-                return done_future_into_py(
+                return crate::py::asyncio::done_future_into_asyncio(
                     py,
                     super::conversion::message_into_py(py, ASGIMessageType::WSClose(None)).map(Bound::unbind),
                 );
             }
-            return done_future_into_py(
+            return crate::py::asyncio::done_future_into_asyncio(
                 py,
                 super::conversion::message_into_py(py, ASGIMessageType::WSConnect).map(Bound::unbind),
             );
@@ -611,7 +616,7 @@ impl ASGIWebsocketProtocol {
         let transport = self.ws_rx.clone();
         let guard_disconnect = self.disconnect_guard.clone();
 
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        crate::py::asyncio::future_into_asyncio_futlike(self.rt.clone(), py, async move {
             if !accepted.load(atomic::Ordering::Acquire) {
                 // need to wait for the protocol to send the accept message and init transport
                 accepted_ev.notified().await;
@@ -627,23 +632,23 @@ impl ASGIWebsocketProtocol {
                         Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message @ Message::Close(_)) => {
                             closed.store(true, atomic::Ordering::Release);
-                            return FutureResultToPy::ASGIWSMessage(message);
+                            return crate::py::asyncio::FutureResultToPy::ASGIWSMessage(message);
                         }
-                        Ok(message) => return FutureResultToPy::ASGIWSMessage(message),
+                        Ok(message) => return crate::py::asyncio::FutureResultToPy::ASGIWSMessage(message),
                         _ => {
                             // treat any recv error as a disconnection
                             closed.store(true, atomic::Ordering::Release);
-                            return FutureResultToPy::ASGIWSMessage(Message::Close(None));
+                            return crate::py::asyncio::FutureResultToPy::ASGIWSMessage(Message::Close(None));
                         }
                     }
                 }
             }
 
             if closed.load(atomic::Ordering::Acquire) {
-                return FutureResultToPy::ASGIWSMessage(Message::Close(None));
+                return crate::py::asyncio::FutureResultToPy::ASGIWSMessage(Message::Close(None));
             }
 
-            FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
+            crate::py::asyncio::FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
         })
     }
 
@@ -654,7 +659,13 @@ impl ASGIWebsocketProtocol {
             Ok(ASGIMessageType::WSMessage(message)) => self.send_message(py, message),
             Ok(ASGIMessageType::HTTPResponseStart(intent)) => self.start_response(py, intent),
             Ok(ASGIMessageType::HTTPResponseBody((body, more))) => self.send_response(py, body, more),
-            _ => err_future_into_py(py, error_message!()),
+            _ => crate::py::asyncio::err_future_into_asyncio(py, error_message!()),
+        }
+    }
+
+    fn _close(&self) {
+        if let (Some(tx), res) = self.tx() {
+            _ = tx.send(res);
         }
     }
 }

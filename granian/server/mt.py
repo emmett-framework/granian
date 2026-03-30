@@ -5,14 +5,15 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WSGIWorker
 from .._loops import loops
 from .._types import SSLCtx
-from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
+from ..asgi import AsyncIOASGIApp, AsyncIOLifespanProtocol
 from ..errors import ConfigurationError, FatalError
-from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
-from ..wsgi import _callback_wrapper as _wsgi_call_wrap
+from ..rsgi import impl as _rsgi_impl
+from ..rsgi._impl import _callbacks_from_target as _rsgi_cbs_from_target
+from ..wsgi import WSGIApp
+from ._runtimes import _tonio_runtime_hook_post, _tonio_runtime_hook_pre
 from .common import (
     WORKERS_METHODS,
     AbstractServer,
@@ -20,8 +21,9 @@ from .common import (
     HTTP1Settings,
     HTTP2Settings,
     HTTPModes,
+    Interfaces,
+    PyRuntimes,
     RuntimeModes,
-    TaskImpl,
     logger,
 )
 
@@ -37,7 +39,7 @@ class WorkerThread(AbstractWorker):
     def wrap_target(target):
         @wraps(target)
         def wrapped(worker_id, sig, callback, sock, loop_impl, *args, **kwargs):
-            loop = loops.get(loop_impl)
+            loop = loops.get(loop_impl) if loop_impl else None
             return target(worker_id, sig, callback, sock, loop, *args, **kwargs)
 
         return wrapped
@@ -71,7 +73,7 @@ class WorkerThread(AbstractWorker):
 class MTServer(AbstractServer[WorkerThread]):
     @staticmethod
     @WorkerThread.wrap_target
-    def _spawn_asgi_worker(
+    def _spawn_asgi_asyncio_worker(
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
@@ -83,7 +85,7 @@ class MTServer(AbstractServer[WorkerThread]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -94,7 +96,7 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: dict[str, Any],
         metrics: Any,
     ):
-        wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
+        app_builder = AsyncIOASGIApp(callback, loop, {}, scope_opts, log_access_fmt)
         evp = asyncio.Event()
 
         async def _main():
@@ -116,6 +118,7 @@ class MTServer(AbstractServer[WorkerThread]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -126,13 +129,12 @@ class MTServer(AbstractServer[WorkerThread]):
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(app_builder.build(bool(log_access_fmt)), loop, shutdown_event)
         loop.run_until_complete(_main())
 
     @staticmethod
     @WorkerThread.wrap_target
-    def _spawn_asgi_lifespan_worker(
+    def _spawn_asgi_asyncio_lifespan_worker(
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
@@ -144,7 +146,7 @@ class MTServer(AbstractServer[WorkerThread]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -155,10 +157,8 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: dict[str, Any],
         metrics: Any,
     ):
-        lifespan_handler = LifespanProtocol(callback)
-        wcallback = _future_watcher_wrapper(
-            _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
-        )
+        lifespan_handler = AsyncIOLifespanProtocol(callback)
+        app_builder = AsyncIOASGIApp(callback, loop, lifespan_handler.state, scope_opts, log_access_fmt)
         evp = asyncio.Event()
 
         async def _main():
@@ -185,6 +185,7 @@ class MTServer(AbstractServer[WorkerThread]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -195,14 +196,13 @@ class MTServer(AbstractServer[WorkerThread]):
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(app_builder.build(bool(log_access_fmt)), loop, shutdown_event)
         loop.run_until_complete(_main())
         loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
     @WorkerThread.wrap_target
-    def _spawn_rsgi_worker(
+    def _spawn_rsgi_asyncio_worker(
         worker_id: int,
         shutdown_event: Any,
         callback: Any,
@@ -214,7 +214,7 @@ class MTServer(AbstractServer[WorkerThread]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -226,7 +226,7 @@ class MTServer(AbstractServer[WorkerThread]):
         metrics: Any,
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
-        wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
+        app_builder = _rsgi_impl.AsyncIORSGIApp(callback, loop, log_access_fmt)
         evp = asyncio.Event()
 
         async def _main():
@@ -250,6 +250,7 @@ class MTServer(AbstractServer[WorkerThread]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -260,10 +261,127 @@ class MTServer(AbstractServer[WorkerThread]):
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(app_builder.build(bool(log_access_fmt)), None, shutdown_event)
         loop.run_until_complete(_main())
         callback_del(loop)
+
+    @staticmethod
+    @WorkerThread.wrap_target
+    def _spawn_rsgi_tonio_worker(
+        worker_id: int,
+        shutdown_event: Any,
+        callback: Any,
+        sock: Any,
+        loop: Any,
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: int | None,
+        blocking_threads: int,
+        blocking_threads_idle_timeout: int,
+        backpressure: int,
+        # task_impl: TaskImpl,
+        http_mode: HTTPModes,
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
+        websockets: bool,
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
+        ssl_ctx: SSLCtx,
+        scope_opts: dict[str, Any],
+        metrics: Any,
+    ):
+        callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
+        app_builder = _rsgi_impl.TonioRSGIApp(callback, log_access_fmt)
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
+
+        worker = RSGIWorker(
+            worker_id,
+            sock,
+            None,
+            runtime_threads,
+            runtime_blocking_threads,
+            blocking_threads,
+            blocking_threads_idle_timeout,
+            False,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            static_path,
+            *ssl_ctx,
+            metrics,
+        )
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
+        serve(app_builder.build(bool(log_access_fmt)), None, shutdown_event)
+        _main()
+
+    @staticmethod
+    @WorkerThread.wrap_target
+    def _spawn_rsgi_sync_worker(
+        worker_id: int,
+        shutdown_event: Any,
+        callback: Any,
+        sock: Any,
+        loop: Any,
+        runtime_mode: RuntimeModes,
+        runtime_threads: int,
+        runtime_blocking_threads: int | None,
+        blocking_threads: int,
+        blocking_threads_idle_timeout: int,
+        backpressure: int,
+        # task_impl: TaskImpl,
+        http_mode: HTTPModes,
+        http1_settings: HTTP1Settings | None,
+        http2_settings: HTTP2Settings | None,
+        websockets: bool,
+        static_path: tuple[str, str, str | None] | None,
+        log_access_fmt: str | None,
+        ssl_ctx: SSLCtx,
+        scope_opts: dict[str, Any],
+        metrics: Any,
+    ):
+        callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
+        app_builder = _rsgi_impl.SyncRSGIApp(callback, log_access_fmt)
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
+
+        worker = RSGIWorker(
+            worker_id,
+            sock,
+            None,
+            runtime_threads,
+            runtime_blocking_threads,
+            blocking_threads,
+            blocking_threads_idle_timeout,
+            True,
+            backpressure,
+            http_mode,
+            http1_settings,
+            http2_settings,
+            websockets,
+            static_path,
+            *ssl_ctx,
+            metrics,
+        )
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
+        serve(app_builder.build(bool(log_access_fmt)), None, shutdown_event)
+        _main()
 
     @staticmethod
     @WorkerThread.wrap_target
@@ -279,7 +397,7 @@ class MTServer(AbstractServer[WorkerThread]):
         blocking_threads: int,
         blocking_threads_idle_timeout: int,
         backpressure: int,
-        task_impl: TaskImpl,
+        # task_impl: TaskImpl,
         http_mode: HTTPModes,
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
@@ -290,7 +408,7 @@ class MTServer(AbstractServer[WorkerThread]):
         scope_opts: dict[str, Any],
         metrics: Any,
     ):
-        wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
+        app_builder = WSGIApp(callback, scope_opts, log_access_fmt)
         evp = threading.Event()
 
         def _main():
@@ -309,6 +427,7 @@ class MTServer(AbstractServer[WorkerThread]):
             runtime_blocking_threads,
             blocking_threads,
             blocking_threads_idle_timeout,
+            False,
             backpressure,
             http_mode,
             http1_settings,
@@ -318,8 +437,7 @@ class MTServer(AbstractServer[WorkerThread]):
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
-        scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        serve(scheduler, loop, shutdown_event)
+        serve(app_builder.build(bool(log_access_fmt)), loop, shutdown_event)
         _main()
 
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerThread:
@@ -334,14 +452,14 @@ class MTServer(AbstractServer[WorkerThread]):
                 sig,
                 callback_loader,
                 (self._ssp, self._shd),
-                self.loop,
+                self.loop if self.pyruntime == PyRuntimes.asyncio else None,
                 self.runtime_mode,
                 self.runtime_threads,
                 self.runtime_blocking_threads,
                 self.blocking_threads,
                 self.blocking_threads_idle_timeout,
                 self.backpressure,
-                self.task_impl,
+                # self.task_impl,
                 self.http,
                 self.http1_settings,
                 self.http2_settings,
@@ -388,4 +506,25 @@ class MTServer(AbstractServer[WorkerThread]):
             logger.error('The resource monitor is not supported on the free-threaded build')
             raise ConfigurationError('workers_max_rss')
 
-        super().serve(spawn_target, target_loader, wrap_loader)
+        super().serve(
+            spawn_target,
+            target_loader,
+            wrap_loader,
+            {
+                Interfaces.ASGI: {
+                    PyRuntimes.asyncio: (self._spawn_asgi_asyncio_lifespan_worker, None),
+                },
+                Interfaces.ASGINL: {PyRuntimes.asyncio: (self._spawn_asgi_asyncio_worker, None)},
+                Interfaces.RSGI: {
+                    PyRuntimes.asyncio: (self._spawn_rsgi_asyncio_worker, None),
+                    PyRuntimes.threading: (self._spawn_rsgi_sync_worker, None),
+                    PyRuntimes.tonio: (
+                        self._spawn_rsgi_tonio_worker,
+                        (_tonio_runtime_hook_pre, _tonio_runtime_hook_post),
+                    ),
+                },
+                Interfaces.WSGI: {
+                    PyRuntimes.threading: (self._spawn_wsgi_worker, None),
+                },
+            },
+        )

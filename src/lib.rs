@@ -12,13 +12,13 @@ use std::sync::OnceLock;
 mod asgi;
 mod asyncio;
 mod blocking;
-mod callbacks;
 mod conversion;
 mod files;
 mod http;
 mod ipc;
 mod metrics;
 mod net;
+mod py;
 mod rsgi;
 mod runtime;
 mod serve;
@@ -47,13 +47,15 @@ pub fn get_granian_version() -> &'static str {
 fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("__version__", get_granian_version())?;
     module.add("BUILD_GIL", BUILD_GIL)?;
-    module.add_class::<callbacks::CallbackScheduler>()?;
+
     asgi::init_pymodule(module)?;
     ipc::init_pymodule(module)?;
     metrics::init_pymodule(module)?;
+    py::init_pymodule(module)?;
     rsgi::init_pymodule(py, module)?;
     sys::init_pymodule(module)?;
     net::init_pymodule(module)?;
     workers::init_pymodule(module)?;
+
     Ok(())
 }

@@ -9,11 +9,10 @@ use tokio::sync::oneshot;
 
 use super::{io::WSGIProtocol, types::WSGIBody};
 use crate::{
-    callbacks::ArcCBScheduler,
-    http::{HTTPProto, HTTPResponseBody, empty_body},
+    http::{HTTPProto, HTTPResponseBody},
     net::SockAddr,
+    py::interop::ArcApp,
     runtime::{Runtime, RuntimeRef},
-    utils::log_application_callable_exception,
 };
 
 macro_rules! environ_set {
@@ -115,8 +114,8 @@ fn build_wsgi(
 
 #[inline(always)]
 pub(crate) fn call_http(
+    app: ArcApp,
     rt: RuntimeRef,
-    cb: ArcCBScheduler,
     server_addr: SockAddr,
     client_addr: SockAddr,
     scheme: HTTPProto,
@@ -129,14 +128,7 @@ pub(crate) fn call_http(
 
     rt.spawn_blocking(move |py| {
         if let Ok((proto, environ)) = build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body) {
-            if let Err(err) = cb.get().cb.call1(py, (proto.clone_ref(py), environ)) {
-                log_application_callable_exception(py, &err);
-                if let Some(tx) = proto.get().tx() {
-                    let _ = tx.send((500, HeaderMap::new(), empty_body()));
-                }
-            }
-
-            proto.drop_ref(py);
+            app.get().handle_request(py, (proto, environ));
         }
     });
 

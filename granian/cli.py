@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 
 import click
 
-from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
+from .constants import HTTPModes, Interfaces, Loops, PyRuntimes, RuntimeModes, SSLProtocols, TaskImpl
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
@@ -152,6 +152,17 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     type=EnumType(RuntimeModes),
     default=RuntimeModes.auto,
     help='Runtime mode to use (single/multi threaded)',
+)
+@option(
+    '--py-runtime',
+    type=EnumType(PyRuntimes),
+    help='Python runtime to use',
+)
+@option(
+    '--py-runtime-threads',
+    type=click.IntRange(1),
+    default=1,
+    help='Number of Python runtime threads',
 )
 @option('--loop', type=EnumType(Loops), default=Loops.auto, help='Event loop implementation')
 @option(
@@ -447,6 +458,8 @@ def cli(
     runtime_threads: int,
     runtime_blocking_threads: int | None,
     runtime_mode: RuntimeModes,
+    py_runtime: PyRuntimes | None,
+    py_runtime_threads: int,
     loop: Loops,
     task_impl: TaskImpl,
     backlog: int,
@@ -531,6 +544,8 @@ def cli(
         runtime_threads=runtime_threads,
         runtime_blocking_threads=runtime_blocking_threads,
         runtime_mode=runtime_mode,
+        py_runtime=py_runtime,
+        py_runtime_threads=py_runtime_threads,
         loop=loop,
         task_impl=task_impl,
         http=http,

@@ -91,6 +91,7 @@ pub(crate) struct WorkerConfig {
     pub blocking_threads: usize,
     pub py_threads: usize,
     pub py_threads_idle_timeout: u64,
+    pub py_loopback_thread: bool,
     pub backpressure: usize,
     pub http_mode: String,
     pub http1_opts: HTTP1Config,
@@ -126,6 +127,7 @@ impl WorkerConfig {
         blocking_threads: usize,
         py_threads: usize,
         py_threads_idle_timeout: u64,
+        py_loopback_thread: bool,
         backpressure: usize,
         http_mode: &str,
         http1_opts: HTTP1Config,
@@ -163,6 +165,7 @@ impl WorkerConfig {
             blocking_threads,
             py_threads,
             py_threads_idle_timeout,
+            py_loopback_thread,
             backpressure,
             http_mode: http_mode.into(),
             http1_opts,
@@ -248,12 +251,12 @@ pub(crate) struct WorkerMarkerConnUpgrades;
 
 #[derive(Clone)]
 pub(crate) struct WorkerCTXBase<M> {
-    pub callback: crate::callbacks::ArcCBScheduler,
+    pub callback: crate::py::interop::ArcApp,
     pub metrics: M,
 }
 
 impl<M> WorkerCTXBase<M> {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M) -> Self {
+    pub fn new(callback: Py<crate::py::interop::PyApp>, metrics: M) -> Self {
         Self {
             callback: Arc::new(callback),
             metrics,
@@ -263,7 +266,7 @@ impl<M> WorkerCTXBase<M> {
 
 #[derive(Clone)]
 pub(crate) struct WorkerCTXFiles<M> {
-    pub callback: crate::callbacks::ArcCBScheduler,
+    pub callback: crate::py::interop::ArcApp,
     pub metrics: M,
     pub static_mounts: Vec<(String, String)>,
     pub static_dir_to_file: Option<String>,
@@ -272,7 +275,7 @@ pub(crate) struct WorkerCTXFiles<M> {
 
 impl<M> WorkerCTXFiles<M> {
     pub fn new(
-        callback: crate::callbacks::PyCBScheduler,
+        callback: Py<crate::py::interop::PyApp>,
         metrics: M,
         files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     ) -> Self {
@@ -302,7 +305,7 @@ impl<C, A, H, F, M, Ret> Worker<C, A, H, F, M>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
-            crate::callbacks::ArcCBScheduler,
+            crate::py::interop::ArcApp,
             crate::net::SockAddr,
             crate::net::SockAddr,
             crate::http::HTTPRequest,
@@ -355,7 +358,7 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -381,7 +384,7 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -421,7 +424,7 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -451,7 +454,7 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1081,7 +1084,7 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1113,7 +1116,7 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1146,7 +1149,7 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1178,7 +1181,7 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    crate::callbacks::ArcCBScheduler,
+                    crate::py::interop::ArcApp,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,

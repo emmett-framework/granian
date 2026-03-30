@@ -1,6 +1,7 @@
 import asyncio
 import multiprocessing as mp
 import socket
+import time
 from contextlib import asynccontextmanager, closing
 from functools import partial
 from pathlib import Path
@@ -63,21 +64,21 @@ async def _server(
         proc = mp.get_context('spawn').Process(target=_serve, kwargs=kwargs)
         proc.start()
 
-        conn_failures = 0
-        while conn_failures < 3:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
             try:
-                await asyncio.sleep(1.5)
-                sock = socket.create_connection(('127.0.0.1', port), timeout=1)
+                await asyncio.sleep(0.05)
+                sock = socket.create_connection(('127.0.0.1', port), timeout=0.05)
                 sock.close()
                 succeeded = True
                 break
             except Exception:
-                conn_failures += 1
+                pass
         if succeeded:
             break
 
         proc.terminate()
-        proc.join(timeout=2)
+        proc.join(timeout=0.05)
         if proc.is_alive():
             proc.kill()
         spawn_failures += 1
@@ -89,7 +90,7 @@ async def _server(
         yield port
     finally:
         proc.terminate()
-        proc.join(timeout=2)
+        proc.join(timeout=1)
         if proc.is_alive():
             proc.kill()
 
