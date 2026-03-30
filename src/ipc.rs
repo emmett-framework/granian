@@ -76,12 +76,12 @@ impl IPCReceiverHandle {
         let metrics_aggregator = Arc::new(metrics_aggregator);
 
         std::thread::spawn(move || {
-            let rt = crate::runtime::init_runtime_st(1, 0, 0, Arc::new(pynone), None);
+            let rt = crate::runtime::init_runtime_st(1, 0, 0, Arc::new(pynone), false, None);
             let local = tokio::task::LocalSet::new();
 
             let idx = handle.get().id;
             let mut pyrx = {
-                let guard = sig.get().rx.lock().unwrap();
+                let guard = sig.get().arx.lock().unwrap();
                 guard.clone().unwrap()
             };
 

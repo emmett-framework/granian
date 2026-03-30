@@ -25,6 +25,7 @@ impl ASGIWorker {
             blocking_threads=512,
             py_threads=1,
             py_threads_idle_timeout=30,
+            py_loopback_thread=false,
             backpressure=256,
             http_mode="1",
             http1_opts=None,
@@ -51,6 +52,7 @@ impl ASGIWorker {
         blocking_threads: usize,
         py_threads: usize,
         py_threads_idle_timeout: u64,
+        py_loopback_thread: bool,
         backpressure: usize,
         http_mode: &str,
         http1_opts: Option<Py<PyAny>>,
@@ -76,6 +78,7 @@ impl ASGIWorker {
                 blocking_threads,
                 py_threads,
                 py_threads_idle_timeout,
+                py_loopback_thread,
                 backpressure,
                 http_mode,
                 worker_http1_config_from_py(py, http1_opts)?,
@@ -116,13 +119,19 @@ impl ASGIWorker {
         );
     }
 
-    fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         gen_serve_match!(
             crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -133,6 +142,7 @@ impl ASGIWorker {
 
     fn serve_async<'p>(
         &self,
+        py: Python,
         callback: Py<CallbackScheduler>,
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
@@ -142,7 +152,7 @@ impl ASGIWorker {
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -174,13 +184,19 @@ impl ASGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str_uds(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         gen_serve_match!(
             crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -192,6 +208,7 @@ impl ASGIWorker {
     #[cfg(unix)]
     fn serve_async_uds<'p>(
         &self,
+        py: Python,
         callback: Py<CallbackScheduler>,
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
@@ -201,7 +218,7 @@ impl ASGIWorker {
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,

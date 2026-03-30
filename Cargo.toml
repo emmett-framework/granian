@@ -31,6 +31,7 @@ name = "_granian"
 crate-type = ["cdylib"]
 
 [dependencies]
+arc-swap = "=1.9"
 anyhow = "=1.0"
 bytes = "1.11"
 ciborium = "=0.2"

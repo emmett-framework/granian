@@ -20,6 +20,7 @@ mod ipc;
 mod metrics;
 mod net;
 mod rsgi;
+mod rsgi2;
 mod runtime;
 mod serve;
 mod sys;
@@ -52,6 +53,7 @@ fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     ipc::init_pymodule(module)?;
     metrics::init_pymodule(module)?;
     rsgi::init_pymodule(py, module)?;
+    rsgi2::init_pymodule(py, module)?;
     sys::init_pymodule(module)?;
     net::init_pymodule(module)?;
     workers::init_pymodule(module)?;

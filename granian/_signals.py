@@ -1,8 +1,7 @@
 import signal
 import sys
-import threading
 
-from ._granian import WorkerSignal, WorkerSignalSync
+from ._granian import WorkerSignal
 
 
 def _get_signals():
@@ -38,7 +37,7 @@ def set_loop_signals(loop):
 
 
 def set_sync_signals():
-    signal_event = WorkerSignalSync(threading.Event())
+    signal_event = WorkerSignal()
 
     def signal_handler(signum, frame):
         signal_event.set()

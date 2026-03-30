@@ -201,12 +201,12 @@ impl MetricsExporter {
     }
 
     fn run(pyself: Py<Self>, py: Python, sock: Py<crate::net::SocketHolder>, sig: Py<crate::workers::WorkerSignal>) {
-        let sig = sig.get().rx.lock().unwrap().take().unwrap();
+        let sig = sig.get().arx.lock().unwrap().take().unwrap();
         let pynone = py.None().into_any().into();
         let exp = pyself.clone_ref(py);
 
         std::thread::spawn(move || {
-            let rt = crate::runtime::init_runtime_st(1, 0, 0, pynone, None);
+            let rt = crate::runtime::init_runtime_st(1, 0, 0, pynone, false, None);
             let local = tokio::task::LocalSet::new();
 
             crate::runtime::block_on_local(&rt, local, spawn_exporter(rt.handler(), exp, sock, sig));

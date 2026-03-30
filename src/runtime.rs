@@ -35,6 +35,10 @@ pub trait Runtime: Send + 'static {
     where
         F: FnOnce(Python) + Send + 'static;
 
+    fn spawn_blocking_loopback<F>(&self, task: F)
+    where
+        F: FnOnce(Python) + Send + 'static;
+
     fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
     where
         F: Future<Output = ()> + Send + 'static;
@@ -47,6 +51,7 @@ pub trait ContextExt: Runtime {
 pub(crate) struct RuntimeWrapper {
     pub inner: tokio::runtime::Runtime,
     br: Arc<blocking::BlockingRunner>,
+    brlb: Arc<blocking::BlockingRunner>,
     pr: Arc<Py<PyAny>>,
     sig: Arc<tokio::sync::Notify>,
 }
@@ -57,15 +62,23 @@ impl RuntimeWrapper {
         py_threads: usize,
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
+        loopback: bool,
         metrics: Option<metrics::ArcWorkerMetrics>,
     ) -> Self {
-        let br = match metrics {
+        let br: Arc<blocking::BlockingRunner> = match metrics {
             Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
             None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout),
+        }
+        .into();
+        let brlb = match loopback {
+            true => Arc::new(blocking::BlockingRunner::new(1, 0)),
+            false => br.clone(),
         };
+
         Self {
             inner: default_runtime(blocking_threads),
-            br: br.into(),
+            br,
+            brlb,
             pr: py_loop,
             sig: tokio::sync::Notify::new().into(),
         }
@@ -76,15 +89,23 @@ impl RuntimeWrapper {
         py_threads: usize,
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
+        loopback: bool,
         metrics: Option<metrics::ArcWorkerMetrics>,
     ) -> Self {
-        let br = match metrics {
+        let br: Arc<blocking::BlockingRunner> = match metrics {
             Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
             None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout),
+        }
+        .into();
+        let brlb = match loopback {
+            true => Arc::new(blocking::BlockingRunner::new(1, 0)),
+            false => br.clone(),
         };
+
         Self {
             inner: rt,
-            br: br.into(),
+            br,
+            brlb,
             pr: py_loop,
             sig: tokio::sync::Notify::new().into(),
         }
@@ -94,6 +115,7 @@ impl RuntimeWrapper {
         RuntimeRef::new(
             self.inner.handle().clone(),
             self.br.clone(),
+            self.brlb.clone(),
             self.pr.clone(),
             self.sig.clone(),
         )
@@ -104,6 +126,7 @@ impl RuntimeWrapper {
 pub struct RuntimeRef {
     pub inner: tokio::runtime::Handle,
     innerb: Arc<blocking::BlockingRunner>,
+    innerbl: Arc<blocking::BlockingRunner>,
     innerp: Arc<Py<PyAny>>,
     sig: Arc<tokio::sync::Notify>,
 }
@@ -112,12 +135,14 @@ impl RuntimeRef {
     pub fn new(
         rt: tokio::runtime::Handle,
         br: Arc<blocking::BlockingRunner>,
+        brlb: Arc<blocking::BlockingRunner>,
         pyloop: Arc<Py<PyAny>>,
         sig: Arc<tokio::sync::Notify>,
     ) -> Self {
         Self {
             inner: rt,
             innerb: br,
+            innerbl: brlb,
             innerp: pyloop,
             sig,
         }
@@ -151,6 +176,14 @@ impl Runtime for RuntimeRef {
         F: FnOnce(Python) + Send + 'static,
     {
         _ = self.innerb.run(task);
+    }
+
+    #[inline]
+    fn spawn_blocking_loopback<F>(&self, task: F)
+    where
+        F: FnOnce(Python) + Send + 'static,
+    {
+        _ = self.innerbl.run(task);
     }
 
     fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
@@ -191,6 +224,7 @@ pub(crate) fn init_runtime_mt(
     py_threads: usize,
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
+    loopback: bool,
     metrics: Option<metrics::ArcWorkerMetrics>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
@@ -203,6 +237,7 @@ pub(crate) fn init_runtime_mt(
         py_threads,
         py_threads_idle_timeout,
         py_loop,
+        loopback,
         metrics,
     )
 }
@@ -212,9 +247,17 @@ pub(crate) fn init_runtime_st(
     py_threads: usize,
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
+    loopback: bool,
     metrics: Option<metrics::ArcWorkerMetrics>,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop, metrics)
+    RuntimeWrapper::new(
+        blocking_threads,
+        py_threads,
+        py_threads_idle_timeout,
+        py_loop,
+        loopback,
+        metrics,
+    )
 }
 
 #[inline(always)]

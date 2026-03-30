@@ -1,233 +1,9 @@
 use pyo3::prelude::*;
-use std::{
-    marker::PhantomData,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{marker::PhantomData, pin::Pin, sync::Arc};
 
-use super::asgi::serve::ASGIWorker;
-use super::metrics;
-use super::rsgi::serve::RSGIWorker;
-use super::tls::{
-    load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
-    resolve_protocol_versions,
-};
-use super::wsgi::serve::WSGIWorker;
-
-#[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct WorkerSignal {
-    pub rx: Mutex<Option<crossbeam_channel::Receiver<bool>>>,
-    tx: crossbeam_channel::Sender<bool>,
-    pub arx: Mutex<Option<tokio::sync::watch::Receiver<bool>>>,
-    atx: tokio::sync::watch::Sender<bool>,
-    cb: arc_swap::ArcSwapOption<Py<PyAny>>,
-}
-
-impl WorkerSignal {
-    pub fn release(&self, py: Python) -> PyResult<Py<PyAny>> {
-        match self.cb.load().as_ref() {
-            Some(cb) => cb.call0(py),
-            None => Ok(py.None()),
-        }
-    }
-}
-
-#[pymethods]
-impl WorkerSignal {
-    #[new]
-    fn new() -> Self {
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        let (atx, arx) = tokio::sync::watch::channel(false);
-        Self {
-            rx: Mutex::new(Some(rx)),
-            tx,
-            arx: Mutex::new(Some(arx)),
-            atx,
-            cb: arc_swap::ArcSwapOption::from(None),
-        }
-    }
-
-    fn add_cb(&self, cb: Py<PyAny>) {
-        self.cb.store(Some(cb.into()));
-    }
-
-    fn set(&self) {
-        _ = self.tx.send(true);
-        _ = self.atx.send(true);
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct HTTP1Config {
-    pub header_read_timeout: core::time::Duration,
-    pub keep_alive: bool,
-    pub max_buffer_size: usize,
-    pub pipeline_flush: bool,
-}
-
-#[derive(Clone)]
-pub(crate) struct HTTP2Config {
-    pub adaptive_window: bool,
-    pub initial_connection_window_size: u32,
-    pub initial_stream_window_size: u32,
-    pub keep_alive_interval: Option<core::time::Duration>,
-    pub keep_alive_timeout: core::time::Duration,
-    pub max_concurrent_streams: u32,
-    pub max_frame_size: u32,
-    pub max_headers_size: u32,
-    pub max_send_buffer_size: usize,
-}
-
-pub(crate) struct WorkerConfig {
-    pub id: i32,
-    sock: Py<crate::net::SocketHolder>,
-    #[cfg(not(Py_GIL_DISABLED))]
-    pub ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
-    pub threads: usize,
-    pub blocking_threads: usize,
-    pub py_threads: usize,
-    pub py_threads_idle_timeout: u64,
-    pub py_loopback_thread: bool,
-    pub backpressure: usize,
-    pub http_mode: String,
-    pub http1_opts: HTTP1Config,
-    pub http2_opts: HTTP2Config,
-    pub websockets_enabled: bool,
-    pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
-    pub tls_opts: Option<WorkerTlsConfig>,
-    pub metrics: (
-        Option<std::time::Duration>,
-        Option<Py<crate::metrics::MetricsAggregator>>,
-    ),
-}
-
-#[derive(Clone)]
-pub(crate) struct WorkerTlsConfig {
-    cert: String,
-    key: (String, Option<String>),
-    proto: String,
-    ca: Option<String>,
-    crl: Vec<String>,
-    client_verify: bool,
-}
-
-impl WorkerConfig {
-    pub fn new(
-        id: i32,
-        sock: Py<crate::net::SocketHolder>,
-        #[allow(unused_variables)] ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
-        threads: usize,
-        blocking_threads: usize,
-        py_threads: usize,
-        py_threads_idle_timeout: u64,
-        py_loopback_thread: bool,
-        backpressure: usize,
-        http_mode: &str,
-        http1_opts: HTTP1Config,
-        http2_opts: HTTP2Config,
-        websockets_enabled: bool,
-        static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
-        ssl_enabled: bool,
-        ssl_cert: Option<String>,
-        ssl_key: Option<String>,
-        ssl_key_password: Option<String>,
-        ssl_protocol_min: &str,
-        ssl_ca: Option<String>,
-        ssl_crl: Vec<String>,
-        ssl_client_verify: bool,
-        metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
-    ) -> Self {
-        let tls_opts = match ssl_enabled {
-            true => Some(WorkerTlsConfig {
-                cert: ssl_cert.unwrap(),
-                key: (ssl_key.unwrap(), ssl_key_password),
-                proto: ssl_protocol_min.into(),
-                ca: ssl_ca,
-                crl: ssl_crl,
-                client_verify: ssl_client_verify,
-            }),
-            false => None,
-        };
-
-        Self {
-            id,
-            sock,
-            #[cfg(not(Py_GIL_DISABLED))]
-            ipc,
-            threads,
-            blocking_threads,
-            py_threads,
-            py_threads_idle_timeout,
-            py_loopback_thread,
-            backpressure,
-            http_mode: http_mode.into(),
-            http1_opts,
-            http2_opts,
-            websockets_enabled,
-            static_files,
-            tls_opts,
-            metrics: (metrics.0.map(std::time::Duration::from_secs), metrics.1),
-        }
-    }
-
-    pub fn tcp_listener(&self) -> std::net::TcpListener {
-        let listener = self.sock.get().as_tcp_listener().unwrap();
-        _ = listener.set_nonblocking(true);
-        listener
-    }
-
-    #[cfg(unix)]
-    pub fn uds_listener(&self) -> std::os::unix::net::UnixListener {
-        let listener = self.sock.get().as_unix_listener().unwrap();
-        _ = listener.set_nonblocking(true);
-        listener
-    }
-
-    pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {
-        let opts = self.tls_opts.as_ref().unwrap();
-        let tls_protos = resolve_protocol_versions(&opts.proto);
-
-        let cfg_builder = match &opts.ca {
-            Some(ca) => {
-                let cas = tls_load_certs(ca.clone());
-                let mut client_auth_cas = tls_listener::rustls::rustls::RootCertStore::empty();
-                for cert in cas {
-                    client_auth_cas.add(cert).unwrap();
-                }
-                let crls = tls_load_crls(opts.crl.iter());
-                let verifier = match opts.client_verify {
-                    true => tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(client_auth_cas.into())
-                        .with_crls(crls)
-                        .build()
-                        .unwrap(),
-                    false => {
-                        tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(client_auth_cas.into())
-                            .with_crls(crls)
-                            .allow_unauthenticated()
-                            .build()
-                            .unwrap()
-                    }
-                };
-                tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
-                    .with_client_cert_verifier(verifier)
-            }
-            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
-                .with_no_client_auth(),
-        };
-        let mut cfg = cfg_builder
-            .with_single_cert(
-                tls_load_certs(opts.cert.clone()),
-                tls_load_pkey(opts.key.0.clone(), opts.key.1.clone()),
-            )
-            .unwrap();
-        cfg.alpn_protocols = match &self.http_mode[..] {
-            "1" => vec![b"http/1.1".to_vec()],
-            "2" => vec![b"h2".to_vec()],
-            _ => vec![b"h2".to_vec(), b"http/1.1".to_vec()],
-        };
-        cfg
-    }
-}
+use super::serve::RSGI2Worker;
+use crate::metrics;
+use crate::workers::{HTTP1Config, HTTP2Config};
 
 struct WorkerMarkerPlain;
 struct WorkerMarkerTls;
@@ -240,22 +16,19 @@ pub(crate) struct WorkerMarkerConnUpgrades;
 
 #[derive(Clone)]
 pub(crate) struct WorkerCTXBase<M> {
-    pub callback: crate::callbacks::ArcCBScheduler,
+    pub callback: super::app::RSGIApp,
     pub metrics: M,
 }
 
 impl<M> WorkerCTXBase<M> {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M) -> Self {
-        Self {
-            callback: Arc::new(callback),
-            metrics,
-        }
+    pub fn new(callback: super::app::RSGIApp, metrics: M) -> Self {
+        Self { callback, metrics }
     }
 }
 
 #[derive(Clone)]
 pub(crate) struct WorkerCTXFiles<M> {
-    pub callback: crate::callbacks::ArcCBScheduler,
+    pub callback: super::app::RSGIApp,
     pub metrics: M,
     pub static_mounts: Vec<(String, String)>,
     pub static_dir_to_file: Option<String>,
@@ -264,13 +37,13 @@ pub(crate) struct WorkerCTXFiles<M> {
 
 impl<M> WorkerCTXFiles<M> {
     pub fn new(
-        callback: crate::callbacks::PyCBScheduler,
+        callback: super::app::RSGIApp,
         metrics: M,
         files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     ) -> Self {
         let (static_mounts, static_dir_to_file, static_expires) = files.unwrap();
         Self {
-            callback: Arc::new(callback),
+            callback,
             metrics,
             static_mounts,
             static_dir_to_file,
@@ -284,7 +57,7 @@ pub(crate) struct Worker<C, A, H, F, M> {
     ctx: C,
     acceptor: A,
     handler: H,
-    pub rt: crate::runtime::RuntimeRef,
+    rt: crate::runtime::RuntimeRef,
     pub tasks: tokio_util::task::TaskTracker,
     target: F,
     metrics: M,
@@ -293,9 +66,8 @@ pub(crate) struct Worker<C, A, H, F, M> {
 impl<C, A, H, F, M, Ret> Worker<C, A, H, F, M>
 where
     F: Fn(
-            crate::runtime::RuntimeRef,
+            super::callbacks::CallbackImpl,
             Arc<tokio::sync::Notify>,
-            crate::callbacks::ArcCBScheduler,
             crate::net::SockAddr,
             crate::net::SockAddr,
             crate::http::HTTPRequest,
@@ -331,9 +103,9 @@ struct WorkerSvc<F, C, P> {
 macro_rules! service_proto_fut {
     ($proto:expr, $self:expr, $req:expr) => {{
         let fut = ($self.f)(
-            $self.rt.clone(),
+            $self.ctx.callback.to_callback_impl($self.rt.clone()),
+            // $self.rt.clone(),
             $self.disconnect_guard.clone(),
-            $self.ctx.callback.clone(),
             $self.addr_local.clone(),
             $self.addr_remote.clone(),
             $req,
@@ -349,9 +121,8 @@ macro_rules! service_impl {
             for WorkerSvc<F, WorkerCTXBase<()>, $proto_marker>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -376,9 +147,8 @@ macro_rules! service_impl {
             for WorkerSvc<F, WorkerCTXFiles<()>, $proto_marker>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -417,9 +187,8 @@ macro_rules! service_impl {
             for WorkerSvc<F, WorkerCTXBase<crate::metrics::ArcWorkerMetrics>, $proto_marker>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -448,9 +217,8 @@ macro_rules! service_impl {
             for WorkerSvc<F, WorkerCTXFiles<crate::metrics::ArcWorkerMetrics>, $proto_marker>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1080,9 +848,8 @@ macro_rules! acceptor_impl {
         impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_plain, H, F, ()>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1113,9 +880,8 @@ macro_rules! acceptor_impl {
         impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_tls, H, F, ()>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1147,9 +913,8 @@ macro_rules! acceptor_impl {
         impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_plain, H, F, crate::metrics::ArcWorkerMetrics>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1180,9 +945,8 @@ macro_rules! acceptor_impl {
         impl<C, H, F, Ret> WorkerAcceptor<$listeneri> for Worker<C, $target_tls, H, F, crate::metrics::ArcWorkerMetrics>
         where
             F: Fn(
-                    crate::runtime::RuntimeRef,
+                    super::callbacks::CallbackImpl,
                     Arc<tokio::sync::Notify>,
-                    crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
@@ -1234,10 +998,7 @@ acceptor_impl!(
 );
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
-    module.add_class::<WorkerSignal>()?;
-    module.add_class::<ASGIWorker>()?;
-    module.add_class::<RSGIWorker>()?;
-    module.add_class::<WSGIWorker>()?;
+    module.add_class::<RSGI2Worker>()?;
 
     Ok(())
 }
