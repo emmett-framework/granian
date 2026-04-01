@@ -60,7 +60,7 @@ tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["
 tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
 tokio = { version = "1.45", features = ["full"] }
 tokio-stream = "0.1"
-tokio-tungstenite = "=0.28"
+tokio-tungstenite = "=0.29"
 tokio-util = { version = "0.7", features = ["codec", "rt"] }
 
 [build-dependencies]
