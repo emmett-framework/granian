@@ -387,6 +387,7 @@ impl ASGIWebsocketProtocol {
         let websocket = self.websocket.lock().unwrap().take();
         let accepted = self.init_tx.clone();
         let accept_notify = self.init_event.clone();
+        let closed = self.closed.clone();
         let rx = self.ws_rx.clone();
         let tx = self.ws_tx.clone();
 
@@ -410,6 +411,12 @@ impl ASGIWebsocketProtocol {
                     accept_notify.notify_one();
                     return FutureResultToPy::None;
                 }
+
+                // connection was closed before upgrade
+                closed.store(true, atomic::Ordering::Release);
+                accepted.store(true, atomic::Ordering::Release);
+                accept_notify.notify_one();
+                return FutureResultToPy::None;
             }
             FutureResultToPy::Err(error_flow!("Connection already upgraded"))
         })
@@ -521,6 +528,13 @@ impl ASGIWebsocketProtocol {
             .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
             .is_ok()
         {
+            // unless the connection was closed
+            if self.closed.load(atomic::Ordering::Acquire) {
+                return done_future_into_py(
+                    py,
+                    super::conversion::message_into_py(py, ASGIMessageType::WSClose(None)).map(Bound::unbind),
+                );
+            }
             return done_future_into_py(
                 py,
                 super::conversion::message_into_py(py, ASGIMessageType::WSConnect).map(Bound::unbind),
