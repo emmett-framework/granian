@@ -39,7 +39,7 @@ encoding_rs = "=0.8"
 futures = "=0.3"
 futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }
-hyper = { version = "=1.8", features = ["http1", "http2", "server"] }
+hyper = { version = "=1.9", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 interprocess = { version = "=2.3", git = "https://github.com/kotauskas/interprocess.git", rev = "44351c4fe88c72ead4f3b0b762c4cf45beb90841", features = ["tokio"] }
 itertools = "0.14"
@@ -55,12 +55,12 @@ pyo3-log = { version = "=0.13", git = "https://github.com/gi0baro/pyo3-log.git",
 rustls-pemfile = "2.2"
 serde = { version = "1.0.228", features = ["derive"] }
 socket2 = { version = "=0.6", features = ["all"] }
-sysinfo = "=0.37"
+sysinfo = "=0.38"
 tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
-tokio = { version = "1.45", features = ["full"] }
+tokio = { version = "1.51", features = ["full"] }
 tokio-stream = "0.1"
-tokio-tungstenite = "=0.28"
+tokio-tungstenite = "=0.29"
 tokio-util = { version = "0.7", features = ["codec", "rt"] }
 
 [build-dependencies]
