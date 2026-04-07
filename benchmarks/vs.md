@@ -4,10 +4,10 @@
 
 ## VS 3rd party comparison
 
-Run at: Mon 01 Dec 2025, 16:21    
-Environment: AMD Ryzen 7 5700X @ Gentoo Linux 6.12.58 (CPUs: 16)    
+Run at: Tue 07 Apr 2026, 11:34    
+Environment: AMD Ryzen 7 5700X @ Gentoo Linux 6.12.77 (CPUs: 16)    
 Python version: 3.13    
-Granian version: 2.6.0
+Granian version: 2.7.3
 
 ### Methodology
 
@@ -34,14 +34,16 @@ The *echo* benchmark consists of an HTTP POST request with a 10KB plain-text bod
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Asgi get 10KB (c128) | 1120599 | 112038 | 1.138ms | 47.111ms |
-| Granian Asgi echo 10KB (iter) (c128) | 495957 | 49591 | 2.57ms | 74.4ms |
-| Uvicorn H11 get 10KB (c128) | 92608 | 9271 | 13.773ms | 661.365ms |
-| Uvicorn H11 echo 10KB (iter) (c128) | 79095 | 7920 | 16.116ms | 852.353ms |
-| Uvicorn Httptools get 10KB (c128) | 372015 | 37202 | 3.431ms | 163.172ms |
-| Uvicorn Httptools echo 10KB (iter) (c128) | 326370 | 32640 | 3.908ms | 187.28ms |
-| Hypercorn get 10KB (c128) | 63625 | 6374 | 20.054ms | 302.944ms |
-| Hypercorn echo 10KB (iter) (c128) | 56003 | 5611 | 22.729ms | 243.464ms |
+| Granian Asgi get 10KB (c128) | 1267010 | 126671 | 1.005ms | 83.455ms |
+| Granian Asgi echo 10KB (iter) (c128) | 585900 | 58584 | 2.178ms | 53.71ms |
+| Gunicorn Asgi get 10KB (c128) | 367488 | 36751 | 3.468ms | 122.756ms |
+| Gunicorn Asgi echo 10KB (iter) (c128) | 343532 | 34353 | 3.715ms | 135.016ms |
+| Uvicorn H11 get 10KB (c128) | 128763 | 12885 | 9.903ms | 490.929ms |
+| Uvicorn H11 echo 10KB (iter) (c128) | 118259 | 11835 | 10.784ms | 575.711ms |
+| Uvicorn Httptools get 10KB (c128) | 512549 | 51252 | 2.488ms | 84.977ms |
+| Uvicorn Httptools echo 10KB (iter) (c128) | 487358 | 48730 | 2.614ms | 99.153ms |
+| Hypercorn get 10KB (c128) | 92710 | 9281 | 13.747ms | 179.906ms |
+| Hypercorn echo 10KB (iter) (c128) | 80989 | 8110 | 15.734ms | 198.318ms |
 
 
 ### WSGI
@@ -50,14 +52,14 @@ Granian is run with `--blocking-threads 1`.
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Wsgi get 10KB (c64) | 1258206 | 125767 | 0.507ms | 24.521ms |
-| Granian Wsgi echo 10KB (iter) (c64) | 968919 | 96869 | 0.658ms | 33.514ms |
-| Gunicorn Gthread get 10KB (c64) | 64957 | 6501 | 9.826ms | 47.665ms |
-| Gunicorn Gthread echo 10KB (iter) (c64) | 48710 | 4876 | 13.098ms | 56.932ms |
-| Gunicorn Gevent get 10KB (c64) | 92780 | 9282 | 6.109ms | 3698.103ms |
-| Gunicorn Gevent echo 10KB (iter) (c64) | 66363 | 6641 | 1.224ms | 7632.984ms |
-| Uwsgi get 10KB (c64) | 125203 | 12524 | 5.1ms | 32.23ms |
-| Uwsgi echo 10KB (iter) (c64) | 96651 | 9670 | 6.61ms | 26.501ms |
+| Granian Wsgi get 10KB (c64) | 1279479 | 127898 | 0.499ms | 19.542ms |
+| Granian Wsgi echo 10KB (iter) (c64) | 1110482 | 110990 | 0.574ms | 33.503ms |
+| Gunicorn Gthread get 10KB (c64) | 99884 | 9993 | 6.397ms | 25.855ms |
+| Gunicorn Gthread echo 10KB (iter) (c64) | 73950 | 7400 | 8.637ms | 32.17ms |
+| Gunicorn Gevent get 10KB (c64) | 140171 | 14019 | 4.382ms | 1330.088ms |
+| Gunicorn Gevent echo 10KB (iter) (c64) | 90038 | 9007 | 6.714ms | 5320.485ms |
+| Uwsgi get 10KB (c64) | 124526 | 12456 | 5.129ms | 29.384ms |
+| Uwsgi echo 10KB (iter) (c64) | 96858 | 9689 | 6.594ms | 34.848ms |
 
 
 ### HTTP/2
@@ -66,10 +68,10 @@ Granian is run with `--http 2` and `--runtime-threads 2`.
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Asgi get 10KB (c128) | 727258 | 72742 | 7.007ms | 20.31ms |
-| Granian Asgi echo 10KB (iter) (c128) | 358296 | 35869 | 14.22ms | 27.098ms |
-| Hypercorn get 10KB (c128) | 47195 | 4768 | 107.262ms | 1947.351ms |
-| Hypercorn echo 10KB (iter) (c128) | 38204 | 3870 | 132.407ms | 1570.028ms |
+| Granian Asgi get 10KB (c128) | 1002316 | 100234 | 5.083ms | 12.808ms |
+| Granian Asgi echo 10KB (iter) (c128) | 473569 | 47383 | 10.712ms | 19.737ms |
+| Hypercorn get 10KB (c128) | 71890 | 7237 | 70.633ms | 1281.351ms |
+| Hypercorn echo 10KB (iter) (c128) | 55700 | 5618 | 91.132ms | 1076.041ms |
 
 
 ### ASGI file responses
@@ -80,10 +82,11 @@ Granian is run with `--runtime-blocking-threads 1`.
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian (pathsend) (c128) | 470582 | 47055 | 2.71ms | 68.904ms |
-| Uvicorn H11 (c128) | 67693 | 6780 | 18.801ms | 1041.191ms |
-| Uvicorn Httptools (c128) | 166445 | 16652 | 7.669ms | 394.407ms |
-| Hypercorn (c128) | 52310 | 5242 | 24.365ms | 356.905ms |
+| Granian (pathsend) (c128) | 468490 | 46847 | 2.716ms | 86.854ms |
+| Gunicorn Asgi (c128) | 158541 | 15860 | 8.047ms | 307.402ms |
+| Uvicorn H11 (c128) | 94017 | 9411 | 13.571ms | 451.567ms |
+| Uvicorn Httptools (c128) | 184182 | 18424 | 6.929ms | 332.375ms |
+| Hypercorn (c128) | 70650 | 7075 | 18.032ms | 264.404ms |
 
 
 ### Long I/O
@@ -92,19 +95,21 @@ Plain text response comparison simulating *long* I/O waits (10ms and 100ms).
 
 | Server | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| Granian Rsgi 10ms (c512) | 455101 | 45537 | 11.14ms | 146.055ms |
-| Granian Rsgi 100ms (c512) | 50082 | 5057 | 101.309ms | 215.883ms |
-| Granian Asgi 10ms (c512) | 432970 | 43327 | 11.742ms | 125.013ms |
-| Granian Asgi 100ms (c512) | 49393 | 4988 | 102.282ms | 240.509ms |
-| Granian Wsgi 10ms (c512) | 403305 | 40359 | 12.611ms | 117.238ms |
-| Granian Wsgi 100ms (c512) | 50176 | 5065 | 100.86ms | 192.847ms |
-| Uvicorn Httptools 10ms (c512) | 342402 | 34272 | 14.81ms | 143.097ms |
-| Uvicorn Httptools 100ms (c512) | 49856 | 5034 | 101.336ms | 238.871ms |
-| Hypercorn 10ms (c512) | 60094 | 6057 | 84.263ms | 3228.749ms |
-| Hypercorn 100ms (c512) | 49229 | 4970 | 102.755ms | 233.677ms |
-| Gunicorn Gevent 10ms (c512) | 80753 | 8122 | 62.714ms | 226.663ms |
-| Gunicorn Gevent 100ms (c512) | 49796 | 5029 | 101.464ms | 277.197ms |
-| Uwsgi 10ms (c512) | 934 | 412 | 1037.048ms | 1899.769ms |
+| Granian Rsgi 10ms (c512) | 465569 | 46588 | 10.929ms | 111.883ms |
+| Granian Rsgi 100ms (c512) | 50022 | 5050 | 101.238ms | 214.227ms |
+| Granian Asgi 10ms (c512) | 452674 | 45296 | 11.237ms | 113.972ms |
+| Granian Asgi 100ms (c512) | 49709 | 5019 | 101.776ms | 198.683ms |
+| Granian Wsgi 10ms (c512) | 252202 | 25259 | 20.129ms | 132.759ms |
+| Granian Wsgi 100ms (c512) | 26068 | 2657 | 192.814ms | 327.33ms |
+| Gunicorn Asgi 10ms (c512) | 415518 | 41584 | 12.237ms | 1286.328ms |
+| Gunicorn Asgi 100ms (c512) | 48679 | 4917 | 103.936ms | 1334.131ms |
+| Uvicorn Httptools 10ms (c512) | 438773 | 43906 | 11.596ms | 115.006ms |
+| Uvicorn Httptools 100ms (c512) | 50006 | 5049 | 101.33ms | 188.6ms |
+| Hypercorn 10ms (c512) | 89997 | 9047 | 56.322ms | 1779.774ms |
+| Hypercorn 100ms (c512) | 49365 | 4985 | 102.348ms | 244.405ms |
+| Gunicorn Gevent 10ms (c512) | 122947 | 12339 | 41.277ms | 183.908ms |
+| Gunicorn Gevent 100ms (c512) | 49693 | 5018 | 101.416ms | 275.473ms |
+| Uwsgi 10ms (c512) | 978 | 413 | 989.141ms | 1113.942ms |
 | Uwsgi 100ms (c512) | 0 | 0 | N/A | N/A |
 
 
@@ -116,16 +121,15 @@ Granian is run with `--ws`.
 
 | Clients | Server | Send throughput | Receive throughput | Combined throughput |
 | --- | --- | --- | --- | --- |
-| 8 | Granian Rsgi | 978859 | 216753 | 243847 |
-| 8 | Granian Asgi | 1017772 | 213299 | 239961 |
-| 8 | Uvicorn H11 | 633314 | 125949 | 141692 |
-| 8 | Hypercorn | 587286 | 91568 | 103014 |
-| 16 | Granian Rsgi | 2026042 | 232389 | 246914 |
-| 16 | Granian Asgi | 1979518 | 231791 | 246278 |
-| 16 | Uvicorn H11 | 1317826 | 129333 | 137416 |
-| 16 | Hypercorn | 1281565 | 99381 | 105592 |
-| 32 | Granian Rsgi | 3717750 | 232016 | 239267 |
-| 32 | Granian Asgi | 3614998 | 232219 | 239475 |
-| 32 | Uvicorn H11 | N/A | N/A | N/A |
-| 32 | Hypercorn | N/A | N/A | N/A |
-
+| 8 | Granian Rsgi | 1237948 | 270130 | 303897 |
+| 8 | Granian Asgi | 1232730 | 250354 | 281648 |
+| 8 | Uvicorn H11 | 863515 | 209364 | 235534 |
+| 8 | Hypercorn | 767098 | 154307 | 173595 |
+| 16 | Granian Rsgi | 2440579 | 328333 | 348854 |
+| 16 | Granian Asgi | 2362271 | 297998 | 316623 |
+| 16 | Uvicorn H11 | 1670907 | 213915 | 227285 |
+| 16 | Hypercorn | 1592275 | 164696 | 174990 |
+| 32 | Granian Rsgi | 4606544 | 311080 | 320802 |
+| 32 | Granian Asgi | 4284942 | 295927 | 305175 |
+| 32 | Uvicorn H11 | 4049752 | 209837 | 216394 |
+| 32 | Hypercorn | 4032787 | 170646 | 175979 |
