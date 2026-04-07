@@ -45,7 +45,7 @@ APPS = {
         'hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 '
         '--workers {procs} asgi:{app}.asgi:async_app'
     ),
-    'gunicorn_asgi': 'gunicorn --workers {procs} --http-protocols h{http} -k asgi app.asgi:app',
+    'gunicorn_asgi': 'gunicorn --workers {procs} --http-protocols h{http} -k asgi {app}.asgi:app',
     'gunicorn_gthread': 'gunicorn --workers {procs} --http-protocols h{http} -k gthread app.wsgi:app',
     'gunicorn_gevent': 'gunicorn --workers {procs} --http-protocols h{http} -k gevent app.wsgi:app',
     'uwsgi': (
