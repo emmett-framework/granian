@@ -1,1 +1,0 @@
-selectolax==0.3.21

@@ -86,7 +86,3 @@ Tests are run with `--runtime-blocking-threads 1`.
 - [Versus 3rd party servers](./vs.md)
 - [AsyncIO-specific benchmarks](./asyncio.md)
 - [Python versions](./pyver.md)
-
-### 3rd party benchmarks
-
-- [TFB](./external/tfb.md)

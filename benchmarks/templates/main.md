@@ -35,10 +35,7 @@ Tests are peformed using `oha` utility, with the concurrency specified in the sp
 
 ### Other benchmarks
 
+- [Concurrency benchmarks](./concurrency.md)
 - [Versus 3rd party servers](./vs.md)
 - [AsyncIO-specific benchmarks](./asyncio.md)
 - [Python versions](./pyver.md)
-
-### 3rd party benchmarks
-
-- [TFB](./external/tfb.md)
