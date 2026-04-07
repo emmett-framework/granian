@@ -45,8 +45,9 @@ APPS = {
         'hypercorn -b localhost:8000 -k uvloop --log-level warning --backlog 2048 '
         '--workers {procs} asgi:{app}.asgi:async_app'
     ),
-    'gunicorn_gthread': 'gunicorn --workers {procs} -k gthread app.wsgi:app',
-    'gunicorn_gevent': 'gunicorn --workers {procs} -k gevent app.wsgi:app',
+    'gunicorn_asgi': 'gunicorn --workers {procs} --http-protocols h{http} -k asgi {app}.asgi:app',
+    'gunicorn_gthread': 'gunicorn --workers {procs} --http-protocols h{http} -k gthread app.wsgi:app',
+    'gunicorn_gevent': 'gunicorn --workers {procs} --http-protocols h{http} -k gevent app.wsgi:app',
     'uwsgi': (
         'uwsgi --http :8000 --master --processes {procs} --enable-threads '
         '--disable-logging --die-on-term --single-interpreter --lazy-apps '
@@ -309,7 +310,7 @@ def task_impl():
 def vs_asgi():
     results = {}
     benches = {'get 10KB': ('b10k', {}), 'echo 10KB (iter)': ('echoi', {'post': 10 * 1024})}
-    for fw in ['granian_asgi', 'uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
+    for fw in ['granian_asgi', 'gunicorn_asgi', 'uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
         for key, bench_data in benches.items():
             route, opts = bench_data
             opts['concurrencies'] = [128]
@@ -352,7 +353,7 @@ def vs_files():
     results = {}
     with app('asgi', bthreads=1):
         results['Granian (pathsend)'] = benchmark('fp', concurrencies=[128])
-    for fw in ['uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
+    for fw in ['gunicorn_asgi', 'uvicorn_h11', 'uvicorn_httptools', 'hypercorn']:
         title = ' '.join(item.title() for item in fw.split('_'))
         with app(fw):
             results[title] = benchmark('fb', concurrencies=[128])
@@ -366,6 +367,7 @@ def vs_io():
         'granian_rsgi',
         'granian_asgi',
         'granian_wsgi',
+        'gunicorn_asgi',
         'uvicorn_httptools',
         'hypercorn',
         'gunicorn_gevent',
@@ -386,6 +388,7 @@ def vs_ws():
     for fw in [
         'granian_rsgi',
         'granian_asgi',
+        'gunicorn_asgi',
         'uvicorn_h11',
         'hypercorn',
     ]:
