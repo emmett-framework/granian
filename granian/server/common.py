@@ -27,8 +27,8 @@ from ..net import SocketSpec, UnixSocketSpec
 WT = TypeVar('WT')
 
 WORKERS_METHODS = {
-    RuntimeModes.mt: {False: 'serve_mtr', True: 'serve_mtr_uds'},
-    RuntimeModes.st: {False: 'serve_str', True: 'serve_str_uds'},
+    RuntimeModes.mt: {False: 'serve_mtr', True: 'serve_mtr_uds', 'dual': 'serve_mtr_dual'},
+    RuntimeModes.st: {False: 'serve_str', True: 'serve_str_uds', 'dual': 'serve_str_dual'},
 }
 
 
@@ -83,7 +83,7 @@ class AbstractServer(Generic[WT]):
     def __init__(
         self,
         target: str,
-        address: str = '127.0.0.1',
+        address: str | None = '127.0.0.1',
         port: int = 8000,
         uds: Path | None = None,
         uds_permissions: int | None = None,
@@ -220,6 +220,9 @@ class AbstractServer(Generic[WT]):
         self._ssp = None
         self._shd = None
         self._sfd = None
+        self._ssp_uds = None
+        self._shd_uds = None
+        self._sfd_uds = None
         self._metrics = MetricsAggregator(self.workers)
         self._metrics_exporter = MetricsExporter(self._metrics)
         self.wrks: list[WT] = []
@@ -291,7 +294,11 @@ class AbstractServer(Generic[WT]):
 
     @property
     def _bind_addr_fmt(self):
-        return f'unix:{self.bind_uds}' if self.bind_uds else f'{self.bind_addr}:{self.bind_port}'
+        if self.bind_uds and self.bind_addr:
+            return f'unix:{self.bind_uds} and {self.bind_addr}:{self.bind_port}'
+        if self.bind_uds:
+            return f'unix:{self.bind_uds}'
+        return f'{self.bind_addr}:{self.bind_port}'
 
     @staticmethod
     def _call_hooks(hooks):
@@ -312,11 +319,13 @@ class AbstractServer(Generic[WT]):
 
     def _init_shared_socket(self):
         if self.bind_uds:
-            self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_permissions)
-        else:
+            self._ssp_uds = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_permissions)
+            self._shd_uds = self._ssp_uds.build()
+            self._sfd_uds = self._shd_uds.get_fd()
+        if self.bind_addr:
             self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
-        self._shd = self._ssp.build()
-        self._sfd = self._shd.get_fd()
+            self._shd = self._ssp.build()
+            self._sfd = self._shd.get_fd()
 
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True
