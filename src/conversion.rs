@@ -1,6 +1,10 @@
-use pyo3::{IntoPyObjectExt, prelude::*};
+use hyper::header;
+use pyo3::{IntoPyObjectExt, prelude::*, pybacked::PyBackedStr};
 
-use crate::workers::{HTTP1Config, HTTP2Config};
+use crate::{
+    http,
+    workers::{HTTP1Config, HTTP2Config},
+};
 
 pub(crate) struct Utf8BytesToPy(pub tokio_tungstenite::tungstenite::Utf8Bytes);
 
@@ -93,4 +97,19 @@ pub(crate) fn worker_http2_config_from_py(py: Python, cfg: Option<Py<PyAny>>) ->
         },
     };
     Ok(ret)
+}
+
+#[inline(always)]
+pub(crate) fn headers_from_py(inp: Vec<(PyBackedStr, PyBackedStr)>) -> header::HeaderMap {
+    let mut headers = header::HeaderMap::with_capacity(inp.len() + 3);
+    for (key, value) in inp {
+        if let (Ok(hkey), Ok(hval)) = (
+            header::HeaderName::from_bytes(key.as_bytes()),
+            header::HeaderValue::from_str(&value),
+        ) {
+            headers.append(hkey, hval);
+        }
+    }
+    headers.entry(header::SERVER).or_insert(http::HV_SERVER);
+    headers
 }

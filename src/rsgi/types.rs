@@ -1,12 +1,7 @@
 use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
-use hyper::{
-    Method, Uri, Version,
-    body::Bytes,
-    header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
-    http::uri::Authority,
-};
+use hyper::{Method, Uri, Version, body::Bytes, header::HeaderMap, http::uri::Authority};
 use percent_encoding::percent_decode_str;
 use pyo3::types::{PyBytes, PyIterator, PyList, PyString};
 use pyo3::{prelude::*, pybacked::PyBackedStr};
@@ -15,7 +10,8 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    http::{HTTPProto, HTTPResponseBody, HV_SERVER, empty_body, response_404, response_500},
+    conversion::headers_from_py,
+    http::{HTTPProto, HTTPResponseBody, empty_body, response_404, response_500},
     net::SockAddr,
 };
 
@@ -232,25 +228,11 @@ pub(crate) struct PyResponseFileRange {
     end: u64,
 }
 
-macro_rules! headers_from_py {
-    ($headers:expr) => {{
-        let mut headers = HeaderMap::with_capacity($headers.len() + 3);
-        for (key, value) in $headers {
-            headers.append(
-                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                HeaderValue::from_str(&value).unwrap(),
-            );
-        }
-        headers.entry(HK_SERVER).or_insert(HV_SERVER);
-        headers
-    }};
-}
-
 impl PyResponseBody {
     pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: HTTPResponseBody) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body,
         }
     }
@@ -258,7 +240,7 @@ impl PyResponseBody {
     pub fn empty(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body: empty_body(),
         }
     }
@@ -266,7 +248,7 @@ impl PyResponseBody {
     pub fn from_bytes(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Box<[u8]>) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body: http_body_util::Full::new(Bytes::from(body))
                 .map_err(std::convert::Into::into)
                 .boxed(),
@@ -276,7 +258,7 @@ impl PyResponseBody {
     pub fn from_string(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             body: http_body_util::Full::new(Bytes::from(body))
                 .map_err(std::convert::Into::into)
                 .boxed(),
@@ -296,7 +278,7 @@ impl PyResponseFile {
     pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             file_path,
         }
     }
@@ -324,7 +306,7 @@ impl PyResponseFileRange {
     pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String, start: u64, end: u64) -> Self {
         Self {
             status: status.try_into().unwrap(),
-            headers: headers_from_py!(headers),
+            headers: headers_from_py(headers),
             file_path,
             start,
             end,
