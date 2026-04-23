@@ -17,7 +17,7 @@ use crate::{
 
 const RSGI_PROTO_VERSION: &str = "1.6";
 
-#[pyclass(frozen, module = "granian._granian")]
+#[pyclass(frozen, module = "granian._granian", from_py_object)]
 #[derive(Clone)]
 pub(crate) struct RSGIHeaders {
     inner: HeaderMap,
