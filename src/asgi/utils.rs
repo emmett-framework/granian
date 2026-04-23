@@ -122,7 +122,13 @@ pub(super) fn build_scope_ws(
             req.headers
                 .get_all("Sec-WebSocket-Protocol")
                 .iter()
-                .flat_map(|v| { v.to_str().unwrap().split(',').map(|s| PyString::new(py, s.trim())) })
+                .flat_map(|v| {
+                    v.to_str()
+                        .unwrap_or_default()
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| PyString::new(py, s.trim()))
+                })
                 .collect::<Vec<Bound<PyString>>>(),
         )
         .unwrap()
