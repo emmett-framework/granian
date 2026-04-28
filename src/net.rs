@@ -67,6 +67,15 @@ pub struct UnixListenerSpec {
     permissions: Option<u32>,
 }
 
+
+#[cfg(unix)]
+#[pyclass(frozen, module = "granian._granian")]
+#[derive(Clone)]
+pub struct FdListenerSpec {
+    inp: (i32,),
+    fd: i32,
+}
+
 impl ListenerSpec {
     pub(crate) fn as_socket(&self) -> Result<Socket> {
         let socket = Socket::new(self.domain, Type::STREAM, Some(Protocol::TCP))?;
@@ -161,6 +170,35 @@ impl UnixListenerSpec {
     }
 }
 
+
+#[cfg(unix)]
+impl FdListenerSpec {
+    pub(crate) fn as_socket(&self) -> Result<Socket> {
+        let socket = unsafe { Socket::from_raw_fd(self.fd) };
+        Ok(socket)
+    }
+}
+
+#[cfg(unix)]
+#[pymethods]
+impl FdListenerSpec {
+    #[new]
+    fn new(fd: i32) -> PyResult<Self> {
+        Ok(Self {
+            inp: (fd,),
+            fd,
+        })
+    }
+
+    fn build(&self) -> Result<SocketHolder> {
+        SocketHolder::from_fd_spec(self)
+    }
+
+    pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
+        self.inp.clone().into_py_any(py).unwrap()
+    }
+}
+
 #[cfg(not(any(windows, target_os = "linux", target_os = "freebsd")))]
 #[pyclass(frozen, module = "granian._granian")]
 pub struct SocketHolder {
@@ -183,6 +221,15 @@ impl SocketHolder {
         Ok(Self {
             socket: Some(socket),
             uds: true,
+        })
+    }
+
+    fn from_fd_spec(spec: &FdListenerSpec) -> Result<Self> {
+        let socket = spec.as_socket()?;
+        let domain = socket.domain().unwrap();
+        Ok(Self {
+            socket: Some(socket),
+            uds: domain == Domain::UNIX,
         })
     }
 
@@ -257,6 +304,16 @@ impl SocketHolder {
             socket: Some(socket),
             uds: true,
             backlog: spec.backlog,
+        })
+    }
+
+    fn from_fd_spec(spec: &FdListenerSpec) -> Result<Self> {
+        let socket = spec.as_socket()?;
+        let domain = socket.domain().unwrap();
+        Ok(Self {
+            socket: Some(socket),
+            uds: domain == Domain::UNIX,
+            backlog: 20,
         })
     }
 
@@ -355,6 +412,7 @@ pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<SocketHolder>()?;
     #[cfg(unix)]
     module.add_class::<UnixListenerSpec>()?;
+    module.add_class::<FdListenerSpec>()?;
 
     Ok(())
 }

@@ -21,7 +21,7 @@ from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
-from ..net import SocketSpec, UnixSocketSpec
+from ..net import SocketSpec, UnixSocketSpec, FdSocketSpec
 
 
 WT = TypeVar('WT')
@@ -87,6 +87,7 @@ class AbstractServer(Generic[WT]):
         port: int = 8000,
         uds: Path | None = None,
         uds_permissions: int | None = None,
+        fd: int | None = None,
         interface: Interfaces = Interfaces.RSGI,
         workers: int = 1,
         blocking_threads: int | None = None,
@@ -149,6 +150,7 @@ class AbstractServer(Generic[WT]):
         self.bind_port = port
         self.bind_uds = uds.resolve() if uds else None
         self.uds_permissions = uds_permissions
+        self.bind_fd = fd
         self.interface = interface
         self.workers = max(1, workers)
         self.runtime_threads = max(1, runtime_threads)
@@ -291,7 +293,12 @@ class AbstractServer(Generic[WT]):
 
     @property
     def _bind_addr_fmt(self):
-        return f'unix:{self.bind_uds}' if self.bind_uds else f'{self.bind_addr}:{self.bind_port}'
+        if self.bind_fd is not None:
+            return f'fd:{self.bind_fd}'
+        elif self.bind_uds :
+            return f'unix:{self.bind_uds}'
+        else:
+            f'{self.bind_addr}:{self.bind_port}'
 
     @staticmethod
     def _call_hooks(hooks):
@@ -311,7 +318,9 @@ class AbstractServer(Generic[WT]):
         return hook
 
     def _init_shared_socket(self):
-        if self.bind_uds:
+        if self.bind_fd:
+            self._ssp = FdSocketSpec(self.bind_fd)
+        elif self.bind_uds:
             self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_permissions)
         else:
             self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
