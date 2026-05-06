@@ -111,6 +111,7 @@ impl IPCReceiverHandle {
                 Python::attach(|_| {
                     drop(ipc);
                     drop(metrics_aggregator);
+                    drop(handle);
                 });
             });
 
