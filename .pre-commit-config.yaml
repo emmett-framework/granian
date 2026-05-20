@@ -10,6 +10,11 @@ repos:
   - id: trailing-whitespace
   - id: check-added-large-files
 
+- repo: https://github.com/zizmorcore/zizmor-pre-commit
+  rev: v1.25.2
+  hooks:
+  - id: zizmor
+
 - repo: local
   hooks:
   - id: lint-python
