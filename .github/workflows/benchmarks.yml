@@ -2,20 +2,23 @@ name: benchmarks
 
 on: workflow_dispatch
 
+permissions: {}
+
 jobs:
   toolchain:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        default: true
-        profile: minimal
+    - name: Install Rust toolchain
+      run: |
+        rustup toolchain install stable --profile minimal --no-self-update
+        rustup default stable
     - run: |
         git clone https://github.com/gi0baro/rewrk.git
         cd rewrk && cargo build --release
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: rewrk
         path: rewrk/target/release/rewrk
@@ -23,18 +26,22 @@ jobs:
   benchmark-base:
     runs-on: ubuntu-latest
     needs: [toolchain]
+    permissions:
+      contents: read
 
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: '3.11'
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: rewrk
     - run: |
         sudo mv rewrk /usr/local/bin && chmod +x /usr/local/bin/rewrk
-    - uses: pyo3/maturin-action@v1
+    - uses: pyo3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
       with:
         command: build
         args: --release --interpreter python3.11
@@ -49,7 +56,7 @@ jobs:
       run: |
         python benchmarks.py
     - name: upload results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: results-base
         path: benchmarks/results/*
@@ -57,18 +64,22 @@ jobs:
   benchmark-vs:
     runs-on: ubuntu-latest
     needs: [toolchain]
+    permissions:
+      contents: read
 
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: '3.11'
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: rewrk
     - run: |
         sudo mv rewrk /usr/local/bin && chmod +x /usr/local/bin/rewrk
-    - uses: pyo3/maturin-action@v1
+    - uses: pyo3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
       with:
         command: build
         args: --release --interpreter python3.11
@@ -87,20 +98,24 @@ jobs:
       run: |
         python benchmarks.py vs
     - name: upload results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: results-vs
         path: benchmarks/results/*
 
   benchmark-ws:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: '3.11'
-    - uses: pyo3/maturin-action@v1
+    - uses: pyo3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
       with:
         command: build
         args: --release --interpreter python3.11
@@ -119,7 +134,7 @@ jobs:
       run: |
         python benchmarks.py vs_ws
     - name: upload results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: results-ws
         path: benchmarks/results/*
@@ -127,22 +142,26 @@ jobs:
   benchmark-pyver:
     runs-on: ubuntu-latest
     needs: [toolchain]
+    permissions:
+      contents: read
 
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: |
           3.10
           3.11
           3.12
           3.13
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: rewrk
     - run: |
         sudo mv rewrk /usr/local/bin && chmod +x /usr/local/bin/rewrk
-    - uses: pyo3/maturin-action@v1
+    - uses: pyo3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
       with:
         command: build
         args: --release --interpreter python3.10 python3.11 python3.12 python3.13
@@ -160,18 +179,20 @@ jobs:
         .venv312/bin/pip install $(ls target/wheels/granian-*-cp312-*.whl)
         .venv313/bin/pip install $(ls target/wheels/granian-*-cp313-*.whl)
     - name: benchmark
+      env:
+        WORKSPACE: ${{ github.workspace }}
       working-directory: ./benchmarks
       run: |
-        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv310/bin ${{ github.workspace }}/.venv310/bin/python benchmarks.py interfaces
+        BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv310/bin" "$WORKSPACE/.venv310/bin/python" benchmarks.py interfaces
         mv results/data.json results/py310.json
-        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv311/bin ${{ github.workspace }}/.venv311/bin/python benchmarks.py interfaces
+        BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv311/bin" "$WORKSPACE/.venv311/bin/python" benchmarks.py interfaces
         mv results/data.json results/py311.json
-        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv312/bin ${{ github.workspace }}/.venv312/bin/python benchmarks.py interfaces
+        BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv312/bin" "$WORKSPACE/.venv312/bin/python" benchmarks.py interfaces
         mv results/data.json results/py312.json
-        BENCHMARK_EXC_PREFIX=${{ github.workspace }}/.venv313/bin ${{ github.workspace }}/.venv313/bin/python benchmarks.py interfaces
+        BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv313/bin" "$WORKSPACE/.venv313/bin/python" benchmarks.py interfaces
         mv results/data.json results/py313.json
     - name: upload results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: results-pyver
         path: benchmarks/results/*
@@ -179,29 +200,34 @@ jobs:
   results:
     runs-on: ubuntu-latest
     needs: [benchmark-base, benchmark-vs, benchmark-ws, benchmark-pyver]
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
-    - uses: actions/checkout@v6
-    - uses: gi0baro/setup-noir@v1
-    - uses: actions/download-artifact@v8
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: gi0baro/setup-noir@c377f5ef3a1e4d0b85578ebd1ae2a8965988d8f9 # v1.0.0
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: results-base
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/base.json
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: results-vs
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/vs.json
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: results-ws
         path: benchmarks/results
     - run: |
         mv benchmarks/results/data.json benchmarks/results/ws.json
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: results-pyver
         path: benchmarks/results
@@ -218,7 +244,7 @@ jobs:
           -v pyvb=310 -v 'benv=GHA Linux x86_64' \
           templates/pyver.md > pyver.md
     - name: open PR
-      uses: peter-evans/create-pull-request@v8
+      uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
       with:
         branch: benchmarks-update
         branch-suffix: timestamp

@@ -9,10 +9,14 @@ on:
     branches:
       - master
 
+permissions: {}
+
 jobs:
   linux:
     name: linux (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -31,16 +35,21 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-    - uses: actions/checkout@v6
-    - uses: astral-sh/setup-uv@v7
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
         enable-cache: false
     - name: Install
+      env:
+        UV_PYTHON: ${{ matrix.python-version }}
+        ALLOCATOR: ${{ matrix.allocator }}
       run: |
-        uv python install ${{ env.UV_PYTHON }}
+        uv python install "$UV_PYTHON"
         uv venv .venv
         uv sync --group all
-        uv run --no-sync maturin develop --uv --features ${{ matrix.allocator }}
+        uv run --no-sync maturin develop --uv --features "$ALLOCATOR"
     - name: Test
       run: |
         source .venv/bin/activate
@@ -49,6 +58,8 @@ jobs:
   macos:
     name: macos (${{ matrix.python-version }})
     runs-on: macos-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -66,16 +77,21 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-    - uses: actions/checkout@v6
-    - uses: astral-sh/setup-uv@v7
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
         enable-cache: false
     - name: Install
+      env:
+        UV_PYTHON: ${{ matrix.python-version }}
+        ALLOCATOR: ${{ matrix.allocator }}
       run: |
-        uv python install ${{ env.UV_PYTHON }}
+        uv python install "$UV_PYTHON"
         uv venv .venv
         uv sync --group all
-        uv run --no-sync maturin develop --uv --features ${{ matrix.allocator }}
+        uv run --no-sync maturin develop --uv --features "$ALLOCATOR"
     - name: Test
       run: |
         source .venv/bin/activate
@@ -83,6 +99,8 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -97,13 +115,17 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-    - uses: actions/checkout@v6
-    - uses: astral-sh/setup-uv@v7
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
         enable-cache: false
     - name: Install
+      env:
+        UV_PYTHON: ${{ matrix.python-version }}
       run: |
-        uv python install ${{ env.UV_PYTHON }}
+        uv python install "$UV_PYTHON"
         uv venv .venv
         uv sync --group all
         uv run --no-sync maturin develop --uv --features mimalloc
