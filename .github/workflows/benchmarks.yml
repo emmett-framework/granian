@@ -181,8 +181,8 @@ jobs:
     - name: benchmark
       env:
         WORKSPACE: ${{ github.workspace }}
+      working-directory: ./benchmarks
       run: |
-        cd benchmarks
         BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv310/bin" "$WORKSPACE/.venv310/bin/python" benchmarks.py interfaces
         mv results/data.json results/py310.json
         BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv311/bin" "$WORKSPACE/.venv311/bin/python" benchmarks.py interfaces
