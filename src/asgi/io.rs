@@ -611,7 +611,7 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
                 "websocket.accept" => {
                     let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {
-                        Ok(Some(item)) => item.extract::<String>().map(Some).unwrap_or(None),
+                        Ok(Some(item)) => item.extract::<String>().ok(),
                         _ => None,
                     };
                     Ok(ASGIMessageType::WSAccept(subproto))
@@ -620,8 +620,7 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     let code: wsframe::coding::CloseCode = match message.get_item(pyo3::intern!(py, "code")) {
                         Ok(Some(item)) => item
                             .extract::<u16>()
-                            .map(std::convert::Into::into)
-                            .unwrap_or(wsframe::coding::CloseCode::Normal),
+                            .map_or(wsframe::coding::CloseCode::Normal, std::convert::Into::into),
                         _ => wsframe::coding::CloseCode::Normal,
                     };
                     let reason: String = match message.get_item(pyo3::intern!(py, "reason")) {

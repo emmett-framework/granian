@@ -50,9 +50,7 @@ impl WSGIBody {
         let mut stream = stream.lock().await;
         loop {
             if let Some(chunk) = stream.next().await {
-                let data = chunk
-                    .map(|buf| buf.into_data().unwrap_or_default())
-                    .unwrap_or(Bytes::new());
+                let data = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
                 buffer.put(data);
                 match buffering {
                     WSGIBodyBuffering::Line => {

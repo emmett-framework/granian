@@ -118,9 +118,7 @@ impl RSGIHTTPProtocol {
             let guard = &mut *body_stream.lock().await;
             match guard.as_mut().unwrap().next().await {
                 Some(chunk) => {
-                    let chunk = chunk
-                        .map(|buf| buf.into_data().unwrap_or_default())
-                        .unwrap_or(body::Bytes::new());
+                    let chunk = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
                     FutureResultToPy::Bytes(chunk)
                 }
                 _ => {

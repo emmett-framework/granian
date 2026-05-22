@@ -58,10 +58,7 @@ impl CallbackScheduler {
                     CallbackSchedulerState::reschedule(state, py, self.pym_lcs.as_ptr());
                 } else {
                     let vptr = pyo3::ffi::PyObject_GetAttr(pres, self.pyname_aioblock.as_ptr());
-                    if Bound::from_owned_ptr_or_err(py, vptr)
-                        .map(|v| v.extract::<bool>().unwrap_or(false))
-                        .unwrap_or(false)
-                    {
+                    if Bound::from_owned_ptr_or_err(py, vptr).is_ok_and(|v| v.extract::<bool>().unwrap_or(false)) {
                         pyo3::ffi::PyObject_SetAttr(pres, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
                         CallbackSchedulerState::add_waker(state, py, pres, self.pyname_futcb.as_ptr());
                     }
