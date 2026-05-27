@@ -40,7 +40,7 @@ On the other hand, Granian won't be the ideal option if:
 - HTTPS and mTLS
 - Websockets
 - Direct static files serving
-- ASGI [pathsend](https://asgi.readthedocs.io/en/latest/extensions.html#path-send) extension
+- ASGI [pathsend](https://asgi.readthedocs.io/en/latest/extensions.html#path-send) and [TLS](https://asgi.readthedocs.io/en/latest/specs/tls.html) extensions
 
 ## Quickstart
 
@@ -544,6 +544,30 @@ and replace the relevant request scope attributes with these values.
 Since altering the request scope based on values from headers is security-sensitive, Granian will check the request is coming from a trusted host as specified by the `trusted_hosts` argument. By default this value is set to `127.0.0.1`, which means Granian will only intercept those headers if the proxy resides on the same machine, but most likely that's not the case in a production environment: you should thus provide the correct set of addresses to the wrappers.
 
 The `trusted_hosts` argument accepts either a string or a list of strings, where valid values are IP addresses (for example, `192.0.2.1` or `fd12:3456:789a::1`) and CIDR ranges (for example, `192.0.2.0/24` or `2001:db8:abcd::/48`). The special *catch-all value* `"*"` (or `["*"]`) will make Granian trust all hosts and effectively disable the security check.
+
+## ASGI TLS extension
+
+When serving ASGI applications over TLS, Granian implements the [ASGI TLS extension](https://asgi.readthedocs.io/en/latest/specs/tls.html), exposing the connection's TLS details under `scope["extensions"]["tls"]`. The extension key is present only on TLS connections, so applications can detect it with:
+
+```python
+async def app(scope, receive, send):
+    tls = scope.get("extensions", {}).get("tls")
+    if tls is not None:
+        ...  # the connection is over TLS
+```
+
+The `tls` dictionary contains:
+
+| Key | Value |
+| --- | --- |
+| `tls_version` | the negotiated TLS version as an integer (e.g. `0x0304` for TLS 1.3), or `None` |
+| `cipher_suite` | the negotiated cipher suite as its 16-bit IANA identifier, or `None` |
+| `client_cert_chain` | the PEM-encoded client certificate chain (leaf first); empty when no client certificate was presented |
+| `client_cert_name` | always `None` (applications can parse the subject from `client_cert_chain[0]`) |
+| `client_cert_error` | always `None`: Granian rejects invalid client certificates during the TLS handshake, so the application only ever observes verified certificates |
+| `server_cert` | always `None` |
+
+When mutual TLS is configured (see the `--ssl-ca` / `--ssl-client-verify` options), a populated `client_cert_chain` is guaranteed to have been verified against the configured CA: an untrusted, malformed, or revoked client certificate fails the handshake and never reaches the application. Note that with `--ssl-ca` but without `--ssl-client-verify`, the client certificate is *optional* — it may be absent (`client_cert_chain == []`) — but any certificate that *is* presented must still be valid.
 
 ## Free-threaded Python
 

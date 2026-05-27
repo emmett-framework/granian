@@ -60,6 +60,72 @@ pub(crate) fn load_crls(filenames: impl Iterator<Item = impl AsRef<std::path::Pa
         .collect()
 }
 
+/// Verified TLS session metadata captured once per connection, after the
+/// handshake completes, for exposure to applications via the ASGI TLS
+/// extension (`scope["extensions"]["tls"]`).
+///
+/// See <https://asgi.readthedocs.io/en/latest/specs/tls.html>.
+pub(crate) struct TlsSessionInfo {
+    /// Negotiated TLS protocol version as an unsigned integer (e.g. `0x0304`
+    /// for TLS 1.3), or `None` when unavailable.
+    pub tls_version: Option<u16>,
+    /// Negotiated cipher suite as its 16-bit IANA identifier, or `None` when
+    /// unavailable.
+    pub cipher_suite: Option<u16>,
+    /// The client certificate chain presented during the handshake, PEM-encoded
+    /// and ordered leaf-first. Empty when the client presented no certificate.
+    pub client_cert_chain: Vec<String>,
+}
+
+/// PEM-encodes a DER certificate (`-----BEGIN CERTIFICATE----- …`).
+fn cert_der_to_pem(der: &Certificate<'_>) -> String {
+    pem::encode(&pem::Pem::new("CERTIFICATE", der.as_ref().to_vec()))
+}
+
+/// Optional per-connection TLS session info threaded into the worker service
+/// and request scope. Always `None` for plain (non-TLS) connections.
+pub(crate) type TlsCtx = Option<Arc<TlsSessionInfo>>;
+
+/// Extracts ASGI TLS-extension metadata from an accepted connection stream.
+///
+/// The plain-stream implementations return `None` and are monomorphized away,
+/// so the non-TLS serving path pays nothing. Extraction reads the negotiated
+/// rustls session and happens once per connection (at accept time, after the
+/// handshake), not per request.
+pub(crate) trait PeerTlsInfo {
+    fn peer_tls_info(&self) -> TlsCtx;
+}
+
+impl PeerTlsInfo for tokio::net::TcpStream {
+    #[inline]
+    fn peer_tls_info(&self) -> TlsCtx {
+        None
+    }
+}
+
+#[cfg(unix)]
+impl PeerTlsInfo for tokio::net::UnixStream {
+    #[inline]
+    fn peer_tls_info(&self) -> TlsCtx {
+        None
+    }
+}
+
+impl<IO> PeerTlsInfo for tls_listener::rustls::server::TlsStream<IO> {
+    fn peer_tls_info(&self) -> TlsCtx {
+        let (_, conn) = self.get_ref();
+        let client_cert_chain = conn
+            .peer_certificates()
+            .map(|chain| chain.iter().map(cert_der_to_pem).collect())
+            .unwrap_or_default();
+        Some(Arc::new(TlsSessionInfo {
+            tls_version: conn.protocol_version().map(u16::from),
+            cipher_suite: conn.negotiated_cipher_suite().map(|cs| u16::from(cs.suite())),
+            client_cert_chain,
+        }))
+    }
+}
+
 pub(crate) fn load_private_key(filename: String, password: Option<String>) -> PrivateKey<'static> {
     match &password {
         Some(pwd) => {
