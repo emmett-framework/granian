@@ -13,7 +13,7 @@ use crate::{
 };
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr) => {
+    ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr, $tls:expr) => {
         match $handler(
             $callback,
             $rt,
@@ -23,6 +23,7 @@ macro_rules! handle_http_response {
             $req,
             $scheme,
             $body,
+            $tls,
         )
         .await
         {
@@ -46,6 +47,7 @@ macro_rules! handle_request {
             client_addr: SockAddr,
             req: HTTPRequest,
             scheme: HTTPProto,
+            tls: crate::tls::TlsCtx,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             handle_http_response!(
@@ -57,7 +59,8 @@ macro_rules! handle_request {
                 client_addr,
                 parts,
                 scheme,
-                body
+                body,
+                tls
             )
         }
     };
@@ -74,6 +77,7 @@ macro_rules! handle_request_with_ws {
             client_addr: SockAddr,
             mut req: HTTPRequest,
             scheme: HTTPProto,
+            tls: crate::tls::TlsCtx,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 return match ws_upgrade(&mut req, None) {
@@ -96,6 +100,7 @@ macro_rules! handle_request_with_ws {
                                 ws,
                                 parts,
                                 UpgradeData::new(res, restx),
+                                tls,
                             )
                             .await
                             {
@@ -157,7 +162,8 @@ macro_rules! handle_request_with_ws {
                 client_addr,
                 parts,
                 scheme,
-                body
+                body,
+                tls
             )
         }
     };
