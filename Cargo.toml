@@ -56,7 +56,7 @@ rustls-pemfile = "2.2"
 serde = { version = "1.0.228", features = ["derive"] }
 socket2 = { version = "=0.6", features = ["all"] }
 sysinfo = "=0.38"
-tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
+tikv-jemallocator = { version = "0.7.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
 tokio = { version = "1.51", features = ["full"] }
 tokio-stream = "0.1"
