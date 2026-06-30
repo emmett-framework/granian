@@ -20,6 +20,7 @@ impl RSGIWorker {
         signature = (
             worker_id,
             sock,
+            uds_sock,
             ipc,
             threads=1,
             blocking_threads=512,
@@ -45,7 +46,8 @@ impl RSGIWorker {
     fn new(
         py: Python,
         worker_id: i32,
-        sock: Py<SocketHolder>,
+        sock: Option<Py<SocketHolder>>,
+        uds_sock: Option<Py<SocketHolder>>,
         ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
@@ -71,6 +73,7 @@ impl RSGIWorker {
             config: WorkerConfig::new(
                 worker_id,
                 sock,
+                uds_sock,
                 ipc,
                 threads,
                 blocking_threads,
@@ -198,6 +201,71 @@ impl RSGIWorker {
     ) -> Bound<'p, PyAny> {
         gen_serve_match!(
             crate::serve::serve_fut_uds,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            (),
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        )
+    }
+
+    #[cfg(unix)]
+    fn serve_mtr_dual(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
+        crate::serve::gen_serve_match_dual!(
+            crate::serve::serve_mt_dual,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            py,
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        );
+    }
+
+    #[cfg(unix)]
+    fn serve_str_dual(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        crate::serve::gen_serve_match_dual!(
+            crate::serve::serve_st_dual,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
+            WorkerAcceptorUdsPlain,
+            WorkerAcceptorUdsTls,
+            self,
+            (),
+            callback,
+            event_loop,
+            signal,
+            handle,
+            handle_ws
+        );
+    }
+
+    #[cfg(unix)]
+    fn serve_async_dual<'p>(
+        &self,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<'p, PyAny>,
+        signal: Py<WorkerSignal>,
+    ) -> Bound<'p, PyAny> {
+        crate::serve::gen_serve_match_dual!(
+            crate::serve::serve_fut_dual,
+            WorkerAcceptorTcpPlain,
+            WorkerAcceptorTcpTls,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,

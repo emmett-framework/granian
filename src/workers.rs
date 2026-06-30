@@ -90,7 +90,8 @@ pub(crate) struct HTTP2Config {
 
 pub(crate) struct WorkerConfig {
     pub id: i32,
-    sock: Py<crate::net::SocketHolder>,
+    tcp_sock: Option<Py<crate::net::SocketHolder>>,
+    uds_sock: Option<Py<crate::net::SocketHolder>>,
     #[cfg(not(Py_GIL_DISABLED))]
     pub ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
     pub threads: usize,
@@ -123,7 +124,8 @@ pub(crate) struct WorkerTlsConfig {
 impl WorkerConfig {
     pub fn new(
         id: i32,
-        sock: Py<crate::net::SocketHolder>,
+        sock: Option<Py<crate::net::SocketHolder>>,
+        uds_sock: Option<Py<crate::net::SocketHolder>>,
         #[allow(unused_variables)] ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
@@ -159,7 +161,8 @@ impl WorkerConfig {
 
         Self {
             id,
-            sock,
+            tcp_sock: sock,
+            uds_sock,
             #[cfg(not(Py_GIL_DISABLED))]
             ipc,
             threads,
@@ -177,17 +180,27 @@ impl WorkerConfig {
         }
     }
 
-    pub fn tcp_listener(&self) -> std::net::TcpListener {
-        let listener = self.sock.get().as_tcp_listener().unwrap();
-        _ = listener.set_nonblocking(true);
-        listener
+    pub fn tcp_listener(&self) -> Option<std::net::TcpListener> {
+        match &self.tcp_sock {
+            Some(sock) => {
+                let listener = sock.get().as_tcp_listener().unwrap();
+                _ = listener.set_nonblocking(true);
+                Some(listener)
+            }
+            _ => None,
+        }
     }
 
     #[cfg(unix)]
-    pub fn uds_listener(&self) -> std::os::unix::net::UnixListener {
-        let listener = self.sock.get().as_unix_listener().unwrap();
-        _ = listener.set_nonblocking(true);
-        listener
+    pub fn uds_listener(&self) -> Option<std::os::unix::net::UnixListener> {
+        match &self.uds_sock {
+            Some(sock) => {
+                let listener = sock.get().as_unix_listener().unwrap();
+                _ = listener.set_nonblocking(true);
+                Some(listener)
+            }
+            _ => None,
+        }
     }
 
     pub fn tls_cfg(&self) -> tls_listener::rustls::rustls::ServerConfig {

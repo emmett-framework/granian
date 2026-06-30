@@ -37,8 +37,9 @@ class WorkerThread(AbstractWorker):
     def wrap_target(target):
         @wraps(target)
         def wrapped(worker_id, sig, callback, sock, loop_impl, *args, **kwargs):
+            sock_tcp, sock_uds = sock
             loop = loops.get(loop_impl)
-            return target(worker_id, sig, callback, sock, loop, *args, **kwargs)
+            return target(worker_id, sig, callback, sock_tcp, sock_uds, loop, *args, **kwargs)
 
         return wrapped
 
@@ -76,6 +77,7 @@ class MTServer(AbstractServer[WorkerThread]):
         shutdown_event: Any,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
@@ -99,7 +101,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker = ASGIWorker(
             worker_id,
             sock,
-            None,
+            uds_sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -113,7 +115,12 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
@@ -124,6 +131,7 @@ class MTServer(AbstractServer[WorkerThread]):
         shutdown_event: Any,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
@@ -155,7 +163,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker = ASGIWorker(
             worker_id,
             sock,
-            None,
+            uds_sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -169,7 +177,12 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
@@ -181,6 +194,7 @@ class MTServer(AbstractServer[WorkerThread]):
         shutdown_event: Any,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
@@ -206,7 +220,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker = RSGIWorker(
             worker_id,
             sock,
-            None,
+            uds_sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -220,7 +234,12 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         callback_del(loop)
@@ -232,6 +251,7 @@ class MTServer(AbstractServer[WorkerThread]):
         shutdown_event: Any,
         callback: Any,
         sock: Any,
+        uds_sock: Any,
         loop: Any,
         runtime_mode: RuntimeModes,
         runtime_threads: int,
@@ -255,7 +275,7 @@ class MTServer(AbstractServer[WorkerThread]):
         worker = WSGIWorker(
             worker_id,
             sock,
-            None,
+            uds_sock,
             runtime_threads,
             runtime_blocking_threads,
             blocking_threads,
@@ -268,7 +288,12 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        if sock and uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode]['dual'])
+        elif uds_sock:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][True])
+        else:
+            serve = getattr(worker, WORKERS_METHODS[runtime_mode][False])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
@@ -283,7 +308,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 idx + 1,
                 sig,
                 callback_loader,
-                self._shd,
+                (self._shd, self._shd_uds),
                 self.loop,
                 self.runtime_mode,
                 self.runtime_threads,
