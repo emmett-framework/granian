@@ -499,7 +499,7 @@ class AbstractServer(Generic[WT]):
         self._call_hooks(self.hooks_shutdown)
         self._unlink_pidfile()
 
-        logger.info('Granian shutdown completed, see ya!')
+        logger.info('Granian shutdown completed.')
 
         if not exit_code and self.interrupt_children:
             exit_code = 1
