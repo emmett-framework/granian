@@ -518,12 +518,12 @@ impl ASGIWebsocketProtocol {
         WebsocketDetachedTransport,
     ) {
         self.closed.store(true, atomic::Ordering::Release);
-        self.teardown.notify_one();
-        let mut ws_tx = self.ws_tx.blocking_lock();
+        self.teardown.notify_waiters();
         let ws_rx = self.ws_rx.try_lock().map_or(None, |mut guard| guard.take());
+        let ws_tx = self.ws_tx.try_lock().map_or(None, |mut guard| guard.take());
         (
             self.tx.lock().unwrap().take(),
-            WebsocketDetachedTransport::new(self.consumed(), ws_rx, ws_tx.take(), None),
+            WebsocketDetachedTransport::new(self.consumed(), ws_rx, ws_tx, None),
         )
     }
 }
