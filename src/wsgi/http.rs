@@ -27,6 +27,9 @@ pub(crate) async fn handle(
     client_addr: SockAddr,
     req: HTTPRequest,
     scheme: HTTPProto,
+    // WSGI has no standard client-certificate mechanism; the per-connection TLS
+    // metadata threaded by the shared worker is intentionally unused.
+    _tls: crate::tls::TlsCtx,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
     if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
