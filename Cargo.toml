@@ -42,7 +42,7 @@ http-body-util = { version = "=0.1" }
 hyper = { version = "=1.10", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 interprocess = { version = "=2.3", git = "https://github.com/kotauskas/interprocess.git", rev = "44351c4fe88c72ead4f3b0b762c4cf45beb90841", features = ["tokio"] }
-itertools = "0.14"
+itertools = "0.15"
 log = "0.4"
 mimalloc = { version = "0.1.49", default-features = false, features = ["local_dynamic_tls"], optional = true }
 mime_guess = "=2.0"
