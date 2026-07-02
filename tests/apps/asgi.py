@@ -66,6 +66,15 @@ async def pathsend(scope, receive, send):
     await send({'type': 'http.response.pathsend', 'path': str(path)})
 
 
+async def stream_slow(scope, receive, send):
+    # Streaming response with a delay between the first and last body chunk, so
+    # time-to-first-byte is tiny but end-to-end duration is measurable (~0.3s).
+    await send(PLAINTEXT_RESPONSE)
+    await send({'type': 'http.response.body', 'body': b'first', 'more_body': True})
+    await asyncio.sleep(0.3)
+    await send({'type': 'http.response.body', 'body': b'last', 'more_body': False})
+
+
 async def ws_reject(scope, receive, send):
     return
 
@@ -221,6 +230,7 @@ def app(scope, receive, send):
         '/sniffio': sniff_aio_impl,
         '/echo': echo,
         '/file': pathsend,
+        '/stream_slow': stream_slow,
         '/ws_reject': ws_reject,
         '/ws_rejecte': ws_reject_explicit,
         '/ws_rejectc': ws_reject_custom,

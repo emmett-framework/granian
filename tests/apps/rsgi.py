@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import pathlib
@@ -40,6 +41,15 @@ async def stream(_, protocol: HTTPProtocol):
     trx = protocol.response_stream(200, [('content-type', 'text/plain; charset=utf-8')])
     for _ in range(0, 3):
         await trx.send_bytes(b'test')
+
+
+async def stream_slow(_, protocol: HTTPProtocol):
+    # Streaming response with a delay between chunks, so time-to-first-byte is
+    # tiny but end-to-end duration is measurable (~0.3s).
+    trx = protocol.response_stream(200, [('content-type', 'text/plain; charset=utf-8')])
+    await trx.send_bytes(b'first')
+    await asyncio.sleep(0.3)
+    await trx.send_bytes(b'last')
 
 
 async def file(scope: Scope, protocol: HTTPProtocol):
@@ -137,6 +147,7 @@ def app(scope, protocol):
         '/file': file,
         '/file_range': file_range,
         '/stream': stream,
+        '/stream_slow': stream_slow,
         '/ws_reject': ws_reject,
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
