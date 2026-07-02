@@ -40,11 +40,12 @@ class WebsocketMessage:
 
 
 class _LoggingProto:
-    __slots__ = ['inner', 'status']
+    __slots__ = ['inner', 'status', 'resp_headers']
 
     def __init__(self, inner):
         self.inner = inner
         self.status = 500
+        self.resp_headers = ()
 
     def __call__(self):
         return self.inner()
@@ -57,26 +58,32 @@ class _LoggingProto:
 
     def response_empty(self, status, headers):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_empty(status, headers)
 
     def response_str(self, status, headers, body):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_str(status, headers, body)
 
     def response_bytes(self, status, headers, body):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_bytes(status, headers, body)
 
     def response_file(self, status, headers, file):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_file(status, headers, file)
 
     def response_file_range(self, status, headers, file, start, end):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_file_range(status, headers, file, start, end)
 
     def response_stream(self, status, headers):
         self.status = status
+        self.resp_headers = headers
         return self.inner.response_stream(status, headers)
 
 
@@ -98,16 +105,25 @@ def _callback_wrapper(callback, access_log_fmt=False):
             access_log(rt, mt, scope, proto.status)
         return rv
 
+    async def _http_logger_with_resp_headers(scope, proto):
+        rt, mt = time.time(), time.perf_counter()
+        try:
+            rv = await callback(scope, proto)
+        finally:
+            access_log(rt, mt, scope, proto.status, proto.resp_headers)
+        return rv
+
     def _ws_logger(scope, proto):
         access_log(time.time(), time.perf_counter(), scope, 101)
         return callback(scope, proto)
 
     def _logger(scope, proto):
         if scope.proto == 'http':
-            return _http_logger(scope, _LoggingProto(proto))
+            return _http_log(scope, _LoggingProto(proto))
         return _ws_logger(scope, proto)
 
-    access_log = _build_access_logger(access_log_fmt)
+    access_log, _needs_resp_headers = _build_access_logger(access_log_fmt)
+    _http_log = _http_logger_with_resp_headers if _needs_resp_headers else _http_logger
     wrapper = callback
     if access_log_fmt:
         wrapper = _logger
@@ -117,20 +133,22 @@ def _callback_wrapper(callback, access_log_fmt=False):
 
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
+    _needs_resp_headers = logger.needs_resp_headers
 
-    def access_log(rt, mt, scope, resp_code):
-        logger(
-            rt,
-            mt,
-            {
-                'addr_remote': scope.client.rsplit(':', 1)[0],
-                'protocol': 'HTTP/' + scope.http_version,
-                'path': scope.path,
-                'qs': scope.query_string,
-                'method': scope.method,
-                'scheme': scope.scheme,
-            },
-            resp_code,
-        )
+    def access_log(rt, mt, scope, resp_code, resp_headers=()):
+        req = {
+            'addr_remote': scope.client.rsplit(':', 1)[0],
+            'protocol': 'HTTP/' + scope.http_version,
+            'path': scope.path,
+            'qs': scope.query_string,
+            'method': scope.method,
+            'scheme': scope.scheme,
+            'user_agent': scope.headers.get('user-agent') or '-',
+            'get_header': scope.headers.get,
+        }
+        if _needs_resp_headers:
+            # RSGI response headers are (str, str) tuples
+            req['get_response_header'] = {hname.lower(): hval for hname, hval in resp_headers}.get
+        logger(rt, mt, req, resp_code)
 
-    return access_log
+    return access_log, _needs_resp_headers

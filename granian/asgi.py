@@ -120,16 +120,34 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
             access_log(rt, mt, scope, proto.sent_response_code)
         return rv
 
+    async def _http_logger_with_resp_headers(scope, proto):
+        rt, mt = time.time(), time.perf_counter()
+        resp_headers_raw = []
+        original_send = proto.send
+
+        async def capturing_send(message):
+            if message.get('type') == 'http.response.start':
+                resp_headers_raw.extend(message.get('headers', ()))
+            return await original_send(message)
+
+        try:
+            scope.update(root_path=root_url_path, state=state.copy())
+            rv = await callback(scope, proto.receive, capturing_send)
+        finally:
+            access_log(rt, mt, scope, proto.sent_response_code, resp_headers_raw)
+        return rv
+
     def _ws_logger(scope, proto):
         access_log(time.time(), time.perf_counter(), scope, 101)
         return _runner(scope, proto)
 
     def _logger(scope, proto):
         if scope['type'] == 'http':
-            return _http_logger(scope, proto)
+            return _http_log(scope, proto)
         return _ws_logger(scope, proto)
 
-    access_log = _build_access_logger(access_log_fmt)
+    access_log, _needs_resp_headers = _build_access_logger(access_log_fmt)
+    _http_log = _http_logger_with_resp_headers if _needs_resp_headers else _http_logger
     wrapper = _logger if access_log_fmt else _runner
     wraps(callback)(wrapper)
 
@@ -138,20 +156,32 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
 
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
+    _needs_resp_headers = logger.needs_resp_headers
 
-    def access_log(rt, mt, scope, resp_code):
-        logger(
-            rt,
-            mt,
-            {
-                'addr_remote': scope['client'][0],
-                'protocol': 'HTTP/' + scope['http_version'],
-                'path': scope['path'],
-                'qs': scope['query_string'],
-                'method': scope.get('method', '-'),
-                'scheme': scope['scheme'],
-            },
-            resp_code,
-        )
+    def access_log(rt, mt, scope, resp_code, resp_headers_raw=()):
+        user_agent = '-'
+        headers_dict = {}
+        for hname_b, hval_b in scope.get('headers', ()):
+            hname = hname_b.decode('latin-1').lower()
+            hval = hval_b.decode('latin-1')
+            headers_dict[hname] = hval
+            if hname == 'user-agent':
+                user_agent = hval
+        req = {
+            'addr_remote': scope['client'][0],
+            'protocol': 'HTTP/' + scope['http_version'],
+            'path': scope['path'],
+            'qs': scope['query_string'],
+            'method': scope.get('method', '-'),
+            'scheme': scope['scheme'],
+            'user_agent': user_agent,
+            'get_header': headers_dict.get,
+        }
+        if _needs_resp_headers:
+            req['get_response_header'] = {
+                hname_b.decode('latin-1').lower(): hval_b.decode('latin-1')
+                for hname_b, hval_b in resp_headers_raw
+            }.get
+        logger(rt, mt, req, resp_code)
 
-    return access_log
+    return access_log, _needs_resp_headers
