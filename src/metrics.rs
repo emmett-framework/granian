@@ -9,10 +9,31 @@ use crate::runtime;
 
 pub(crate) type MetricsData = Vec<MetricValue>;
 
+// Upper bucket bounds (in microseconds) for the request duration histogram.
+// These mirror the OpenTelemetry `http.server.request.duration` recommended
+// buckets (in seconds), stored here as integer microseconds. The implicit
+// `+Inf` bucket is represented by the histogram `count`.
+pub(crate) const LATENCY_BUCKETS_US: [u64; 14] = [
+    5_000, 10_000, 25_000, 50_000, 75_000, 100_000, 250_000, 500_000, 750_000, 1_000_000, 2_500_000, 5_000_000,
+    7_500_000, 10_000_000,
+];
+
+// Prometheus `le` labels (seconds) aligned with `LATENCY_BUCKETS_US`. Kept as
+// pre-rendered strings to avoid lossy integer-to-float conversions at format
+// time.
+const LATENCY_BUCKETS_LE: [&str; 14] = [
+    "0.005", "0.01", "0.025", "0.05", "0.075", "0.1", "0.25", "0.5", "0.75", "1", "2.5", "5", "7.5", "10",
+];
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum MetricValue {
     Abs(usize),
     Int(isize),
+    // A snapshot of a latency histogram. `buckets` holds the *non-cumulative*
+    // per-bucket counts (aligned with `LATENCY_BUCKETS_US`), `count` the total
+    // number of observations (i.e. the `+Inf` bucket) and `sum_us` the sum of
+    // all observed values in microseconds.
+    Hist { buckets: Vec<u64>, count: u64, sum_us: u64 },
 }
 
 impl std::fmt::Display for MetricValue {
@@ -20,6 +41,45 @@ impl std::fmt::Display for MetricValue {
         match self {
             Self::Abs(v) => v.fmt(f),
             Self::Int(v) => v.fmt(f),
+            // Histograms are expanded into multiple lines by `format_metrics`;
+            // this fallback simply renders the observation count.
+            Self::Hist { count, .. } => count.fmt(f),
+        }
+    }
+}
+
+pub(crate) struct LatencyHistogram {
+    buckets: [atomic::AtomicU64; LATENCY_BUCKETS_US.len()],
+    count: atomic::AtomicU64,
+    sum_us: atomic::AtomicU64,
+}
+
+impl LatencyHistogram {
+    fn new() -> Self {
+        Self {
+            buckets: std::array::from_fn(|_| atomic::AtomicU64::new(0)),
+            count: 0.into(),
+            sum_us: 0.into(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn observe(&self, micros: u64) {
+        for (idx, edge) in LATENCY_BUCKETS_US.iter().enumerate() {
+            if micros <= *edge {
+                self.buckets[idx].fetch_add(1, atomic::Ordering::Relaxed);
+                break;
+            }
+        }
+        self.count.fetch_add(1, atomic::Ordering::Relaxed);
+        self.sum_us.fetch_add(micros, atomic::Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> MetricValue {
+        MetricValue::Hist {
+            buckets: self.buckets.iter().map(|v| v.load(atomic::Ordering::Relaxed)).collect(),
+            count: self.count.load(atomic::Ordering::Relaxed),
+            sum_us: self.sum_us.load(atomic::Ordering::Relaxed),
         }
     }
 }
@@ -43,6 +103,7 @@ pub(crate) struct WorkerMetrics {
     pub blocking_idle_cumul: atomic::AtomicUsize,
     pub blocking_busy_cumul: atomic::AtomicUsize,
     pub py_wait_cumul: atomic::AtomicUsize,
+    pub req_latency: LatencyHistogram,
 }
 
 impl MainMetrics {
@@ -70,6 +131,7 @@ impl WorkerMetrics {
             blocking_idle_cumul: 0.into(),
             blocking_busy_cumul: 0.into(),
             py_wait_cumul: 0.into(),
+            req_latency: LatencyHistogram::new(),
         }
     }
 }
@@ -141,6 +203,39 @@ impl MetricsAggregator {
         for items in &mut wrk {
             all.append(items);
         }
+
+        // Request duration histogram (positioned right after the scalar worker
+        // metrics in `MetricsData`, at index `wrk_metrics.len()`).
+        let hist_idx = wrk_metrics.len();
+        let hist_label = format!("{prefix}request_duration_seconds");
+        let mut hist_lines: Vec<String> = vec![format!("# TYPE {hist_label} histogram")];
+        {
+            let wrk_data = self.data_w.lock().unwrap();
+            for (idx, values) in wrk_data.iter().enumerate() {
+                if let Some(MetricValue::Hist { buckets, count, sum_us }) = values.get(hist_idx) {
+                    let worker = idx + 1;
+                    let mut cumulative: u64 = 0;
+                    for (bucket_idx, le) in LATENCY_BUCKETS_LE.iter().enumerate() {
+                        cumulative += buckets.get(bucket_idx).copied().unwrap_or(0);
+                        hist_lines.push(format!(
+                            "{hist_label}_bucket{{worker=\"{worker}\",le=\"{le}\"}} {cumulative}"
+                        ));
+                    }
+                    hist_lines.push(format!(
+                        "{hist_label}_bucket{{worker=\"{worker}\",le=\"+Inf\"}} {count}"
+                    ));
+                    // Render microseconds as fractional seconds without lossy float casts.
+                    hist_lines.push(format!(
+                        "{hist_label}_sum{{worker=\"{worker}\"}} {}.{:06}",
+                        sum_us / 1_000_000,
+                        sum_us % 1_000_000
+                    ));
+                    hist_lines.push(format!("{hist_label}_count{{worker=\"{worker}\"}} {count}"));
+                }
+            }
+        }
+        all.append(&mut hist_lines);
+
         all.join("\n")
     }
 }
@@ -246,6 +341,9 @@ fn collect_metrics(birth: &std::time::Instant, data: &Arc<WorkerMetrics>) -> Met
         MetricValue::Abs(data.blocking_idle_cumul.load(atomic::Ordering::Acquire)),
         MetricValue::Abs(data.blocking_busy_cumul.load(atomic::Ordering::Acquire)),
         MetricValue::Abs(data.py_wait_cumul.load(atomic::Ordering::Acquire)),
+        // NOTE: keep this histogram entry as the last item; `format_metrics`
+        // reads it positionally at `wrk_metrics.len()`.
+        data.req_latency.snapshot(),
     ]
 }
 
