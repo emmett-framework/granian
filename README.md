@@ -478,6 +478,7 @@ Granian exposes the following runtime metrics in Prometheus format. All the metr
 | `connections_handled` | counter | absolute number | worker | Number of accepted connections |
 | `connections_err` | gauge | absolute number | worker | Number of failed connections |
 | `requests_handled` | counter | absolute number | worker | Number of processed requests |
+| `request_duration_seconds` | histogram | seconds | worker | Distribution of application request durations (time to response); static file requests are excluded |
 | `static_requests_handled` | counter | absolute number | worker | Number of processed requests for static files |
 | `static_requests_err` | counter | absolute number | worker | Number of requests for static files resulted in a non 200 response code |
 | `blocking_threads` | gauge | absolute number | worker | Current number of blocking threads in the pool (on async protocols this is always 1) |

@@ -26,6 +26,7 @@ async def _server(
     task_impl='asyncio',
     static_mount=False,
     static_rewrite=False,
+    metrics_port=None,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -37,6 +38,11 @@ async def _server(
         'task_impl': task_impl,
         'websockets': ws,
     }
+    if metrics_port is not None:
+        kwargs['metrics_enabled'] = True
+        kwargs['metrics_address'] = '127.0.0.1'
+        kwargs['metrics_port'] = metrics_port
+        kwargs['metrics_scrape_interval'] = 1
     if tls:
         if tls == 'private':
             kwargs['ssl_cert'] = certs_path / 'pcert.pem'
@@ -103,6 +109,14 @@ def server_port():
 
 
 @pytest.fixture(scope='function')
+def metrics_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(('localhost', 0))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return sock.getsockname()[1]
+
+
+@pytest.fixture(scope='function')
 def asgi_server(server_port, **extras):
     return partial(_server, 'asgi', server_port, **extras)
 
@@ -130,3 +144,13 @@ def server_tls(server_port, request, tls=True, **extras):
 @pytest.fixture(scope='function')
 def server_static_files(server_port, request, static_mount=True, **extras):
     return partial(_server, request.param, server_port, static_mount=static_mount, **extras)
+
+
+@pytest.fixture(scope='function')
+def server_metrics(server_port, metrics_port, request):
+    return metrics_port, partial(_server, request.param, server_port, metrics_port=metrics_port)
+
+
+@pytest.fixture(scope='function')
+def server_metrics_static(server_port, metrics_port, request):
+    return metrics_port, partial(_server, request.param, server_port, metrics_port=metrics_port, static_mount=True)
