@@ -70,7 +70,7 @@ pub(crate) fn load_private_key(filename: String, password: Option<String>) -> Pr
                 .into_iter()
                 .filter(|v| v.tag() == expected_tag)
                 .map(|v| v.contents().to_vec());
-            let key = pkcs8::EncryptedPrivateKeyInfo::try_from(
+            let key = pkcs8::EncryptedPrivateKeyInfo::<Vec<u8>>::try_from(
                 iter.next()
                     .map_or_else(|| Err(anyhow!("Invalid key")), Ok)
                     .expect("invalid key")
