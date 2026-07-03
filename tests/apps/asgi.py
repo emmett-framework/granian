@@ -1,6 +1,7 @@
 import asyncio
 import json
 import pathlib
+import time
 
 import sniffio
 
@@ -206,6 +207,28 @@ async def timeout_w(scope, receive, send):
     await send({'type': 'http.response.body', 'body': ret, 'more_body': False})
 
 
+async def shutdown_race(scope, receive, send):
+    loop = asyncio.get_running_loop()
+    if not hasattr(loop, '_test_busy_task'):
+
+        async def keep_loop_busy():
+            while True:
+                await asyncio.sleep(0)
+
+        loop._test_busy_task = loop.create_task(keep_loop_busy())
+
+        inner_write = loop._write_to_self
+
+        def slow_write_to_self():
+            time.sleep(0.2)
+            inner_write()
+
+        loop._write_to_self = slow_write_to_self
+
+    await send(PLAINTEXT_RESPONSE)
+    await send({'type': 'http.response.body', 'body': b'ok', 'more_body': False})
+
+
 async def lifespan(scope, receive, send):
     msg = await receive()
     if msg['type'] == 'lifespan.startup':
@@ -233,4 +256,5 @@ def app(scope, receive, send):
         '/err_proto/flow': err_proto_flow,
         '/timeout_n': timeout_n,
         '/timeout_w': timeout_w,
+        '/shutdown_race': shutdown_race,
     }.get(scope['path'], info)(scope, receive, send)

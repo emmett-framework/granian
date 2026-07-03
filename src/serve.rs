@@ -94,7 +94,7 @@ macro_rules! serve_fn {
                 Ok(())
             });
 
-            drop(rt);
+            py.detach(|| drop(rt));
 
             if let Err(err) = main_loop {
                 log::error!("{err}");
@@ -227,7 +227,7 @@ macro_rules! serve_fn {
                 Ok(())
             });
 
-            drop(rtm);
+            event_loop.py().detach(|| drop(rtm));
 
             if let Err(err) = main_loop {
                 log::error!("{err}");
