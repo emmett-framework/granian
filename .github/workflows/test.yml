@@ -27,6 +27,7 @@ jobs:
         - '3.12'
         - '3.13'
         - '3.14'
+        - '3.15'
         - pypy3.11
         include:
           - python-version: 3.14t
@@ -70,6 +71,7 @@ jobs:
         - '3.12'
         - '3.13'
         - '3.14'
+        - '3.15'
         include:
           - python-version: 3.14t
             allocator: mimalloc
@@ -111,6 +113,8 @@ jobs:
         - '3.13'
         - '3.14'
         - '3.14t'
+        - '3.15'
+        - '3.15t'
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
