@@ -113,7 +113,6 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
 @click.argument('app', required=True)
 @option(
     '--host',
-    default='127.0.0.1',
     help='Host address to bind to',
 )
 @option('--port', type=int, default=8000, help='Port to bind to.')
@@ -434,7 +433,7 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
 @click.version_option(message='%(prog)s %(version)s')
 def cli(
     app: str,
-    host: str,
+    host: str | None,
     port: int,
     uds: pathlib.Path | None,
     uds_permissions: int | None,
@@ -517,6 +516,9 @@ def cli(
     from ._internal import patch_pypath
 
     patch_pypath(working_dir)
+
+    if not host and not uds:
+        host = '127.0.0.1'
 
     server = Server(
         app,
