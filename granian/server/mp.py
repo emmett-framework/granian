@@ -134,6 +134,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         from granian._signals import set_loop_signals
 
@@ -156,6 +158,8 @@ class MPServer(AbstractServer[WorkerProcess]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping_interval_ms,
+            websocket_ping_timeout_ms,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -185,6 +189,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         from granian._signals import set_loop_signals
 
@@ -215,6 +221,8 @@ class MPServer(AbstractServer[WorkerProcess]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping_interval_ms,
+            websocket_ping_timeout_ms,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -245,6 +253,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         from granian._signals import set_loop_signals
 
@@ -299,6 +309,8 @@ class MPServer(AbstractServer[WorkerProcess]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         from granian._signals import set_sync_signals
 
@@ -432,6 +444,8 @@ class MPServer(AbstractServer[WorkerProcess]):
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
                 (self.metrics_scrape_interval if self.metrics_enabled else None, None),
+                self.websocket_ping_interval_ms,
+                self.websocket_ping_timeout_ms,
             ),
         )
 

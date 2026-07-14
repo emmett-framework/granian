@@ -8,6 +8,8 @@ use crate::net::SocketHolder;
 use crate::serve::gen_serve_match;
 use crate::workers::{WorkerConfig, WorkerSignal};
 
+use super::io::configure_websocket_keepalive;
+
 #[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
     config: WorkerConfig,
@@ -40,6 +42,8 @@ impl ASGIWorker {
             ssl_crl=vec![],
             ssl_client_verify=false,
             metrics=(None, None),
+            websocket_ping_interval_ms=None,
+            websocket_ping_timeout_ms=20_000,
         )
     )]
     fn new(
@@ -66,7 +70,10 @@ impl ASGIWorker {
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
+        websocket_ping_interval_ms: Option<u64>,
+        websocket_ping_timeout_ms: u64,
     ) -> PyResult<Self> {
+        configure_websocket_keepalive(websocket_ping_interval_ms, websocket_ping_timeout_ms);
         Ok(Self {
             config: WorkerConfig::new(
                 worker_id,

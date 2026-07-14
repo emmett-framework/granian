@@ -80,6 +80,9 @@ class ASGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        metrics: tuple[int | None, Any | None] = ...,
+        websocket_ping_interval_ms: int | None = ...,
+        websocket_ping_timeout_ms: int = ...,
     ) -> ASGIWorker: ...
 
 class WSGIWorker:

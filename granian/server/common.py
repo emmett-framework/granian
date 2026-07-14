@@ -98,6 +98,8 @@ class AbstractServer(Generic[WT]):
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
+        websocket_ping_interval: float | None = None,
+        websocket_ping_timeout: float = 20,
         backlog: int = 1024,
         backpressure: int | None = None,
         http1_settings: HTTP1Settings | None = None,
@@ -158,6 +160,14 @@ class AbstractServer(Generic[WT]):
         self.task_impl = task_impl
         self.http = http
         self.websockets = websockets
+        if websocket_ping_interval is not None and websocket_ping_interval <= 0:
+            raise ValueError('websocket_ping_interval must be greater than zero')
+        if websocket_ping_timeout <= 0:
+            raise ValueError('websocket_ping_timeout must be greater than zero')
+        self.websocket_ping_interval_ms = (
+            max(1, int(websocket_ping_interval * 1000)) if websocket_ping_interval is not None else None
+        )
+        self.websocket_ping_timeout_ms = max(1, int(websocket_ping_timeout * 1000))
         self.backlog = max(128, backlog)
         self.backpressure = max(1, backpressure or self.backlog // self.workers)
         self.blocking_threads = (

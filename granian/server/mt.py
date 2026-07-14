@@ -93,6 +93,8 @@ class MTServer(AbstractServer[WorkerThread]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
 
@@ -112,6 +114,8 @@ class MTServer(AbstractServer[WorkerThread]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping_interval_ms,
+            websocket_ping_timeout_ms,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -141,6 +145,8 @@ class MTServer(AbstractServer[WorkerThread]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         lifespan_handler = LifespanProtocol(callback)
         wcallback = _future_watcher_wrapper(
@@ -168,6 +174,8 @@ class MTServer(AbstractServer[WorkerThread]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping_interval_ms,
+            websocket_ping_timeout_ms,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -198,6 +206,8 @@ class MTServer(AbstractServer[WorkerThread]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
@@ -249,6 +259,8 @@ class MTServer(AbstractServer[WorkerThread]):
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
         metrics: Any,
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
 
@@ -301,6 +313,8 @@ class MTServer(AbstractServer[WorkerThread]):
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
                 (self.metrics_scrape_interval if self.metrics_enabled else None, self._metrics),
+                self.websocket_ping_interval_ms,
+                self.websocket_ping_timeout_ms,
             ),
             sig=sig,
         )

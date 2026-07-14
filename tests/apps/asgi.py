@@ -134,6 +134,14 @@ async def ws_echo(scope, receive, send):
     await send({'type': 'websocket.close'})
 
 
+async def ws_slow(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.accept'})
+    await asyncio.sleep(0.5)
+    await send({'type': 'websocket.send', 'text': 'ready'})
+    await send({'type': 'websocket.close'})
+
+
 async def ws_push(scope, receive, send):
     await send({'type': 'websocket.accept'})
 
@@ -228,6 +236,7 @@ def app(scope, receive, send):
         '/ws_echo': ws_echo,
         '/ws_close': ws_close,
         '/ws_push': ws_push,
+        '/ws_slow': ws_slow,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,
         '/err_proto/flow': err_proto_flow,

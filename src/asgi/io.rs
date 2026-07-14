@@ -9,6 +9,7 @@ use pyo3::{prelude::*, pybacked::PyBackedBytes, types::PyDict};
 use std::{
     borrow::Cow,
     sync::{Arc, Mutex, atomic},
+    time::Duration,
 };
 use tokio::{
     fs::File,
@@ -27,12 +28,29 @@ use crate::{
     runtime::{
         Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
     },
-    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
+    ws::{HyperWebsocket, UpgradeData, WSTxStream},
 };
 
 const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
 const EMPTY_STRING: String = String::new();
 static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
+const WS_MESSAGE_QUEUE_CAPACITY: usize = 256;
+static WS_PING_INTERVAL_MS: atomic::AtomicU64 = atomic::AtomicU64::new(0);
+static WS_PING_TIMEOUT_MS: atomic::AtomicU64 = atomic::AtomicU64::new(20_000);
+
+pub(crate) fn configure_websocket_keepalive(ping_interval_ms: Option<u64>, ping_timeout_ms: u64) {
+    WS_PING_INTERVAL_MS.store(ping_interval_ms.unwrap_or_default(), atomic::Ordering::Release);
+    WS_PING_TIMEOUT_MS.store(ping_timeout_ms, atomic::Ordering::Release);
+}
+
+fn websocket_keepalive() -> Option<(Duration, Duration)> {
+    let interval_ms = WS_PING_INTERVAL_MS.load(atomic::Ordering::Acquire);
+    if interval_ms == 0 {
+        return None;
+    }
+    let timeout_ms = WS_PING_TIMEOUT_MS.load(atomic::Ordering::Acquire);
+    Some((Duration::from_millis(interval_ms), Duration::from_millis(timeout_ms)))
+}
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
@@ -308,21 +326,14 @@ impl ASGIHTTPProtocol {
 
 pub(crate) struct WebsocketDetachedTransport {
     pub consumed: bool,
-    rx: Option<WSRxStream>,
     tx: Option<WSTxStream>,
     closeframe: Option<wsframe::CloseFrame>,
 }
 
 impl WebsocketDetachedTransport {
-    pub fn new(
-        consumed: bool,
-        rx: Option<WSRxStream>,
-        tx: Option<WSTxStream>,
-        closeframe: Option<wsframe::CloseFrame>,
-    ) -> Self {
+    pub fn new(consumed: bool, tx: Option<WSTxStream>, closeframe: Option<wsframe::CloseFrame>) -> Self {
         Self {
             consumed,
-            rx,
             tx,
             closeframe,
         }
@@ -337,7 +348,6 @@ impl WebsocketDetachedTransport {
                 log::info!("Failed to close websocket with error {err:?}");
             }
         }
-        drop(self.rx.take());
     }
 }
 
@@ -349,13 +359,19 @@ pub(crate) struct ASGIWebsocketProtocol {
     websocket: Mutex<Option<HyperWebsocket>>,
     upgrade: Mutex<Option<UpgradeData>>,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
-    ws_rx: Arc<AsyncMutex<Option<WSRxStream>>>,
+    message_rx: Arc<AsyncMutex<mpsc::Receiver<Message>>>,
+    message_tx: mpsc::Sender<Message>,
     ws_tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     init_rx: atomic::AtomicBool,
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
     teardown: Arc<Notify>,
+    expected_pong: Arc<atomic::AtomicU64>,
+    pong_received: Arc<Notify>,
+    heartbeat_stop: Arc<Notify>,
+    reader_stop: Arc<Notify>,
+    keepalive: Option<(Duration, Duration)>,
 }
 
 impl ASGIWebsocketProtocol {
@@ -366,6 +382,7 @@ impl ASGIWebsocketProtocol {
         upgrade: UpgradeData,
         disconnect_guard: Arc<Notify>,
     ) -> Self {
+        let (message_tx, message_rx) = mpsc::channel(WS_MESSAGE_QUEUE_CAPACITY);
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
@@ -373,13 +390,19 @@ impl ASGIWebsocketProtocol {
             websocket: Mutex::new(Some(websocket)),
             upgrade: Mutex::new(Some(upgrade)),
             response_intent: Mutex::new(None),
-            ws_rx: Arc::new(AsyncMutex::new(None)),
+            message_rx: Arc::new(AsyncMutex::new(message_rx)),
+            message_tx,
             ws_tx: Arc::new(AsyncMutex::new(None)),
             init_rx: false.into(),
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
             teardown: Arc::new(Notify::new()),
+            expected_pong: Arc::new(atomic::AtomicU64::new(0)),
+            pong_received: Arc::new(Notify::new()),
+            heartbeat_stop: Arc::new(Notify::new()),
+            reader_stop: Arc::new(Notify::new()),
+            keepalive: websocket_keepalive(),
         }
     }
 
@@ -390,8 +413,15 @@ impl ASGIWebsocketProtocol {
         let accepted = self.init_tx.clone();
         let accept_notify = self.init_event.clone();
         let closed = self.closed.clone();
-        let rx = self.ws_rx.clone();
+        let message_tx = self.message_tx.clone();
         let tx = self.ws_tx.clone();
+        let expected_pong = self.expected_pong.clone();
+        let pong_received = self.pong_received.clone();
+        let heartbeat_stop = self.heartbeat_stop.clone();
+        let reader_stop = self.reader_stop.clone();
+        let disconnect_guard = self.disconnect_guard.clone();
+        let keepalive = self.keepalive;
+        let rt = self.rt.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
@@ -404,13 +434,120 @@ impl ASGIWebsocketProtocol {
                     && let Ok(stream) = websocket.await
                 {
                     let mut wtx = tx.lock().await;
-                    let mut wrx = rx.lock().await;
-                    let (tx, rx) = stream.split();
-                    *wtx = Some(tx);
-                    *wrx = Some(rx);
-                    drop(wrx);
+                    let (split_tx, split_rx) = stream.split();
+                    *wtx = Some(split_tx);
+                    drop(wtx);
                     accepted.store(true, atomic::Ordering::Release);
                     accept_notify.notify_one();
+
+                    let reader_closed = closed.clone();
+                    let reader_expected_pong = expected_pong.clone();
+                    let reader_pong_received = pong_received.clone();
+                    let reader_heartbeat_stop = heartbeat_stop.clone();
+                    let reader_messages = message_tx.clone();
+                    // Keep control-frame handling independent from application receive calls.
+                    rt.spawn(async move {
+                        let mut split_rx = split_rx;
+                        loop {
+                            let recv = tokio::select! {
+                                biased;
+                                () = reader_stop.notified() => return,
+                                () = disconnect_guard.notified() => {
+                                    reader_closed.store(true, atomic::Ordering::Release);
+                                    reader_heartbeat_stop.notify_one();
+                                    _ = reader_messages.try_send(Message::Close(None));
+                                    return;
+                                },
+                                recv = split_rx.next() => recv,
+                            };
+
+                            match recv {
+                                Some(Ok(Message::Ping(_))) => {}
+                                Some(Ok(Message::Pong(payload))) => {
+                                    if payload.len() == size_of::<u64>() {
+                                        let mut bytes = [0_u8; size_of::<u64>()];
+                                        bytes.copy_from_slice(&payload);
+                                        let sequence = u64::from_be_bytes(bytes);
+                                        if reader_expected_pong
+                                            .compare_exchange(
+                                                sequence,
+                                                0,
+                                                atomic::Ordering::AcqRel,
+                                                atomic::Ordering::Acquire,
+                                            )
+                                            .is_ok()
+                                        {
+                                            reader_pong_received.notify_one();
+                                        }
+                                    }
+                                }
+                                Some(Ok(message @ Message::Close(_))) => {
+                                    reader_closed.store(true, atomic::Ordering::Release);
+                                    reader_heartbeat_stop.notify_one();
+                                    _ = reader_messages.try_send(message);
+                                    return;
+                                }
+                                Some(Ok(message)) => {
+                                    if reader_messages.send(message).await.is_err() {
+                                        reader_heartbeat_stop.notify_one();
+                                        return;
+                                    }
+                                }
+                                _ => {
+                                    reader_closed.store(true, atomic::Ordering::Release);
+                                    reader_heartbeat_stop.notify_one();
+                                    _ = reader_messages.try_send(Message::Close(None));
+                                    return;
+                                }
+                            }
+                        }
+                    });
+
+                    if let Some((ping_interval, ping_timeout)) = keepalive {
+                        rt.spawn(async move {
+                            let mut sequence = 1_u64;
+                            loop {
+                                tokio::select! {
+                                    () = tokio::time::sleep(ping_interval) => {},
+                                    () = heartbeat_stop.notified() => return,
+                                }
+                                if closed.load(atomic::Ordering::Acquire) {
+                                    return;
+                                }
+
+                                let payload = bytes::Bytes::copy_from_slice(&sequence.to_be_bytes());
+                                expected_pong.store(sequence, atomic::Ordering::Release);
+                                let pong_waiter = pong_received.notified();
+                                let sent = match &mut *(tx.lock().await) {
+                                    Some(ws) => ws.send(Message::Ping(payload)).await.is_ok(),
+                                    None => false,
+                                };
+                                if !sent {
+                                    closed.store(true, atomic::Ordering::Release);
+                                    _ = message_tx.try_send(Message::Close(None));
+                                    return;
+                                }
+
+                                tokio::select! {
+                                    () = pong_waiter => {},
+                                    () = tokio::time::sleep(ping_timeout) => {
+                                        if expected_pong.compare_exchange(
+                                            sequence,
+                                            0,
+                                            atomic::Ordering::AcqRel,
+                                            atomic::Ordering::Acquire,
+                                        ).is_ok() {
+                                            closed.store(true, atomic::Ordering::Release);
+                                            _ = message_tx.try_send(Message::Close(None));
+                                            return;
+                                        }
+                                    },
+                                    () = heartbeat_stop.notified() => return,
+                                }
+                                sequence = sequence.wrapping_add(1).max(1);
+                            }
+                        });
+                    }
                     return FutureResultToPy::None;
                 }
 
@@ -491,15 +628,14 @@ impl ASGIWebsocketProtocol {
     #[inline(always)]
     fn close<'p>(&self, py: Python<'p>, frame: Option<wsframe::CloseFrame>) -> PyResult<Bound<'p, PyAny>> {
         let init_ev = self.init_event.clone();
-        let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
         self.closed.store(true, atomic::Ordering::Release);
+        self.heartbeat_stop.notify_one();
+        self.reader_stop.notify_one();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
-                WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx), frame)
-                    .close()
-                    .await;
+                WebsocketDetachedTransport::new(true, Some(tx), frame).close().await;
             } else {
                 init_ev.notify_one();
             }
@@ -519,11 +655,12 @@ impl ASGIWebsocketProtocol {
     ) {
         self.closed.store(true, atomic::Ordering::Release);
         self.teardown.notify_waiters();
-        let ws_rx = self.ws_rx.try_lock().map_or(None, |mut guard| guard.take());
+        self.heartbeat_stop.notify_one();
+        self.reader_stop.notify_one();
         let ws_tx = self.ws_tx.try_lock().map_or(None, |mut guard| guard.take());
         (
             self.tx.lock().unwrap().take(),
-            WebsocketDetachedTransport::new(self.consumed(), ws_rx, ws_tx, None),
+            WebsocketDetachedTransport::new(self.consumed(), ws_tx, None),
         )
     }
 }
@@ -553,8 +690,7 @@ impl ASGIWebsocketProtocol {
         let accepted = self.init_tx.clone();
         let accepted_ev = self.init_event.clone();
         let closed = self.closed.clone();
-        let transport = self.ws_rx.clone();
-        let guard_disconnect = self.disconnect_guard.clone();
+        let transport = self.message_rx.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if !accepted.load(atomic::Ordering::Acquire) {
@@ -562,33 +698,21 @@ impl ASGIWebsocketProtocol {
                 accepted_ev.notified().await;
             }
 
-            if let Some(ws) = &mut *(transport.lock().await) {
-                while let Some(recv) = tokio::select! {
-                    biased;
-                    recv = ws.next() => recv,
-                    () = guard_disconnect.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
-                } {
-                    match recv {
-                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
-                        Ok(message @ Message::Close(_)) => {
-                            closed.store(true, atomic::Ordering::Release);
-                            return FutureResultToPy::ASGIWSMessage(message);
-                        }
-                        Ok(message) => return FutureResultToPy::ASGIWSMessage(message),
-                        _ => {
-                            // treat any recv error as a disconnection
-                            closed.store(true, atomic::Ordering::Release);
-                            return FutureResultToPy::ASGIWSMessage(Message::Close(None));
-                        }
-                    }
-                }
-            }
-
             if closed.load(atomic::Ordering::Acquire) {
                 return FutureResultToPy::ASGIWSMessage(Message::Close(None));
             }
 
-            FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
+            match transport.lock().await.recv().await {
+                Some(message @ Message::Close(_)) => {
+                    closed.store(true, atomic::Ordering::Release);
+                    FutureResultToPy::ASGIWSMessage(message)
+                }
+                Some(message) => FutureResultToPy::ASGIWSMessage(message),
+                None => {
+                    closed.store(true, atomic::Ordering::Release);
+                    FutureResultToPy::ASGIWSMessage(Message::Close(None))
+                }
+            }
         })
     }
 

@@ -21,6 +21,8 @@ async def _server(
     port,
     runtime_mode,
     ws=True,
+    ws_ping_interval=None,
+    ws_ping_timeout=None,
     tls=False,
     tls_proto=None,
     task_impl='asyncio',
@@ -37,6 +39,10 @@ async def _server(
         'task_impl': task_impl,
         'websockets': ws,
     }
+    if ws_ping_interval is not None:
+        kwargs['websocket_ping_interval'] = ws_ping_interval
+    if ws_ping_timeout is not None:
+        kwargs['websocket_ping_timeout'] = ws_ping_timeout
     if tls:
         if tls == 'private':
             kwargs['ssl_cert'] = certs_path / 'pcert.pem'
