@@ -303,7 +303,7 @@ impl ASGIHTTPProtocol {
                                 res
                             }
                             Err(_) => {
-                                log::info!("Cannot open file {}", &file_path);
+                                log::info!("Cannot open file {file_path}");
                                 response_404()
                             }
                         };
