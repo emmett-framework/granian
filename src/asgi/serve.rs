@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
-use super::http::{handle, handle_ws};
+use super::http::{handle, handle_ws as handle_ws_with_config};
+use super::io::{WebsocketKeepalive, websocket_keepalive_from_millis};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
@@ -8,11 +9,28 @@ use crate::net::SocketHolder;
 use crate::serve::gen_serve_match;
 use crate::workers::{WorkerConfig, WorkerSignal};
 
-use super::io::configure_websocket_keepalive;
+macro_rules! websocket_handler {
+    ($worker:expr) => {{
+        let keepalive = $worker.websocket_keepalive;
+        move |rt, disconnect_guard, callback, server_addr, client_addr, req, scheme| {
+            handle_ws_with_config(
+                rt,
+                disconnect_guard,
+                callback,
+                server_addr,
+                client_addr,
+                req,
+                scheme,
+                keepalive,
+            )
+        }
+    }};
+}
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct ASGIWorker {
     config: WorkerConfig,
+    websocket_keepalive: WebsocketKeepalive,
 }
 
 #[pymethods]
@@ -73,7 +91,6 @@ impl ASGIWorker {
         websocket_ping_interval_ms: Option<u64>,
         websocket_ping_timeout_ms: u64,
     ) -> PyResult<Self> {
-        configure_websocket_keepalive(websocket_ping_interval_ms, websocket_ping_timeout_ms);
         Ok(Self {
             config: WorkerConfig::new(
                 worker_id,
@@ -99,6 +116,7 @@ impl ASGIWorker {
                 ssl_client_verify,
                 metrics,
             ),
+            websocket_keepalive: websocket_keepalive_from_millis(websocket_ping_interval_ms, websocket_ping_timeout_ms),
         })
     }
 
@@ -109,6 +127,7 @@ impl ASGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignal>,
     ) {
+        let handle_ws = websocket_handler!(self);
         gen_serve_match!(
             crate::serve::serve_mt,
             WorkerAcceptorTcpPlain,
@@ -124,6 +143,7 @@ impl ASGIWorker {
     }
 
     fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        let handle_ws = websocket_handler!(self);
         gen_serve_match!(
             crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
@@ -144,6 +164,7 @@ impl ASGIWorker {
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
+        let handle_ws = websocket_handler!(self);
         gen_serve_match!(
             crate::serve::serve_fut,
             WorkerAcceptorTcpPlain,
@@ -166,6 +187,7 @@ impl ASGIWorker {
         event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignal>,
     ) {
+        let handle_ws = websocket_handler!(self);
         gen_serve_match!(
             crate::serve::serve_mt_uds,
             WorkerAcceptorUdsPlain,
@@ -182,6 +204,7 @@ impl ASGIWorker {
 
     #[cfg(unix)]
     fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+        let handle_ws = websocket_handler!(self);
         gen_serve_match!(
             crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
@@ -203,6 +226,7 @@ impl ASGIWorker {
         event_loop: &Bound<'p, PyAny>,
         signal: Py<WorkerSignal>,
     ) -> Bound<'p, PyAny> {
+        let handle_ws = websocket_handler!(self);
         gen_serve_match!(
             crate::serve::serve_fut_uds,
             WorkerAcceptorUdsPlain,

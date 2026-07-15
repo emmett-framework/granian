@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{Notify, mpsc};
 
 use super::callbacks::{call_http, call_ws};
+use super::io::WebsocketKeepalive;
 use crate::{
     callbacks::ArcCBScheduler,
     http::{HTTPProto, HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
@@ -74,6 +75,7 @@ macro_rules! handle_request_with_ws {
             client_addr: SockAddr,
             mut req: HTTPRequest,
             scheme: HTTPProto,
+            keepalive: WebsocketKeepalive,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 return match ws_upgrade(&mut req, None) {
@@ -96,6 +98,7 @@ macro_rules! handle_request_with_ws {
                                 ws,
                                 parts,
                                 UpgradeData::new(res, restx),
+                                keepalive,
                             )
                             .await
                             {

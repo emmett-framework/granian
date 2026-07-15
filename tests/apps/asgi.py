@@ -142,6 +142,31 @@ async def ws_slow(scope, receive, send):
     await send({'type': 'websocket.close'})
 
 
+async def ws_slow_close_order(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.accept'})
+    await asyncio.sleep(0.2)
+    message = await receive()
+    if message['type'] != 'websocket.receive':
+        return
+    target = pathlib.Path(message.get('text') or message['bytes'].decode('utf8'))
+    message = await receive()
+    if message['type'] == 'websocket.disconnect':
+        target.touch()
+
+
+async def ws_backpressured(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.accept'})
+    await asyncio.sleep(0.3)
+    for _ in range(257):
+        message = await receive()
+        if message['type'] != 'websocket.receive':
+            return
+    await send({'type': 'websocket.send', 'text': 'ready'})
+    await send({'type': 'websocket.close'})
+
+
 async def ws_push(scope, receive, send):
     await send({'type': 'websocket.accept'})
 
@@ -237,6 +262,8 @@ def app(scope, receive, send):
         '/ws_close': ws_close,
         '/ws_push': ws_push,
         '/ws_slow': ws_slow,
+        '/ws_slow_close_order': ws_slow_close_order,
+        '/ws_backpressured': ws_backpressured,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,
         '/err_proto/flow': err_proto_flow,

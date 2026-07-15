@@ -106,6 +106,8 @@ class Server(AbstractServer[AsyncWorker]):
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
+        websocket_ping_interval: float | None = None,
+        websocket_ping_timeout: float = 20,
         backlog: int = 128,
         backpressure: int | None = None,
         http1_settings: HTTP1Settings | None = None,
@@ -142,6 +144,8 @@ class Server(AbstractServer[AsyncWorker]):
             task_impl=task_impl,
             http=http,
             websockets=websockets,
+            websocket_ping_interval=websocket_ping_interval,
+            websocket_ping_timeout=websocket_ping_timeout,
             backlog=backlog,
             backpressure=backpressure,
             http1_settings=http1_settings,
@@ -193,6 +197,8 @@ class Server(AbstractServer[AsyncWorker]):
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
+                self.websocket_ping_interval_ms,
+                self.websocket_ping_timeout_ms,
             ),
             sig=sig,
         )
@@ -219,6 +225,8 @@ class Server(AbstractServer[AsyncWorker]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
 
@@ -238,6 +246,8 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
             (None, None),
+            websocket_ping_interval_ms,
+            websocket_ping_timeout_ms,
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -265,6 +275,8 @@ class Server(AbstractServer[AsyncWorker]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         lifespan_handler = LifespanProtocol(callback)
         wcallback = _future_watcher_wrapper(
@@ -292,6 +304,8 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
             (None, None),
+            websocket_ping_interval_ms,
+            websocket_ping_timeout_ms,
         )
         serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -320,6 +334,8 @@ class Server(AbstractServer[AsyncWorker]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        websocket_ping_interval_ms: int | None,
+        websocket_ping_timeout_ms: int,
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))

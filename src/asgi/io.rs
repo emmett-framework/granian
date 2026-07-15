@@ -35,21 +35,13 @@ const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
 const EMPTY_STRING: String = String::new();
 static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
 const WS_MESSAGE_QUEUE_CAPACITY: usize = 256;
-static WS_PING_INTERVAL_MS: atomic::AtomicU64 = atomic::AtomicU64::new(0);
-static WS_PING_TIMEOUT_MS: atomic::AtomicU64 = atomic::AtomicU64::new(20_000);
+pub(crate) type WebsocketKeepalive = Option<(Duration, Duration)>;
 
-pub(crate) fn configure_websocket_keepalive(ping_interval_ms: Option<u64>, ping_timeout_ms: u64) {
-    WS_PING_INTERVAL_MS.store(ping_interval_ms.unwrap_or_default(), atomic::Ordering::Release);
-    WS_PING_TIMEOUT_MS.store(ping_timeout_ms, atomic::Ordering::Release);
-}
-
-fn websocket_keepalive() -> Option<(Duration, Duration)> {
-    let interval_ms = WS_PING_INTERVAL_MS.load(atomic::Ordering::Acquire);
-    if interval_ms == 0 {
-        return None;
-    }
-    let timeout_ms = WS_PING_TIMEOUT_MS.load(atomic::Ordering::Acquire);
-    Some((Duration::from_millis(interval_ms), Duration::from_millis(timeout_ms)))
+pub(crate) fn websocket_keepalive_from_millis(
+    ping_interval_ms: Option<u64>,
+    ping_timeout_ms: u64,
+) -> WebsocketKeepalive {
+    ping_interval_ms.map(|interval| (Duration::from_millis(interval), Duration::from_millis(ping_timeout_ms)))
 }
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -371,7 +363,8 @@ pub(crate) struct ASGIWebsocketProtocol {
     pong_received: Arc<Notify>,
     heartbeat_stop: Arc<Notify>,
     reader_stop: Arc<Notify>,
-    keepalive: Option<(Duration, Duration)>,
+    reader_backpressured: Arc<atomic::AtomicBool>,
+    keepalive: WebsocketKeepalive,
 }
 
 impl ASGIWebsocketProtocol {
@@ -381,6 +374,7 @@ impl ASGIWebsocketProtocol {
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
         disconnect_guard: Arc<Notify>,
+        keepalive: WebsocketKeepalive,
     ) -> Self {
         let (message_tx, message_rx) = mpsc::channel(WS_MESSAGE_QUEUE_CAPACITY);
         Self {
@@ -402,7 +396,8 @@ impl ASGIWebsocketProtocol {
             pong_received: Arc::new(Notify::new()),
             heartbeat_stop: Arc::new(Notify::new()),
             reader_stop: Arc::new(Notify::new()),
-            keepalive: websocket_keepalive(),
+            reader_backpressured: Arc::new(false.into()),
+            keepalive,
         }
     }
 
@@ -419,6 +414,7 @@ impl ASGIWebsocketProtocol {
         let pong_received = self.pong_received.clone();
         let heartbeat_stop = self.heartbeat_stop.clone();
         let reader_stop = self.reader_stop.clone();
+        let reader_backpressured = self.reader_backpressured.clone();
         let disconnect_guard = self.disconnect_guard.clone();
         let keepalive = self.keepalive;
         let rt = self.rt.clone();
@@ -445,7 +441,10 @@ impl ASGIWebsocketProtocol {
                     let reader_pong_received = pong_received.clone();
                     let reader_heartbeat_stop = heartbeat_stop.clone();
                     let reader_messages = message_tx.clone();
-                    // Keep control-frame handling independent from application receive calls.
+                    let heartbeat_reader_stop = reader_stop.clone();
+                    let heartbeat_reader_backpressured = reader_backpressured.clone();
+                    // Read control frames independently from application receive calls;
+                    // heartbeat timeout handling accounts for queue backpressure below.
                     rt.spawn(async move {
                         let mut split_rx = split_rx;
                         loop {
@@ -487,12 +486,36 @@ impl ASGIWebsocketProtocol {
                                     _ = reader_messages.try_send(message);
                                     return;
                                 }
-                                Some(Ok(message)) => {
-                                    if reader_messages.send(message).await.is_err() {
+                                Some(Ok(message)) => match reader_messages.try_send(message) {
+                                    Ok(()) => {}
+                                    Err(mpsc::error::TrySendError::Full(message)) => {
+                                        reader_backpressured.store(true, atomic::Ordering::Release);
+                                        let send_result = tokio::select! {
+                                            biased;
+                                            () = reader_stop.notified() => {
+                                                reader_backpressured.store(false, atomic::Ordering::Release);
+                                                return;
+                                            },
+                                            () = disconnect_guard.notified() => {
+                                                reader_backpressured.store(false, atomic::Ordering::Release);
+                                                reader_closed.store(true, atomic::Ordering::Release);
+                                                reader_heartbeat_stop.notify_one();
+                                                _ = reader_messages.try_send(Message::Close(None));
+                                                return;
+                                            },
+                                            result = reader_messages.send(message) => result,
+                                        };
+                                        reader_backpressured.store(false, atomic::Ordering::Release);
+                                        if send_result.is_err() {
+                                            reader_heartbeat_stop.notify_one();
+                                            return;
+                                        }
+                                    }
+                                    Err(mpsc::error::TrySendError::Closed(_)) => {
                                         reader_heartbeat_stop.notify_one();
                                         return;
                                     }
-                                }
+                                },
                                 _ => {
                                     reader_closed.store(true, atomic::Ordering::Release);
                                     reader_heartbeat_stop.notify_one();
@@ -524,25 +547,37 @@ impl ASGIWebsocketProtocol {
                                 };
                                 if !sent {
                                     closed.store(true, atomic::Ordering::Release);
+                                    heartbeat_reader_stop.notify_one();
                                     _ = message_tx.try_send(Message::Close(None));
                                     return;
                                 }
 
-                                tokio::select! {
-                                    () = pong_waiter => {},
-                                    () = tokio::time::sleep(ping_timeout) => {
-                                        if expected_pong.compare_exchange(
-                                            sequence,
-                                            0,
-                                            atomic::Ordering::AcqRel,
-                                            atomic::Ordering::Acquire,
-                                        ).is_ok() {
-                                            closed.store(true, atomic::Ordering::Release);
-                                            _ = message_tx.try_send(Message::Close(None));
-                                            return;
-                                        }
-                                    },
-                                    () = heartbeat_stop.notified() => return,
+                                tokio::pin!(pong_waiter);
+                                loop {
+                                    tokio::select! {
+                                        () = &mut pong_waiter => break,
+                                        () = tokio::time::sleep(ping_timeout) => {
+                                            if heartbeat_reader_backpressured.load(atomic::Ordering::Acquire) {
+                                                continue;
+                                            }
+                                            if expected_pong.compare_exchange(
+                                                sequence,
+                                                0,
+                                                atomic::Ordering::AcqRel,
+                                                atomic::Ordering::Acquire,
+                                            ).is_ok() {
+                                                closed.store(true, atomic::Ordering::Release);
+                                                heartbeat_reader_stop.notify_one();
+                                                if let Some(tx) = tx.lock().await.take() {
+                                                    WebsocketDetachedTransport::new(true, Some(tx), None).close().await;
+                                                }
+                                                _ = message_tx.try_send(Message::Close(None));
+                                                return;
+                                            }
+                                            break;
+                                        },
+                                        () = heartbeat_stop.notified() => return,
+                                    }
                                 }
                                 sequence = sequence.wrapping_add(1).max(1);
                             }
@@ -698,11 +733,17 @@ impl ASGIWebsocketProtocol {
                 accepted_ev.notified().await;
             }
 
-            if closed.load(atomic::Ordering::Acquire) {
-                return FutureResultToPy::ASGIWSMessage(Message::Close(None));
-            }
+            let mut transport = transport.lock().await;
+            let message = match transport.try_recv() {
+                Ok(message) => Some(message),
+                Err(mpsc::error::TryRecvError::Empty) if closed.load(atomic::Ordering::Acquire) => {
+                    return FutureResultToPy::ASGIWSMessage(Message::Close(None));
+                }
+                Err(mpsc::error::TryRecvError::Empty) => transport.recv().await,
+                Err(mpsc::error::TryRecvError::Disconnected) => None,
+            };
 
-            match transport.lock().await.recv().await {
+            match message {
                 Some(message @ Message::Close(_)) => {
                     closed.store(true, atomic::Ordering::Release);
                     FutureResultToPy::ASGIWSMessage(message)

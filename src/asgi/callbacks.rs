@@ -4,7 +4,10 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::{Notify, oneshot};
 
 use super::{
-    io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
+    io::{
+        ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport,
+        WebsocketKeepalive,
+    },
     utils::{build_scope_http, build_scope_ws},
 };
 use crate::{
@@ -178,9 +181,10 @@ pub(crate) fn call_ws(
     ws: HyperWebsocket,
     req: hyper::http::request::Parts,
     upgrade: UpgradeData,
+    keepalive: WebsocketKeepalive,
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
     let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard);
+    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard, keepalive);
 
     rt.spawn_blocking(move |py| {
         if let Ok(scope) = build_scope_ws(py, req, server_addr, client_addr, scheme)

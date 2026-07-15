@@ -3,12 +3,17 @@ import base64
 import json
 import os
 import secrets
+import socket
+from contextlib import closing
 
 import pytest
 import websockets
 import websockets.exceptions
 
 from granian import Granian
+from granian.server.common import Interfaces
+from granian.server.embed import Server as EmbeddedGranian
+from tests.apps.asgi import app as asgi_app
 
 
 def test_websocket_ping_options_validation():
@@ -37,6 +42,25 @@ async def _open_raw_websocket(port, path='/ws_echo'):
     response = await reader.readuntil(b'\r\n\r\n')
     assert response.startswith(b'HTTP/1.1 101')
     return reader, writer
+
+
+async def _wait_for_server(port):
+    for _ in range(20):
+        try:
+            reader, writer = await asyncio.open_connection('127.0.0.1', port)
+        except OSError:
+            await asyncio.sleep(0.05)
+            continue
+        writer.close()
+        await writer.wait_closed()
+        return
+    raise RuntimeError(f'Server on port {port} did not start')
+
+
+def _free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(('127.0.0.1', 0))
+        return sock.getsockname()[1]
 
 
 @pytest.mark.asyncio
@@ -151,6 +175,78 @@ async def test_asgi_keepalive_processes_pong_while_app_is_busy(asgi_server, runt
         async with websockets.connect(f'ws://localhost:{port}/ws_slow', ping_interval=None) as ws:
             # the app sleeps way past ping interval and timeout before sending
             assert await ws.recv() == 'ready'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_keepalive_timeout_closes_transport_while_app_is_busy(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws_ping_interval=0.05, ws_ping_timeout=0.1) as port:
+        reader, writer = await _open_raw_websocket(port, '/ws_slow')
+        try:
+            ping = await asyncio.wait_for(reader.readexactly(10), timeout=2)
+            assert ping[:2] == b'\x89\x08'
+            close_header = await asyncio.wait_for(reader.readexactly(2), timeout=0.3)
+            assert close_header[0] == 0x88
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_disconnect_preserves_queued_message_order(asgi_server, runtime_mode, tmp_path):
+    target = tmp_path / 'ws_ordered_disconnect'
+    async with asgi_server(runtime_mode) as port:
+        async with websockets.connect(f'ws://localhost:{port}/ws_slow_close_order') as ws:
+            await ws.send(str(target.resolve()))
+        for _ in range(20):
+            if target.exists():
+                break
+            await asyncio.sleep(0.05)
+    assert target.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_keepalive_defers_timeout_during_reader_backpressure(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws_ping_interval=0.1, ws_ping_timeout=0.15) as port:
+        async with websockets.connect(f'ws://localhost:{port}/ws_backpressured', ping_interval=None) as ws:
+            for _ in range(257):
+                await ws.send('message')
+            assert await asyncio.wait_for(ws.recv(), timeout=2) == 'ready'
+
+
+@pytest.mark.asyncio
+async def test_asgi_keepalive_configuration_is_per_worker(server_port):
+    disabled_port = _free_port()
+    enabled = EmbeddedGranian(
+        asgi_app,
+        port=server_port,
+        interface=Interfaces.ASGINL,
+        websocket_ping_interval=0.05,
+        websocket_ping_timeout=0.1,
+    )
+    disabled = EmbeddedGranian(asgi_app, port=disabled_port, interface=Interfaces.ASGINL)
+    enabled_task = asyncio.create_task(enabled.serve())
+    disabled_task = None
+    try:
+        await _wait_for_server(server_port)
+        disabled_task = asyncio.create_task(disabled.serve())
+        await _wait_for_server(disabled_port)
+        reader, writer = await _open_raw_websocket(server_port, '/ws_slow')
+        try:
+            ping = await asyncio.wait_for(reader.readexactly(10), timeout=1)
+            assert ping[:2] == b'\x89\x08'
+        finally:
+            writer.close()
+            await writer.wait_closed()
+    finally:
+        enabled.stop()
+        disabled.stop()
+        tasks = [enabled_task]
+        if disabled_task is not None:
+            tasks.append(disabled_task)
+        await asyncio.gather(*tasks)
 
 
 @pytest.mark.asyncio
