@@ -68,18 +68,27 @@ def wrap_asgi_with_proxy_headers(app, trusted_hosts: list[str] | str = '127.0.0.
         client_host = client_addr[0] if client_addr else None
 
         if client_host in forwarders:
-            headers = dict(scope['headers'])
+            x_forwarded_proto = None
+            x_forwarded_for = []
 
-            if x_forwarded_proto := headers.get(b'x-forwarded-proto', b'').decode('latin1').strip():
-                if x_forwarded_proto in {'http', 'https', 'ws', 'wss'}:
-                    if scope['type'] == 'websocket':
-                        scope['scheme'] = x_forwarded_proto.replace('http', 'ws')
-                    else:
-                        scope['scheme'] = x_forwarded_proto
+            for key, val in scope['headers']:
+                if key == b'x-forwarded-proto' and not x_forwarded_proto:
+                    if proto := val.decode('latin1').strip():
+                        x_forwarded_proto = proto
+                    continue
+                if key == b'x-forwarded-for':
+                    if forwarded := val.decode('latin1').strip():
+                        x_forwarded_for.append(forwarded)
 
-            if x_forwarded_for := headers.get(b'x-forwarded-for', b'').decode('latin1'):
-                if host := forwarders.get_client_host(x_forwarded_for):
+            if x_forwarded_for:
+                if host := forwarders.get_client_host(', '.join(x_forwarded_for)):
                     scope['client'] = (host, 0)
+
+                    if x_forwarded_proto in {'http', 'https', 'ws', 'wss'}:
+                        if scope['type'] == 'websocket':
+                            scope['scheme'] = x_forwarded_proto.replace('http', 'ws')
+                        else:
+                            scope['scheme'] = x_forwarded_proto
 
         return app(scope, receive, send)
 
@@ -94,13 +103,13 @@ def wrap_wsgi_with_proxy_headers(app, trusted_hosts: list[str] | str = '127.0.0.
         client_host = scope.get('REMOTE_ADDR')
 
         if client_host in forwarders:
-            if x_forwarded_proto := scope.get('HTTP_X_FORWARDED_PROTO'):
-                if x_forwarded_proto in {'http', 'https'}:
-                    scope['wsgi.url_scheme'] = x_forwarded_proto
-
             if x_forwarded_for := scope.get('HTTP_X_FORWARDED_FOR'):
                 if host := forwarders.get_client_host(x_forwarded_for):
                     scope['REMOTE_ADDR'] = host
+
+                    if x_forwarded_proto := scope.get('HTTP_X_FORWARDED_PROTO'):
+                        if x_forwarded_proto in {'http', 'https'}:
+                            scope['wsgi.url_scheme'] = x_forwarded_proto
 
         return app(scope, resp)
 

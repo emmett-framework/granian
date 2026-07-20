@@ -356,22 +356,32 @@ class AbstractServer(Generic[WT]):
                     logger.warning(f'Killing old worker-{idx + 1} after it refused to gracefully stop')
                     old_wrk.kill()
                     old_wrk.join()
+
+            logger.info(f'Stopped old worker-{idx + 1}')
+
         self._metrics.incr_spawn(len(workers))
 
     def _stop_workers(self):
         for wrk in self.wrks:
             wrk.terminate()
 
+        now = time.monotonic()
+        timeout = self.workers_kill_timeout if self.workers_kill_timeout else None
         for wrk in self.wrks:
-            wrk.join(self.workers_kill_timeout)
+            wrk.join(timeout)
+
             if self.workers_kill_timeout:
                 # the worker might still be reported after `join`, let's context switch
                 if wrk.is_alive():
                     time.sleep(0.001)
                 if wrk.is_alive():
-                    logger.warning(f'Killing worker-{wrk.idx} after it refused to gracefully stop')
+                    logger.warning(f'Killing worker-{wrk.idx + 1} after it refused to gracefully stop')
                     wrk.kill()
                     wrk.join()
+
+                timeout = max(timeout - (time.monotonic() - now), 0.001)
+
+            logger.info(f'Stopped worker-{wrk.idx + 1}')
 
         self.wrks.clear()
 
@@ -481,12 +491,16 @@ class AbstractServer(Generic[WT]):
 
     def shutdown(self, exit_code=0):
         logger.info('Shutting down granian')
+
         if self.metrics_enabled:
             self._stop_metrics()
         self._stop_workers()
         self._stop_ipc()
         self._call_hooks(self.hooks_shutdown)
         self._unlink_pidfile()
+
+        logger.info('Granian shutdown completed, see ya!')
+
         if not exit_code and self.interrupt_children:
             exit_code = 1
         if exit_code:
@@ -494,6 +508,7 @@ class AbstractServer(Generic[WT]):
 
     def _reload(self, spawn_target, target_loader):
         logger.info('HUP signal received, gracefully respawning workers..')
+
         workers = list(range(self.workers))
         self.reload_signal = False
         self.respawned_wrks.clear()

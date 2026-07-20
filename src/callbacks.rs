@@ -278,11 +278,10 @@ impl CallbackSchedulerState {
         ctxd.set_item(pyo3::intern!(py, "context"), self.ctx.clone_ref(py))
             .unwrap();
 
-        pyo3::ffi::PyObject_Call(
-            pyo3::ffi::PyObject_GetAttr(fut, fut_cbm),
-            (waker,).into_py_any(py).unwrap().as_ptr(),
-            ctxd.as_ptr(),
-        );
+        let fut_cb = pyo3::ffi::PyObject_GetAttr(fut, fut_cbm);
+        let res = pyo3::ffi::PyObject_Call(fut_cb, (waker,).into_py_any(py).unwrap().as_ptr(), ctxd.as_ptr());
+        pyo3::ffi::Py_XDECREF(res);
+        pyo3::ffi::Py_DECREF(fut_cb);
     }
 
     fn reschedule(self: Arc<Self>, py: Python, loop_m: *mut pyo3::ffi::PyObject) {
@@ -292,7 +291,8 @@ impl CallbackSchedulerState {
             .unwrap();
 
         unsafe {
-            pyo3::ffi::PyObject_Call(loop_m, (step,).into_py_any(py).unwrap().as_ptr(), ctxd.as_ptr());
+            let res = pyo3::ffi::PyObject_Call(loop_m, (step,).into_py_any(py).unwrap().as_ptr(), ctxd.as_ptr());
+            pyo3::ffi::Py_XDECREF(res);
         }
     }
 }

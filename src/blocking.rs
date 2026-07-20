@@ -125,6 +125,7 @@ pub(crate) struct BlockingRunnerPool<M> {
     tq: channel::Receiver<BlockingTask>,
     threads: Arc<atomic::AtomicUsize>,
     tmax: usize,
+    idle: Arc<atomic::AtomicUsize>,
     idle_timeout: time::Duration,
     metrics: M,
 }
@@ -132,17 +133,19 @@ pub(crate) struct BlockingRunnerPool<M> {
 impl BlockingRunnerPool<()> {
     pub fn new(max_threads: usize, idle_timeout: u64) -> Self {
         let (qtx, qrx) = channel::unbounded();
+        let idle = Arc::new(atomic::AtomicUsize::new(0));
         let ret = Self {
             queue: qtx,
             tq: qrx.clone(),
             threads: Arc::new(1.into()),
             tmax: max_threads,
+            idle: idle.clone(),
             idle_timeout: time::Duration::from_secs(idle_timeout),
             metrics: (),
         };
 
         // always spawn the first thread
-        thread::spawn(move || blocking_worker(qrx));
+        thread::spawn(move || blocking_worker_idle(qrx, idle));
 
         ret
     }
@@ -164,10 +167,11 @@ impl BlockingRunnerPool<()> {
 
         let queue = self.tq.clone();
         let tcount = self.threads.clone();
+        let idle = self.idle.clone();
         let timeout = self.idle_timeout;
 
         thread::spawn(move || {
-            blocking_worker_idle(queue, timeout);
+            blocking_worker_timeout(queue, timeout, idle);
             tcount.fetch_sub(1, atomic::Ordering::Release);
         });
     }
@@ -179,7 +183,8 @@ impl BlockingRunnerPool<()> {
     {
         let threads = self.threads.load(atomic::Ordering::Acquire).cast_signed();
         self.queue.send(BlockingTask::new(task))?;
-        let overload = self.queue.len().cast_signed() - threads;
+        let idle = self.idle.load(atomic::Ordering::Relaxed).cast_signed();
+        let overload = self.queue.len().cast_signed() - idle;
         if (overload > 0) && (threads < self.tmax.cast_signed()) {
             self.spawn_thread(threads.cast_unsigned());
         }
@@ -190,18 +195,20 @@ impl BlockingRunnerPool<()> {
 impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
     pub fn new(max_threads: usize, idle_timeout: u64, metrics: metrics::ArcWorkerMetrics) -> Self {
         let (qtx, qrx) = channel::unbounded();
+        let idle = Arc::new(atomic::AtomicUsize::new(0));
         let ret = Self {
             queue: qtx,
             tq: qrx.clone(),
             // NOTE: we use metrics in place of this atomic
             threads: Arc::new(0.into()),
             tmax: max_threads,
+            idle: idle.clone(),
             idle_timeout: time::Duration::from_secs(idle_timeout),
             metrics: metrics.clone(),
         };
 
         // always spawn the first thread
-        thread::spawn(move || blocking_worker_with_metrics(qrx, metrics));
+        thread::spawn(move || blocking_worker_idle_with_metrics(qrx, idle, metrics));
         ret.metrics.blocking_threads.store(1, atomic::Ordering::Release);
 
         ret
@@ -225,10 +232,11 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
 
         let queue = self.tq.clone();
         let metrics = self.metrics.clone();
+        let idle = self.idle.clone();
         let timeout = self.idle_timeout;
 
         thread::spawn(move || {
-            blocking_worker_idle_with_metrics(queue, timeout, metrics.clone());
+            blocking_worker_timeout_with_metrics(queue, timeout, idle, metrics.clone());
             metrics.blocking_threads.fetch_sub(1, atomic::Ordering::Release);
         });
     }
@@ -245,7 +253,8 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
             .cast_signed();
         self.queue.send(BlockingTask::new(task))?;
         self.metrics.blocking_queue.fetch_add(1, atomic::Ordering::Release);
-        let overload = self.queue.len().cast_signed() - threads;
+        let idle = self.idle.load(atomic::Ordering::Relaxed).cast_signed();
+        let overload = self.queue.len().cast_signed() - idle;
         if (overload > 0) && (threads < self.tmax.cast_signed()) {
             self.spawn_thread(threads.cast_unsigned());
         }
@@ -261,9 +270,31 @@ fn blocking_worker(queue: channel::Receiver<BlockingTask>) {
     });
 }
 
-fn blocking_worker_idle(queue: channel::Receiver<BlockingTask>, timeout: time::Duration) {
+fn blocking_worker_idle(queue: channel::Receiver<BlockingTask>, idle: Arc<atomic::AtomicUsize>) {
     Python::attach(|py| {
-        while let Ok(task) = py.detach(|| queue.recv_timeout(timeout)) {
+        while let Ok(task) = py.detach(|| {
+            idle.fetch_add(1, atomic::Ordering::Relaxed);
+            let task = queue.recv();
+            idle.fetch_sub(1, atomic::Ordering::Relaxed);
+            task
+        }) {
+            task.run(py);
+        }
+    });
+}
+
+fn blocking_worker_timeout(
+    queue: channel::Receiver<BlockingTask>,
+    timeout: time::Duration,
+    idle: Arc<atomic::AtomicUsize>,
+) {
+    Python::attach(|py| {
+        while let Ok(task) = py.detach(|| {
+            idle.fetch_add(1, atomic::Ordering::Relaxed);
+            let task = queue.recv_timeout(timeout);
+            idle.fetch_sub(1, atomic::Ordering::Relaxed);
+            task
+        }) {
             task.run(py);
         }
     });
@@ -322,14 +353,16 @@ fn blocking_worker_with_metrics(queue: channel::Receiver<BlockingTask>, metrics:
 #[cfg(not(Py_GIL_DISABLED))]
 fn blocking_worker_idle_with_metrics(
     queue: channel::Receiver<BlockingTask>,
-    timeout: time::Duration,
+    idle: Arc<atomic::AtomicUsize>,
     metrics: Arc<metrics::WorkerMetrics>,
 ) {
     Python::attach(|py| {
         let mut t_wait = time::Instant::now();
         while let Ok(task) = py.detach(|| {
             let t = time::Instant::now();
-            let task = queue.recv_timeout(timeout);
+            idle.fetch_add(1, atomic::Ordering::Relaxed);
+            let task = queue.recv();
+            idle.fetch_sub(1, atomic::Ordering::Relaxed);
             metrics
                 .blocking_idle_cumul
                 .fetch_add(t.elapsed().as_micros() as usize, atomic::Ordering::Release);
@@ -353,13 +386,79 @@ fn blocking_worker_idle_with_metrics(
 #[cfg(Py_GIL_DISABLED)]
 fn blocking_worker_idle_with_metrics(
     queue: channel::Receiver<BlockingTask>,
-    timeout: time::Duration,
+    idle: Arc<atomic::AtomicUsize>,
     metrics: Arc<metrics::WorkerMetrics>,
 ) {
     Python::attach(|py| {
         while let Ok(task) = py.detach(|| {
             let t = time::Instant::now();
+            idle.fetch_add(1, atomic::Ordering::Relaxed);
+            let task = queue.recv();
+            idle.fetch_sub(1, atomic::Ordering::Relaxed);
+            metrics
+                .blocking_idle_cumul
+                .fetch_add(t.elapsed().as_micros() as usize, atomic::Ordering::Release);
+            if task.is_ok() {
+                metrics.blocking_queue.fetch_sub(1, atomic::Ordering::Release);
+            }
+            task
+        }) {
+            let t = time::Instant::now();
+            task.run(py);
+            metrics
+                .blocking_busy_cumul
+                .fetch_add(t.elapsed().as_micros() as usize, atomic::Ordering::Release);
+        }
+    });
+}
+
+#[cfg(not(Py_GIL_DISABLED))]
+fn blocking_worker_timeout_with_metrics(
+    queue: channel::Receiver<BlockingTask>,
+    timeout: time::Duration,
+    idle: Arc<atomic::AtomicUsize>,
+    metrics: Arc<metrics::WorkerMetrics>,
+) {
+    Python::attach(|py| {
+        let mut t_wait = time::Instant::now();
+        while let Ok(task) = py.detach(|| {
+            let t = time::Instant::now();
+            idle.fetch_add(1, atomic::Ordering::Relaxed);
             let task = queue.recv_timeout(timeout);
+            idle.fetch_sub(1, atomic::Ordering::Relaxed);
+            metrics
+                .blocking_idle_cumul
+                .fetch_add(t.elapsed().as_micros() as usize, atomic::Ordering::Release);
+            if task.is_ok() {
+                metrics.blocking_queue.fetch_sub(1, atomic::Ordering::Release);
+            }
+            t_wait = time::Instant::now();
+            task
+        }) {
+            metrics
+                .py_wait_cumul
+                .fetch_add(t_wait.elapsed().as_micros() as usize, atomic::Ordering::Release);
+            task.run(py);
+            metrics
+                .blocking_busy_cumul
+                .fetch_add(t_wait.elapsed().as_micros() as usize, atomic::Ordering::Release);
+        }
+    });
+}
+
+#[cfg(Py_GIL_DISABLED)]
+fn blocking_worker_timeout_with_metrics(
+    queue: channel::Receiver<BlockingTask>,
+    timeout: time::Duration,
+    idle: Arc<atomic::AtomicUsize>,
+    metrics: Arc<metrics::WorkerMetrics>,
+) {
+    Python::attach(|py| {
+        while let Ok(task) = py.detach(|| {
+            let t = time::Instant::now();
+            idle.fetch_add(1, atomic::Ordering::Relaxed);
+            let task = queue.recv_timeout(timeout);
+            idle.fetch_sub(1, atomic::Ordering::Relaxed);
             metrics
                 .blocking_idle_cumul
                 .fetch_add(t.elapsed().as_micros() as usize, atomic::Ordering::Release);

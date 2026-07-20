@@ -1,6 +1,6 @@
 [package]
 name = "granian"
-version = "2.7.5"
+version = "2.7.9"
 description = "A Rust HTTP server for Python applications"
 authors = ["Giovanni Barillari <g@baro.dev>"]
 license = "BSD-3-Clause"
@@ -39,24 +39,24 @@ encoding_rs = "=0.8"
 futures = "=0.3"
 futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }
-hyper = { version = "=1.9", features = ["http1", "http2", "server"] }
+hyper = { version = "=1.10", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 interprocess = { version = "=2.3", git = "https://github.com/kotauskas/interprocess.git", rev = "44351c4fe88c72ead4f3b0b762c4cf45beb90841", features = ["tokio"] }
-itertools = "0.14"
+itertools = "0.15"
 log = "0.4"
 mimalloc = { version = "0.1.49", default-features = false, features = ["local_dynamic_tls"], optional = true }
 mime_guess = "=2.0"
 pem = "=3.0"
 percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
-pkcs8 = { version = "=0.10", features = ["encryption", "pkcs5"] }
+pkcs8 = { version = "=0.11", features = ["encryption", "pkcs5"] }
 pyo3 = { version = "=0.27", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
 pyo3-log = { version = "=0.13", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-027" }
 rustls-pemfile = "2.2"
 serde = { version = "1.0.228", features = ["derive"] }
 socket2 = { version = "=0.6", features = ["all"] }
-sysinfo = "=0.38"
-tikv-jemallocator = { version = "0.6.0", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
+sysinfo = "=0.39"
+tikv-jemallocator = { version = "=0.7", default-features = false, features = ["disable_initial_exec_tls"], optional = true }
 tls-listener = { version = "=0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
 tokio = { version = "1.51", features = ["full"] }
 tokio-stream = "0.1"
