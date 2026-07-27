@@ -156,17 +156,11 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
 
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
+    _needs_req_headers = logger.needs_req_headers
     _needs_resp_headers = logger.needs_resp_headers
 
     def access_log(rt, mt, scope, resp_code, resp_headers_raw=()):
         user_agent = '-'
-        headers_dict = {}
-        for hname_b, hval_b in scope.get('headers', ()):
-            hname = hname_b.decode('latin-1').lower()
-            hval = hval_b.decode('latin-1')
-            headers_dict[hname] = hval
-            if hname == 'user-agent':
-                user_agent = hval
         req = {
             'addr_remote': scope['client'][0],
             'protocol': 'HTTP/' + scope['http_version'],
@@ -175,8 +169,22 @@ def _build_access_logger(fmt):
             'method': scope.get('method', '-'),
             'scheme': scope['scheme'],
             'user_agent': user_agent,
-            'get_header': headers_dict.get,
         }
+        if _needs_req_headers:
+            headers_dict = {}
+            for hname_b, hval_b in scope.get('headers', ()):
+                hname = hname_b.decode('latin-1').lower()
+                hval = hval_b.decode('latin-1')
+                headers_dict[hname] = hval
+                if hname == 'user-agent':
+                    user_agent = hval
+            req['get_header'] = headers_dict.get
+        else:
+            for hname_b, hval_b in scope.get('headers', ()):
+                if hname_b.lower() == b'user-agent':
+                    user_agent = hval_b.decode('latin-1')
+                    break
+        req['user_agent'] = user_agent
         if _needs_resp_headers:
             req['get_response_header'] = {
                 hname_b.decode('latin-1').lower(): hval_b.decode('latin-1')

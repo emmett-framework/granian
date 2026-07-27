@@ -28,8 +28,7 @@ class ResponseIterWrap:
         self.__next__ = iter(inner).__next__
 
     def close(self):
-        if hasattr(self.inner, 'close'):
-            self.inner.close()
+        self.inner.close()
 
 
 class _LoggingProto:

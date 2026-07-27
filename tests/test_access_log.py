@@ -1,4 +1,5 @@
 import logging
+import pytest
 import time
 from unittest.mock import MagicMock
 
@@ -334,3 +335,103 @@ def test_wsgi_access_log_absent_response_header_defaults_to_dash(caplog):
     with caplog.at_level(logging.INFO, logger='granian.access'):
         access_log(time.time(), time.perf_counter(), _wsgi_scope(), 200, ())
     assert _log_message(caplog).endswith('- -')
+
+
+# ---------------------------------------------------------------------------
+# Eager format-string validation (granian/log.py)
+# ---------------------------------------------------------------------------
+
+
+def test_log_request_builder_rejects_unknown_atom():
+    with pytest.raises(ValueError, match='Invalid access log format'):
+        log_request_builder('%(nonexistent)s')
+
+
+def test_log_request_builder_rejects_type_mismatch():
+    # %d against a string-valued atom raises TypeError, which should be
+    # surfaced as a friendly ValueError at build time.
+    with pytest.raises(ValueError, match='Invalid access log format'):
+        log_request_builder('%(user_agent)d')
+
+
+def test_log_request_builder_accepts_valid_format():
+    # A well-formed format string (including header atoms) must not raise.
+    log_request_builder(_FMT)
+    log_request_builder(_HEADER_FMT)
+    log_request_builder(_RESP_HEADER_FMT)
+
+
+# ---------------------------------------------------------------------------
+# needs_resp_headers flag — drives _http_log selection in each backend
+# ---------------------------------------------------------------------------
+
+
+def test_log_request_builder_needs_resp_headers_flag():
+    # Only a %({...}o)s atom should require response-header capture.
+    assert log_request_builder(_RESP_HEADER_FMT).needs_resp_headers is True
+    assert log_request_builder(_HEADER_FMT).needs_resp_headers is False
+    assert log_request_builder(_FMT).needs_resp_headers is False
+
+
+def test_log_request_builder_needs_req_headers_flag():
+    # Only a %({...}i)s atom should require the full request-header map.
+    assert log_request_builder(_HEADER_FMT).needs_req_headers is True
+    assert log_request_builder(_RESP_HEADER_FMT).needs_req_headers is False
+    assert log_request_builder(_FMT).needs_req_headers is False
+
+
+def _spy_access_logger(build_access_logger, monkeypatch, module, needs_req, needs_resp):
+    # Replace log_request_builder in the target module with a spy that records the
+    # `req` dict handed to the logger, so we can assert what the backend populated.
+    captured = {}
+
+    def _spy_logger(rt, mt, req, resp_code):
+        captured['req'] = req
+
+    _spy_logger.needs_req_headers = needs_req
+    _spy_logger.needs_resp_headers = needs_resp
+    monkeypatch.setattr(module, 'log_request_builder', lambda fmt: _spy_logger)
+    access_log, _ = build_access_logger('unused')
+    return access_log, captured
+
+
+def test_asgi_access_log_skips_header_dict_when_not_needed(monkeypatch):
+    import granian.asgi as asgi_mod
+
+    # No %({...}i)s atom -> needs_req_headers False -> no request-header dict built.
+    access_log, captured = _spy_access_logger(
+        asgi_build_access_logger, monkeypatch, asgi_mod, needs_req=False, needs_resp=False
+    )
+    scope = _asgi_scope(b'curl/8.0')
+    scope['headers'] = [(b'x-request-id', b'abc'), (b'user-agent', b'curl/8.0')]
+    access_log(time.time(), time.perf_counter(), scope, 200)
+    req = captured['req']
+    assert 'get_header' not in req  # dict was skipped entirely
+    assert req['user_agent'] == 'curl/8.0'  # still resolved via lightweight scan
+
+
+def test_asgi_access_log_builds_header_dict_when_needed(monkeypatch):
+    import granian.asgi as asgi_mod
+
+    # A %({...}i)s atom -> needs_req_headers True -> get_header present.
+    access_log, captured = _spy_access_logger(
+        asgi_build_access_logger, monkeypatch, asgi_mod, needs_req=True, needs_resp=False
+    )
+    scope = _asgi_scope(b'curl/8.0')
+    scope['headers'] = [(b'x-request-id', b'abc'), (b'user-agent', b'curl/8.0')]
+    access_log(time.time(), time.perf_counter(), scope, 200)
+    req = captured['req']
+    assert req['get_header']('x-request-id') == 'abc'
+    assert req['user_agent'] == 'curl/8.0'
+
+
+@pytest.mark.parametrize(
+    'build_access_logger',
+    [asgi_build_access_logger, rsgi_build_access_logger, wsgi_build_access_logger],
+)
+def test_build_access_logger_reports_needs_resp_headers(build_access_logger):
+    # The second return value gates the _http_log selection: only formats with a
+    # %({...}o)s response-header atom pull in the header-capturing wrapper.
+    assert build_access_logger(_RESP_HEADER_FMT)[1] is True
+    assert build_access_logger(_HEADER_FMT)[1] is False
+    assert build_access_logger(_FMT)[1] is False
