@@ -187,8 +187,7 @@ def _build_access_logger(fmt):
         req['user_agent'] = user_agent
         if _needs_resp_headers:
             req['get_response_header'] = {
-                hname_b.decode('latin-1').lower(): hval_b.decode('latin-1')
-                for hname_b, hval_b in resp_headers_raw
+                hname_b.decode('latin-1').lower(): hval_b.decode('latin-1') for hname_b, hval_b in resp_headers_raw
             }.get
         logger(rt, mt, req, resp_code)
 

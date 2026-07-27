@@ -1,7 +1,8 @@
 import logging
-import pytest
 import time
 from unittest.mock import MagicMock
+
+import pytest
 
 from granian.asgi import _build_access_logger as asgi_build_access_logger
 from granian.log import log_request_builder
