@@ -1,15 +1,28 @@
+use futures::StreamExt;
 use http_body_util::BodyExt;
 use hyper::{
     Response,
-    body::Bytes,
+    body::{Bytes, Frame},
     header::{HeaderValue, SERVER as HK_SERVER},
 };
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 pub(crate) type HTTPRequest = hyper::Request<hyper::body::Incoming>;
 pub(crate) type HTTPResponseBody = http_body_util::combinators::BoxBody<Bytes, anyhow::Error>;
 pub(crate) type HTTPResponse = hyper::Response<HTTPResponseBody>;
 
 pub(crate) const HV_SERVER: HeaderValue = HeaderValue::from_static("granian");
+
+// NOTE: bounded so a slow client applies backpressure to the producer instead of an unbounded
+//       buffer growing without limit; capacity chosen empirically, see the fix this introduced.
+const STREAM_CHANNEL_CAPACITY: usize = 32;
+
+pub(crate) fn body_stream_channel() -> (mpsc::Sender<Bytes>, HTTPResponseBody) {
+    let (tx, rx) = mpsc::channel::<Bytes>(STREAM_CHANNEL_CAPACITY);
+    let body = http_body_util::StreamBody::new(ReceiverStream::new(rx).map(Frame::data).map(Result::Ok));
+    (tx, BodyExt::boxed(body))
+}
 
 #[derive(Clone)]
 pub(crate) enum HTTPProto {

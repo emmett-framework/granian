@@ -15,7 +15,8 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    runtime::{RuntimeRef, empty_future_into_py, err_future_into_py, future_into_py_futlike},
+    http::body_stream_channel,
+    runtime::{RuntimeRef, empty_future_into_py, future_into_py_futlike},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -23,12 +24,23 @@ pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<WSTxStream>);
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
-    tx: mpsc::UnboundedSender<body::Bytes>,
+    rt: RuntimeRef,
+    tx: mpsc::Sender<body::Bytes>,
 }
 
 impl RSGIHTTPStreamTransport {
-    pub fn new(transport: mpsc::UnboundedSender<body::Bytes>) -> Self {
-        Self { tx: transport }
+    pub fn new(rt: RuntimeRef, transport: mpsc::Sender<body::Bytes>) -> Self {
+        Self { rt, tx: transport }
+    }
+
+    fn send_frame<'p>(&self, py: Python<'p>, frame: body::Bytes) -> PyResult<Bound<'p, PyAny>> {
+        let tx = self.tx.clone();
+        future_into_py_futlike(self.rt.clone(), py, async move {
+            match tx.send(frame).await {
+                Ok(()) => FutureResultToPy::None,
+                _ => FutureResultToPy::Err(error_stream!()),
+            }
+        })
     }
 }
 
@@ -38,17 +50,11 @@ impl RSGIHTTPStreamTransport {
 impl RSGIHTTPStreamTransport {
     fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
         let bdata = body::Bytes::from(std::convert::Into::<Box<[u8]>>::into(data));
-        match self.tx.send(bdata) {
-            Ok(()) => empty_future_into_py(py),
-            _ => err_future_into_py(py, error_stream!()),
-        }
+        self.send_frame(py, bdata)
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
-        match self.tx.send(body::Bytes::from(data)) {
-            Ok(()) => empty_future_into_py(py),
-            _ => err_future_into_py(py, error_stream!()),
-        }
+        self.send_frame(py, body::Bytes::from(data))
     }
 }
 
@@ -203,18 +209,9 @@ impl RSGIHTTPProtocol {
         headers: Vec<(PyBackedStr, PyBackedStr)>,
     ) -> PyResult<Bound<'p, RSGIHTTPStreamTransport>> {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
-            let body_stream = http_body_util::StreamBody::new(
-                tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
-                    .map(body::Frame::data)
-                    .map(Result::Ok),
-            );
-            _ = tx.send(PyResponse::Body(PyResponseBody::new(
-                status,
-                headers,
-                BodyExt::boxed(body_stream),
-            )));
-            let trx = Py::new(py, RSGIHTTPStreamTransport::new(body_tx))?;
+            let (body_tx, txbody) = body_stream_channel();
+            _ = tx.send(PyResponse::Body(PyResponseBody::new(status, headers, txbody)));
+            let trx = Py::new(py, RSGIHTTPStreamTransport::new(self.rt.clone(), body_tx))?;
             return Ok(trx.into_bound(py));
         }
         error_proto!()
