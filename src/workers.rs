@@ -9,7 +9,7 @@ use super::asgi::serve::ASGIWorker;
 use super::metrics;
 use super::rsgi::serve::RSGIWorker;
 use super::tls::{
-    load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
+    PeerTlsInfo, load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
     resolve_protocol_versions,
 };
 use super::wsgi::serve::WSGIWorker;
@@ -307,6 +307,7 @@ where
             crate::net::SockAddr,
             crate::http::HTTPRequest,
             crate::http::HTTPProto,
+            crate::tls::TlsCtx,
         ) -> Ret
         + Copy,
     Ret: Future<Output = crate::http::HTTPResponse>,
@@ -332,6 +333,7 @@ struct WorkerSvc<F, C, P> {
     disconnect_guard: Arc<tokio::sync::Notify>,
     addr_local: crate::net::SockAddr,
     addr_remote: crate::net::SockAddr,
+    tls: crate::tls::TlsCtx,
     _proto: PhantomData<P>,
 }
 
@@ -345,6 +347,7 @@ macro_rules! service_proto_fut {
             $self.addr_remote.clone(),
             $req,
             $proto,
+            $self.tls.clone(),
         );
         Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
     }};
@@ -363,6 +366,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -390,6 +394,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -431,6 +436,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -462,6 +468,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -965,6 +972,10 @@ macro_rules! acceptor_impl_stream {
     ($proto_marker:ty, $sockwrap:expr, $stream:expr, $addr_remote:expr, $self:expr, $addr_local:expr, $rt:expr, $tasks:expr, $permit:expr, $connsig:expr, $target:expr, $ctx:expr) => {{
         let disconnect_guard = Arc::new(tokio::sync::Notify::new());
         let handle = $self.handle(disconnect_guard.clone());
+        // Capture verified TLS session metadata once per connection (no-op for
+        // plain streams, monomorphized away); the borrow ends before the stream
+        // is moved into the hyper connection below.
+        let tls = $stream.peer_tls_info();
         let svc = WorkerSvc {
             f: $target,
             ctx: $ctx,
@@ -972,6 +983,7 @@ macro_rules! acceptor_impl_stream {
             disconnect_guard,
             addr_local: $addr_local.clone(),
             addr_remote: $sockwrap($addr_remote),
+            tls,
             _proto: PhantomData::<$proto_marker>,
         };
         $tasks.spawn(handle.call(svc, $stream, $permit, $connsig));
@@ -1094,6 +1106,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1127,6 +1140,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1161,6 +1175,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1194,6 +1209,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send

@@ -24,6 +24,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy,
             M: Clone + Sync,
@@ -123,6 +124,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send,
@@ -257,6 +259,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::tls::TlsCtx,
                 ) -> Ret
                 + Copy
                 + Send,
