@@ -1,7 +1,9 @@
+import asyncio
 import multiprocessing
 import os
 import socket
 import sys
+import threading
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -139,6 +141,18 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
         shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = ASGIWorker(
             worker_id,
@@ -160,6 +174,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
 
     @staticmethod
     @WorkerProcess.wrap_target
@@ -193,6 +208,18 @@ class MPServer(AbstractServer[WorkerProcess]):
             _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
         )
         shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         loop.run_until_complete(lifespan_handler.startup())
         if lifespan_handler.interrupt:
@@ -219,6 +246,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
@@ -251,6 +279,19 @@ class MPServer(AbstractServer[WorkerProcess]):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
         shutdown_event = set_loop_signals(loop)
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
         callback_init(loop)
 
         worker = RSGIWorker(
@@ -273,6 +314,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         callback_del(loop)
 
     @staticmethod
@@ -304,6 +346,15 @@ class MPServer(AbstractServer[WorkerProcess]):
 
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
         shutdown_event = set_sync_signals()
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = WSGIWorker(
             worker_id,
@@ -324,6 +375,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        _main()
 
     def _init_shared_socket(self):
         super()._init_shared_socket()

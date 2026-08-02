@@ -1,5 +1,4 @@
 import sys
-import threading
 from typing import Any
 
 from ._types import WebsocketMessage
@@ -50,12 +49,7 @@ class WSGIScope:
 class WorkerSignal:
     def __init__(self) -> None: ...
     def set(self) -> None: ...
-
-class WorkerSignalSync:
-    qs: threading.Event
-
-    def __init__(self) -> None: ...
-    def set(self) -> None: ...
+    def add_cb(self, cb: Any) -> None: ...
 
 class ASGIWorker:
     def __new__(

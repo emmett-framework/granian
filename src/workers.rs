@@ -16,54 +16,45 @@ use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WorkerSignal {
-    pub rx: Mutex<Option<tokio::sync::watch::Receiver<bool>>>,
-    tx: tokio::sync::watch::Sender<bool>,
+    pub rx: Mutex<Option<crossbeam_channel::Receiver<bool>>>,
+    tx: crossbeam_channel::Sender<bool>,
+    pub arx: Mutex<Option<tokio::sync::watch::Receiver<bool>>>,
+    atx: tokio::sync::watch::Sender<bool>,
+    cb: Mutex<Option<Py<PyAny>>>,
+}
+
+impl WorkerSignal {
+    pub fn release(&self, py: Python) -> PyResult<Py<PyAny>> {
+        match self.cb.lock().unwrap().take() {
+            Some(cb) => cb.call0(py),
+            None => Ok(py.None()),
+        }
+    }
 }
 
 #[pymethods]
 impl WorkerSignal {
     #[new]
     fn new() -> Self {
-        let (tx, rx) = tokio::sync::watch::channel(false);
-        Self {
-            rx: Mutex::new(Some(rx)),
-            tx,
-        }
-    }
-
-    fn set(&self) {
-        let _ = self.tx.send(true);
-    }
-}
-
-#[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct WorkerSignalSync {
-    pub rx: Mutex<Option<crossbeam_channel::Receiver<bool>>>,
-    tx: crossbeam_channel::Sender<bool>,
-    #[pyo3(get)]
-    pub qs: Py<PyAny>,
-}
-
-impl WorkerSignalSync {
-    pub fn release(&self, py: Python) -> PyResult<Py<PyAny>> {
-        self.qs.call_method0(py, "set")
-    }
-}
-
-#[pymethods]
-impl WorkerSignalSync {
-    #[new]
-    fn new(qs: Py<PyAny>) -> Self {
         let (tx, rx) = crossbeam_channel::bounded(1);
+        let (atx, arx) = tokio::sync::watch::channel(false);
         Self {
             rx: Mutex::new(Some(rx)),
             tx,
-            qs,
+            arx: Mutex::new(Some(arx)),
+            atx,
+            cb: Mutex::new(None),
         }
     }
 
+    fn add_cb(&self, cb: Py<PyAny>) {
+        let mut guard = self.cb.lock().unwrap();
+        *guard = Some(cb);
+    }
+
     fn set(&self) {
-        let _ = self.tx.send(true);
+        _ = self.tx.send(true);
+        _ = self.atx.send(true);
     }
 }
 
@@ -1252,7 +1243,6 @@ acceptor_impl!(
 
 pub(crate) fn init_pymodule(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<WorkerSignal>()?;
-    module.add_class::<WorkerSignalSync>()?;
     module.add_class::<ASGIWorker>()?;
     module.add_class::<RSGIWorker>()?;
     module.add_class::<WSGIWorker>()?;

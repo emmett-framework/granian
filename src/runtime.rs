@@ -1,8 +1,5 @@
 use pyo3::{IntoPyObjectExt, prelude::*};
-use std::{
-    future::Future,
-    sync::{Arc, Mutex},
-};
+use std::{future::Future, sync::Arc};
 use tokio::{
     runtime::Builder as RuntimeBuilder,
     task::{JoinHandle, LocalSet},
@@ -330,40 +327,6 @@ where
     });
 
     Ok(py_fut.into_bound(py))
-}
-
-#[allow(unused_must_use)]
-pub(crate) fn run_until_complete<F>(rt: &RuntimeWrapper, event_loop: Bound<PyAny>, fut: F) -> PyResult<()>
-where
-    F: Future<Output = PyResult<()>> + Send + 'static,
-{
-    let result_tx = Arc::new(Mutex::new(None));
-    let result_rx = Arc::clone(&result_tx);
-
-    let py_fut = event_loop.call_method0("create_future")?;
-    let loop_tx = event_loop.clone().unbind();
-    let future_tx = py_fut.clone().unbind();
-
-    rt.inner.spawn(async move {
-        let _ = fut.await;
-        if let Ok(mut result) = result_tx.lock() {
-            *result = Some(());
-        }
-
-        // NOTE: we don't care if we block the runtime.
-        //       `run_until_complete` is used only for the workers main loop.
-        Python::attach(move |py| {
-            let res_method = future_tx.getattr(py, "set_result").unwrap();
-            let _ = loop_tx.call_method(py, "call_soon_threadsafe", (res_method, py.None()), None);
-            future_tx.drop_ref(py);
-            loop_tx.drop_ref(py);
-        });
-    });
-
-    event_loop.call_method1("run_until_complete", (py_fut,))?;
-
-    result_rx.lock().unwrap().take().unwrap();
-    Ok(())
 }
 
 pub(crate) fn block_on_local<F>(rt: &RuntimeWrapper, local: LocalSet, fut: F)

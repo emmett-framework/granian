@@ -201,7 +201,7 @@ impl MetricsExporter {
     }
 
     fn run(pyself: Py<Self>, py: Python, sock: Py<crate::net::SocketHolder>, sig: Py<crate::workers::WorkerSignal>) {
-        let sig = sig.get().rx.lock().unwrap().take().unwrap();
+        let sig = sig.get().arx.lock().unwrap().take().unwrap();
         let pynone = py.None().into_any().into();
         let exp = pyself.clone_ref(py);
 
