@@ -8,7 +8,7 @@ use crate::{
     callbacks::CallbackScheduler,
     conversion::{worker_http1_config_from_py, worker_http2_config_from_py},
     http::HTTPProto,
-    net::SocketHolder,
+    net::{ListenerSpec, SocketHolder},
     serve::gen_serve_match,
     workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignalSync},
 };
@@ -49,7 +49,7 @@ impl WSGIWorker {
     fn new(
         py: Python,
         worker_id: i32,
-        sock: Py<SocketHolder>,
+        sock: (Option<Py<ListenerSpec>>, Option<Py<SocketHolder>>),
         ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
