@@ -40,10 +40,11 @@ impl WSGIProtocol {
 
     fn response_iter(&self, py: Python, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Bound<PyAny>) {
         if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
-            let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
+            //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
+            let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
 
             let body_stream = http_body_util::StreamBody::new(
-                tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                tokio_stream::wrappers::ReceiverStream::new(body_rx)
                     .map(body::Frame::data)
                     .map(Result::Ok),
             );
@@ -72,9 +73,16 @@ impl WSGIProtocol {
                         closed = true;
                         None
                     }
-                } && body_tx.send(frame).is_ok()
-                {
-                    continue;
+                } {
+                    match body_tx.try_send(frame) {
+                        Ok(()) => continue,
+                        Err(mpsc::error::TrySendError::Full(frame)) => {
+                            if py.detach(|| body_tx.blocking_send(frame)).is_ok() {
+                                continue;
+                            }
+                        }
+                        _ => {}
+                    }
                 }
 
                 if !closed {
