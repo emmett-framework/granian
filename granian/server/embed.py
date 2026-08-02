@@ -178,7 +178,7 @@ class Server(AbstractServer[AsyncWorker]):
                 idx + 1,
                 sig,
                 callback_loader,
-                self._shd,
+                (self._ssp, self._shd),
                 self.runtime_threads,
                 self.runtime_blocking_threads,
                 self.blocking_threads,
@@ -239,7 +239,7 @@ class Server(AbstractServer[AsyncWorker]):
             *ssl_ctx,
             (None, None),
         )
-        serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
+        serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         await serve(scheduler, loop, shutdown_event)
 
@@ -293,7 +293,7 @@ class Server(AbstractServer[AsyncWorker]):
             *ssl_ctx,
             (None, None),
         )
-        serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
+        serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         await serve(scheduler, loop, shutdown_event)
         await lifespan_handler.shutdown()
@@ -342,7 +342,7 @@ class Server(AbstractServer[AsyncWorker]):
             *ssl_ctx,
             (None, None),
         )
-        serve = worker.serve_async_uds if sock.is_uds() else worker.serve_async
+        serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         await serve(scheduler, loop, shutdown_event)
         callback_del(loop)

@@ -55,6 +55,7 @@ pub struct ListenerSpec {
     address: std::net::SocketAddr,
     domain: Domain,
     backlog: i32,
+    resolved_port: std::sync::OnceLock<u16>,
 }
 
 #[cfg(unix)]
@@ -69,6 +70,11 @@ pub struct UnixListenerSpec {
 
 impl ListenerSpec {
     pub(crate) fn as_socket(&self) -> Result<Socket> {
+        let mut address = self.address;
+        if let Some(port) = self.resolved_port.get() {
+            address.set_port(*port);
+        }
+
         let socket = Socket::new(self.domain, Type::STREAM, Some(Protocol::TCP))?;
 
         #[cfg(not(windows))]
@@ -81,12 +87,29 @@ impl ListenerSpec {
         }
         socket.set_reuse_address(true)?;
         socket.set_tcp_nodelay(true)?;
-        socket.bind(&self.address.into())?;
+        socket.bind(&address.into())?;
+
+        if address.port() == 0
+            && let Some(local) = socket.local_addr()?.as_socket()
+        {
+            _ = self.resolved_port.set(local.port());
+        }
 
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         socket.listen(self.backlog)?;
 
         Ok(socket)
+    }
+
+    pub(crate) fn as_listener(&self) -> Result<TcpListener> {
+        let socket = self.as_socket()?;
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        socket.listen(self.backlog)?;
+        Ok(socket.into())
+    }
+
+    fn local_port(&self) -> u16 {
+        self.resolved_port.get().copied().unwrap_or(self.inp.1)
     }
 }
 
@@ -104,6 +127,7 @@ impl ListenerSpec {
             address,
             domain,
             backlog,
+            resolved_port: std::sync::OnceLock::new(),
         })
     }
 
@@ -111,8 +135,14 @@ impl ListenerSpec {
         SocketHolder::from_spec(self)
     }
 
+    pub fn is_uds(&self) -> bool {
+        false
+    }
+
     pub fn __getstate__(&self, py: Python) -> Py<PyAny> {
-        self.inp.clone().into_py_any(py).unwrap()
+        (self.inp.0.clone(), self.local_port(), self.inp.2)
+            .into_py_any(py)
+            .unwrap()
     }
 }
 

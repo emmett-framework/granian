@@ -113,7 +113,7 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
@@ -169,7 +169,7 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
@@ -220,7 +220,7 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         callback_del(loop)
@@ -268,7 +268,7 @@ class MTServer(AbstractServer[WorkerThread]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
@@ -283,7 +283,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 idx + 1,
                 sig,
                 callback_loader,
-                self._shd,
+                (self._ssp, self._shd),
                 self.loop,
                 self.runtime_mode,
                 self.runtime_threads,

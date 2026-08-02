@@ -90,7 +90,10 @@ pub(crate) struct HTTP2Config {
 
 pub(crate) struct WorkerConfig {
     pub id: i32,
-    sock: Py<crate::net::SocketHolder>,
+    sock: (
+        Option<Py<crate::net::ListenerSpec>>,
+        Option<Py<crate::net::SocketHolder>>,
+    ),
     #[cfg(not(Py_GIL_DISABLED))]
     pub ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
     pub threads: usize,
@@ -123,7 +126,10 @@ pub(crate) struct WorkerTlsConfig {
 impl WorkerConfig {
     pub fn new(
         id: i32,
-        sock: Py<crate::net::SocketHolder>,
+        sock: (
+            Option<Py<crate::net::ListenerSpec>>,
+            Option<Py<crate::net::SocketHolder>>,
+        ),
         #[allow(unused_variables)] ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,
@@ -178,14 +184,18 @@ impl WorkerConfig {
     }
 
     pub fn tcp_listener(&self) -> std::net::TcpListener {
-        let listener = self.sock.get().as_tcp_listener().unwrap();
+        let listener = if let Some(sock) = &self.sock.1 {
+            sock.get().as_tcp_listener().unwrap()
+        } else {
+            self.sock.0.as_ref().unwrap().get().as_listener().unwrap()
+        };
         _ = listener.set_nonblocking(true);
         listener
     }
 
     #[cfg(unix)]
     pub fn uds_listener(&self) -> std::os::unix::net::UnixListener {
-        let listener = self.sock.get().as_unix_listener().unwrap();
+        let listener = self.sock.1.as_ref().unwrap().get().as_unix_listener().unwrap();
         _ = listener.set_nonblocking(true);
         listener
     }

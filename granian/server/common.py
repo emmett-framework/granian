@@ -32,6 +32,13 @@ WORKERS_METHODS = {
 }
 
 
+def _tcp_migrate_req_enabled():
+    try:
+        return Path('/proc/sys/net/ipv4/tcp_migrate_req').read_text().strip() == '1'
+    except OSError:
+        return False
+
+
 class AbstractWorker:
     _idl = 'id'
 
@@ -315,8 +322,12 @@ class AbstractServer(Generic[WT]):
             self._ssp = UnixSocketSpec(str(self.bind_uds), self.backlog, self.uds_permissions)
         else:
             self._ssp = SocketSpec(self.bind_addr, self.bind_port, self.backlog)
+            if sys.platform == 'linux':
+                self._ssp.build()
+                return
         self._shd = self._ssp.build()
         self._sfd = self._shd.get_fd()
+        self._ssp = None
 
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True
@@ -698,6 +709,20 @@ class AbstractServer(Generic[WT]):
         if self.blocking_threads_idle_timeout < 5 or self.blocking_threads_idle_timeout > 600:
             logger.error('Blocking threads idle timeout must be between 5 and 600 seconds')
             raise ConfigurationError('blocking_threads_idle_timeout')
+
+        if (
+            sys.platform == 'linux'
+            and self.workers > 1
+            and (self.workers_lifetime is not None or self.workers_rss is not None)
+            and not self.bind_uds
+            and not _tcp_migrate_req_enabled()
+        ):
+            logger.warning(
+                'Workers respawn is configured, but the net.ipv4.tcp_migrate_req sysctl is not enabled '
+                '(or the kernel does not support it, which requires Linux 5.14+): '
+                'queued connections may be reset when a worker respawns. '
+                'To avoid this, set `sysctl net.ipv4.tcp_migrate_req=1`.'
+            )
 
         cpus = multiprocessing.cpu_count()
         if self.workers > cpus:

@@ -4,7 +4,7 @@ use super::http::{handle, handle_ws};
 
 use crate::callbacks::CallbackScheduler;
 use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py};
-use crate::net::SocketHolder;
+use crate::net::{ListenerSpec, SocketHolder};
 use crate::serve::gen_serve_match;
 use crate::workers::{WorkerConfig, WorkerSignal};
 
@@ -45,7 +45,7 @@ impl RSGIWorker {
     fn new(
         py: Python,
         worker_id: i32,
-        sock: Py<SocketHolder>,
+        sock: (Option<Py<ListenerSpec>>, Option<Py<SocketHolder>>),
         ipc: Option<Py<crate::ipc::IPCSenderHandle>>,
         threads: usize,
         blocking_threads: usize,

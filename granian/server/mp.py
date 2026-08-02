@@ -48,7 +48,7 @@ class WorkerProcess(AbstractWorker):
         # NOTE: Python 3.14 defaults mp spawn method to 'forkserver' on Linux,
         #       which doesn't really play well with shared sockets.
         self._spawn_method = multiprocessing.get_start_method()
-        if self._spawn_method not in {'fork', 'spawn'}:
+        if self._spawn_method not in {'fork', 'spawn'} and parent._sso is not None:
             self._spawn_method = 'spawn'
         super().__init__(parent, idx, target, args)
 
@@ -80,7 +80,7 @@ class WorkerProcess(AbstractWorker):
             _ipc_handle = None
             sock, _sso = sock
             if sys.platform == 'win32':
-                sock = SocketHolder(_sso.fileno())
+                sock = (None, SocketHolder(_sso.fileno()))
             elif ipc:
                 _ipc_fd = os.dup(ipc.fileno())
                 os.set_blocking(_ipc_fd, False)
@@ -157,7 +157,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
@@ -216,7 +216,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         loop.run_until_complete(lifespan_handler.shutdown())
@@ -270,7 +270,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
         callback_del(loop)
@@ -321,22 +321,25 @@ class MPServer(AbstractServer[WorkerProcess]):
             *ssl_ctx,
             metrics,
         )
-        serve = getattr(worker, WORKERS_METHODS[runtime_mode][sock.is_uds()])
+        serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
 
     def _init_shared_socket(self):
         super()._init_shared_socket()
-        sock = socket.socket(fileno=self._sfd)
-        sock.set_inheritable(True)
-        self._sso = sock
+        self._sso = None
+        if self._shd is not None:
+            sock = socket.socket(fileno=self._sfd)
+            sock.set_inheritable(True)
+            self._sso = sock
 
     def _write_pidfile(self):
         super()._write_pidfile()
         self._rss_collector = ProcInfoCollector()
 
     def _unlink_pidfile(self):
-        self._sso.detach()
+        if self._sso is not None:
+            self._sso.detach()
         super()._unlink_pidfile()
 
     def _start_ipc(self):
@@ -407,7 +410,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 idx + 1,
                 self.process_name,
                 callback_loader,
-                (self._shd, self._sso),
+                ((self._ssp, self._shd), self._sso),
                 # NOTE: given we use IPC only for metrics right now, let's share the pipe
                 #       only if metrics collection is actually enabled.
                 self._ipc[idx][1] if self.metrics_enabled else None,
