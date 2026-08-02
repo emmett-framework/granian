@@ -5,18 +5,18 @@ pysources = granian tests
 build-dev:
 	@rm -f granian/*.so
 	uv sync --group all
-	maturin develop --uv
+	uv run maturin develop --uv
 
 .PHONY: format
 format:
-	ruff check --fix $(pysources)
-	ruff format $(pysources)
+	uv run ruff check --fix $(pysources)
+	uv run ruff format $(pysources)
 	cargo fmt
 
 .PHONY: lint-python
 lint-python:
-	ruff check $(pysources)
-	ruff format --check $(pysources)
+	uv run ruff check $(pysources)
+	uv run ruff format --check $(pysources)
 
 .PHONY: lint-rust
 lint-rust:
@@ -50,7 +50,7 @@ lint: lint-python lint-rust
 
 .PHONY: test
 test:
-	pytest -v tests
+	uv run pytest -v tests
 
 .PHONY: all
 all: format build-dev lint test
