@@ -43,7 +43,7 @@ pub(crate) struct ASGIHTTPProtocol {
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
-    body_tx: Mutex<Option<mpsc::UnboundedSender<body::Bytes>>>,
+    body_tx: Mutex<Option<mpsc::Sender<body::Bytes>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<Notify>,
@@ -88,15 +88,37 @@ impl ASGIHTTPProtocol {
     fn send_body<'p>(
         &self,
         py: Python<'p>,
-        tx: &mpsc::UnboundedSender<body::Bytes>,
+        tx: mpsc::Sender<body::Bytes>,
         body: Box<[u8]>,
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
-        match tx.send(body.into()) {
+        let frame = body.into();
+        match tx.try_send(frame) {
             Ok(()) => {
                 if close {
                     self.flow_tx_waiter.notify_one();
                 }
+            }
+            Err(mpsc::error::TrySendError::Full(frame)) => {
+                let tx_waiter = self.flow_tx_waiter.clone();
+                let rx_closed = self.flow_rx_closed.clone();
+
+                return future_into_py_futlike(self.rt.clone(), py, async move {
+                    match tx.send(frame).await {
+                        Ok(()) => {
+                            if close {
+                                tx_waiter.notify_one();
+                            }
+                        }
+                        Err(err) => {
+                            if !rx_closed.load(atomic::Ordering::Acquire) {
+                                log::info!("ASGI transport error: {err:?}");
+                            }
+                            tx_waiter.notify_one();
+                        }
+                    }
+                    FutureResultToPy::None
+                });
             }
             Err(err) => {
                 if !self.flow_rx_closed.load(atomic::Ordering::Acquire) {
@@ -202,9 +224,10 @@ impl ASGIHTTPProtocol {
 
                 self.response_chunked.store(true, atomic::Ordering::Relaxed);
                 let (status, headers) = intent;
-                let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
+                //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
+                let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
                 let body_stream = http_body_util::StreamBody::new(
-                    tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                    tokio_stream::wrappers::ReceiverStream::new(body_rx)
                         .map(body::Frame::data)
                         .map(Result::Ok),
                 );
@@ -235,25 +258,26 @@ impl ASGIHTTPProtocol {
                     (true, true, false) => match self.response_intent.lock().unwrap().take() {
                         Some((status, headers)) => {
                             self.response_chunked.store(true, atomic::Ordering::Relaxed);
-                            let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
+                            //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
+                            let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
                             let body_stream = http_body_util::StreamBody::new(
-                                tokio_stream::wrappers::UnboundedReceiverStream::new(body_rx)
+                                tokio_stream::wrappers::ReceiverStream::new(body_rx)
                                     .map(body::Frame::data)
                                     .map(Result::Ok),
                             );
                             *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                             self.send_response(status, headers, BodyExt::boxed(body_stream));
-                            self.send_body(py, &body_tx, body, false)
+                            self.send_body(py, body_tx, body, false)
                         }
                         _ => error_flow!("Response already finished"),
                     },
                     (true, true, true) => match &*self.body_tx.lock().unwrap() {
-                        Some(tx) => self.send_body(py, tx, body, false),
+                        Some(tx) => self.send_body(py, tx.clone(), body, false),
                         _ => error_flow!("Transport not initialized or closed"),
                     },
                     (true, false, true) => match self.body_tx.lock().unwrap().take() {
                         Some(tx) => match body.is_empty() {
-                            false => self.send_body(py, &tx, body, true),
+                            false => self.send_body(py, tx, body, true),
                             true => {
                                 self.flow_tx_waiter.notify_one();
                                 empty_future_into_py(py)
