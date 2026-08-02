@@ -48,11 +48,11 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], 
 
     def _runner(proto, scope):
         resp = Response()
-        scope.update(basic_env)
-        if scope['SCRIPT_NAME']:
-            scope['PATH_INFO'] = scope['PATH_INFO'][len(scope['SCRIPT_NAME']) :] or '/'
+        environ = basic_env | scope
+        if basic_env['SCRIPT_NAME']:
+            environ['PATH_INFO'] = scope['PATH_INFO'][len(basic_env['SCRIPT_NAME']) :] or '/'
 
-        rv = callback(scope, resp)
+        rv = callback(environ, resp)
 
         if isinstance(rv, list):
             proto.response_bytes(resp.status, resp.headers, b''.join(rv))
