@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
 use super::workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignal};
 
@@ -50,7 +50,8 @@ macro_rules! serve_fn {
                 )
             });
             let rth = rt.handler();
-            let srx = signal.get().rx.lock().unwrap().take().unwrap();
+            let (stx, srx) = tokio::sync::watch::channel(false);
+            let cvar = Arc::new((Mutex::new(false), Condvar::new()));
             let mc_notify = Arc::new(tokio::sync::Notify::new());
 
             if let Some(metrics_interval) = cfg.metrics.0 {
@@ -80,7 +81,8 @@ macro_rules! serve_fn {
             let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
             let tasks = wrk.tasks.clone();
 
-            let main_loop = crate::runtime::run_until_complete(&rt, event_loop.clone(), async move {
+            let ml_cvar = cvar.clone();
+            rt.inner.spawn(async move {
                 wrk.listen(srx, listener, backpressure).await;
 
                 log::info!("Stopping worker-{worker_id}");
@@ -91,22 +93,36 @@ macro_rules! serve_fn {
                 mc_notify.notified().await;
 
                 Python::attach(|_| drop(wrk));
-                Ok(())
+
+                let (lock, cvar) = &*ml_cvar;
+                let mut done = lock.lock().unwrap();
+                *done = true;
+                cvar.notify_one();
             });
 
-            drop(rt);
+            let pysig = signal.clone_ref(py);
+            std::thread::spawn(move || {
+                let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+                _ = pyrx.recv();
+                _ = stx.send(true);
 
-            if let Err(err) = main_loop {
-                log::error!("{err}");
-                std::process::exit(1);
-            }
+                let (lock, cvar) = &*cvar;
+                let done = lock.lock().unwrap();
+                let _done = cvar.wait(done);
+
+                Python::attach(|py| {
+                    _ = pysig.get().release(py);
+                    drop(pysig);
+                    drop(rt);
+                });
+            });
         }
     };
 
     (st $name:ident, $listener:ty, $listener_gen:ident) => {
         pub(crate) fn $name<C, A, H, F, M, Ret>(
             cfg: &WorkerConfig,
-            _py: (),
+            py: Python,
             event_loop: &Bound<PyAny>,
             signal: Py<WorkerSignal>,
             metrics: (M, Option<crate::metrics::ArcWorkerMetrics>),
@@ -142,6 +158,52 @@ macro_rules! serve_fn {
             let mut workers = vec![];
 
             let py_loop = Arc::new(event_loop.clone().unbind());
+            let mc_notify = Arc::new(tokio::sync::Notify::new());
+
+            let metrics_thread = if let Some(metrics_interval) = cfg.metrics.0 {
+                let metrics = metrics.1.clone().unwrap();
+                #[cfg(not(Py_GIL_DISABLED))]
+                let ipc = cfg.ipc.as_ref().map(|v| v.clone_ref(py));
+                #[cfg(Py_GIL_DISABLED)]
+                let aggr = cfg.metrics.1.as_ref().map(|v| v.clone_ref(py));
+                let srx = srx.clone();
+                let py_loop = py_loop.clone();
+
+                let thread = std::thread::spawn(move || {
+                    let rt = crate::runtime::init_runtime_st(1, 0, 0, py_loop, None);
+                    let local = tokio::task::LocalSet::new();
+
+                    #[cfg(not(Py_GIL_DISABLED))]
+                    crate::metrics::spawn_ipc_collector(
+                        rt.handler(),
+                        srx,
+                        mc_notify.clone(),
+                        metrics,
+                        metrics_interval,
+                        ipc.unwrap(),
+                    );
+                    #[cfg(Py_GIL_DISABLED)]
+                    crate::metrics::spawn_local_collector(
+                        rt.handler(),
+                        srx,
+                        mc_notify.clone(),
+                        metrics,
+                        metrics_interval,
+                        (worker_id - 1).try_into().unwrap(),
+                        aggr.unwrap(),
+                    );
+
+                    crate::runtime::block_on_local(&rt, local, async move {
+                        mc_notify.notified().await;
+                    });
+
+                    Python::attach(|_| drop(rt));
+                });
+                Some(thread)
+            } else {
+                mc_notify.notify_one();
+                None
+            };
 
             for thread_id in 0..cfg.threads {
                 log::info!("Started worker-{} runtime-{}", worker_id, thread_id + 1);
@@ -188,67 +250,40 @@ macro_rules! serve_fn {
                 }));
             }
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()), None);
-            let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
-            let mc_notify = Arc::new(tokio::sync::Notify::new());
+            let pysig = signal.clone_ref(py);
+            std::thread::spawn(move || {
+                let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+                _ = pyrx.recv();
+                _ = stx.send(true).unwrap();
 
-            if let Some(metrics_interval) = cfg.metrics.0 {
-                #[cfg(not(Py_GIL_DISABLED))]
-                crate::metrics::spawn_ipc_collector(
-                    rtm.handler(),
-                    pyrx.clone(),
-                    mc_notify.clone(),
-                    metrics.1.clone().unwrap(),
-                    metrics_interval,
-                    cfg.ipc.as_ref().unwrap().clone_ref(event_loop.py()),
-                );
-                #[cfg(Py_GIL_DISABLED)]
-                crate::metrics::spawn_local_collector(
-                    rtm.handler(),
-                    pyrx.clone(),
-                    mc_notify.clone(),
-                    metrics.1.clone().unwrap(),
-                    metrics_interval,
-                    (cfg.id - 1).try_into().unwrap(),
-                    cfg.metrics.1.as_ref().unwrap().clone_ref(event_loop.py()),
-                );
-            } else {
-                mc_notify.notify_one();
-            }
-
-            let main_loop = crate::runtime::run_until_complete(&rtm, event_loop.clone(), async move {
-                let _ = pyrx.changed().await;
-                stx.send(true).unwrap();
                 log::info!("Stopping worker-{worker_id}");
                 while let Some(worker) = workers.pop() {
                     worker.join().unwrap();
                 }
-                mc_notify.notified().await;
-                Ok(())
+                if let Some(thread) = metrics_thread {
+                    thread.join().unwrap();
+                }
+
+                Python::attach(|py| {
+                    _ = pysig.get().release(py);
+                    drop(pysig);
+                });
             });
-
-            drop(rtm);
-
-            if let Err(err) = main_loop {
-                log::error!("{err}");
-                std::process::exit(1);
-            }
         }
     };
 
     (fut $name:ident, $listener:ty, $listener_gen:ident) => {
-        pub(crate) fn $name<'p, C, A, H, F, M, Ret>(
+        pub(crate) fn $name<C, A, H, F, M, Ret>(
             cfg: &WorkerConfig,
-            _py: (),
-            event_loop: &Bound<'p, PyAny>,
+            py: Python,
+            event_loop: &Bound<PyAny>,
             signal: Py<WorkerSignal>,
             metrics: (M, Option<crate::metrics::ArcWorkerMetrics>),
             ctx: C,
             acceptor: A,
             handler: H,
             target: F,
-        ) -> Bound<'p, PyAny>
-        where
+        ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
                     Arc<tokio::sync::Notify>,
@@ -279,15 +314,14 @@ macro_rules! serve_fn {
             let backpressure = cfg.backpressure;
 
             let (stx, srx) = tokio::sync::watch::channel(false);
-            let pyloop_r1 = Arc::new(event_loop.clone().unbind());
-            let pyloop_r2 = pyloop_r1.clone();
+            let py_loop = Arc::new(event_loop.clone().unbind());
 
             let worker = std::thread::spawn(move || {
                 let rt = crate::runtime::init_runtime_st(
                     blocking_threads,
                     py_threads,
                     py_threads_idle_timeout,
-                    pyloop_r1,
+                    py_loop,
                     metrics.1.clone(),
                 );
                 let rth = rt.handler();
@@ -309,36 +343,18 @@ macro_rules! serve_fn {
                 Python::attach(|_| drop(rt));
             });
 
-            let ret = event_loop.call_method0("create_future").unwrap();
-            let pyfut = ret.clone().unbind();
-
+            let pysig = signal.clone_ref(py);
             std::thread::spawn(move || {
-                let rt = crate::runtime::init_runtime_st(1, 0, 0, pyloop_r2.clone(), None);
-                let local = tokio::task::LocalSet::new();
-
-                let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
-                crate::runtime::block_on_local(&rt, local, async move {
-                    let _ = pyrx.changed().await;
-                    stx.send(true).unwrap();
-                    log::info!("Stopping worker-{worker_id}");
-                    worker.join().unwrap();
-                });
+                let pyrx = pysig.get().rx.lock().unwrap().take().unwrap();
+                _ = pyrx.recv();
+                _ = stx.send(true);
+                worker.join().unwrap();
 
                 Python::attach(|py| {
-                    let cb = pyfut.getattr(py, "set_result").unwrap();
-                    _ = pyloop_r2.call_method1(
-                        py,
-                        "call_soon_threadsafe",
-                        (crate::callbacks::PyFutureResultSetter, cb, py.None()),
-                    );
-                    drop(pyfut);
-                    drop(pyloop_r2);
-                    drop(signal);
-                    drop(rt);
+                    _ = pysig.get().release(py);
+                    drop(pysig);
                 });
             });
-
-            ret
         }
     };
 }

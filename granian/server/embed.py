@@ -221,6 +221,15 @@ class Server(AbstractServer[AsyncWorker]):
         scope_opts: dict[str, Any],
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
+        fut = loop.create_future()
+
+        def shutdown_glue():
+            def _inner():
+                fut.set_result(None)
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = ASGIWorker(
             worker_id,
@@ -241,7 +250,8 @@ class Server(AbstractServer[AsyncWorker]):
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        await serve(scheduler, loop, shutdown_event)
+        serve(scheduler, loop, shutdown_event)
+        await fut
 
     @staticmethod
     @AsyncWorker.wrap_target
@@ -276,6 +286,16 @@ class Server(AbstractServer[AsyncWorker]):
             logger.error('ASGI lifespan startup failed', exc_info=lifespan_handler.exc)
             raise FatalError('ASGI lifespan startup')
 
+        fut = loop.create_future()
+
+        def shutdown_glue():
+            def _inner():
+                fut.set_result(None)
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
         worker = ASGIWorker(
             worker_id,
             sock,
@@ -295,7 +315,8 @@ class Server(AbstractServer[AsyncWorker]):
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        await serve(scheduler, loop, shutdown_event)
+        serve(scheduler, loop, shutdown_event)
+        await fut
         await lifespan_handler.shutdown()
 
     @staticmethod
@@ -323,6 +344,16 @@ class Server(AbstractServer[AsyncWorker]):
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
+        fut = loop.create_future()
+
+        def shutdown_glue():
+            def _inner():
+                fut.set_result(None)
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
         callback_init(loop)
 
         worker = RSGIWorker(
@@ -344,7 +375,8 @@ class Server(AbstractServer[AsyncWorker]):
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
-        await serve(scheduler, loop, shutdown_event)
+        serve(scheduler, loop, shutdown_event)
+        await fut
         callback_del(loop)
 
     async def _respawn_workers(self, workers, spawn_target, target_loader, delay: float = 0):

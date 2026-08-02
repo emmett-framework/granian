@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import threading
 from collections.abc import Callable
@@ -5,7 +6,7 @@ from functools import wraps
 from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WorkerSignalSync, WSGIWorker
+from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WSGIWorker
 from .._loops import loops
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -19,7 +20,6 @@ from .common import (
     HTTP1Settings,
     HTTP2Settings,
     HTTPModes,
-    Interfaces,
     RuntimeModes,
     TaskImpl,
     logger,
@@ -95,6 +95,18 @@ class MTServer(AbstractServer[WorkerThread]):
         metrics: Any,
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = ASGIWorker(
             worker_id,
@@ -116,6 +128,7 @@ class MTServer(AbstractServer[WorkerThread]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
 
     @staticmethod
     @WorkerThread.wrap_target
@@ -146,6 +159,18 @@ class MTServer(AbstractServer[WorkerThread]):
         wcallback = _future_watcher_wrapper(
             _asgi_call_wrap(callback, scope_opts, lifespan_handler.state, log_access_fmt)
         )
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
 
         loop.run_until_complete(lifespan_handler.startup())
         if lifespan_handler.interrupt:
@@ -172,6 +197,7 @@ class MTServer(AbstractServer[WorkerThread]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         loop.run_until_complete(lifespan_handler.shutdown())
 
     @staticmethod
@@ -201,6 +227,19 @@ class MTServer(AbstractServer[WorkerThread]):
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
+        evp = asyncio.Event()
+
+        async def _main():
+            await evp.wait()
+
+        def shutdown_glue():
+            def _inner():
+                evp.set()
+
+            loop.call_soon_threadsafe(_inner)
+
+        shutdown_event.add_cb(shutdown_glue)
+
         callback_init(loop)
 
         worker = RSGIWorker(
@@ -223,6 +262,7 @@ class MTServer(AbstractServer[WorkerThread]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        loop.run_until_complete(_main())
         callback_del(loop)
 
     @staticmethod
@@ -251,6 +291,15 @@ class MTServer(AbstractServer[WorkerThread]):
         metrics: Any,
     ):
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
+        evp = threading.Event()
+
+        def _main():
+            evp.wait()
+
+        def shutdown_glue():
+            evp.set()
+
+        shutdown_event.add_cb(shutdown_glue)
 
         worker = WSGIWorker(
             worker_id,
@@ -271,9 +320,10 @@ class MTServer(AbstractServer[WorkerThread]):
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
         serve(scheduler, loop, shutdown_event)
+        _main()
 
     def _spawn_worker(self, idx, target, callback_loader) -> WorkerThread:
-        sig = WorkerSignalSync(threading.Event()) if self.interface == Interfaces.WSGI else WorkerSignal()
+        sig = WorkerSignal()
 
         return WorkerThread(
             parent=self,

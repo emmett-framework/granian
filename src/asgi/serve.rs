@@ -116,13 +116,19 @@ impl ASGIWorker {
         );
     }
 
-    fn serve_str(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         gen_serve_match!(
             crate::serve::serve_st,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -131,24 +137,25 @@ impl ASGIWorker {
         );
     }
 
-    fn serve_async<'p>(
+    fn serve_async(
         &self,
+        py: Python,
         callback: Py<CallbackScheduler>,
-        event_loop: &Bound<'p, PyAny>,
+        event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignal>,
-    ) -> Bound<'p, PyAny> {
+    ) {
         gen_serve_match!(
             crate::serve::serve_fut,
             WorkerAcceptorTcpPlain,
             WorkerAcceptorTcpTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
             handle,
             handle_ws
-        )
+        );
     }
 
     #[cfg(unix)]
@@ -174,13 +181,19 @@ impl ASGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_str_uds(&self, callback: Py<CallbackScheduler>, event_loop: &Bound<PyAny>, signal: Py<WorkerSignal>) {
+    fn serve_str_uds(
+        &self,
+        py: Python,
+        callback: Py<CallbackScheduler>,
+        event_loop: &Bound<PyAny>,
+        signal: Py<WorkerSignal>,
+    ) {
         gen_serve_match!(
             crate::serve::serve_st_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
@@ -190,23 +203,24 @@ impl ASGIWorker {
     }
 
     #[cfg(unix)]
-    fn serve_async_uds<'p>(
+    fn serve_async_uds(
         &self,
+        py: Python,
         callback: Py<CallbackScheduler>,
-        event_loop: &Bound<'p, PyAny>,
+        event_loop: &Bound<PyAny>,
         signal: Py<WorkerSignal>,
-    ) -> Bound<'p, PyAny> {
+    ) {
         gen_serve_match!(
             crate::serve::serve_fut_uds,
             WorkerAcceptorUdsPlain,
             WorkerAcceptorUdsTls,
             self,
-            (),
+            py,
             callback,
             event_loop,
             signal,
             handle,
             handle_ws
-        )
+        );
     }
 }
