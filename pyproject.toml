@@ -69,7 +69,7 @@ build = [
     'maturin~=1.13.0',
 ]
 lint = [
-    'ruff~=0.11',
+    'ruff~=0.15.0',
 ]
 test = [
     'httpx~=0.28',
