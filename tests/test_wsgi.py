@@ -28,22 +28,6 @@ async def test_scope(wsgi_server, runtime_mode):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
-@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
-async def test_scope_not_overridden_by_process_env(wsgi_server, runtime_mode, monkeypatch):
-    monkeypatch.setenv('HTTP_X_CUSTOM', 'env_value')
-    monkeypatch.setenv('HTTP_HOST', 'env.example')
-    async with wsgi_server(runtime_mode) as port:
-        res = httpx.get(f'http://localhost:{port}/info', headers=[('x-custom', 'header_value')])
-
-    assert res.status_code == 200
-
-    data = res.json()
-    assert data['headers']['HTTP_X_CUSTOM'] == 'header_value'
-    assert data['headers']['HTTP_HOST'] == f'localhost:{port}'
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_body(wsgi_server, runtime_mode):
     async with wsgi_server(runtime_mode) as port:

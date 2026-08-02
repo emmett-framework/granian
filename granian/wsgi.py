@@ -49,8 +49,8 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], 
     def _runner(proto, scope):
         resp = Response()
         environ = basic_env | scope
-        if environ['SCRIPT_NAME']:
-            environ['PATH_INFO'] = scope['PATH_INFO'] = environ['PATH_INFO'][len(environ['SCRIPT_NAME']) :] or '/'
+        if basic_env['SCRIPT_NAME']:
+            environ['PATH_INFO'] = scope['PATH_INFO'][len(basic_env['SCRIPT_NAME']) :] or '/'
 
         rv = callback(environ, resp)
 
