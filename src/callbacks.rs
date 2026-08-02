@@ -124,7 +124,7 @@ impl CallbackScheduler {
 impl CallbackScheduler {
     #[inline]
     pub(crate) fn schedule<T>(&self, py: Python, watcher: Py<T>) {
-        let cbarg = (watcher,).into_pyobject(py).unwrap().into_ptr();
+        let cbarg = (watcher.into_any(),).into_pyobject(py).unwrap().into_ptr();
         let sched = self.schedule_fn.get().unwrap().as_ptr();
 
         unsafe {

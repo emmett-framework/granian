@@ -17,7 +17,7 @@ use crate::{
 
 const RSGI_PROTO_VERSION: &str = "1.6";
 
-#[pyclass(frozen, module = "granian._granian")]
+#[pyclass(frozen, from_py_object, module = "granian._granian")]
 #[derive(Clone)]
 pub(crate) struct RSGIHeaders {
     inner: HeaderMap,
@@ -295,7 +295,7 @@ impl PyResponseFile {
                 res
             }
             Err(_) => {
-                log::info!("Cannot open file {}", &self.file_path);
+                log::info!("Cannot open file {}", self.file_path);
                 response_404()
             }
         }
@@ -321,7 +321,7 @@ impl PyResponseFileRange {
         match File::open(&self.file_path).await {
             Ok(mut file) => {
                 if file.seek(SeekFrom::Start(self.start)).await.is_err() {
-                    log::error!("Cannot seek to position {} in file {}", self.start, &self.file_path);
+                    log::error!("Cannot seek to position {} in file {}", self.start, self.file_path);
                     return response_500();
                 }
                 let take = file.take(self.end - self.start);
@@ -333,7 +333,7 @@ impl PyResponseFileRange {
                 res
             }
             Err(_) => {
-                log::info!("Cannot open file {}", &self.file_path);
+                log::info!("Cannot open file {}", self.file_path);
                 response_404()
             }
         }
