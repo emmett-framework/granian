@@ -32,6 +32,8 @@ jobs:
         include:
           - python-version: 3.14t
             allocator: mimalloc
+          - python-version: 3.15t
+            allocator: mimalloc
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
@@ -74,6 +76,8 @@ jobs:
         - '3.15'
         include:
           - python-version: 3.14t
+            allocator: mimalloc
+          - python-version: 3.15t
             allocator: mimalloc
 
     env:
