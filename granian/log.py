@@ -85,7 +85,7 @@ def log_request_builder(fmt):
         headers.append(name)
         return f'%(_h{idx})s'
 
-    fmt = _HEADER_RE.sub(_replace_header, fmt)
+    fmt = _HEADER_RE.sub(_replace_header, fmt or '')
     parse_headers = bool(headers)
 
     now = datetime.datetime.now()
