@@ -420,11 +420,7 @@ The following atoms are available for use:
 | method | Request HTTP method |
 | scheme | Request scheme |
 | protocol | HTTP protocol version |
-| user\_agent | Request User-Agent header |
-
-Arbitrary request headers can be accessed using `%({Header-Name}i)s` (case-insensitive), e.g. `%({X-Request-Id}i)s`.
-
-Arbitrary response headers can be accessed using `%({Header-Name}o)s` (case-insensitive), e.g. `%({X-Trace-Id}o)s`.
+| header{header-name} | Request header value for the provided (case insensitive) `header-name` |
 
 ### Workers and threads
 
