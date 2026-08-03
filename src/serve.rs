@@ -107,8 +107,10 @@ macro_rules! serve_fn {
                 _ = stx.send(true);
 
                 let (lock, cvar) = &*cvar;
-                let done = lock.lock().unwrap();
-                let _done = cvar.wait(done);
+                let mut done = lock.lock().unwrap();
+                while !*done {
+                    done = cvar.wait(done).unwrap();
+                }
 
                 Python::attach(|py| {
                     _ = pysig.get().release(py);
