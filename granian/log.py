@@ -2,6 +2,7 @@ import copy
 import datetime
 import logging
 import logging.config
+import re
 import time
 from enum import Enum
 from typing import Any
@@ -72,27 +73,50 @@ def configure_logging(level: LogLevels, config: dict[str, Any] | None = None, en
         logger.setLevel(logging.CRITICAL + 1)
 
 
+_HEADER_RE = re.compile(r'%\(header\{([^}]+)\}\)s')
+
+
 def log_request_builder(fmt):
+    headers = []
+
+    def _replace_header(m):
+        idx = len(headers)
+        name = m.group(1).strip().lower()
+        headers.append(name)
+        return f'%(_h{idx})s'
+
+    fmt = _HEADER_RE.sub(_replace_header, fmt)
+    parse_headers = bool(headers)
+
     now = datetime.datetime.now()
     local_now = now.astimezone()
     local_tz = local_now.tzinfo
 
-    def log_request(rtime, mtime, req, res_code):
+    def _build_log_dict(rtime, mtime, req, res_code):
         dt = time.perf_counter() - mtime
         rdt = datetime.datetime.fromtimestamp(rtime, tz=local_tz)
-        access_logger.info(
-            fmt,
-            {
-                'addr': req['addr_remote'],
-                'time': rdt.strftime('%Y-%m-%d %H:%M:%S %z'),
-                'dt_ms': dt * 1000,
-                'status': res_code,
-                'path': req['path'],
-                'query_string': req['qs'],
-                'method': req['method'],
-                'scheme': req['scheme'],
-                'protocol': req['protocol'],
-            },
-        )
+        return {
+            'addr': req['addr_remote'],
+            'time': rdt.strftime('%Y-%m-%d %H:%M:%S %z'),
+            'dt_ms': dt * 1000,
+            'status': res_code,
+            'path': req['path'],
+            'query_string': req['qs'],
+            'method': req['method'],
+            'scheme': req['scheme'],
+            'protocol': req['protocol'],
+        }
 
+    def _build_log_dict_with_headers(rtime, mtime, req, res_code):
+        rv = _build_log_dict(rtime, mtime, req, res_code)
+        for idx, hkey in enumerate(headers):
+            rv[f'_h{idx}'] = req['headers'](hkey) or '-'
+        return rv
+
+    build_log_dict = _build_log_dict_with_headers if parse_headers else _build_log_dict
+
+    def log_request(rtime, mtime, req, res_code):
+        access_logger.info(fmt, build_log_dict(rtime, mtime, req, res_code))
+
+    log_request.parse_headers = parse_headers
     return log_request

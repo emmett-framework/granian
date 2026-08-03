@@ -420,6 +420,7 @@ The following atoms are available for use:
 | method | Request HTTP method |
 | scheme | Request scheme |
 | protocol | HTTP protocol version |
+| header{header-name} | Request header value for the provided (case insensitive) `header-name` |
 
 ### Workers and threads
 

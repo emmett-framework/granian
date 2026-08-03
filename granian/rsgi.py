@@ -118,19 +118,22 @@ def _callback_wrapper(callback, access_log_fmt=False):
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(rt, mt, scope, resp_code):
-        logger(
-            rt,
-            mt,
-            {
-                'addr_remote': scope.client.rsplit(':', 1)[0],
-                'protocol': 'HTTP/' + scope.http_version,
-                'path': scope.path,
-                'qs': scope.query_string,
-                'method': scope.method,
-                'scheme': scope.scheme,
-            },
-            resp_code,
-        )
+    def _log_dict(scope):
+        return {
+            'addr_remote': scope.client.rsplit(':', 1)[0],
+            'protocol': 'HTTP/' + scope.http_version,
+            'path': scope.path,
+            'qs': scope.query_string,
+            'method': scope.method,
+            'scheme': scope.scheme,
+        }
 
-    return access_log
+    def _access_log(rt, mt, scope, resp_code):
+        logger(rt, mt, _log_dict(scope), resp_code)
+
+    def _access_log_with_headers(rt, mt, scope, resp_code):
+        data = _log_dict(scope)
+        data['headers'] = scope.headers.get
+        logger(rt, mt, data, resp_code)
+
+    return _access_log_with_headers if logger.parse_headers else _access_log

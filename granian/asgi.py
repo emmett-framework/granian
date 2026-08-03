@@ -139,19 +139,27 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
 def _build_access_logger(fmt):
     logger = log_request_builder(fmt)
 
-    def access_log(rt, mt, scope, resp_code):
-        logger(
-            rt,
-            mt,
-            {
-                'addr_remote': scope['client'][0],
-                'protocol': 'HTTP/' + scope['http_version'],
-                'path': scope['path'],
-                'qs': scope['query_string'],
-                'method': scope.get('method', '-'),
-                'scheme': scope['scheme'],
-            },
-            resp_code,
-        )
+    def _log_dict(scope):
+        return {
+            'addr_remote': scope['client'][0],
+            'protocol': 'HTTP/' + scope['http_version'],
+            'path': scope['path'],
+            'qs': scope['query_string'],
+            'method': scope.get('method', '-'),
+            'scheme': scope['scheme'],
+        }
 
-    return access_log
+    def _access_log(rt, mt, scope, resp_code):
+        logger(rt, mt, _log_dict(scope), resp_code)
+
+    def _access_log_with_headers(rt, mt, scope, resp_code):
+        data = _log_dict(scope)
+        headers = {}
+        for hname_b, hval_b in scope['headers']:
+            hname = hname_b.decode('latin-1').lower()
+            hval = hval_b.decode('latin-1')
+            headers[hname] = hval
+        data['headers'] = headers.get
+        logger(rt, mt, data, resp_code)
+
+    return _access_log_with_headers if logger.parse_headers else _access_log
