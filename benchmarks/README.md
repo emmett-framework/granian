@@ -2,10 +2,10 @@
 
 
 
-Run at: Tue 07 Apr 2026, 11:25    
-Environment: AMD Ryzen 7 5700X @ Gentoo Linux 6.12.77 (CPUs: 16)    
+Run at: Mon 03 Aug 2026, 12:37    
+Environment: AMD Ryzen 7 5700X @ Gentoo Linux 6.18.41 (CPUs: 16)    
 Python version: 3.13    
-Granian version: 2.7.3
+Granian version: 2.8.0
 
 ### Methodology
 
@@ -27,10 +27,10 @@ RSGI plain text response comparison using protocol `response_str` and `response_
 
 | Type | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| bytes 10B (c64) | 1450961 | 145033 | 0.439ms | 25.405ms |
-| str 10B (c64) | 1480230 | 147959 | 0.43ms | 52.436ms |
-| bytes 100KB (c64) | 593398 | 59331 | 1.074ms | 52.242ms |
-| str 100KB (c64) | 594070 | 59394 | 1.073ms | 42.795ms |
+| bytes 10B (c64) | 1478898 | 147834 | 0.431ms | 29.2ms |
+| str 10B (c64) | 1470102 | 146951 | 0.433ms | 35.542ms |
+| bytes 100KB (c64) | 565924 | 56579 | 1.127ms | 25.056ms |
+| str 100KB (c64) | 572614 | 57251 | 1.113ms | 38.346ms |
 
 
 ## Interfaces
@@ -41,15 +41,15 @@ The 1KB GET and POST tests are run with `--blocking-threads 1`.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI get 1KB (c128) | 1421433 | 142099 | 0.896ms | 87.046ms |
-| RSGI echo 1KB (c128) | 1246244 | 124588 | 1.022ms | 76.837ms |
-| RSGI echo 100KB (iter) (c64) | 171420 | 17143 | 3.723ms | 41.503ms |
-| ASGI get 1KB (c128) | 1393345 | 139302 | 0.916ms | 56.471ms |
-| ASGI echo 1KB (c128) | 1010462 | 101035 | 1.263ms | 57.267ms |
-| ASGI echo 100KB (iter) (c64) | 194048 | 19404 | 3.289ms | 44.404ms |
-| WSGI get 1KB (c64) | 1465008 | 146454 | 0.435ms | 30.114ms |
-| WSGI echo 1KB (c64) | 1361498 | 136094 | 0.468ms | 37.591ms |
-| WSGI echo 100KB (iter) (c64) | 109622 | 10966 | 5.824ms | 37.476ms |
+| RSGI get 1KB (c128) | 1440061 | 143968 | 0.885ms | 55.875ms |
+| RSGI echo 1KB (c128) | 1253848 | 125350 | 1.017ms | 53.773ms |
+| RSGI echo 100KB (iter) (c64) | 170504 | 17054 | 3.744ms | 36.51ms |
+| ASGI get 1KB (c128) | 1345988 | 134571 | 0.947ms | 67.815ms |
+| ASGI echo 1KB (c128) | 906887 | 90672 | 1.406ms | 44.779ms |
+| ASGI echo 100KB (iter) (c64) | 190543 | 19056 | 3.35ms | 35.072ms |
+| WSGI get 1KB (c64) | 1455635 | 145517 | 0.438ms | 35.965ms |
+| WSGI echo 1KB (c64) | 1377045 | 137662 | 0.463ms | 34.602ms |
+| WSGI echo 100KB (iter) (c64) | 100855 | 10090 | 6.332ms | 34.801ms |
 
 
 ## HTTP/2
@@ -61,10 +61,10 @@ HTTP/2 tests are run with `--http 2`.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| HTTP/1 get 1KB (c128) | 2481531 | 248039 | 0.513ms | 71.339ms |
-| HTTP/1 echo 1KB (c128) | 1672558 | 167208 | 0.761ms | 66.556ms |
-| HTTP/2 get 1KB (c128) | 2045952 | 204531 | 2.483ms | 10.003ms |
-| HTTP/2 echo 1KB (c128) | 1483399 | 148302 | 3.421ms | 8.178ms |
+| HTTP/1 get 1KB (c128) | 2434204 | 243333 | 0.524ms | 36.302ms |
+| HTTP/1 echo 1KB (c128) | 1572323 | 157196 | 0.811ms | 44.33ms |
+| HTTP/2 get 1KB (c128) | 2039868 | 203943 | 2.497ms | 10.459ms |
+| HTTP/2 echo 1KB (c128) | 1400511 | 140020 | 3.634ms | 10.965ms |
 
 
 ## File responses
@@ -76,9 +76,9 @@ Tests are run with `--runtime-blocking-threads 1`.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| RSGI (c128) | 483076 | 48308 | 2.642ms | 56.197ms |
-| ASGI (c128) | 378697 | 37874 | 3.366ms | 69.31ms |
-| ASGI pathsend (c128) | 477448 | 47741 | 2.672ms | 60.371ms |
+| RSGI (c128) | 471413 | 47139 | 2.705ms | 58.164ms |
+| ASGI (c128) | 371143 | 37108 | 3.438ms | 48.285ms |
+| ASGI pathsend (c128) | 479851 | 47983 | 2.657ms | 59.238ms |
 
 
 ### Other benchmarks
