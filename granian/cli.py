@@ -127,6 +127,7 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     default=Interfaces.RSGI,
     help='Application interface type',
 )
+@option('--fd', type=int, default=None, help='Listen on socket from this file-descriptor.')
 @option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
 @option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling')
 @option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
@@ -438,6 +439,7 @@ def cli(
     port: int,
     uds: pathlib.Path | None,
     uds_permissions: int | None,
+    fd: int | None,
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
@@ -524,6 +526,7 @@ def cli(
         port=port,
         uds=uds,
         uds_permissions=uds_permissions,
+        fd=fd,
         interface=interface,
         workers=workers,
         blocking_threads=blocking_threads,
