@@ -981,7 +981,7 @@ macro_rules! acceptor_impl_stream {
 
 macro_rules! acceptor_impl_err {
     ($err:expr, $permit:expr) => {{
-        log::info!("TCP handshake failed with error: {:?}", $err);
+        log::debug!("TCP handshake failed with error: {:?}", $err);
         drop($permit);
     }};
 }
