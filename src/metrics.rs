@@ -1,18 +1,35 @@
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, atomic};
+use std::task::{Context, Poll};
 
+use http_body_util::BodyExt;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(Py_GIL_DISABLED))]
 use crate::ipc;
+use crate::http::{HTTPResponse, HTTPResponseBody};
 use crate::runtime;
 
 pub(crate) type MetricsData = Vec<MetricValue>;
+
+// OTel `http.server.request.duration` buckets, as integer microseconds.
+pub(crate) const DURATION_BUCKETS_US: [u64; 14] = [
+    5_000, 10_000, 25_000, 50_000, 75_000, 100_000, 250_000, 500_000, 750_000, 1_000_000, 2_500_000, 5_000_000,
+    7_500_000, 10_000_000,
+];
+
+// `le` labels (seconds) for `DURATION_BUCKETS_US`, pre-rendered to avoid float casts.
+const DURATION_BUCKETS_LE: [&str; 14] = [
+    "0.005", "0.01", "0.025", "0.05", "0.075", "0.1", "0.25", "0.5", "0.75", "1", "2.5", "5", "7.5", "10",
+];
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum MetricValue {
     Abs(usize),
     Int(isize),
+    // Non-cumulative per-bucket counts, total observations and sum (microseconds).
+    Hist { buckets: Vec<u64>, count: u64, sum_us: u64 },
 }
 
 impl std::fmt::Display for MetricValue {
@@ -20,8 +37,108 @@ impl std::fmt::Display for MetricValue {
         match self {
             Self::Abs(v) => v.fmt(f),
             Self::Int(v) => v.fmt(f),
+            Self::Hist { count, .. } => count.fmt(f),
         }
     }
+}
+
+pub(crate) struct DurationHistogram {
+    buckets: [atomic::AtomicU64; DURATION_BUCKETS_US.len()],
+    count: atomic::AtomicU64,
+    sum_us: atomic::AtomicU64,
+}
+
+impl DurationHistogram {
+    fn new() -> Self {
+        Self {
+            buckets: std::array::from_fn(|_| atomic::AtomicU64::new(0)),
+            count: 0.into(),
+            sum_us: 0.into(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn observe(&self, micros: u64) {
+        for (idx, edge) in DURATION_BUCKETS_US.iter().enumerate() {
+            if micros <= *edge {
+                self.buckets[idx].fetch_add(1, atomic::Ordering::Relaxed);
+                break;
+            }
+        }
+        self.count.fetch_add(1, atomic::Ordering::Relaxed);
+        self.sum_us.fetch_add(micros, atomic::Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> MetricValue {
+        MetricValue::Hist {
+            buckets: self.buckets.iter().map(|v| v.load(atomic::Ordering::Relaxed)).collect(),
+            count: self.count.load(atomic::Ordering::Relaxed),
+            sum_us: self.sum_us.load(atomic::Ordering::Relaxed),
+        }
+    }
+}
+
+pin_project_lite::pin_project! {
+    // Wraps a response body to record request duration once the body has been
+    // fully sent (or on drop, e.g. a client disconnecting mid-stream). This
+    // captures true end-to-end time, including streaming body transmission.
+    struct TimedBody {
+        #[pin]
+        inner: HTTPResponseBody,
+        start: std::time::Instant,
+        metrics: ArcWorkerMetrics,
+        done: bool,
+    }
+    impl PinnedDrop for TimedBody {
+        fn drop(this: Pin<&mut Self>) {
+            let this = this.project();
+            if !*this.done {
+                this.metrics.request_duration.observe(this.start.elapsed().as_micros() as u64);
+            }
+        }
+    }
+}
+
+impl hyper::body::Body for TimedBody {
+    type Data = hyper::body::Bytes;
+    type Error = anyhow::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+        let this = self.project();
+        let out = this.inner.poll_frame(cx);
+        if matches!(out, Poll::Ready(None)) && !*this.done {
+            *this.done = true;
+            this.metrics.request_duration.observe(this.start.elapsed().as_micros() as u64);
+        }
+        out
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+// Wrap `response` so its duration is recorded when the body finishes streaming.
+pub(crate) fn timed_response(
+    response: HTTPResponse,
+    start: std::time::Instant,
+    metrics: ArcWorkerMetrics,
+) -> HTTPResponse {
+    let (parts, inner) = response.into_parts();
+    let body = TimedBody {
+        inner,
+        start,
+        metrics,
+        done: false,
+    };
+    HTTPResponse::from_parts(parts, body.boxed())
 }
 
 struct MainMetrics {
@@ -43,6 +160,7 @@ pub(crate) struct WorkerMetrics {
     pub blocking_idle_cumul: atomic::AtomicUsize,
     pub blocking_busy_cumul: atomic::AtomicUsize,
     pub py_wait_cumul: atomic::AtomicUsize,
+    pub request_duration: DurationHistogram,
 }
 
 impl MainMetrics {
@@ -70,6 +188,7 @@ impl WorkerMetrics {
             blocking_idle_cumul: 0.into(),
             blocking_busy_cumul: 0.into(),
             py_wait_cumul: 0.into(),
+            request_duration: DurationHistogram::new(),
         }
     }
 }
@@ -141,6 +260,37 @@ impl MetricsAggregator {
         for items in &mut wrk {
             all.append(items);
         }
+
+        // Request duration histogram (last entry in `MetricsData`).
+        let hist_idx = wrk_metrics.len();
+        let hist_label = format!("{prefix}request_duration_seconds");
+        let mut hist_lines: Vec<String> = vec![format!("# TYPE {hist_label} histogram")];
+        {
+            let wrk_data = self.data_w.lock().unwrap();
+            for (idx, values) in wrk_data.iter().enumerate() {
+                if let Some(MetricValue::Hist { buckets, count, sum_us }) = values.get(hist_idx) {
+                    let worker = idx + 1;
+                    let mut cumulative: u64 = 0;
+                    for (bucket_idx, le) in DURATION_BUCKETS_LE.iter().enumerate() {
+                        cumulative += buckets.get(bucket_idx).copied().unwrap_or(0);
+                        hist_lines.push(format!(
+                            "{hist_label}_bucket{{worker=\"{worker}\",le=\"{le}\"}} {cumulative}"
+                        ));
+                    }
+                    hist_lines.push(format!(
+                        "{hist_label}_bucket{{worker=\"{worker}\",le=\"+Inf\"}} {count}"
+                    ));
+                    hist_lines.push(format!(
+                        "{hist_label}_sum{{worker=\"{worker}\"}} {}.{:06}",
+                        sum_us / 1_000_000,
+                        sum_us % 1_000_000
+                    ));
+                    hist_lines.push(format!("{hist_label}_count{{worker=\"{worker}\"}} {count}"));
+                }
+            }
+        }
+        all.append(&mut hist_lines);
+
         all.join("\n")
     }
 }
@@ -246,6 +396,8 @@ fn collect_metrics(birth: &std::time::Instant, data: &Arc<WorkerMetrics>) -> Met
         MetricValue::Abs(data.blocking_idle_cumul.load(atomic::Ordering::Acquire)),
         MetricValue::Abs(data.blocking_busy_cumul.load(atomic::Ordering::Acquire)),
         MetricValue::Abs(data.py_wait_cumul.load(atomic::Ordering::Acquire)),
+        // Keep last: `format_metrics` reads the histogram positionally.
+        data.request_duration.snapshot(),
     ]
 }
 

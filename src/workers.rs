@@ -351,6 +351,28 @@ macro_rules! service_proto_fut {
     }};
 }
 
+// As `service_proto_fut!`, but records end-to-end request duration: the timer
+// runs until the full response body has been sent (see `metrics::timed_response`).
+macro_rules! service_proto_fut_timed {
+    ($proto:expr, $self:expr, $req:expr) => {{
+        let fut = ($self.f)(
+            $self.rt.clone(),
+            $self.disconnect_guard.clone(),
+            $self.ctx.callback.clone(),
+            $self.addr_local.clone(),
+            $self.addr_remote.clone(),
+            $req,
+            $proto,
+        );
+        let metrics = $self.ctx.metrics.clone();
+        let start = std::time::Instant::now();
+        Box::pin(async move {
+            let res = fut.await;
+            Ok::<_, hyper::Error>(crate::metrics::timed_response(res, start, metrics))
+        })
+    }};
+}
+
 macro_rules! service_impl {
     ($proto_marker:ty, $proto:expr) => {
         impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
@@ -448,7 +470,7 @@ macro_rules! service_impl {
                     .metrics
                     .req_handled
                     .fetch_add(1, std::sync::atomic::Ordering::Release);
-                service_proto_fut!($proto, self, req)
+                service_proto_fut_timed!($proto, self, req)
             }
         }
 
@@ -502,7 +524,7 @@ macro_rules! service_impl {
                     });
                 }
 
-                service_proto_fut!($proto, self, req)
+                service_proto_fut_timed!($proto, self, req)
             }
         }
     };
