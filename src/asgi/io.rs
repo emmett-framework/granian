@@ -379,7 +379,6 @@ pub(crate) struct ASGIWebsocketProtocol {
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
-    teardown: Arc<Notify>,
 }
 
 impl ASGIWebsocketProtocol {
@@ -403,7 +402,6 @@ impl ASGIWebsocketProtocol {
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
-            teardown: Arc::new(Notify::new()),
         }
     }
 
@@ -488,24 +486,22 @@ impl ASGIWebsocketProtocol {
 
     #[inline(always)]
     fn send_message<'p>(&self, py: Python<'p>, data: Message) -> PyResult<Bound<'p, PyAny>> {
+        if self.closed.load(atomic::Ordering::Acquire) {
+            return err_future_into_py(py, error_flow!("Transport closed"));
+        }
+
         let transport = self.ws_tx.clone();
         let closed = self.closed.clone();
-        let teardown = self.teardown.clone();
-
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(ws) = &mut *(transport.lock().await) {
-                tokio::select! {
-                    biased;
-                    res = ws.send(data) => match res {
-                        Ok(()) => return FutureResultToPy::None,
-                        _ => {
-                            if closed.load(atomic::Ordering::Acquire) {
-                                log::info!("Attempted to write to a closed websocket");
-                                return FutureResultToPy::None;
-                            }
+                match ws.send(data).await {
+                    Ok(()) => return FutureResultToPy::None,
+                    _ => {
+                        if closed.load(atomic::Ordering::Acquire) {
+                            log::info!("Attempted to write to a closed websocket");
+                            return FutureResultToPy::None;
                         }
-                    },
-                    () = teardown.notified() => return FutureResultToPy::None,
+                    }
                 }
             }
             FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
@@ -542,7 +538,6 @@ impl ASGIWebsocketProtocol {
         WebsocketDetachedTransport,
     ) {
         self.closed.store(true, atomic::Ordering::Release);
-        self.teardown.notify_waiters();
         let ws_rx = self.ws_rx.try_lock().map_or(None, |mut guard| guard.take());
         let ws_tx = self.ws_tx.try_lock().map_or(None, |mut guard| guard.take());
         (
