@@ -14,7 +14,7 @@ Unless otherwise specified in the specific benchmark section, Granian is run:
 - Using default configuration, thus:
   - 1 worker
   - 1 runtime thread
-- With `--runtime-mode` set to `st` on ASGI and `mt` otherwise
+- With `--runtime-mode` set to `auto`
 - With `--http 1` flag
 - With `--no-ws` flag
 - With `uvloop` event-loop on async protocols

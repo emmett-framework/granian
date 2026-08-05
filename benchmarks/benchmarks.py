@@ -73,7 +73,7 @@ def app(
     threads = threads or 1
     bthreads_flag = 'blocking-threads' if name == 'wsgi' else 'runtime-blocking-threads'
     bthreads = f' --{bthreads_flag} {bthreads}' if bthreads else ''
-    thmode = thmode or ('st' if name == 'asgi' else 'mt')
+    thmode = thmode or 'auto'
     wsmode = '--no-ws ' if not ws else ''
     exc_prefix = os.environ.get('BENCHMARK_EXC_PREFIX')
     proc_cmd = APPS[name].format(
@@ -394,7 +394,7 @@ def vs_ws():
     ]:
         fw_app = fw.split('_')[1] if fw.startswith('granian') else fw
         title = ' '.join(item.title() for item in fw.split('_'))
-        with app(fw_app, ws=True, app_path='ws.app'):
+        with app(fw_app, ws=True, threads=2, app_path='ws.app'):
             results[title] = benchmark_ws()
     return results
 

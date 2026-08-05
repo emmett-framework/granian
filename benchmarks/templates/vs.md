@@ -70,7 +70,7 @@ Plain text response comparison simulating *long* I/O waits (10ms and 100ms).
 
 Websocket broadcasting comparison with concurrent clients sending a predefined amount of messages and receiving those messages from all the connected clients. The benchmark takes the time required for the test to run and compute the relevant throughput (in messages per second).
 
-Granian is run with `--ws`.
+Granian is run with `--ws` and `--runtime-threads 2`.
 
 {{ _data = wsdata.results["vs_ws"] }}
 {{ include './_vs_ws_table.tpl' }}

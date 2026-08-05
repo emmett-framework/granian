@@ -1,9 +1,17 @@
+import asyncio
+
 clients = set()
 
 
-async def broadcast(message):
+def broadcast(message):
+    tasks = []
     for ws in list(clients):
-        await ws({'type': 'websocket.send', 'bytes': message, 'text': None})
+        tasks.append(
+            asyncio.ensure_future(
+                ws({'type': 'websocket.send', 'bytes': message, 'text': None})
+            )
+        )
+    return asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def app(scope, receive, send):

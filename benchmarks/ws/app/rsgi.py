@@ -1,12 +1,16 @@
+import asyncio
+
 from granian.rsgi import WebsocketMessageType
 
 
 clients = set()
 
 
-async def broadcast(message):
+def broadcast(message):
+    tasks = []
     for ws in list(clients):
-        await ws.send_bytes(message)
+        tasks.append(asyncio.ensure_future(ws.send_bytes(message)))
+    return asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def app(scope, protocol):
