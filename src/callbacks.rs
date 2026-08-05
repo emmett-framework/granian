@@ -555,14 +555,16 @@ impl PyFutureAwaitable {
         let kwctx = pyo3::types::PyDict::new(py);
         kwctx.set_item(pyo3::intern!(py, "context"), context)?;
 
-        let state = pyself.state.load(atomic::Ordering::Acquire);
-        if state == PyFutureAwaitableState::Pending as u8 {
+        {
             let mut ack = pyself.ack.write().unwrap();
-            *ack = Some((cb, kwctx.unbind()));
-        } else {
-            let event_loop = pyself.event_loop.clone_ref(py);
-            event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(&kwctx))?;
+            if pyself.state.load(atomic::Ordering::Acquire) == PyFutureAwaitableState::Pending as u8 {
+                *ack = Some((cb, kwctx.unbind()));
+                return Ok(());
+            }
         }
+
+        let event_loop = pyself.event_loop.clone_ref(py);
+        event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(&kwctx))?;
 
         Ok(())
     }

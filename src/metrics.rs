@@ -94,22 +94,22 @@ impl MetricsAggregator {
             format!("# TYPE {prefix}workers_spawns counter"),
             format!(
                 "{prefix}workers_spawns {}",
-                self.data_m.spawn.load(atomic::Ordering::Acquire)
+                self.data_m.spawn.load(atomic::Ordering::Relaxed)
             ),
             format!("# TYPE {prefix}workers_respawns_for_err counter"),
             format!(
                 "{prefix}workers_respawns_for_err {}",
-                self.data_m.respawn_err.load(atomic::Ordering::Acquire)
+                self.data_m.respawn_err.load(atomic::Ordering::Relaxed)
             ),
             format!("# TYPE {prefix}workers_respawns_for_lifetime counter"),
             format!(
                 "{prefix}workers_respawns_for_lifetime {}",
-                self.data_m.respawn_ttl.load(atomic::Ordering::Acquire)
+                self.data_m.respawn_ttl.load(atomic::Ordering::Relaxed)
             ),
             format!("# TYPE {prefix}workers_respawns_for_rss counter"),
             format!(
                 "{prefix}workers_respawns_for_rss {}",
-                self.data_m.respawn_rss.load(atomic::Ordering::Acquire)
+                self.data_m.respawn_rss.load(atomic::Ordering::Relaxed)
             ),
         ];
         let wrk_metrics = vec![
@@ -160,19 +160,19 @@ impl MetricsAggregator {
     }
 
     fn incr_spawn(&self, val: usize) {
-        self.data_m.spawn.fetch_add(val, atomic::Ordering::Release);
+        self.data_m.spawn.fetch_add(val, atomic::Ordering::Relaxed);
     }
 
     fn incr_respawn_err(&self, val: usize) {
-        self.data_m.respawn_err.fetch_add(val, atomic::Ordering::Release);
+        self.data_m.respawn_err.fetch_add(val, atomic::Ordering::Relaxed);
     }
 
     fn incr_respawn_ttl(&self, val: usize) {
-        self.data_m.respawn_ttl.fetch_add(val, atomic::Ordering::Release);
+        self.data_m.respawn_ttl.fetch_add(val, atomic::Ordering::Relaxed);
     }
 
     fn incr_respawn_rss(&self, val: usize) {
-        self.data_m.respawn_rss.fetch_add(val, atomic::Ordering::Release);
+        self.data_m.respawn_rss.fetch_add(val, atomic::Ordering::Relaxed);
     }
 }
 
@@ -235,17 +235,17 @@ struct IPCMetricsCollector {
 fn collect_metrics(birth: &std::time::Instant, data: &Arc<WorkerMetrics>) -> MetricsData {
     vec![
         MetricValue::Abs(birth.elapsed().as_secs() as usize),
-        MetricValue::Abs(data.conn_active.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.conn_handled.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.conn_err.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.req_handled.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.req_static_handled.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.req_static_err.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.blocking_threads.load(atomic::Ordering::Acquire)),
-        MetricValue::Int(data.blocking_queue.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.blocking_idle_cumul.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.blocking_busy_cumul.load(atomic::Ordering::Acquire)),
-        MetricValue::Abs(data.py_wait_cumul.load(atomic::Ordering::Acquire)),
+        MetricValue::Abs(data.conn_active.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.conn_handled.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.conn_err.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.req_handled.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.req_static_handled.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.req_static_err.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.blocking_threads.load(atomic::Ordering::Relaxed)),
+        MetricValue::Int(data.blocking_queue.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.blocking_idle_cumul.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.blocking_busy_cumul.load(atomic::Ordering::Relaxed)),
+        MetricValue::Abs(data.py_wait_cumul.load(atomic::Ordering::Relaxed)),
     ]
 }
 

@@ -447,7 +447,7 @@ macro_rules! service_impl {
                 self.ctx
                     .metrics
                     .req_handled
-                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 service_proto_fut!($proto, self, req)
             }
         }
@@ -478,7 +478,7 @@ macro_rules! service_impl {
                 self.ctx
                     .metrics
                     .req_handled
-                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                 if let Some(static_match) = crate::files::match_static_file(
                     req.uri().path(),
@@ -488,12 +488,12 @@ macro_rules! service_impl {
                     self.ctx
                         .metrics
                         .req_static_handled
-                        .fetch_add(1, std::sync::atomic::Ordering::Release);
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if static_match.is_err() {
                         self.ctx
                             .metrics
                             .req_static_err
-                            .fetch_add(1, std::sync::atomic::Ordering::Release);
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
                     }
                     let expires = self.ctx.static_expires.clone();
@@ -806,11 +806,11 @@ macro_rules! conn_handle_h1 {
         ) {
             self.metrics
                 .conn_active
-                .fetch_add(1, std::sync::atomic::Ordering::Release);
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             conn_handle_h1_impl!($cb, self, svc, stream, permit, sig);
             self.metrics
                 .conn_active
-                .fetch_sub(1, std::sync::atomic::Ordering::Release);
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         }
     };
 }
@@ -837,11 +837,11 @@ macro_rules! conn_handle_ha {
         ) {
             self.metrics
                 .conn_active
-                .fetch_add(1, std::sync::atomic::Ordering::Release);
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             conn_handle_ha_impl!($conn_method, self, svc, stream, permit, sig);
             self.metrics
                 .conn_active
-                .fetch_sub(1, std::sync::atomic::Ordering::Release);
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         }
     };
 }
@@ -927,11 +927,11 @@ where
     async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
         self.metrics
             .conn_active
-            .fetch_add(1, std::sync::atomic::Ordering::Release);
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         conn_handle_h2_impl!(self, svc, stream, permit, sig);
         self.metrics
             .conn_active
-            .fetch_sub(1, std::sync::atomic::Ordering::Release);
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -1015,7 +1015,7 @@ macro_rules! acceptor_impl_match_metrics {
                 $self
                     .metrics
                     .conn_handled
-                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 acceptor_impl_stream!(
                     $proto_marker,
                     $sockwrap,
@@ -1035,7 +1035,7 @@ macro_rules! acceptor_impl_match_metrics {
                 $self
                     .metrics
                     .conn_err
-                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 acceptor_impl_err!(err, $permit)
             }
         }
