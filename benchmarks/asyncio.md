@@ -4,9 +4,9 @@
 
 ## AsyncIO-specific benchmarks
 
-Run at: Mon 03 Aug 2026, 13:33    
+Run at: Wed 05 Aug 2026, 17:39    
 Environment: AMD Ryzen 7 5700X @ Gentoo Linux 6.18.41 (CPUs: 16)    
-Granian version: 2.8.0
+Granian version: 2.8.1
 
 Same methodology of the main benchmarks applies.
 
@@ -16,18 +16,18 @@ Comparison between different AsyncIO event loops on async protocols.
 
 | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- |
-| ASGI asyncio get 10KB (c128) | 839230 | 83908 | 1.52ms | 51.656ms |
-| ASGI asyncio echo 10KB (iter) (c128) | 310612 | 31068 | 4.108ms | 55.179ms |
-| ASGI rloop get 10KB (c128) | 1215411 | 121514 | 1.05ms | 35.207ms |
-| ASGI rloop echo 10KB (iter) (c128) | 543235 | 54320 | 2.348ms | 68.411ms |
-| ASGI uvloop get 10KB (c128) | 1208549 | 120829 | 1.055ms | 43.209ms |
-| ASGI uvloop echo 10KB (iter) (c128) | 543266 | 54322 | 2.349ms | 71.63ms |
-| RSGI asyncio get 10KB (c128) | 912162 | 91202 | 1.399ms | 42.773ms |
-| RSGI asyncio echo 10KB (iter) (c128) | 335161 | 33518 | 3.808ms | 50.721ms |
-| RSGI rloop get 10KB (c128) | 1250666 | 125034 | 1.019ms | 74.128ms |
-| RSGI rloop echo 10KB (iter) (c128) | 541749 | 54166 | 2.356ms | 60.262ms |
-| RSGI uvloop get 10KB (c128) | 1247640 | 124725 | 1.022ms | 50.592ms |
-| RSGI uvloop echo 10KB (iter) (c128) | 542087 | 54206 | 2.351ms | 64.009ms |
+| ASGI asyncio get 10KB (c128) | 852931 | 85281 | 1.495ms | 55.368ms |
+| ASGI asyncio echo 10KB (iter) (c128) | 327496 | 32751 | 3.895ms | 69.804ms |
+| ASGI rloop get 10KB (c128) | 1249304 | 124909 | 1.021ms | 56.193ms |
+| ASGI rloop echo 10KB (iter) (c128) | 616976 | 61688 | 2.067ms | 67.253ms |
+| ASGI uvloop get 10KB (c128) | 1279888 | 127962 | 0.997ms | 34.37ms |
+| ASGI uvloop echo 10KB (iter) (c128) | 621551 | 62146 | 2.053ms | 48.604ms |
+| RSGI asyncio get 10KB (c128) | 834524 | 83449 | 1.527ms | 69.925ms |
+| RSGI asyncio echo 10KB (iter) (c128) | 294914 | 29494 | 4.31ms | 55.038ms |
+| RSGI rloop get 10KB (c128) | 1255607 | 125535 | 1.016ms | 41.315ms |
+| RSGI rloop echo 10KB (iter) (c128) | 541029 | 54100 | 2.358ms | 50.119ms |
+| RSGI uvloop get 10KB (c128) | 1253244 | 125285 | 1.017ms | 64.307ms |
+| RSGI uvloop echo 10KB (iter) (c128) | 540926 | 54069 | 2.358ms | 64.165ms |
 
 ### Task implementation
 
@@ -35,11 +35,11 @@ Comparison between Granian Rust AsyncIO task implementation and stdlib one on AS
 
 | Python version | Request | Total requests | RPS | avg latency | max latency |
 | --- | --- | --- | --- | --- | --- |
-| 3.10 | asyncio get 10KB (c128) | 767313 | 76721 | 1.664ms | 36.178ms |
-| 3.10 | asyncio echo 10KB (iter) (c128) | 271892 | 27196 | 4.693ms | 61.188ms |
-| 3.10 | rust get 10KB (c128) | 910217 | 91018 | 1.399ms | 87.943ms |
-| 3.10 | rust echo 10KB (iter) (c128) | 247852 | 24789 | 5.149ms | 243.031ms |
-| 3.11 | asyncio get 10KB (c128) | 786990 | 78685 | 1.62ms | 49.041ms |
-| 3.11 | asyncio echo 10KB (iter) (c128) | 296161 | 29621 | 4.308ms | 53.257ms |
-| 3.11 | rust get 10KB (c128) | 909852 | 90966 | 1.401ms | 58.006ms |
-| 3.11 | rust echo 10KB (iter) (c128) | 281718 | 28177 | 4.533ms | 230.648ms |
+| 3.10 | asyncio get 10KB (c128) | 746970 | 74686 | 1.707ms | 57.866ms |
+| 3.10 | asyncio echo 10KB (iter) (c128) | 286332 | 28638 | 4.456ms | 56.752ms |
+| 3.10 | rust get 10KB (c128) | 887365 | 88726 | 1.439ms | 24.96ms |
+| 3.10 | rust echo 10KB (iter) (c128) | 264384 | 26444 | 4.822ms | 245.077ms |
+| 3.11 | asyncio get 10KB (c128) | 784057 | 78399 | 1.626ms | 56.582ms |
+| 3.11 | asyncio echo 10KB (iter) (c128) | 307002 | 30703 | 4.158ms | 61.533ms |
+| 3.11 | rust get 10KB (c128) | 952725 | 95253 | 1.339ms | 48.13ms |
+| 3.11 | rust echo 10KB (iter) (c128) | 290548 | 29058 | 4.392ms | 243.4ms |
