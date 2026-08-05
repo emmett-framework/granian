@@ -613,6 +613,10 @@ impl PyFutureAwaitable {
         self.state.load(atomic::Ordering::Acquire) != PyFutureAwaitableState::Pending as u8
     }
 
+    fn cancelled(&self) -> bool {
+        self.state.load(atomic::Ordering::Acquire) == PyFutureAwaitableState::Cancelled as u8
+    }
+
     fn result(&self, py: Python) -> PyResult<Py<PyAny>> {
         let state = self.state.load(atomic::Ordering::Acquire);
 
@@ -647,8 +651,7 @@ impl PyFutureAwaitable {
                 .get()
                 .unwrap()
                 .as_ref()
-                .map(|_| py.None())
-                .map_err(|err| err.clone_ref(py));
+                .map_or_else(|err| err.clone_ref(py).into_py_any(py), |_| Ok(py.None()));
         }
         if state == PyFutureAwaitableState::Cancelled as u8 {
             let msg = self
