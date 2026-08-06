@@ -19,6 +19,7 @@ from .._granian import (
     WorkerSignal,
     WSGIWorker,
 )
+from .._imports import import_setproctitle
 from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -73,10 +74,7 @@ class WorkerProcess(AbstractWorker):
             from granian._loops import loops
 
             if process_name:
-                try:
-                    import setproctitle
-                except ImportError:
-                    setproctitle = None
+                setproctitle = import_setproctitle()
                 if setproctitle is not None:
                     setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
 
