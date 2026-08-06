@@ -136,4 +136,3 @@ Granian is run with `--ws` and `--runtime-threads 2`.
 | 32 | Gunicorn Asgi | 3802710 | 366978 | 378446 |
 | 32 | Uvicorn H11 | 3163470 | 183706 | 189447 |
 | 32 | Hypercorn | N/A | N/A | N/A |
-

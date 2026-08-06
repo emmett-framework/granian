@@ -36,7 +36,6 @@ from .common import (
     TaskImpl,
     configure_logging,
     logger,
-    setproctitle,
 )
 
 
@@ -74,7 +73,12 @@ class WorkerProcess(AbstractWorker):
             from granian._loops import loops
 
             if process_name:
-                setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
+                try:
+                    import setproctitle
+                except ImportError:
+                    setproctitle = None
+                if setproctitle is not None:
+                    setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
 
             configure_logging(log_level, log_config, log_enabled)
             load_env(env_files)
