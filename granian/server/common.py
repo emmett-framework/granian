@@ -14,7 +14,7 @@ from typing import Any, Generic, TypeVar
 
 from .._compat import _PY_312, _PYV
 from .._granian import MetricsAggregator, MetricsExporter, WorkerSignal
-from .._imports import dotenv, setproctitle, watchfiles
+from .._imports import dotenv, import_setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
 from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
@@ -676,6 +676,8 @@ class AbstractServer(Generic[WT]):
                 logger.info('Websockets are not supported on WSGI, ignoring')
             if self.http == HTTPModes.http2:
                 logger.info('Websockets are not supported on HTTP/2 only, ignoring')
+
+        setproctitle = import_setproctitle()
 
         if setproctitle is not None:
             self.process_name = self.process_name or (f'granian {self.interface} {self._bind_addr_fmt} {self.target}')

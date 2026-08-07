@@ -19,6 +19,7 @@ from .._granian import (
     WorkerSignal,
     WSGIWorker,
 )
+from .._imports import import_setproctitle
 from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -36,7 +37,6 @@ from .common import (
     TaskImpl,
     configure_logging,
     logger,
-    setproctitle,
 )
 
 
@@ -74,7 +74,9 @@ class WorkerProcess(AbstractWorker):
             from granian._loops import loops
 
             if process_name:
-                setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
+                setproctitle = import_setproctitle()
+                if setproctitle is not None:
+                    setproctitle.setproctitle(f'{process_name} worker-{worker_id}')
 
             configure_logging(log_level, log_config, log_enabled)
             load_env(env_files)
