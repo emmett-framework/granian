@@ -50,7 +50,7 @@ class WorkerProcess(AbstractWorker):
         # NOTE: Python 3.14 defaults mp spawn method to 'forkserver' on Linux,
         #       which doesn't really play well with shared sockets.
         self._spawn_method = multiprocessing.get_start_method()
-        if self._spawn_method not in {'fork', 'spawn'} and parent._sso is not None:
+        if self._spawn_method not in {'fork', 'spawn'}:
             self._spawn_method = 'spawn'
         super().__init__(parent, idx, target, args)
 
