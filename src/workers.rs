@@ -677,7 +677,7 @@ trait WorkerHandle<I, S> {
         svc: S,
         stream: I,
         permit: tokio::sync::OwnedSemaphorePermit,
-        sig: Arc<tokio::sync::Notify>,
+        sig: Arc<tokio::sync::SetOnce<bool>>,
     ) -> impl Future<Output = ()> + Send + 'static;
 }
 
@@ -692,7 +692,7 @@ macro_rules! conn_handle_h1_impl {
             _ = conn.as_mut() => {
                 done = true;
             },
-            _ = $sig.notified() => {
+            _ = $sig.wait() => {
                 conn.as_mut().graceful_shutdown();
             }
         }
@@ -736,7 +736,7 @@ macro_rules! conn_handle_ha_impl {
             _ = conn.as_mut() => {
                 done = true;
             },
-            _ = $sig.notified() => {
+            _ = $sig.wait() => {
                 conn.as_mut().graceful_shutdown();
             }
         }
@@ -771,7 +771,7 @@ macro_rules! conn_handle_h2_impl {
             _ = conn.as_mut() => {
                 done = true;
             },
-            () = $sig.notified() => {
+            _ = $sig.wait() => {
                 conn.as_mut().graceful_shutdown();
             }
         }
@@ -791,7 +791,7 @@ macro_rules! conn_handle_h1 {
             svc: S,
             stream: I,
             permit: tokio::sync::OwnedSemaphorePermit,
-            sig: Arc<tokio::sync::Notify>,
+            sig: Arc<tokio::sync::SetOnce<bool>>,
         ) {
             conn_handle_h1_impl!($cb, self, svc, stream, permit, sig)
         }
@@ -802,7 +802,7 @@ macro_rules! conn_handle_h1 {
             svc: S,
             stream: I,
             permit: tokio::sync::OwnedSemaphorePermit,
-            sig: Arc<tokio::sync::Notify>,
+            sig: Arc<tokio::sync::SetOnce<bool>>,
         ) {
             self.metrics
                 .conn_active
@@ -822,7 +822,7 @@ macro_rules! conn_handle_ha {
             svc: S,
             stream: I,
             permit: tokio::sync::OwnedSemaphorePermit,
-            sig: Arc<tokio::sync::Notify>,
+            sig: Arc<tokio::sync::SetOnce<bool>>,
         ) {
             conn_handle_ha_impl!($conn_method, self, svc, stream, permit, sig)
         }
@@ -833,7 +833,7 @@ macro_rules! conn_handle_ha {
             svc: S,
             stream: I,
             permit: tokio::sync::OwnedSemaphorePermit,
-            sig: Arc<tokio::sync::Notify>,
+            sig: Arc<tokio::sync::SetOnce<bool>>,
         ) {
             self.metrics
                 .conn_active
@@ -912,7 +912,13 @@ where
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
+    async fn call(
+        self,
+        svc: S,
+        stream: I,
+        permit: tokio::sync::OwnedSemaphorePermit,
+        sig: Arc<tokio::sync::SetOnce<bool>>,
+    ) {
         conn_handle_h2_impl!(self, svc, stream, permit, sig);
     }
 }
@@ -924,7 +930,13 @@ where
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
+    async fn call(
+        self,
+        svc: S,
+        stream: I,
+        permit: tokio::sync::OwnedSemaphorePermit,
+        sig: Arc<tokio::sync::SetOnce<bool>>,
+    ) {
         self.metrics
             .conn_active
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1045,7 +1057,7 @@ macro_rules! acceptor_impl_match_metrics {
 macro_rules! acceptor_impl_loop {
     ($proto_marker:ty, $sockwrap:expr, $matchi:ident, $self:expr, $sig:expr, $backpressure:expr, $listener:expr, $addr_local:expr) => {{
         let semaphore = Arc::new(tokio::sync::Semaphore::new($backpressure));
-        let connsig = Arc::new(tokio::sync::Notify::new());
+        let connsig = Arc::new(tokio::sync::SetOnce::new());
         let mut accept_loop = true;
 
         while accept_loop {
@@ -1076,7 +1088,7 @@ macro_rules! acceptor_impl_loop {
                 ),
                 _ = $sig.changed() => {
                     accept_loop = false;
-                    connsig.notify_waiters();
+                    _ = connsig.set(true);
                 }
             }
         }
