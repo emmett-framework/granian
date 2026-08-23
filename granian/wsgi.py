@@ -39,6 +39,8 @@ def _callback_wrapper(callback: Callable[..., Any], scope_opts: dict[str, Any], 
             'SCRIPT_NAME': scope_opts.get('url_path_prefix') or '',
             'SERVER_SOFTWARE': 'Granian',
             'wsgi.errors': sys.stderr,
+            #: this is not in PEP333, but you know, werkzeug..
+            'wsgi.input_terminated': True,
             'wsgi.multiprocess': False,
             'wsgi.multithread': True,
             'wsgi.run_once': False,
