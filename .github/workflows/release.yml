@@ -113,8 +113,14 @@ jobs:
             target: x86_64
             interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t pypy3.11
             allocator: mimalloc
+          - os: windows
+            target: aarch64
+            runner: windows-11-arm
+            # no PyPy nor CPython 3.10 builds available for win_arm64
+            interpreter: 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t
+            allocator: mimalloc
 
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.runner || format('{0}-latest', matrix.os) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
