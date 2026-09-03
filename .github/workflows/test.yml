@@ -104,12 +104,14 @@ jobs:
         make test
 
   windows:
-    runs-on: windows-latest
+    name: windows ${{ matrix.runner == 'windows-11-arm' && 'arm64' || 'x64' }} (${{ matrix.python-version }})
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
+        runner: [windows-latest, windows-11-arm]
         python-version:
         - '3.10'
         - '3.11'
@@ -119,9 +121,11 @@ jobs:
         - '3.14t'
         - '3.15'
         - '3.15t'
+        exclude:
+          # no CPython 3.10 build available for win_arm64
+          - runner: windows-11-arm
+            python-version: '3.10'
 
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -129,11 +133,17 @@ jobs:
     - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       with:
         enable-cache: false
-    - name: Install
+    - name: Resolve Python version request
+      # uv resolves bare requests to an emulated x86_64 build on Windows ARM64
       env:
-        UV_PYTHON: ${{ matrix.python-version }}
+        PY_VERSION: ${{ matrix.python-version }}
+        PY_ARCH: ${{ matrix.runner == 'windows-11-arm' && 'aarch64' || 'x86_64' }}
       run: |
-        uv python install "$UV_PYTHON"
+        $version = $env:PY_VERSION -replace 't$','+freethreaded'
+        "UV_PYTHON=cpython-$version-windows-$($env:PY_ARCH)-none" >> $env:GITHUB_ENV
+    - name: Install
+      run: |
+        uv python install $env:UV_PYTHON
         uv venv .venv
         uv sync --group all
         uv run --no-sync maturin develop --uv --features mimalloc
