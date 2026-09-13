@@ -55,6 +55,9 @@ macro_rules! handle_request {
             client_addr: SockAddr,
             req: HTTPRequest,
             scheme: HTTPProto,
+            // RSGI does not implement the ASGI TLS extension; the per-connection
+            // TLS metadata threaded by the shared worker is intentionally unused.
+            _tls: crate::tls::TlsCtx,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
@@ -74,6 +77,7 @@ macro_rules! handle_request_with_ws {
             client_addr: SockAddr,
             mut req: HTTPRequest,
             scheme: HTTPProto,
+            _tls: crate::tls::TlsCtx,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 match ws_upgrade(&mut req, None) {

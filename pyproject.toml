@@ -72,7 +72,7 @@ lint = [
     'ruff~=0.15.0',
 ]
 test = [
-    'httpx~=0.28',
+    'httpx[http2]~=0.28',
     'pytest~=9.0',
     'pytest-asyncio~=1.3',
     'sniffio~=1.3',

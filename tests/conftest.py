@@ -23,6 +23,8 @@ async def _server(
     ws=True,
     tls=False,
     tls_proto=None,
+    mtls=False,
+    crl=False,
     task_impl='asyncio',
     static_mount=False,
     static_rewrite=False,
@@ -48,6 +50,14 @@ async def _server(
 
         if tls_proto:
             kwargs['ssl_protocol_min'] = tls_proto
+
+        if mtls:
+            # mtls=True -> CA + mandatory client verification;
+            # mtls='optional' -> CA configured but client cert not required.
+            kwargs['ssl_ca'] = certs_path / 'clientca.pem'
+            kwargs['ssl_client_verify'] = mtls != 'optional'
+            if crl:
+                kwargs['ssl_crl'] = [certs_path / 'crl.pem']
 
     if static_mount:
         if static_mount is True:
