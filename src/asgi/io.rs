@@ -8,7 +8,9 @@ use hyper::{
 use pyo3::{prelude::*, pybacked::PyBackedBytes, types::PyDict};
 use std::{
     borrow::Cow,
+    pin::Pin,
     sync::{Arc, Mutex, atomic},
+    task::{Context, Poll},
 };
 use tokio::{
     fs::File,
@@ -34,6 +36,51 @@ const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
 const EMPTY_STRING: String = String::new();
 static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
 
+struct ResponseBodyStream {
+    inner: mpsc::Receiver<body::Bytes>,
+    closed: Arc<Notify>,
+}
+
+impl Drop for ResponseBodyStream {
+    fn drop(&mut self) {
+        self.closed.notify_one();
+    }
+}
+
+impl body::Body for ResponseBodyStream {
+    type Data = body::Bytes;
+    type Error = anyhow::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<body::Frame<Self::Data>, Self::Error>>> {
+        self.inner
+            .poll_recv(cx)
+            .map(|item| item.map(|data| Ok(body::Frame::data(data))))
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_closed() && self.inner.is_empty()
+    }
+
+    fn size_hint(&self) -> body::SizeHint {
+        body::SizeHint::default()
+    }
+}
+
+impl ResponseBodyStream {
+    fn new(notify: Arc<Notify>) -> (mpsc::Sender<body::Bytes>, Self) {
+        //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
+        let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
+        let slf = Self {
+            inner: body_rx,
+            closed: notify,
+        };
+        (body_tx, slf)
+    }
+}
+
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
@@ -47,6 +94,7 @@ pub(crate) struct ASGIHTTPProtocol {
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<Notify>,
+    flow_tx_guard: Arc<Notify>,
     sent_response_code: Arc<atomic::AtomicU16>,
 }
 
@@ -69,6 +117,7 @@ impl ASGIHTTPProtocol {
             flow_rx_exhausted: Arc::new(atomic::AtomicBool::new(false)),
             flow_rx_closed: Arc::new(atomic::AtomicBool::new(false)),
             flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
+            flow_tx_guard: Arc::new(Notify::new()),
             sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
         }
     }
@@ -149,10 +198,12 @@ impl ASGIHTTPProtocol {
         if self.flow_rx_exhausted.load(atomic::Ordering::Acquire) {
             let guard_tx = self.flow_tx_waiter.clone();
             let guard_disconnect = self.disconnect_guard.clone();
+            let guard_stream = self.flow_tx_guard.clone();
             let disconnected = self.flow_rx_closed.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 tokio::select! {
                     () = guard_tx.notified() => {},
+                    () = guard_stream.notified() => {},
                     () = guard_disconnect.notified() => disconnected.store(true, atomic::Ordering::Release),
                 }
                 FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
@@ -224,13 +275,7 @@ impl ASGIHTTPProtocol {
 
                 self.response_chunked.store(true, atomic::Ordering::Relaxed);
                 let (status, headers) = intent;
-                //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
-                let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
-                let body_stream = http_body_util::StreamBody::new(
-                    tokio_stream::wrappers::ReceiverStream::new(body_rx)
-                        .map(body::Frame::data)
-                        .map(Result::Ok),
-                );
+                let (body_tx, body_stream) = ResponseBodyStream::new(self.flow_tx_guard.clone());
                 *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                 self.send_response(status, headers, BodyExt::boxed(body_stream));
                 empty_future_into_py(py)
@@ -258,13 +303,7 @@ impl ASGIHTTPProtocol {
                     (true, true, false) => match self.response_intent.lock().unwrap().take() {
                         Some((status, headers)) => {
                             self.response_chunked.store(true, atomic::Ordering::Relaxed);
-                            //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
-                            let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
-                            let body_stream = http_body_util::StreamBody::new(
-                                tokio_stream::wrappers::ReceiverStream::new(body_rx)
-                                    .map(body::Frame::data)
-                                    .map(Result::Ok),
-                            );
+                            let (body_tx, body_stream) = ResponseBodyStream::new(self.flow_tx_guard.clone());
                             *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                             self.send_response(status, headers, BodyExt::boxed(body_stream));
                             self.send_body(py, body_tx, body, false)
