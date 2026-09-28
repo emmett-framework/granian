@@ -1,4 +1,46 @@
 use pyo3::{prelude::*, types::PyTracebackMethods};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::sync::{SetOnce, oneshot};
+
+pub(crate) struct GuardedReceiver<T> {
+    inner: oneshot::Receiver<T>,
+    guard: Arc<SetOnce<()>>,
+    done: bool,
+}
+
+impl<T> GuardedReceiver<T> {
+    pub fn new(inner: oneshot::Receiver<T>, guard: Arc<SetOnce<()>>) -> Self {
+        Self {
+            inner,
+            guard,
+            done: false,
+        }
+    }
+}
+
+impl<T> Future for GuardedReceiver<T> {
+    type Output = Result<T, oneshot::error::RecvError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let ret = Pin::new(&mut self.inner).poll(cx);
+        if ret.is_ready() {
+            self.done = true;
+        }
+        ret
+    }
+}
+
+impl<T> Drop for GuardedReceiver<T> {
+    fn drop(&mut self) {
+        if !self.done {
+            _ = self.guard.set(());
+        }
+    }
+}
 
 pub(crate) fn header_contains_value(
     headers: &hyper::HeaderMap,

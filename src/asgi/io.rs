@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::{
     fs::File,
-    sync::{Mutex as AsyncMutex, Notify, mpsc, oneshot},
+    sync::{Mutex as AsyncMutex, Notify, SetOnce, mpsc, oneshot},
 };
 use tokio_tungstenite::tungstenite::{Message, protocol::frame as wsframe};
 use tokio_util::io::ReaderStream;
@@ -38,12 +38,12 @@ static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
 
 struct ResponseBodyStream {
     inner: mpsc::Receiver<body::Bytes>,
-    closed: Arc<Notify>,
+    closed: Arc<SetOnce<()>>,
 }
 
 impl Drop for ResponseBodyStream {
     fn drop(&mut self) {
-        self.closed.notify_one();
+        _ = self.closed.set(());
     }
 }
 
@@ -70,7 +70,7 @@ impl body::Body for ResponseBodyStream {
 }
 
 impl ResponseBodyStream {
-    fn new(notify: Arc<Notify>) -> (mpsc::Sender<body::Bytes>, Self) {
+    fn new(notify: Arc<SetOnce<()>>) -> (mpsc::Sender<body::Bytes>, Self) {
         //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
         let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
         let slf = Self {
@@ -85,7 +85,7 @@ impl ResponseBodyStream {
 pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<HTTPResponse>>>,
-    disconnect_guard: Arc<Notify>,
+    disconnect_guard: Arc<SetOnce<()>>,
     request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
@@ -93,17 +93,16 @@ pub(crate) struct ASGIHTTPProtocol {
     body_tx: Mutex<Option<mpsc::Sender<body::Bytes>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
-    flow_tx_waiter: Arc<Notify>,
-    flow_tx_guard: Arc<Notify>,
+    flow_tx_waiter: Arc<SetOnce<()>>,
     sent_response_code: Arc<atomic::AtomicU16>,
 }
 
 impl ASGIHTTPProtocol {
     pub fn new(
         rt: RuntimeRef,
+        disconnect_guard: Arc<SetOnce<()>>,
         body: hyper::body::Incoming,
         tx: oneshot::Sender<HTTPResponse>,
-        disconnect_guard: Arc<Notify>,
     ) -> Self {
         Self {
             rt,
@@ -116,8 +115,7 @@ impl ASGIHTTPProtocol {
             body_tx: Mutex::new(None),
             flow_rx_exhausted: Arc::new(atomic::AtomicBool::new(false)),
             flow_rx_closed: Arc::new(atomic::AtomicBool::new(false)),
-            flow_tx_waiter: Arc::new(tokio::sync::Notify::new()),
-            flow_tx_guard: Arc::new(Notify::new()),
+            flow_tx_waiter: Arc::new(SetOnce::new()),
             sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
         }
     }
@@ -145,7 +143,7 @@ impl ASGIHTTPProtocol {
         match tx.try_send(frame) {
             Ok(()) => {
                 if close {
-                    self.flow_tx_waiter.notify_one();
+                    _ = self.flow_tx_waiter.set(());
                 }
             }
             Err(mpsc::error::TrySendError::Full(frame)) => {
@@ -156,14 +154,14 @@ impl ASGIHTTPProtocol {
                     match tx.send(frame).await {
                         Ok(()) => {
                             if close {
-                                tx_waiter.notify_one();
+                                _ = tx_waiter.set(());
                             }
                         }
                         Err(err) => {
                             if !rx_closed.load(atomic::Ordering::Acquire) {
                                 log::info!("ASGI transport error: {err:?}");
                             }
-                            tx_waiter.notify_one();
+                            _ = tx_waiter.set(());
                         }
                     }
                     FutureResultToPy::None
@@ -173,7 +171,7 @@ impl ASGIHTTPProtocol {
                 if !self.flow_rx_closed.load(atomic::Ordering::Acquire) {
                     log::info!("ASGI transport error: {err:?}");
                 }
-                self.flow_tx_waiter.notify_one();
+                _ = self.flow_tx_waiter.set(());
             }
         }
 
@@ -198,13 +196,11 @@ impl ASGIHTTPProtocol {
         if self.flow_rx_exhausted.load(atomic::Ordering::Acquire) {
             let guard_tx = self.flow_tx_waiter.clone();
             let guard_disconnect = self.disconnect_guard.clone();
-            let guard_stream = self.flow_tx_guard.clone();
             let disconnected = self.flow_rx_closed.clone();
             return future_into_py_futlike(self.rt.clone(), py, async move {
                 tokio::select! {
-                    () = guard_tx.notified() => {},
-                    () = guard_stream.notified() => {},
-                    () = guard_disconnect.notified() => disconnected.store(true, atomic::Ordering::Release),
+                    () = guard_tx.wait() => {},
+                    () = guard_disconnect.wait() => disconnected.store(true, atomic::Ordering::Release),
                 }
                 FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
             });
@@ -230,7 +226,7 @@ impl ASGIHTTPProtocol {
                     Some(Err(_)) => None,
                     _ => Some(body::Bytes::new()),
                 },
-                () = guard_disconnect.notified() => {
+                () = guard_disconnect.wait() => {
                     disconnected.store(true, atomic::Ordering::Release);
                     None
                 }
@@ -242,7 +238,7 @@ impl ASGIHTTPProtocol {
             match chunk {
                 Some(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((data, more_body))),
                 _ => {
-                    guard_tx.notify_one();
+                    _ = guard_tx.set(());
                     FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
                 }
             }
@@ -275,7 +271,7 @@ impl ASGIHTTPProtocol {
 
                 self.response_chunked.store(true, atomic::Ordering::Relaxed);
                 let (status, headers) = intent;
-                let (body_tx, body_stream) = ResponseBodyStream::new(self.flow_tx_guard.clone());
+                let (body_tx, body_stream) = ResponseBodyStream::new(self.disconnect_guard.clone());
                 *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                 self.send_response(status, headers, BodyExt::boxed(body_stream));
                 empty_future_into_py(py)
@@ -295,7 +291,7 @@ impl ASGIHTTPProtocol {
                                     .map_err(std::convert::Into::into)
                                     .boxed(),
                             );
-                            self.flow_tx_waiter.notify_one();
+                            _ = self.flow_tx_waiter.set(());
                             empty_future_into_py(py)
                         }
                         _ => error_flow!("Response already finished"),
@@ -303,7 +299,7 @@ impl ASGIHTTPProtocol {
                     (true, true, false) => match self.response_intent.lock().unwrap().take() {
                         Some((status, headers)) => {
                             self.response_chunked.store(true, atomic::Ordering::Relaxed);
-                            let (body_tx, body_stream) = ResponseBodyStream::new(self.flow_tx_guard.clone());
+                            let (body_tx, body_stream) = ResponseBodyStream::new(self.disconnect_guard.clone());
                             *self.body_tx.lock().unwrap() = Some(body_tx.clone());
                             self.send_response(status, headers, BodyExt::boxed(body_stream));
                             self.send_body(py, body_tx, body, false)
@@ -318,7 +314,7 @@ impl ASGIHTTPProtocol {
                         Some(tx) => match body.is_empty() {
                             false => self.send_body(py, tx, body, true),
                             true => {
-                                self.flow_tx_waiter.notify_one();
+                                _ = self.flow_tx_waiter.set(());
                                 empty_future_into_py(py)
                             }
                         },
@@ -354,6 +350,7 @@ impl ASGIHTTPProtocol {
                         };
                         let _ = tx.send(res);
                     });
+                    _ = self.flow_tx_waiter.set(());
                     empty_future_into_py(py)
                 }
                 _ => error_flow!("Response not started"),

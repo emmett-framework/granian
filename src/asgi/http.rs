@@ -13,19 +13,8 @@ use crate::{
 };
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr) => {
-        match $handler(
-            $callback,
-            $rt,
-            $disconnect_guard,
-            $server_addr,
-            $client_addr,
-            $req,
-            $scheme,
-            $body,
-        )
-        .await
-        {
+    ($handler:expr, $rt:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr) => {
+        match $handler($callback, $rt, $server_addr, $client_addr, $req, $scheme, $body).await {
             Ok(res) => res,
             _ => {
                 log::error!("ASGI protocol failure");
@@ -40,7 +29,6 @@ macro_rules! handle_request {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
             server_addr: SockAddr,
             client_addr: SockAddr,
@@ -51,7 +39,6 @@ macro_rules! handle_request {
             handle_http_response!(
                 $handler,
                 rt,
-                disconnect_guard,
                 callback,
                 server_addr,
                 client_addr,
@@ -68,7 +55,6 @@ macro_rules! handle_request_with_ws {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
             server_addr: SockAddr,
             client_addr: SockAddr,
@@ -151,7 +137,6 @@ macro_rules! handle_request_with_ws {
             handle_http_response!(
                 $handler_req,
                 rt,
-                disconnect_guard,
                 callback,
                 server_addr,
                 client_addr,
