@@ -144,7 +144,7 @@ def _build_access_logger(fmt):
             'addr_remote': scope['client'][0],
             'protocol': 'HTTP/' + scope['http_version'],
             'path': scope['path'],
-            'qs': scope['query_string'],
+            'qs': scope['query_string'].decode('latin-1'),
             'method': scope.get('method', '-'),
             'scheme': scope['scheme'],
         }
