@@ -9,7 +9,6 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from functools import partial
-from ipaddress import IPv6Address, ip_address
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
@@ -301,17 +300,8 @@ class AbstractServer(Generic[WT]):
     def _bind_addr_fmt(self):
         if self.bind_uds:
             return f'unix:{self.bind_uds}'
-
-        # Format IPv6 addresses enclosed in brackets.
-        try:
-            ip = ip_address(self.bind_addr)
-            if isinstance(ip, IPv6Address):
-                return f'[{self.bind_addr}]:{self.bind_port}'
-        except ValueError:
-            pass
-
-        # Format IPv4 addresses and hostnames without brakcets.
-        return f'{self.bind_addr}:{self.bind_port}'
+        bind_addr = f'[{self.bind_addr}]' if ':' in self.bind_addr else self.bind_addr
+        return f'{bind_addr}:{self.bind_port}'
 
     @staticmethod
     def _call_hooks(hooks):
