@@ -31,8 +31,8 @@ macro_rules! build_scope {
 }
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $body:expr, $scope:expr) => {
-        match $handler($callback, $rt, $disconnect_guard, $body, $scope).await {
+    ($handler:expr, $rt:expr, $callback:expr, $body:expr, $scope:expr) => {
+        match $handler($callback, $rt, $body, $scope).await {
             Ok(PyResponse::Body(pyres)) => pyres.to_response(),
             Ok(PyResponse::File(pyres)) => pyres.to_response().await,
             Ok(PyResponse::FileRange(pyres)) => pyres.to_response().await,
@@ -49,7 +49,6 @@ macro_rules! handle_request {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
             server_addr: SockAddr,
             client_addr: SockAddr,
@@ -58,7 +57,7 @@ macro_rules! handle_request {
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
-            handle_http_response!($handler, rt, disconnect_guard, callback, body, scope)
+            handle_http_response!($handler, rt, callback, body, scope)
         }
     };
 }
@@ -68,7 +67,6 @@ macro_rules! handle_request_with_ws {
         #[inline]
         pub(crate) async fn $func_name(
             rt: RuntimeRef,
-            disconnect_guard: Arc<Notify>,
             callback: ArcCBScheduler,
             server_addr: SockAddr,
             client_addr: SockAddr,
@@ -138,7 +136,7 @@ macro_rules! handle_request_with_ws {
 
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
-            handle_http_response!($handler_req, rt, disconnect_guard, callback, body, scope)
+            handle_http_response!($handler_req, rt, callback, body, scope)
         }
     };
 }

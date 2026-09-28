@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex, RwLock, atomic},
     task::{Context, Poll},
 };
-use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc, oneshot};
+use tokio::sync::{Mutex as AsyncMutex, Notify, SetOnce, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
@@ -25,12 +25,12 @@ pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<WSTxStream>);
 
 struct ResponseBodyStream {
     inner: mpsc::UnboundedReceiver<body::Bytes>,
-    closed: Arc<Notify>,
+    closed: Arc<SetOnce<()>>,
 }
 
 impl Drop for ResponseBodyStream {
     fn drop(&mut self) {
-        self.closed.notify_one();
+        _ = self.closed.set(());
     }
 }
 
@@ -57,7 +57,7 @@ impl body::Body for ResponseBodyStream {
 }
 
 impl ResponseBodyStream {
-    fn new(notify: Arc<Notify>) -> (mpsc::UnboundedSender<body::Bytes>, Self) {
+    fn new(notify: Arc<SetOnce<()>>) -> (mpsc::UnboundedSender<body::Bytes>, Self) {
         let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
         let slf = Self {
             inner: body_rx,
@@ -101,9 +101,8 @@ impl RSGIHTTPStreamTransport {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPProtocol {
     rt: RuntimeRef,
+    disconnect_guard: Arc<SetOnce<()>>,
     tx: Mutex<Option<oneshot::Sender<PyResponse>>>,
-    tx_drop_guard: Arc<Notify>,
-    disconnect_guard: Arc<Notify>,
     body: Mutex<Option<body::Incoming>>,
     body_stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
     disconnected: Arc<atomic::AtomicBool>,
@@ -112,15 +111,14 @@ pub(crate) struct RSGIHTTPProtocol {
 impl RSGIHTTPProtocol {
     pub fn new(
         rt: RuntimeRef,
+        disconnect_guard: Arc<SetOnce<()>>,
         tx: oneshot::Sender<PyResponse>,
         body: body::Incoming,
-        disconnect_guard: Arc<Notify>,
     ) -> Self {
         Self {
             rt,
-            tx: Mutex::new(Some(tx)),
-            tx_drop_guard: Arc::new(Notify::new()),
             disconnect_guard,
+            tx: Mutex::new(Some(tx)),
             body: Mutex::new(Some(body)),
             body_stream: Arc::new(AsyncMutex::new(None)),
             disconnected: Arc::new(atomic::AtomicBool::new(false)),
@@ -182,14 +180,10 @@ impl RSGIHTTPProtocol {
             return empty_future_into_py(py);
         }
 
-        let guard_disconnect = self.disconnect_guard.clone();
-        let guard_stream = self.tx_drop_guard.clone();
+        let guard = self.disconnect_guard.clone();
         let state = self.disconnected.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
-            tokio::select! {
-                () = guard_disconnect.notified() => {},
-                () = guard_stream.notified() => {},
-            }
+            guard.wait().await;
             state.store(true, atomic::Ordering::Release);
             FutureResultToPy::None
         })
@@ -255,7 +249,7 @@ impl RSGIHTTPProtocol {
         headers: Vec<(PyBackedStr, PyBackedStr)>,
     ) -> PyResult<Bound<'p, RSGIHTTPStreamTransport>> {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            let (body_tx, body_stream) = ResponseBodyStream::new(self.tx_drop_guard.clone());
+            let (body_tx, body_stream) = ResponseBodyStream::new(self.disconnect_guard.clone());
             _ = tx.send(PyResponse::Body(PyResponseBody::new(
                 status,
                 headers,
