@@ -551,11 +551,13 @@ class AbstractServer(Generic[WT]):
                     break
 
                 workers = list(self.interrupt_children)
+                for idx in workers:
+                    self._metrics.clear(idx)
                 self.interrupt_children.clear()
                 self.respawned_wrks.clear()
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, spawn_target, target_loader)
-                self._metrics.incr_respawn_err(1)
+                self._metrics.incr_respawn_err(len(workers))
 
             if self.reload_signal:
                 self._reload(spawn_target, target_loader)
