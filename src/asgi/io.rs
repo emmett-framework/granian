@@ -523,7 +523,9 @@ impl ASGIWebsocketProtocol {
     #[inline(always)]
     fn send_message<'p>(&self, py: Python<'p>, data: Message) -> PyResult<Bound<'p, PyAny>> {
         if self.closed.load(atomic::Ordering::Acquire) {
-            return err_future_into_py(py, error_flow!("Transport closed"));
+            //: ASGI spec 2.3 => no error
+            // return err_future_into_py(py, error_flow!("Transport closed"));
+            return empty_future_into_py(py);
         }
 
         let transport = self.ws_tx.clone();
@@ -540,7 +542,9 @@ impl ASGIWebsocketProtocol {
                     }
                 }
             }
-            FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
+            //: ASGI spec 2.3 => no error
+            // FutureResultToPy::Err(error_flow!("Transport not initialized or closed"))
+            FutureResultToPy::None
         })
     }
 
