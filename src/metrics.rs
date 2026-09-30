@@ -79,13 +79,17 @@ pub(crate) type ArcWorkerMetrics = Arc<WorkerMetrics>;
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct MetricsAggregator {
     data_m: MainMetrics,
-    data_w: Arc<Mutex<Vec<MetricsData>>>,
+    data_w: Arc<Mutex<Vec<(u64, MetricsData)>>>,
 }
 
 impl MetricsAggregator {
-    pub fn collect(&self, id: usize, data: MetricsData) {
+    pub fn collect(&self, id: usize, birth: u64, data: MetricsData) {
         let mut aggr = self.data_w.lock().unwrap();
-        aggr[id] = data;
+        // NOTE: during respawns the old and new workers overlap on the same slot,
+        //       keep only the data coming from the most recent one.
+        if birth >= aggr[id].0 {
+            aggr[id] = (birth, data);
+        }
     }
 
     fn format_metrics(&self) -> String {
@@ -131,7 +135,7 @@ impl MetricsAggregator {
             let wrk_data = self.data_w.lock().unwrap();
             for (metric_idx, (metric_label, metric_type)) in wrk_metrics.iter().enumerate() {
                 wrk[metric_idx].push(format!("# TYPE {metric_label} {metric_type}"));
-                for (idx, values) in wrk_data.iter().enumerate() {
+                for (idx, (_, values)) in wrk_data.iter().enumerate() {
                     if let Some(value) = values.get(metric_idx) {
                         wrk[metric_idx].push(format!("{}{{worker=\"{}\"}} {}", metric_label, idx + 1, value));
                     }
@@ -141,6 +145,7 @@ impl MetricsAggregator {
         for items in &mut wrk {
             all.append(items);
         }
+        all.push(String::new());
         all.join("\n")
     }
 }
@@ -151,12 +156,17 @@ impl MetricsAggregator {
     fn new(w_size: usize) -> Self {
         let mut data = Vec::with_capacity(w_size);
         for _ in 0..w_size {
-            data.push(Vec::new());
+            data.push((0, Vec::new()));
         }
         Self {
             data_m: MainMetrics::new(),
             data_w: Arc::new(Mutex::new(data)),
         }
+    }
+
+    fn clear(&self, id: usize) {
+        let mut aggr = self.data_w.lock().unwrap();
+        aggr[id] = (0, Vec::new());
     }
 
     fn incr_spawn(&self, val: usize) {
@@ -219,6 +229,7 @@ impl MetricsExporter {
 struct LocalMetricsCollector {
     data: Arc<WorkerMetrics>,
     birth: std::time::Instant,
+    birth_ts: u64,
     interval: std::time::Duration,
     id: usize,
 }
@@ -227,8 +238,15 @@ struct LocalMetricsCollector {
 struct IPCMetricsCollector {
     data: Arc<WorkerMetrics>,
     birth: std::time::Instant,
+    birth_ts: u64,
     interval: std::time::Duration,
     rt: runtime::RuntimeRef,
+}
+
+fn birth_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |v| v.as_micros() as u64)
 }
 
 #[inline(always)]
@@ -253,7 +271,7 @@ fn collect_metrics(birth: &std::time::Instant, data: &Arc<WorkerMetrics>) -> Met
 impl LocalMetricsCollector {
     fn poll(&self, aggregator: &Py<MetricsAggregator>) {
         let data = collect_metrics(&self.birth, &self.data);
-        aggregator.get().collect(self.id, data);
+        aggregator.get().collect(self.id, self.birth_ts, data);
     }
 }
 
@@ -266,9 +284,10 @@ impl IPCMetricsCollector {
     fn send(&self, data: MetricsData, ipc: Arc<tokio::sync::Mutex<interprocess::unnamed_pipe::tokio::Sender>>) {
         use runtime::Runtime;
 
+        let birth = self.birth_ts;
         self.rt.spawn(async move {
             let mut sender = ipc.lock().await;
-            _ = ipc::write_msg(ipc::Message::Metrics(data), &mut *sender).await;
+            _ = ipc::write_msg(ipc::Message::Metrics(birth, data), &mut *sender).await;
         });
     }
 }
@@ -287,6 +306,7 @@ pub(crate) fn spawn_ipc_collector(
     let collector = IPCMetricsCollector {
         data: metrics,
         birth: std::time::Instant::now(),
+        birth_ts: birth_timestamp(),
         interval,
         rt: runtime.clone(),
     };
@@ -325,6 +345,7 @@ pub(crate) fn spawn_local_collector(
     let collector = LocalMetricsCollector {
         id: idx,
         birth: std::time::Instant::now(),
+        birth_ts: birth_timestamp(),
         data: metrics,
         interval,
     };
@@ -383,7 +404,7 @@ fn spawn_exporter(
                                     let data = exp.get().data();
                                     async move {
                                         let mut response = hyper::Response::new(http_body_util::Full::new(hyper::body::Bytes::from(data)));
-                                        response.headers_mut().append(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/plain"));
+                                        response.headers_mut().append(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"));
                                         Ok::<hyper::Response<http_body_util::Full<hyper::body::Bytes>>, std::convert::Infallible>(
                                             response
                                         )
