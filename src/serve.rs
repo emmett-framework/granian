@@ -18,7 +18,6 @@ macro_rules! serve_fn {
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -136,7 +135,6 @@ macro_rules! serve_fn {
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -298,7 +296,6 @@ macro_rules! serve_fn {
         ) where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,

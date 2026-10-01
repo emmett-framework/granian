@@ -307,7 +307,6 @@ impl<C, A, H, F, M, Ret> Worker<C, A, H, F, M>
 where
     F: Fn(
             crate::runtime::RuntimeRef,
-            Arc<tokio::sync::Notify>,
             crate::callbacks::ArcCBScheduler,
             crate::net::SockAddr,
             crate::net::SockAddr,
@@ -335,7 +334,6 @@ struct WorkerSvc<F, C, P> {
     f: F,
     ctx: C,
     rt: crate::runtime::RuntimeRef,
-    disconnect_guard: Arc<tokio::sync::Notify>,
     addr_local: crate::net::SockAddr,
     addr_remote: crate::net::SockAddr,
     _proto: PhantomData<P>,
@@ -345,7 +343,6 @@ macro_rules! service_proto_fut {
     ($proto:expr, $self:expr, $req:expr) => {{
         let fut = ($self.f)(
             $self.rt.clone(),
-            $self.disconnect_guard.clone(),
             $self.ctx.callback.clone(),
             $self.addr_local.clone(),
             $self.addr_remote.clone(),
@@ -363,7 +360,6 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -390,7 +386,6 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -431,7 +426,6 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -462,7 +456,6 @@ macro_rules! service_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -557,27 +550,24 @@ pub(crate) struct WorkerHandlerHA<U, M> {
 
 struct WorkerHandleH1<U, M> {
     opts: HTTP1Config,
-    guard: Arc<tokio::sync::Notify>,
     metrics: M,
     _upgrades: PhantomData<U>,
 }
 
 struct WorkerHandleH2<M> {
     opts: HTTP2Config,
-    guard: Arc<tokio::sync::Notify>,
     metrics: M,
 }
 
 struct WorkerHandleHA<U, M> {
     opts_h1: HTTP1Config,
     opts_h2: HTTP2Config,
-    guard: Arc<tokio::sync::Notify>,
     metrics: M,
     _upgrades: PhantomData<U>,
 }
 
 trait WorkerHandleBuilder<I, S> {
-    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S>;
+    fn handle(&self) -> impl WorkerHandle<I, S>;
 }
 
 impl<C, A, F, M, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnNoUpgrades, M>, F, M>
@@ -589,10 +579,9 @@ where
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     WorkerHandleH1<WorkerMarkerConnNoUpgrades, M>: WorkerHandle<I, S>,
 {
-    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+    fn handle(&self) -> impl WorkerHandle<I, S> {
         WorkerHandleH1 {
             opts: self.handler.opts.clone(),
-            guard,
             metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnNoUpgrades>,
         }
@@ -608,10 +597,9 @@ where
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     WorkerHandleH1<WorkerMarkerConnUpgrades, M>: WorkerHandle<I, S>,
 {
-    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+    fn handle(&self) -> impl WorkerHandle<I, S> {
         WorkerHandleH1 {
             opts: self.handler.opts.clone(),
-            guard,
             metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnUpgrades>,
         }
@@ -627,10 +615,9 @@ where
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     WorkerHandleH2<M>: WorkerHandle<I, S>,
 {
-    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+    fn handle(&self) -> impl WorkerHandle<I, S> {
         WorkerHandleH2 {
             opts: self.handler.opts.clone(),
-            guard,
             metrics: self.handler.metrics.clone(),
         }
     }
@@ -645,11 +632,10 @@ where
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     WorkerHandleHA<WorkerMarkerConnNoUpgrades, M>: WorkerHandle<I, S>,
 {
-    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+    fn handle(&self) -> impl WorkerHandle<I, S> {
         WorkerHandleHA {
             opts_h1: self.handler.opts_h1.clone(),
             opts_h2: self.handler.opts_h2.clone(),
-            guard,
             metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnNoUpgrades>,
         }
@@ -665,11 +651,10 @@ where
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     WorkerHandleHA<WorkerMarkerConnUpgrades, M>: WorkerHandle<I, S>,
 {
-    fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S> {
+    fn handle(&self) -> impl WorkerHandle<I, S> {
         WorkerHandleHA {
             opts_h1: self.handler.opts_h1.clone(),
             opts_h2: self.handler.opts_h2.clone(),
-            guard,
             metrics: self.handler.metrics.clone(),
             _upgrades: PhantomData::<WorkerMarkerConnUpgrades>,
         }
@@ -705,7 +690,6 @@ macro_rules! conn_handle_h1_impl {
             _ = conn.as_mut().await;
         }
 
-        $self.guard.notify_one();
         drop($permit);
     }};
 }
@@ -749,7 +733,6 @@ macro_rules! conn_handle_ha_impl {
             _ = conn.as_mut().await;
         }
 
-        $self.guard.notify_one();
         drop($permit);
     }};
 }
@@ -784,7 +767,6 @@ macro_rules! conn_handle_h2_impl {
             _ = conn.as_mut().await;
         }
 
-        $self.guard.notify_one();
         drop($permit);
     }};
 }
@@ -981,13 +963,11 @@ pub(crate) trait WorkerAcceptor<L> {
 
 macro_rules! acceptor_impl_stream {
     ($proto_marker:ty, $sockwrap:expr, $stream:expr, $addr_remote:expr, $self:expr, $addr_local:expr, $rt:expr, $tasks:expr, $permit:expr, $connsig:expr, $target:expr, $ctx:expr) => {{
-        let disconnect_guard = Arc::new(tokio::sync::Notify::new());
-        let handle = $self.handle(disconnect_guard.clone());
+        let handle = $self.handle();
         let svc = WorkerSvc {
             f: $target,
             ctx: $ctx,
             rt: $rt,
-            disconnect_guard,
             addr_local: $addr_local.clone(),
             addr_remote: $sockwrap($addr_remote),
             _proto: PhantomData::<$proto_marker>,
@@ -1106,7 +1086,6 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -1139,7 +1118,6 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -1173,7 +1151,6 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,
@@ -1206,7 +1183,6 @@ macro_rules! acceptor_impl {
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
-                    Arc<tokio::sync::Notify>,
                     crate::callbacks::ArcCBScheduler,
                     crate::net::SockAddr,
                     crate::net::SockAddr,

@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use std::sync::{Arc, OnceLock};
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::{Notify, SetOnce, oneshot};
 
 use super::{
     io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
@@ -9,7 +9,7 @@ use super::{
 use crate::{
     callbacks::ArcCBScheduler,
     runtime::{Runtime, RuntimeRef},
-    utils::log_application_callable_exception,
+    utils::{GuardedReceiver, log_application_callable_exception},
     ws::{HyperWebsocket, UpgradeData},
 };
 
@@ -118,12 +118,12 @@ impl CallbackWatcherWebsocket {
 pub(crate) fn call_http(
     cb: ArcCBScheduler,
     rt: RuntimeRef,
-    disconnect_guard: Arc<Notify>,
     body: hyper::body::Incoming,
     scope: HTTPScope,
-) -> oneshot::Receiver<PyResponse> {
+) -> GuardedReceiver<PyResponse> {
     let (tx, rx) = oneshot::channel();
-    let protocol = HTTPProtocol::new(rt.clone(), tx, body, disconnect_guard);
+    let disconnect_guard = Arc::new(SetOnce::new());
+    let protocol = HTTPProtocol::new(rt.clone(), disconnect_guard.clone(), tx, body);
 
     rt.spawn_blocking(move |py| {
         if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope) {
@@ -131,7 +131,7 @@ pub(crate) fn call_http(
         }
     });
 
-    rx
+    GuardedReceiver::new(rx, disconnect_guard)
 }
 
 #[inline]
