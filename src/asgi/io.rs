@@ -29,7 +29,7 @@ use crate::{
     runtime::{
         Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
     },
-    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
+    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream, WsKeepalive, WsKeepaliveConfig, spawn_keepalive},
 };
 
 const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
@@ -415,6 +415,8 @@ pub(crate) struct ASGIWebsocketProtocol {
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
+    ws_config: WsKeepaliveConfig,
+    keepalive: Arc<Mutex<Option<Arc<WsKeepalive>>>>,
 }
 
 impl ASGIWebsocketProtocol {
@@ -425,6 +427,7 @@ impl ASGIWebsocketProtocol {
         upgrade: UpgradeData,
         disconnect_guard: Arc<Notify>,
     ) -> Self {
+        let ws_config = rt.ws_config();
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
@@ -438,6 +441,8 @@ impl ASGIWebsocketProtocol {
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
+            ws_config,
+            keepalive: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -448,10 +453,14 @@ impl ASGIWebsocketProtocol {
         let accepted = self.init_tx.clone();
         let accept_notify = self.init_event.clone();
         let closed = self.closed.clone();
+        let keepalive = self.keepalive.clone();
+        let disconnect_guard = self.disconnect_guard.clone();
+        let ws_config = self.ws_config;
+        let rth = self.rt.clone();
         let rx = self.ws_rx.clone();
         let tx = self.ws_tx.clone();
 
-        future_into_py_futlike(self.rt.clone(), py, async move {
+        future_into_py_futlike(rth.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
                 let mut upgrade_headers = HeaderMap::new();
                 if let Some(v) = subproto {
@@ -461,12 +470,17 @@ impl ASGIWebsocketProtocol {
                     && let Some(websocket) = websocket
                     && let Ok(stream) = websocket.await
                 {
-                    let mut wtx = tx.lock().await;
-                    let mut wrx = rx.lock().await;
-                    let (tx, rx) = stream.split();
-                    *wtx = Some(tx);
-                    *wrx = Some(rx);
-                    drop(wrx);
+                    let (stx, srx) = stream.split();
+                    {
+                        let mut wtx = tx.lock().await;
+                        *wtx = Some(stx);
+                    }
+                    {
+                        let mut wrx = rx.lock().await;
+                        *wrx = Some(srx);
+                    }
+                    let ka = spawn_keepalive(&rth, ws_config, tx, closed.clone(), disconnect_guard);
+                    *keepalive.lock().unwrap() = ka;
                     accepted.store(true, atomic::Ordering::Release);
                     accept_notify.notify_one();
                     return FutureResultToPy::None;
@@ -612,6 +626,7 @@ impl ASGIWebsocketProtocol {
         let accepted = self.init_tx.clone();
         let accepted_ev = self.init_event.clone();
         let closed = self.closed.clone();
+        let keepalive = self.keepalive.clone();
         let transport = self.ws_rx.clone();
         let guard_disconnect = self.disconnect_guard.clone();
 
@@ -621,6 +636,8 @@ impl ASGIWebsocketProtocol {
                 accepted_ev.notified().await;
             }
 
+            let keepalive = keepalive.lock().unwrap().clone();
+
             if let Some(ws) = &mut *(transport.lock().await) {
                 while let Some(recv) = tokio::select! {
                     biased;
@@ -628,7 +645,12 @@ impl ASGIWebsocketProtocol {
                     () = guard_disconnect.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
                 } {
                     match recv {
-                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
+                        Ok(Message::Ping(_)) => {}
+                        Ok(Message::Pong(payload)) => {
+                            if let Some(keepalive) = &keepalive {
+                                keepalive.on_pong(&payload);
+                            }
+                        }
                         Ok(message @ Message::Close(_)) => {
                             closed.store(true, atomic::Ordering::Release);
                             return FutureResultToPy::ASGIWSMessage(message);

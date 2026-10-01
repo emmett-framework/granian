@@ -18,7 +18,7 @@ use super::{
 use crate::{
     conversion::FutureResultToPy,
     runtime::{Runtime, RuntimeRef, empty_future_into_py, err_future_into_py, future_into_py_futlike},
-    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
+    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream, WsKeepalive, WsKeepaliveConfig, spawn_keepalive},
 };
 
 pub(crate) type WebsocketDetachedTransport = (i32, bool, Option<WSTxStream>);
@@ -269,6 +269,7 @@ pub(crate) struct RSGIWebsocketTransport {
     tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     rx: Arc<AsyncMutex<WSRxStream>>,
     closed: Arc<atomic::AtomicBool>,
+    keepalive: Option<Arc<WsKeepalive>>,
 }
 
 impl RSGIWebsocketTransport {
@@ -278,6 +279,7 @@ impl RSGIWebsocketTransport {
         tx: Arc<AsyncMutex<Option<WSTxStream>>>,
         rx: WSRxStream,
         closed: Arc<atomic::AtomicBool>,
+        keepalive: Option<Arc<WsKeepalive>>,
     ) -> Self {
         Self {
             rt,
@@ -285,6 +287,7 @@ impl RSGIWebsocketTransport {
             tx,
             rx: Arc::new(AsyncMutex::new(rx)),
             closed,
+            keepalive,
         }
     }
 }
@@ -294,6 +297,7 @@ impl RSGIWebsocketTransport {
     fn receive<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let transport = self.rx.clone();
         let dg = self.dg.clone();
+        let keepalive = self.keepalive.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Ok(mut stream) = transport.try_lock() {
@@ -303,7 +307,12 @@ impl RSGIWebsocketTransport {
                     () = dg.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
                 } {
                     match recv {
-                        Ok(Message::Ping(_) | Message::Pong(_)) => {}
+                        Ok(Message::Ping(_)) => {}
+                        Ok(Message::Pong(payload)) => {
+                            if let Some(keepalive) = &keepalive {
+                                keepalive.on_pong(&payload);
+                            }
+                        }
                         Ok(message) => return FutureResultToPy::RSGIWSMessage(message),
                         _ => break,
                     }
@@ -359,6 +368,7 @@ pub(crate) struct RSGIWebsocketProtocol {
     upgrade: RwLock<Option<UpgradeData>>,
     closed: Arc<atomic::AtomicBool>,
     transport: Arc<AsyncMutex<Option<WSTxStream>>>,
+    ws_config: WsKeepaliveConfig,
 }
 
 impl RSGIWebsocketProtocol {
@@ -369,6 +379,7 @@ impl RSGIWebsocketProtocol {
         upgrade: UpgradeData,
         disconnect_guard: Arc<Notify>,
     ) -> Self {
+        let ws_config = rt.ws_config();
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
@@ -377,6 +388,7 @@ impl RSGIWebsocketProtocol {
             upgrade: RwLock::new(Some(upgrade)),
             closed: Arc::new(false.into()),
             transport: Arc::new(AsyncMutex::new(None)),
+            ws_config,
         }
     }
 
@@ -409,6 +421,7 @@ impl RSGIWebsocketProtocol {
     fn accept<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let rth = self.rt.clone();
         let dg = self.disconnect_guard.clone();
+        let ws_config = self.ws_config;
         let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
         let closed = self.closed.clone();
         let transport = self.websocket.clone();
@@ -424,7 +437,11 @@ impl RSGIWebsocketProtocol {
                             let mut guard = itransport.lock().await;
                             *guard = Some(stx);
                         }
-                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(rth, dg, itransport, srx, closed))
+                        let keepalive =
+                            spawn_keepalive(&rth, ws_config, itransport.clone(), closed.clone(), dg.clone());
+                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(
+                            rth, dg, itransport, srx, closed, keepalive,
+                        ))
                     }
                     _ => FutureResultToPy::Err(error_proto!()),
                 },

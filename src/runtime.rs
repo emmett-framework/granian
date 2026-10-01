@@ -14,6 +14,7 @@ use super::blocking;
 use super::callbacks::{PyDoneAwaitable, PyEmptyAwaitable, PyErrAwaitable, PyIterAwaitable};
 use super::conversion::FutureResultToPy;
 use super::metrics;
+use super::ws::WsKeepaliveConfig;
 
 pub trait JoinError {
     #[allow(dead_code)]
@@ -46,6 +47,7 @@ pub(crate) struct RuntimeWrapper {
     br: Arc<blocking::BlockingRunner>,
     pr: Arc<Py<PyAny>>,
     sig: Arc<tokio::sync::Notify>,
+    ws_config: WsKeepaliveConfig,
 }
 
 impl RuntimeWrapper {
@@ -55,6 +57,7 @@ impl RuntimeWrapper {
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
         metrics: Option<metrics::ArcWorkerMetrics>,
+        ws_config: WsKeepaliveConfig,
     ) -> Self {
         let br = match metrics {
             Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
@@ -65,6 +68,7 @@ impl RuntimeWrapper {
             br: br.into(),
             pr: py_loop,
             sig: tokio::sync::Notify::new().into(),
+            ws_config,
         }
     }
 
@@ -74,6 +78,7 @@ impl RuntimeWrapper {
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
         metrics: Option<metrics::ArcWorkerMetrics>,
+        ws_config: WsKeepaliveConfig,
     ) -> Self {
         let br = match metrics {
             Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
@@ -84,6 +89,7 @@ impl RuntimeWrapper {
             br: br.into(),
             pr: py_loop,
             sig: tokio::sync::Notify::new().into(),
+            ws_config,
         }
     }
 
@@ -93,6 +99,7 @@ impl RuntimeWrapper {
             self.br.clone(),
             self.pr.clone(),
             self.sig.clone(),
+            self.ws_config,
         )
     }
 }
@@ -103,6 +110,7 @@ pub struct RuntimeRef {
     innerb: Arc<blocking::BlockingRunner>,
     innerp: Arc<Py<PyAny>>,
     sig: Arc<tokio::sync::Notify>,
+    ws_config: WsKeepaliveConfig,
 }
 
 impl RuntimeRef {
@@ -111,17 +119,23 @@ impl RuntimeRef {
         br: Arc<blocking::BlockingRunner>,
         pyloop: Arc<Py<PyAny>>,
         sig: Arc<tokio::sync::Notify>,
+        ws_config: WsKeepaliveConfig,
     ) -> Self {
         Self {
             inner: rt,
             innerb: br,
             innerp: pyloop,
             sig,
+            ws_config,
         }
     }
 
     pub fn close(&self) {
         self.sig.notify_waiters();
+    }
+
+    pub fn ws_config(&self) -> WsKeepaliveConfig {
+        self.ws_config
     }
 }
 
@@ -189,6 +203,7 @@ pub(crate) fn init_runtime_mt(
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
     metrics: Option<metrics::ArcWorkerMetrics>,
+    ws_config: WsKeepaliveConfig,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         RuntimeBuilder::new_multi_thread()
@@ -201,6 +216,7 @@ pub(crate) fn init_runtime_mt(
         py_threads_idle_timeout,
         py_loop,
         metrics,
+        ws_config,
     )
 }
 
@@ -210,8 +226,16 @@ pub(crate) fn init_runtime_st(
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
     metrics: Option<metrics::ArcWorkerMetrics>,
+    ws_config: WsKeepaliveConfig,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop, metrics)
+    RuntimeWrapper::new(
+        blocking_threads,
+        py_threads,
+        py_threads_idle_timeout,
+        py_loop,
+        metrics,
+        ws_config,
+    )
 }
 
 #[inline(always)]

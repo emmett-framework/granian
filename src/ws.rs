@@ -1,3 +1,4 @@
+use futures::sink::SinkExt;
 use http_body_util::BodyExt;
 use hyper::{
     Request, Response, StatusCode,
@@ -8,25 +9,215 @@ use pin_project_lite::pin_project;
 use std::{
     future::Future,
     pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
     task::{Context, Poll},
+    time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
 use tokio_tungstenite::{
     WebSocketStream,
     tungstenite::{
         Error as TungsteniteError, Message,
         error::ProtocolError,
         handshake::derive_accept_key,
-        protocol::{Role, WebSocketConfig},
+        protocol::{
+            Role, WebSocketConfig,
+            frame::{CloseFrame, coding::CloseCode},
+        },
     },
 };
 
 use super::http::HTTPResponse;
 use super::utils::header_contains_value;
+use crate::runtime::{Runtime, RuntimeRef};
 
 pub(crate) type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
 pub(crate) type WSRxStream = futures::stream::SplitStream<WSStream>;
 pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, Message>;
+
+static WS_PING_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+#[inline]
+fn next_ping_id() -> u32 {
+    loop {
+        let id = WS_PING_COUNTER.fetch_add(1, Ordering::Relaxed);
+        if id != 0 {
+            return id;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WsKeepaliveConfig {
+    interval: Option<Duration>,
+    timeout: Option<Duration>,
+}
+
+impl WsKeepaliveConfig {
+    pub const fn disabled() -> Self {
+        Self {
+            interval: None,
+            timeout: None,
+        }
+    }
+
+    pub fn new(interval: Option<f64>, timeout: Option<f64>) -> Self {
+        let sanitize = |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).map(Duration::from_secs_f64);
+        Self {
+            interval: sanitize(interval),
+            timeout: sanitize(timeout),
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.interval.is_some()
+    }
+}
+
+pub(crate) struct WsKeepalive {
+    // `0` means no ping is currently in flight; ping ids start at `1`.
+    pending: AtomicU32,
+    pong: Notify,
+}
+
+impl WsKeepalive {
+    fn new() -> Self {
+        Self {
+            pending: AtomicU32::new(0),
+            pong: Notify::new(),
+        }
+    }
+
+    #[inline]
+    fn track(&self, id: u32) {
+        self.pending.store(id, Ordering::Release);
+    }
+
+    #[inline]
+    fn clear(&self) {
+        self.pending.store(0, Ordering::Release);
+    }
+
+    #[inline]
+    fn is_pending(&self) -> bool {
+        self.pending.load(Ordering::Acquire) != 0
+    }
+
+    pub fn on_pong(&self, payload: &[u8]) {
+        let Ok(bytes) = <[u8; 4]>::try_from(payload) else {
+            return;
+        };
+        let id = u32::from_be_bytes(bytes);
+        if id != 0
+            && self
+                .pending
+                .compare_exchange(id, 0, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            self.pong.notify_one();
+        }
+    }
+}
+
+pub(crate) fn spawn_keepalive(
+    rt: &RuntimeRef,
+    config: WsKeepaliveConfig,
+    tx: Arc<AsyncMutex<Option<WSTxStream>>>,
+    closed: Arc<AtomicBool>,
+    disconnect_guard: Arc<Notify>,
+) -> Option<Arc<WsKeepalive>> {
+    if !config.enabled() {
+        return None;
+    }
+    let keepalive = Arc::new(WsKeepalive::new());
+    let ka = keepalive.clone();
+    rt.spawn(async move {
+        run_keepalive(config, tx, closed, disconnect_guard, ka).await;
+    });
+    Some(keepalive)
+}
+
+async fn run_keepalive(
+    config: WsKeepaliveConfig,
+    tx: Arc<AsyncMutex<Option<WSTxStream>>>,
+    closed: Arc<AtomicBool>,
+    disconnect_guard: Arc<Notify>,
+    keepalive: Arc<WsKeepalive>,
+) {
+    let Some(interval) = config.interval else {
+        return;
+    };
+
+    loop {
+        tokio::select! {
+            biased;
+            () = tokio::time::sleep(interval) => {},
+            () = disconnect_guard.notified() => return,
+        }
+        if closed.load(Ordering::Acquire) {
+            return;
+        }
+
+        let id = next_ping_id();
+        keepalive.track(id);
+        let payload = id.to_be_bytes();
+
+        {
+            let mut guard = tx.lock().await;
+            match guard.as_mut() {
+                Some(stream) => {
+                    if stream.send(Message::Ping(payload.to_vec().into())).await.is_err() {
+                        return;
+                    }
+                }
+                None => return,
+            }
+        }
+
+        let Some(timeout) = config.timeout else {
+            continue;
+        };
+
+        let sleep = tokio::time::sleep(timeout);
+        tokio::pin!(sleep);
+        loop {
+            tokio::select! {
+                biased;
+                () = keepalive.pong.notified() => {
+                    if !keepalive.is_pending() {
+                        break;
+                    }
+                },
+                () = &mut sleep => {
+                    keepalive.clear();
+                    if closed.load(Ordering::Acquire) {
+                        return;
+                    }
+                    log::info!("WebSocket keepalive ping timeout");
+                    closed.store(true, Ordering::Release);
+                    {
+                        let mut guard = tx.lock().await;
+                        if let Some(stream) = guard.as_mut() {
+                            let _ = stream
+                                .send(Message::Close(Some(CloseFrame {
+                                    code: CloseCode::Error,
+                                    reason: "keepalive ping timeout".into(),
+                                })))
+                                .await;
+                            let _ = stream.close().await;
+                        }
+                    }
+                    disconnect_guard.notify_one();
+                    return;
+                },
+                () = disconnect_guard.notified() => return,
+            }
+        }
+    }
+}
 
 pin_project! {
     #[derive(Debug)]

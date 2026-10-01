@@ -206,7 +206,7 @@ impl MetricsExporter {
         let exp = pyself.clone_ref(py);
 
         std::thread::spawn(move || {
-            let rt = crate::runtime::init_runtime_st(1, 0, 0, pynone, None);
+            let rt = crate::runtime::init_runtime_st(1, 0, 0, pynone, None, crate::ws::WsKeepaliveConfig::disabled());
             let local = tokio::task::LocalSet::new();
 
             crate::runtime::block_on_local(&rt, local, spawn_exporter(rt.handler(), exp, sock, sig));
