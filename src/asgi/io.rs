@@ -5,7 +5,12 @@ use hyper::{
     Response, StatusCode, body,
     header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
 };
-use pyo3::{prelude::*, pybacked::PyBackedBytes, types::PyDict};
+use pyo3::{
+    buffer::PyBuffer,
+    prelude::*,
+    pybacked::PyBackedBytes,
+    types::{PyBytes, PyDict, PyMemoryView},
+};
 use std::{
     borrow::Cow,
     pin::Pin,
@@ -736,17 +741,28 @@ fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
 }
 
 #[inline(always)]
+fn body_from_buffer(py: Python, item: &Bound<PyAny>) -> Option<Box<[u8]>> {
+    let view = PyMemoryView::from(item)
+        .ok()?
+        .call_method1(pyo3::intern!(py, "cast"), (pyo3::intern!(py, "B"),))
+        .ok()?;
+    Some(PyBuffer::<u8>::get(&view).ok()?.to_vec(py).ok()?.into())
+}
+
+#[inline(always)]
 fn adapt_body(py: Python, message: &Bound<PyDict>) -> (Box<[u8]>, bool) {
-    let body = message.get_item(pyo3::intern!(py, "body"));
-    let body = match body {
-        Ok(Some(ref item)) => item.extract().unwrap_or(EMPTY_BYTES),
-        _ => EMPTY_BYTES,
+    let body: Box<[u8]> = match message.get_item(pyo3::intern!(py, "body")) {
+        Ok(Some(item)) => match item.cast::<PyBytes>() {
+            Ok(b) => b.as_bytes().into(),
+            Err(_) => body_from_buffer(py, &item).unwrap_or_default(),
+        },
+        _ => EMPTY_BYTES.into(),
     };
     let more = match message.get_item(pyo3::intern!(py, "more_body")) {
         Ok(Some(item)) => item.extract().unwrap_or(false),
         _ => false,
     };
-    (body.into(), more)
+    (body, more)
 }
 
 #[inline(always)]

@@ -60,6 +60,16 @@ async def echo(scope, receive, send):
     await send({'type': 'http.response.body', 'body': body, 'more_body': False})
 
 
+async def memoryview_body_b(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    await send({'type': 'http.response.body', 'body': memoryview(b'\x80').cast('b'), 'more_body': False})
+
+
+async def memoryview_body_h(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    await send({'type': 'http.response.body', 'body': memoryview(b'\x01\x00\x02\x00').cast('H'), 'more_body': False})
+
+
 async def pathsend(scope, receive, send):
     path = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'static' / 'media.png'
     await send(MEDIA_RESPONSE)
@@ -220,6 +230,8 @@ def app(scope, receive, send):
         '/info': info,
         '/sniffio': sniff_aio_impl,
         '/echo': echo,
+        '/memoryview_b': memoryview_body_b,
+        '/memoryview_H': memoryview_body_h,
         '/file': pathsend,
         '/ws_reject': ws_reject,
         '/ws_rejecte': ws_reject_explicit,

@@ -61,6 +61,26 @@ async def test_body_large(asgi_server, runtime_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_memoryview_body_b(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws=False) as port:
+        res = httpx.get(f'http://localhost:{port}/memoryview_b')
+
+    assert res.status_code == 200
+    assert res.content == b'\x80'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_memoryview_body_h(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws=False) as port:
+        res = httpx.get(f'http://localhost:{port}/memoryview_H')
+
+    assert res.status_code == 200
+    assert res.content == b'\x01\x00\x02\x00'
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_app_error(asgi_server, runtime_mode):
