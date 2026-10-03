@@ -84,7 +84,7 @@ def _build_access_logger(fmt):
 
     def _log_dict(scope):
         return {
-            'addr_remote': scope['REMOTE_ADDR'].rsplit(':', 1)[0],
+            'addr_remote': scope['REMOTE_ADDR'],
             'protocol': scope['SERVER_PROTOCOL'],
             'path': scope['PATH_INFO'],
             'qs': scope['QUERY_STRING'],
