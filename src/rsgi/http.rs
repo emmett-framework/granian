@@ -13,7 +13,7 @@ use crate::{
     http::{HTTPProto, HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
     net::SockAddr,
     runtime::{Runtime, RuntimeRef},
-    ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
+    ws::{UpgradeData, WsKeepaliveConfig, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
 
 macro_rules! build_scope {
@@ -54,6 +54,7 @@ macro_rules! handle_request {
             client_addr: SockAddr,
             req: HTTPRequest,
             scheme: HTTPProto,
+            _ws_keepalive: WsKeepaliveConfig,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
@@ -72,6 +73,7 @@ macro_rules! handle_request_with_ws {
             client_addr: SockAddr,
             mut req: HTTPRequest,
             scheme: HTTPProto,
+            ws_keepalive: WsKeepaliveConfig,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 match ws_upgrade(&mut req, None) {
@@ -85,7 +87,16 @@ macro_rules! handle_request_with_ws {
                         rt.spawn_cancellable(cancel_sig.clone(), async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(callback, rth, cancel_sig, ws, UpgradeData::new(res, restx), scope).await
+                            match $handler_ws(
+                                callback,
+                                rth,
+                                cancel_sig,
+                                ws,
+                                UpgradeData::new(res, restx),
+                                scope,
+                                ws_keepalive,
+                            )
+                            .await
                             {
                                 Ok((status, consumed, stream)) => match (consumed, stream) {
                                     (false, _) => {

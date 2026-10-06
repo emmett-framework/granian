@@ -57,13 +57,6 @@ pub(crate) struct WsKeepaliveConfig {
 }
 
 impl WsKeepaliveConfig {
-    pub const fn disabled() -> Self {
-        Self {
-            interval: None,
-            timeout: None,
-        }
-    }
-
     pub fn new(interval: Option<f64>, timeout: Option<f64>) -> Self {
         let sanitize = |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).map(Duration::from_secs_f64);
         Self {

@@ -23,6 +23,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy,
             M: Clone + Sync,
@@ -46,7 +47,6 @@ macro_rules! serve_fn {
                     cfg.py_threads_idle_timeout,
                     rtpyloop,
                     metrics.1.clone(),
-                    cfg.ws_config,
                 )
             });
             let rth = rt.handler();
@@ -140,6 +140,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send,
@@ -171,14 +172,7 @@ macro_rules! serve_fn {
                 let py_loop = py_loop.clone();
 
                 let thread = std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(
-                        1,
-                        0,
-                        0,
-                        py_loop,
-                        None,
-                        crate::ws::WsKeepaliveConfig::disabled(),
-                    );
+                    let rt = crate::runtime::init_runtime_st(1, 0, 0, py_loop, None);
                     let local = tokio::task::LocalSet::new();
 
                     #[cfg(not(Py_GIL_DISABLED))]
@@ -221,7 +215,6 @@ macro_rules! serve_fn {
                 let py_threads = cfg.py_threads;
                 let py_threads_idle_timeout = cfg.py_threads_idle_timeout;
                 let backpressure = cfg.backpressure;
-                let ws_config = cfg.ws_config;
                 let metrics = metrics.clone();
                 let ctx = ctx.clone();
                 let acceptor = acceptor.clone();
@@ -237,7 +230,6 @@ macro_rules! serve_fn {
                         py_threads_idle_timeout,
                         py_loop,
                         metrics.1.clone(),
-                        ws_config,
                     );
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
@@ -301,6 +293,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send,
@@ -321,7 +314,6 @@ macro_rules! serve_fn {
             let py_threads = cfg.py_threads;
             let py_threads_idle_timeout = cfg.py_threads_idle_timeout;
             let backpressure = cfg.backpressure;
-            let ws_config = cfg.ws_config;
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let py_loop = Arc::new(event_loop.clone().unbind());
@@ -333,7 +325,6 @@ macro_rules! serve_fn {
                     py_threads_idle_timeout,
                     py_loop,
                     metrics.1.clone(),
-                    ws_config,
                 );
                 let rth = rt.handler();
                 let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
@@ -536,7 +527,7 @@ macro_rules! gen_serve_match_files {
                 $signal,
                 $metrics,
                 $metrics_opt,
-                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone(), $self.config.ws_config),
                 $acceptor_plain,
                 $acceptor_tls,
                 $target,
@@ -550,7 +541,12 @@ macro_rules! gen_serve_match_files {
                 $signal,
                 $metrics,
                 $metrics_opt,
-                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
+                crate::workers::WorkerCTXFiles::new(
+                    $callback,
+                    $metrics.clone(),
+                    $self.config.ws_config,
+                    $self.config.static_files.clone(),
+                ),
                 $acceptor_plain,
                 $acceptor_tls,
                 $target,

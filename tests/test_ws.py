@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import struct
+import time
 
 import pytest
 import websockets
@@ -61,6 +62,13 @@ def _raw_ws_client(port, path='/ws_echo'):
         sock.close()
         raise
     return sock
+
+
+def _send_pong(sock, payload):
+    """Send a masked pong frame (client frames must be masked per RFC 6455)."""
+    mask = os.urandom(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    sock.sendall(bytes([0x8A, 0x80 | len(payload)]) + mask + masked)
 
 
 @pytest.mark.asyncio
@@ -253,3 +261,33 @@ async def test_keepalive_survives_pong(server, runtime_mode):
             await ws.send('foo')
             res = await ws.recv()
             assert res == 'foo'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+@pytest.mark.xfail(
+    reason='keepalive pongs are only observed while the app calls receive(); '
+    'push-only apps time out on healthy connections (see docs/handoff/WS.md rough edge)',
+    strict=False,
+)
+async def test_keepalive_push_app_with_pong(server, runtime_mode):
+    # /ws_push never calls receive; the client answers every ping, so the
+    # connection must stay open past the timeout regardless of app reads.
+    async with server(runtime_mode, ws_ping_interval=0.1, ws_ping_timeout=0.2) as port:
+        sock = _raw_ws_client(port, path='/ws_push')
+        try:
+            sock.settimeout(2)
+            deadline = time.monotonic() + 1.0
+            pings = 0
+            while time.monotonic() < deadline:
+                opcode, payload = _read_frame(sock)
+                if opcode == 0x9:
+                    pings += 1
+                    _send_pong(sock, payload)
+                elif opcode == 0x8:
+                    raise AssertionError('server closed a healthy keepalive connection')
+                # 0x1/0x2 frames are the app's push messages; ignore them
+            assert pings > 0
+        finally:
+            sock.close()

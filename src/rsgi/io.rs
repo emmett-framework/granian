@@ -378,8 +378,8 @@ impl RSGIWebsocketProtocol {
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
         disconnect_guard: Arc<Notify>,
+        ws_config: WsKeepaliveConfig,
     ) -> Self {
-        let ws_config = rt.ws_config();
         Self {
             rt,
             tx: Mutex::new(Some(tx)),
