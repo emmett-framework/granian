@@ -152,6 +152,15 @@ Options:
                                   default: (auto)]
   --ws / --no-ws                  Enable websockets handling  [env var:
                                   GRANIAN_WEBSOCKETS; default: (enabled)]
+  --ws-ping-interval FLOAT RANGE  Sets an interval (in seconds) for WebSocket
+                                  Ping frames to be sent to keep a connection
+                                  alive (0 disables)  [env var:
+                                  GRANIAN_WS_PING_INTERVAL; x>=0.0]
+  --ws-ping-timeout FLOAT RANGE   Sets a timeout (in seconds) for receiving a
+                                  Pong response to a WebSocket Ping frame (0
+                                  disables the timeout)  [env var:
+                                  GRANIAN_WS_PING_TIMEOUT; default: 60.0;
+                                  x>=0.0]
   --workers INTEGER RANGE         Number of worker processes  [env var:
                                   GRANIAN_WORKERS; default: 1; x>=1]
   --blocking-threads INTEGER RANGE
@@ -547,6 +556,17 @@ and replace the relevant request scope attributes with these values.
 Since altering the request scope based on values from headers is security-sensitive, Granian will check the request is coming from a trusted host as specified by the `trusted_hosts` argument. By default this value is set to `127.0.0.1`, which means Granian will only intercept those headers if the proxy resides on the same machine, but most likely that's not the case in a production environment: you should thus provide the correct set of addresses to the wrappers.
 
 The `trusted_hosts` argument accepts either a string or a list of strings, where valid values are IP addresses (for example, `192.0.2.1` or `fd12:3456:789a::1`) and CIDR ranges (for example, `192.0.2.0/24` or `2001:db8:abcd::/48`). The special *catch-all value* `"*"` (or `["*"]`) will make Granian trust all hosts and effectively disable the security check.
+
+### Websockets
+
+Granian supports WebSocket connections on HTTP/1.1 for ASGI and RSGI applications (they're not available on WSGI or HTTP/2). WebSocket handling is enabled by default and can be turned off with `--no-ws`.
+
+Granian can additionally send periodic WebSocket Ping frames to connected clients, closing the connection when a client does not answer with a matching Pong. This is useful to detect dead/zombie connections and to prevent intermediary proxies from dropping idle sockets. Two settings control this behaviour:
+
+- `--ws-ping-interval`: the number of seconds between Ping frames. A value of `0` – or leaving the default `None` – disables server-initiated pings entirely.
+- `--ws-ping-timeout`: the number of seconds to wait for a Pong response before closing the connection with close code `1011` and reason `keepalive ping timeout`. Defaults to `60` seconds; a value of `0` (or `None`) keeps sending pings without ever timing out.
+
+Server-initiated pings are opt-in (`--ws-ping-interval` defaults to `None`); when pings are enabled, the Pong timeout defaults to `60` seconds. These settings map to uvicorn's `--ws-ping-interval` and `--ws-ping-timeout` options.
 
 ## Free-threaded Python
 

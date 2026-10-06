@@ -6,6 +6,7 @@ use crate::{
     http::{HTTPProto, HTTPRequest, HTTPResponse, HTTPResponseBody, response_500},
     net::SockAddr,
     runtime::RuntimeRef,
+    ws::WsKeepaliveConfig,
 };
 
 #[inline(always)]
@@ -24,6 +25,7 @@ pub(crate) async fn handle(
     client_addr: SockAddr,
     req: HTTPRequest,
     scheme: HTTPProto,
+    _ws_keepalive: WsKeepaliveConfig,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
     if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
