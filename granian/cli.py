@@ -164,7 +164,7 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     '--backlog',
     type=click.IntRange(128),
     default=1024,
-    help='Maximum number of connections to hold in backlog (globally)',
+    help='Maximum number of connections to hold in backlog (per worker, globally for UDS)',
 )
 @option(
     '--backpressure',

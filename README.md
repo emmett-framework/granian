@@ -180,8 +180,8 @@ Options:
   --task-impl [asyncio|rust]      Async task implementation to use  [env var:
                                   GRANIAN_TASK_IMPL; default: (asyncio)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
-                                  backlog (globally)  [env var:
-                                  GRANIAN_BACKLOG; default: 1024; x>=128]
+                                  backlog (per worker, globally for UDS)  [env 
+                                  var: GRANIAN_BACKLOG; default: 1024; x>=128]
   --backpressure INTEGER RANGE    Maximum number of requests to process
                                   concurrently (per worker)  [env var:
                                   GRANIAN_BACKPRESSURE; default:
