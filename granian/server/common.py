@@ -393,7 +393,7 @@ class AbstractServer(Generic[WT]):
                     wrk.kill()
                     wrk.join()
 
-                timeout = max(timeout - (time.monotonic() - now), 0.001)
+                timeout = max(self.workers_kill_timeout - (time.monotonic() - now), 0.001)
 
             logger.info(f'Stopped worker-{wrk.idx + 1}')
 
