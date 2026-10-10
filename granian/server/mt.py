@@ -26,6 +26,12 @@ from .common import (
 )
 
 
+def _close_worker_loop(loop: Any) -> None:
+    if loop.is_running() or loop.is_closed():
+        return
+    loop.close()
+
+
 class WorkerThread(AbstractWorker):
     _idl = 'TID'
 
@@ -38,7 +44,10 @@ class WorkerThread(AbstractWorker):
         @wraps(target)
         def wrapped(worker_id, sig, callback, sock, loop_impl, *args, **kwargs):
             loop = loops.get(loop_impl)
-            return target(worker_id, sig, callback, sock, loop, *args, **kwargs)
+            try:
+                return target(worker_id, sig, callback, sock, loop, *args, **kwargs)
+            finally:
+                _close_worker_loop(loop)
 
         return wrapped
 
