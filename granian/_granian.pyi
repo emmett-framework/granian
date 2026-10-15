@@ -74,6 +74,7 @@ class ASGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        websocket_ping: tuple[float | None, float | None],
     ) -> ASGIWorker: ...
 
 class WSGIWorker:
@@ -123,6 +124,7 @@ class RSGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        websocket_ping: tuple[float | None, float | None],
     ) -> RSGIWorker: ...
 
 class SocketHolder:

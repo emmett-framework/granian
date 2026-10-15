@@ -1,3 +1,4 @@
+use futures::sink::SinkExt;
 use http_body_util::BodyExt;
 use hyper::{
     Request, Response, StatusCode,
@@ -8,25 +9,45 @@ use pin_project_lite::pin_project;
 use std::{
     future::Future,
     pin::Pin,
+    sync::{Arc, atomic},
     task::{Context, Poll},
+    time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::{
+    sync::{Mutex as AsyncMutex, Notify, mpsc},
+    time,
+};
 use tokio_tungstenite::{
     WebSocketStream,
     tungstenite::{
         Error as TungsteniteError, Message,
         error::ProtocolError,
         handshake::derive_accept_key,
-        protocol::{Role, WebSocketConfig},
+        protocol::{
+            Role, WebSocketConfig,
+            frame::{CloseFrame, coding::CloseCode},
+        },
     },
 };
 
 use super::http::HTTPResponse;
+use super::runtime::{Runtime, RuntimeRef};
 use super::utils::header_contains_value;
 
 pub(crate) type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
 pub(crate) type WSRxStream = futures::stream::SplitStream<WSStream>;
 pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, Message>;
+pub(crate) type WSPing = (Option<f64>, Option<f64>);
+
+/// Builds a `'static` websocket target by copying the ping config out of `&self`.
+macro_rules! ws_target {
+    ($self:expr, $handler:path) => {{
+        let websocket_ping = $self.config.websocket_ping;
+        move |rt, dg, cb, sa, ca, req, sch| $handler(rt, dg, cb, sa, ca, req, sch, websocket_ping)
+    }};
+}
+
+pub(crate) use ws_target;
 
 pin_project! {
     #[derive(Debug)]
@@ -137,4 +158,64 @@ pub(crate) fn upgrade_intent<B>(
     };
 
     Ok((response_builder, stream))
+}
+
+async fn ws_send(sink: &AsyncMutex<Option<WSTxStream>>, msg: Message) -> bool {
+    match &mut *sink.lock().await {
+        Some(tx) => tx.send(msg).await.is_ok(),
+        None => false,
+    }
+}
+
+/// Pings an idle peer every interval and closes it with 1011 if nothing is received within the timeout.
+pub(crate) fn spawn_keepalive(
+    rt: &RuntimeRef,
+    cfg: WSPing,
+    sink: Arc<AsyncMutex<Option<WSTxStream>>>,
+    closed: Arc<atomic::AtomicBool>,
+    alive: Arc<atomic::AtomicBool>,
+    disconnect_guard: Arc<Notify>,
+) {
+    let to_duration = |secs: Option<f64>| {
+        secs.and_then(|v| Duration::try_from_secs_f64(v).ok())
+            .filter(|d| !d.is_zero())
+    };
+    let Some(interval) = to_duration(cfg.0) else {
+        return;
+    };
+    let timeout = to_duration(cfg.1);
+
+    rt.spawn(async move {
+        let mut ticker = time::interval_at(time::Instant::now() + interval, interval);
+        ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+        loop {
+            ticker.tick().await;
+            if closed.load(atomic::Ordering::Acquire) {
+                return;
+            }
+            if alive.swap(false, atomic::Ordering::Relaxed) {
+                continue;
+            }
+            if !ws_send(&sink, Message::Ping(hyper::body::Bytes::new())).await {
+                return;
+            }
+            if let Some(timeout) = timeout {
+                time::sleep(timeout).await;
+                if closed.load(atomic::Ordering::Acquire) {
+                    return;
+                }
+                if !alive.swap(false, atomic::Ordering::Relaxed) {
+                    log::info!("Websocket keepalive ping timeout, closing connection");
+                    let frame = CloseFrame {
+                        code: CloseCode::Error,
+                        reason: "keepalive ping timeout".into(),
+                    };
+                    ws_send(&sink, Message::Close(Some(frame))).await;
+                    disconnect_guard.notify_one();
+                    return;
+                }
+            }
+        }
+    });
 }

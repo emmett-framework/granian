@@ -7,6 +7,7 @@ use crate::conversion::{worker_http1_config_from_py, worker_http2_config_from_py
 use crate::net::{ListenerSpec, SocketHolder};
 use crate::serve::gen_serve_match;
 use crate::workers::{WorkerConfig, WorkerSignal};
+use crate::ws::{WSPing, ws_target};
 
 #[pyclass(frozen, module = "granian._granian")]
 pub struct RSGIWorker {
@@ -40,6 +41,7 @@ impl RSGIWorker {
             ssl_crl=vec![],
             ssl_client_verify=false,
             metrics=(None, None),
+            websocket_ping=(None, None),
         )
     )]
     fn new(
@@ -66,6 +68,7 @@ impl RSGIWorker {
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
+        websocket_ping: WSPing,
     ) -> PyResult<Self> {
         Ok(Self {
             config: WorkerConfig::new(
@@ -81,6 +84,7 @@ impl RSGIWorker {
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
                 websockets_enabled,
+                websocket_ping,
                 static_files,
                 ssl_enabled,
                 ssl_cert,
@@ -112,7 +116,7 @@ impl RSGIWorker {
             event_loop,
             signal,
             handle,
-            handle_ws
+            ws_target!(self, handle_ws)
         );
     }
 
@@ -133,7 +137,7 @@ impl RSGIWorker {
             event_loop,
             signal,
             handle,
-            handle_ws
+            ws_target!(self, handle_ws)
         );
     }
 
@@ -154,7 +158,7 @@ impl RSGIWorker {
             event_loop,
             signal,
             handle,
-            handle_ws
+            ws_target!(self, handle_ws)
         );
     }
 
@@ -176,7 +180,7 @@ impl RSGIWorker {
             event_loop,
             signal,
             handle,
-            handle_ws
+            ws_target!(self, handle_ws)
         );
     }
 
@@ -198,7 +202,7 @@ impl RSGIWorker {
             event_loop,
             signal,
             handle,
-            handle_ws
+            ws_target!(self, handle_ws)
         );
     }
 
@@ -220,7 +224,7 @@ impl RSGIWorker {
             event_loop,
             signal,
             handle,
-            handle_ws
+            ws_target!(self, handle_ws)
         );
     }
 }

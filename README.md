@@ -152,6 +152,14 @@ Options:
                                   default: (auto)]
   --ws / --no-ws                  Enable websockets handling  [env var:
                                   GRANIAN_WEBSOCKETS; default: (enabled)]
+  --ws-ping-interval FLOAT RANGE  Seconds of client silence after which a
+                                  websocket ping is sent (unset or 0 disables)
+                                  [env var: GRANIAN_WS_PING_INTERVAL; x>=0]
+  --ws-ping-timeout FLOAT RANGE   Seconds to wait for a client frame after a
+                                  ping before closing the websocket (unset or
+                                  0 disables). Client frames are read only
+                                  while the application is awaiting receive()
+                                  [env var: GRANIAN_WS_PING_TIMEOUT; x>=0]
   --workers INTEGER RANGE         Number of worker processes  [env var:
                                   GRANIAN_WORKERS; default: 1; x>=1]
   --blocking-threads INTEGER RANGE
@@ -517,6 +525,13 @@ $ granian \
 ```
 
 > **Note:** while Granian performs a rewrite on the target directory, the file will still be served if the request path points to it directly (in the example above, requests pointing to `/docs/somefolder` and `/docs/somefolder/index.html` will both respond with the contents of `index.html` – if present). Also, the option will enable this behavior on all the static paths defined.
+
+### Websockets keepalive
+
+Use `--ws-ping-interval` to ping websocket clients after the given number of seconds without receiving anything from them, keeping idle connections alive through proxies and load balancers.
+Add `--ws-ping-timeout` to also close (with code `1011`) the connections where nothing, pong included, is received within the given number of seconds after a ping. Both options are disabled by default.
+
+> **Warning:** client frames are only read while the application awaits `receive()`, so enable the timeout only if your application keeps reading from the websocket, otherwise push-only applications will get their healthy connections closed.
 
 ### Proxies and forwarded headers
 

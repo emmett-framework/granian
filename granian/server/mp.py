@@ -131,6 +131,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -170,6 +171,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -195,6 +197,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -242,6 +245,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -268,6 +272,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -310,6 +315,7 @@ class MPServer(AbstractServer[WorkerProcess]):
             static_path,
             *ssl_ctx,
             metrics,
+            websocket_ping,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -336,6 +342,7 @@ class MPServer(AbstractServer[WorkerProcess]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -482,6 +489,7 @@ class MPServer(AbstractServer[WorkerProcess]):
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
+                (self.ws_ping_interval, self.ws_ping_timeout),
                 self.static_path,
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
