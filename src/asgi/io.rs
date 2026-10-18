@@ -3,7 +3,7 @@ use futures::{StreamExt, TryStreamExt, sink::SinkExt};
 use http_body_util::BodyExt;
 use hyper::{
     Response, StatusCode, body,
-    header::{HeaderMap, HeaderName, HeaderValue, SERVER as HK_SERVER},
+    header::{HeaderMap, HeaderName, HeaderValue},
 };
 use pyo3::{prelude::*, pybacked::PyBackedBytes, types::PyDict};
 use std::{
@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     conversion::FutureResultToPy,
-    http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404},
+    http::{HTTPResponse, HTTPResponseBody, response_404},
     runtime::{
         Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
     },
@@ -731,7 +731,6 @@ fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
         }
         ret.append(HeaderName::from_bytes(&htup[0])?, HeaderValue::from_bytes(&htup[1])?);
     }
-    ret.entry(HK_SERVER).or_insert(HV_SERVER);
     Ok(ret)
 }
 
