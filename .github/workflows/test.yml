@@ -105,6 +105,9 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
     strategy:
