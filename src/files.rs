@@ -21,10 +21,15 @@ pub(crate) fn match_static_file(
     let decoded_uri_path = percent_decode_str(uri_path).decode_utf8_lossy();
     for (prefix, mount_point) in mounts {
         if let Some(file_path) = decoded_uri_path.strip_prefix(prefix) {
+            if !file_path.is_empty() && !file_path.starts_with('/') {
+                continue;
+            }
+
             #[cfg(not(windows))]
             let fpath = format!("{mount_point}{file_path}");
             #[cfg(windows)]
             let fpath = format!("{mount_point}{}", file_path.replace("/", "\\"));
+
             match Path::new(&fpath).canonicalize() {
                 Ok(mut full_path) => {
                     if full_path.is_dir() {
@@ -35,13 +40,15 @@ pub(crate) fn match_static_file(
                             None => return Some(Err(anyhow::anyhow!("dir"))),
                         }
                     }
+
                     #[cfg(windows)]
-                    let full_path = &full_path.display().to_string()[4..];
+                    let full_path = {
+                        let str_path = full_path.display().to_string();
+                        std::path::PathBuf::from(str_path.strip_prefix(r"\\?\").unwrap_or(&str_path))
+                    };
+
                     if full_path.starts_with(mount_point) {
-                        #[cfg(not(windows))]
                         return full_path.to_str().map(ToOwned::to_owned).map(Ok);
-                        #[cfg(windows)]
-                        return Some(Ok(full_path.to_owned()));
                     }
                     return Some(Err(anyhow::anyhow!("outside mount path")));
                 }
