@@ -1,3 +1,4 @@
+import utils.session
 from ._granian import __version__
 from ._loops import loops
 from .server import Server as Granian

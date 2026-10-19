@@ -5,7 +5,8 @@ __pycache__
 .idea/
 *.sublime-*
 .venv
-.vscode
 
 granian/*.so
 target/*
+config.bat
+node_modules
