@@ -180,8 +180,8 @@ Options:
   --task-impl [asyncio|rust]      Async task implementation to use  [env var:
                                   GRANIAN_TASK_IMPL; default: (asyncio)]
   --backlog INTEGER RANGE         Maximum number of connections to hold in
-                                  backlog (globally)  [env var:
-                                  GRANIAN_BACKLOG; default: 1024; x>=128]
+                                  backlog  [env var: GRANIAN_BACKLOG; default:
+                                  1024; x>=128]
   --backpressure INTEGER RANGE    Maximum number of requests to process
                                   concurrently (per worker)  [env var:
                                   GRANIAN_BACKPRESSURE; default:
@@ -443,11 +443,17 @@ Also, **you should generally avoid to configure workers and threads based on num
 
 > **Note:** using multiple workers and respawn options (lifetime, max memory) on Linux requires kernel versions >= 5.14 and the `net.ipv4.tcp_migrate_req` syctl option enabled. Otherwise, during workers respawns, queued connections in the backlog might be dropped.
 
+### Sockets and backlog
+
+On Linux with TCP bindings, every Granian worker opens its own listening socket and the kernel distributes incoming connections across them. In this case, the `backlog` option applies to each worker's socket, thus the total amount of connections that can be queued by the kernel is `backlog * workers`.
+
+On other platforms, and when binding to Unix Domain Sockets, workers share a single listening socket, thus the `backlog` is effectively global, as it's the size of one single queue.
+
 ### Backpressure
 
 Since Granian runs a separated Rust runtime aside of your application that will handle I/O and "send work" to the Python interpreter, a mechanism to avoid pushing more work that what the Python interpreter can actually do is provided: backpressure.
 
-Backpressure in Granian operates at the single worker's connections accept loop, practically interrupting the loop in case too many requests are waiting to be processed down the line. It is a per-worker concurrency limiter: connections exceeding the configured value will wait in the worker's own socket queue – the network stack backlog provided by the OS kernel (and configured with the apposite parameter).
+Backpressure in Granian operates at the single worker's connections accept loop, practically interrupting the loop in case too many requests are waiting to be processed down the line. It is a per-worker concurrency limiter: connections exceeding the configured value will wait in the worker's socket queue – the network stack backlog provided by the OS kernel (and configured with the apposite parameter).
 
 While on asynchronous protocols, the default value for the backpressure should work fine for the vast majority of applications, as _work_ will be handled and suspended by the AsyncIO event loop, on synchronous protocols there's no way to predict the amount of interrupts (and thus GIL releases) your application would do on a single request, and thus you should configure a value that makes sense in your environment. For example, if your WSGI application never does I/O within a request-reponse flow, then you can't really go beyond serial, and thus any backpressure value above 2 wouldn't probably make any difference, as all the requests will just be waiting to acquire the GIL in order to be processed. On the other hand, if your application makes external network requests within the standard request-response flow, a large backpressure can help, as during the time spent on those code paths you can still process other requests. Another example would be if your application communicate with a database, and you have a limited amount of connections that can be opened to that database: in this case setting the backpressure to that value would definitely be the best option.
 
