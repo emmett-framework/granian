@@ -39,7 +39,7 @@ encoding_rs = "=0.8"
 futures = "=0.3"
 futures-util = { version = "=0.3", default-features = false }
 http-body-util = { version = "=0.1" }
-hyper = { version = "=1.11", features = ["http1", "http2", "server"] }
+hyper = { version = "=1.12", features = ["http1", "http2", "server"] }
 hyper-util = { version = "=0.1", features = ["server-auto", "tokio"] }
 interprocess = { version = "=2.3", git = "https://github.com/kotauskas/interprocess.git", rev = "44351c4fe88c72ead4f3b0b762c4cf45beb90841", features = ["tokio"] }
 itertools = "0.15"
