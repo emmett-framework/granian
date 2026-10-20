@@ -658,8 +658,7 @@ Granian follows a *semantic versioning* scheme for its releases, with a `{major}
 
 Mind that bug and security fixes are **usually provided for the latest minor version only**.
 
-Granian is used *in production* by projects like [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81), [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25), [searxng](https://github.com/searxng/searxng/blob/a0ff173799d978873ba022e5d5d8467b8ca7e822/requirements-server.txt#L1) and [Weblate](https://github.com/WeblateOrg/weblate/blob/weblate-5.13.3/pyproject.toml#L238), and by companies like [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26), [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Sentry](https://github.com/getsentry/sentry/blob/25.10.0/pyproject.toml#L38).
-
+Granian is used *in production* by projects like [Orionis Framework](https://github.com/orionis-framework/framework/blob/1.x/pyproject.toml), [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx/blob/v2.17.1/pyproject.toml#L81), [reflex](https://github.com/reflex-dev/reflex/blob/v0.7.14/pyproject.toml#L25), [searxng](https://github.com/searxng/searxng/blob/a0ff173799d978873ba022e5d5d8467b8ca7e822/requirements-server.txt#L1) and [Weblate](https://github.com/WeblateOrg/weblate/blob/weblate-5.13.3/pyproject.toml#L238), and by companies like [Microsoft](https://github.com/microsoft/call-center-ai/blob/958b3192020ab8a49cabd328a873eaa70e8865bc/pyproject.toml#L26), [Mozilla](https://github.com/mozilla/bedrock/blob/2025-06-25/requirements/prod.in#L33) and [Sentry](https://github.com/getsentry/sentry/blob/25.10.0/pyproject.toml#L38).
 ## License
 
 Granian is released under the BSD License.
