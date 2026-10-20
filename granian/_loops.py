@@ -106,3 +106,9 @@ def build_auto_loop():
     if 'winloop' in loops:
         return loops.get('winloop')
     return loops.get('asyncio')
+
+
+def close_active_loop(loop: asyncio.AbstractEventLoop):
+    if loop.is_running() or loop.is_closed():
+        return
+    loop.close()
