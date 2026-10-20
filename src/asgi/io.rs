@@ -29,7 +29,7 @@ use crate::{
     runtime::{
         Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
     },
-    ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
+    ws::{HyperWebsocket, UpgradeData, WSPing, WSRxStream, WSTxStream, spawn_keepalive},
 };
 
 const EMPTY_BYTES: Cow<[u8]> = Cow::Borrowed(b"");
@@ -415,6 +415,8 @@ pub(crate) struct ASGIWebsocketProtocol {
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
+    websocket_ping: WSPing,
+    alive: Arc<atomic::AtomicBool>,
 }
 
 impl ASGIWebsocketProtocol {
@@ -424,6 +426,7 @@ impl ASGIWebsocketProtocol {
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
         disconnect_guard: Arc<Notify>,
+        websocket_ping: WSPing,
     ) -> Self {
         Self {
             rt,
@@ -438,6 +441,8 @@ impl ASGIWebsocketProtocol {
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
+            websocket_ping,
+            alive: Arc::new(false.into()),
         }
     }
 
@@ -450,6 +455,10 @@ impl ASGIWebsocketProtocol {
         let closed = self.closed.clone();
         let rx = self.ws_rx.clone();
         let tx = self.ws_tx.clone();
+        let rt = self.rt.clone();
+        let websocket_ping = self.websocket_ping;
+        let alive = self.alive.clone();
+        let dg = self.disconnect_guard.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(mut upgrade) = upgrade {
@@ -463,6 +472,7 @@ impl ASGIWebsocketProtocol {
                 {
                     let mut wtx = tx.lock().await;
                     let mut wrx = rx.lock().await;
+                    spawn_keepalive(&rt, websocket_ping, tx.clone(), closed.clone(), alive, dg);
                     let (tx, rx) = stream.split();
                     *wtx = Some(tx);
                     *wrx = Some(rx);
@@ -614,6 +624,7 @@ impl ASGIWebsocketProtocol {
         let closed = self.closed.clone();
         let transport = self.ws_rx.clone();
         let guard_disconnect = self.disconnect_guard.clone();
+        let alive = self.alive.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if !accepted.load(atomic::Ordering::Acquire) {
@@ -627,6 +638,7 @@ impl ASGIWebsocketProtocol {
                     recv = ws.next() => recv,
                     () = guard_disconnect.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
                 } {
+                    alive.store(true, atomic::Ordering::Relaxed);
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message @ Message::Close(_)) => {

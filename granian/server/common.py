@@ -105,6 +105,8 @@ class AbstractServer(Generic[WT]):
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
+        ws_ping_interval: float | None = None,
+        ws_ping_timeout: float | None = None,
         backlog: int = 1024,
         backpressure: int | None = None,
         http1_settings: HTTP1Settings | None = None,
@@ -165,6 +167,8 @@ class AbstractServer(Generic[WT]):
         self.task_impl = task_impl
         self.http = http
         self.websockets = websockets
+        self.ws_ping_interval = ws_ping_interval
+        self.ws_ping_timeout = ws_ping_timeout
         self.backlog = max(128, backlog)
         self.backpressure = max(1, backpressure or self.backlog // self.workers)
         self.blocking_threads = (
