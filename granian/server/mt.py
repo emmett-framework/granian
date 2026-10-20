@@ -7,7 +7,7 @@ from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
 from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WSGIWorker
-from .._loops import loops
+from .._loops import close_active_loop, loops
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
 from ..errors import ConfigurationError, FatalError
@@ -26,12 +26,6 @@ from .common import (
 )
 
 
-def _close_worker_loop(loop: Any) -> None:
-    if loop.is_running() or loop.is_closed():
-        return
-    loop.close()
-
-
 class WorkerThread(AbstractWorker):
     _idl = 'TID'
 
@@ -47,7 +41,7 @@ class WorkerThread(AbstractWorker):
             try:
                 return target(worker_id, sig, callback, sock, loop, *args, **kwargs)
             finally:
-                _close_worker_loop(loop)
+                close_active_loop(loop)
 
         return wrapped
 
