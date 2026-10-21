@@ -27,6 +27,7 @@ async def _server(
     task_impl='asyncio',
     static_mount=False,
     static_rewrite=False,
+    runtime_threads=1,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -35,6 +36,7 @@ async def _server(
         'loop': 'asyncio',
         'blocking_threads': 1,
         'runtime_mode': runtime_mode,
+        'runtime_threads': runtime_threads,
         'task_impl': task_impl,
         'websockets': ws,
     }
