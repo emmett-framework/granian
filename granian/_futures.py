@@ -89,7 +89,7 @@ def _cbsched_schedule(loop, ctx, run, cb):
 
 def _cbsched_aioschedule(loop, ctx, cb):
     def _run(coro, watcher):
-        task = loop.create_task(coro)
+        task = loop.create_task(coro, context=watcher.ctx)
         watcher.taskref(task)
 
     def _schedule(watcher):

@@ -13,8 +13,8 @@ use crate::{
 };
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr) => {
-        match $handler($callback, $rt, $server_addr, $client_addr, $req, $scheme, $body).await {
+    ($handler:expr, $rt:expr, $callback:expr, $server_addr:expr, $client_addr:expr, $scheme:expr, $req:expr, $body:expr, $flow:expr) => {
+        match $handler($callback, $rt, $server_addr, $client_addr, $req, $scheme, $body, $flow).await {
             Ok(res) => res,
             _ => {
                 log::error!("ASGI protocol failure");
@@ -35,6 +35,7 @@ macro_rules! handle_request {
             req: HTTPRequest,
             scheme: HTTPProto,
         ) -> HTTPResponse {
+            let flow = rt.resolve_flow(&client_addr, req.headers());
             let (parts, body) = req.into_parts();
             handle_http_response!(
                 $handler,
@@ -44,7 +45,8 @@ macro_rules! handle_request {
                 client_addr,
                 parts,
                 scheme,
-                body
+                body,
+                flow
             )
         }
     };
@@ -61,6 +63,7 @@ macro_rules! handle_request_with_ws {
             mut req: HTTPRequest,
             scheme: HTTPProto,
         ) -> HTTPResponse {
+            let flow = rt.resolve_flow(&client_addr, req.headers());
             if is_ws_upgrade(&req) {
                 return match ws_upgrade(&mut req, None) {
                     Ok((res, ws)) => {
@@ -82,6 +85,7 @@ macro_rules! handle_request_with_ws {
                                 ws,
                                 parts,
                                 UpgradeData::new(res, restx),
+                                flow,
                             )
                             .await
                             {
@@ -142,7 +146,8 @@ macro_rules! handle_request_with_ws {
                 client_addr,
                 parts,
                 scheme,
-                body
+                body,
+                flow
             )
         }
     };

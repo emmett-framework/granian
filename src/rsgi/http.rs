@@ -31,8 +31,8 @@ macro_rules! build_scope {
 }
 
 macro_rules! handle_http_response {
-    ($handler:expr, $rt:expr, $callback:expr, $body:expr, $scope:expr) => {
-        match $handler($callback, $rt, $body, $scope).await {
+    ($handler:expr, $rt:expr, $callback:expr, $body:expr, $scope:expr, $flow:expr) => {
+        match $handler($callback, $rt, $body, $scope, $flow).await {
             Ok(PyResponse::Body(pyres)) => pyres.to_response(),
             Ok(PyResponse::File(pyres)) => pyres.to_response().await,
             Ok(PyResponse::FileRange(pyres)) => pyres.to_response().await,
@@ -55,9 +55,10 @@ macro_rules! handle_request {
             req: HTTPRequest,
             scheme: HTTPProto,
         ) -> HTTPResponse {
+            let flow = rt.resolve_flow(&client_addr, req.headers());
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
-            handle_http_response!($handler, rt, callback, body, scope)
+            handle_http_response!($handler, rt, callback, body, scope, flow)
         }
     };
 }
@@ -73,6 +74,7 @@ macro_rules! handle_request_with_ws {
             mut req: HTTPRequest,
             scheme: HTTPProto,
         ) -> HTTPResponse {
+            let flow = rt.resolve_flow(&client_addr, req.headers());
             if is_ws_upgrade(&req) {
                 match ws_upgrade(&mut req, None) {
                     Ok((res, ws)) => {
@@ -85,7 +87,16 @@ macro_rules! handle_request_with_ws {
                         rt.spawn_cancellable(cancel_sig.clone(), async move {
                             let tx_ref = restx.clone();
 
-                            match $handler_ws(callback, rth, cancel_sig, ws, UpgradeData::new(res, restx), scope).await
+                            match $handler_ws(
+                                callback,
+                                rth,
+                                cancel_sig,
+                                ws,
+                                UpgradeData::new(res, restx),
+                                scope,
+                                flow,
+                            )
+                            .await
                             {
                                 Ok((status, consumed, stream)) => match (consumed, stream) {
                                     (false, _) => {
@@ -136,7 +147,7 @@ macro_rules! handle_request_with_ws {
 
             let (parts, body) = req.into_parts();
             let scope = build_scope!(HTTPScope, server_addr, client_addr, parts, scheme);
-            handle_http_response!($handler_req, rt, callback, body, scope)
+            handle_http_response!($handler_req, rt, callback, body, scope, flow)
         }
     };
 }

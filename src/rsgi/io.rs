@@ -5,7 +5,7 @@ use pyo3::{prelude::*, pybacked::PyBackedStr};
 use std::{
     borrow::Cow,
     pin::Pin,
-    sync::{Arc, Mutex, RwLock, atomic},
+    sync::{Arc, Mutex, OnceLock, RwLock, atomic},
     task::{Context, Poll},
 };
 use tokio::sync::{Mutex as AsyncMutex, Notify, SetOnce, mpsc, oneshot};
@@ -16,8 +16,9 @@ use super::{
     types::{PyResponse, PyResponseBody, PyResponseFile, PyResponseFileRange},
 };
 use crate::{
+    accounting::{self, RequestAcct},
     conversion::FutureResultToPy,
-    runtime::{Runtime, RuntimeRef, empty_future_into_py, err_future_into_py, future_into_py_futlike},
+    runtime::{RequestRt, Runtime, empty_future_into_py, err_future_into_py, future_into_py_futlike},
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
 
@@ -69,12 +70,18 @@ impl ResponseBodyStream {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPStreamTransport {
+    rt: RequestRt,
+    acct: Option<Py<RequestAcct>>,
     tx: mpsc::UnboundedSender<body::Bytes>,
 }
 
 impl RSGIHTTPStreamTransport {
-    pub fn new(transport: mpsc::UnboundedSender<body::Bytes>) -> Self {
-        Self { tx: transport }
+    pub fn new(rt: RequestRt, acct: Option<Py<RequestAcct>>, transport: mpsc::UnboundedSender<body::Bytes>) -> Self {
+        Self {
+            rt,
+            acct,
+            tx: transport,
+        }
     }
 }
 
@@ -83,6 +90,7 @@ impl RSGIHTTPStreamTransport {
 #[pymethods]
 impl RSGIHTTPStreamTransport {
     fn send_bytes<'p>(&self, py: Python<'p>, data: Cow<[u8]>) -> PyResult<Bound<'p, PyAny>> {
+        accounting::debit(&self.rt, self.acct.as_ref());
         let bdata = body::Bytes::from(std::convert::Into::<Box<[u8]>>::into(data));
         match self.tx.send(bdata) {
             Ok(()) => empty_future_into_py(py),
@@ -91,6 +99,7 @@ impl RSGIHTTPStreamTransport {
     }
 
     fn send_str<'p>(&self, py: Python<'p>, data: String) -> PyResult<Bound<'p, PyAny>> {
+        accounting::debit(&self.rt, self.acct.as_ref());
         match self.tx.send(body::Bytes::from(data)) {
             Ok(()) => empty_future_into_py(py),
             _ => err_future_into_py(py, error_stream!()),
@@ -100,17 +109,19 @@ impl RSGIHTTPStreamTransport {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIHTTPProtocol {
-    rt: RuntimeRef,
+    rt: RequestRt,
     disconnect_guard: Arc<SetOnce<()>>,
     tx: Mutex<Option<oneshot::Sender<PyResponse>>>,
     body: Mutex<Option<body::Incoming>>,
     body_stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
     disconnected: Arc<atomic::AtomicBool>,
+    acct: OnceLock<Py<RequestAcct>>,
+    finalized: atomic::AtomicBool,
 }
 
 impl RSGIHTTPProtocol {
     pub fn new(
-        rt: RuntimeRef,
+        rt: RequestRt,
         disconnect_guard: Arc<SetOnce<()>>,
         tx: oneshot::Sender<PyResponse>,
         body: body::Incoming,
@@ -122,7 +133,21 @@ impl RSGIHTTPProtocol {
             body: Mutex::new(Some(body)),
             body_stream: Arc::new(AsyncMutex::new(None)),
             disconnected: Arc::new(atomic::AtomicBool::new(false)),
+            acct: OnceLock::new(),
+            finalized: false.into(),
         }
+    }
+
+    pub(crate) fn set_acct(&self, acct: Py<RequestAcct>) {
+        _ = self.acct.set(acct);
+    }
+
+    pub(crate) fn finalize(&self) {
+        if self.finalized.swap(true, atomic::Ordering::AcqRel) {
+            return;
+        }
+        accounting::debit(&self.rt, self.acct.get());
+        accounting::release(&self.rt);
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<PyResponse>> {
@@ -191,6 +216,7 @@ impl RSGIHTTPProtocol {
 
     #[pyo3(signature = (status=200, headers=vec![]))]
     fn response_empty(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>) {
+        accounting::debit(&self.rt, self.acct.get());
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::empty(status, headers)));
         }
@@ -198,6 +224,7 @@ impl RSGIHTTPProtocol {
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
     fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
+        accounting::debit(&self.rt, self.acct.get());
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(
                 status,
@@ -209,6 +236,7 @@ impl RSGIHTTPProtocol {
 
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
     fn response_str(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) {
+        accounting::debit(&self.rt, self.acct.get());
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
         }
@@ -216,6 +244,7 @@ impl RSGIHTTPProtocol {
 
     #[pyo3(signature = (status, headers, file))]
     fn response_file(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file: String) {
+        accounting::debit(&self.rt, self.acct.get());
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::File(PyResponseFile::new(status, headers, file)));
         }
@@ -233,6 +262,7 @@ impl RSGIHTTPProtocol {
         if start >= end {
             return Err(pyo3::exceptions::PyValueError::new_err("Invalid range"));
         }
+        accounting::debit(&self.rt, self.acct.get());
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::FileRange(PyResponseFileRange::new(
                 status, headers, file, start, end,
@@ -255,7 +285,10 @@ impl RSGIHTTPProtocol {
                 headers,
                 BodyExt::boxed(body_stream),
             )));
-            let trx = Py::new(py, RSGIHTTPStreamTransport::new(body_tx))?;
+            let trx = Py::new(
+                py,
+                RSGIHTTPStreamTransport::new(self.rt.clone(), self.acct.get().map(|a| a.clone_ref(py)), body_tx),
+            )?;
             return Ok(trx.into_bound(py));
         }
         error_proto!()
@@ -264,7 +297,8 @@ impl RSGIHTTPProtocol {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIWebsocketTransport {
-    rt: RuntimeRef,
+    rt: RequestRt,
+    acct: Option<Py<RequestAcct>>,
     dg: Arc<Notify>,
     tx: Arc<AsyncMutex<Option<WSTxStream>>>,
     rx: Arc<AsyncMutex<WSRxStream>>,
@@ -273,7 +307,8 @@ pub(crate) struct RSGIWebsocketTransport {
 
 impl RSGIWebsocketTransport {
     pub fn new(
-        rt: RuntimeRef,
+        rt: RequestRt,
+        acct: Option<Py<RequestAcct>>,
         dg: Arc<Notify>,
         tx: Arc<AsyncMutex<Option<WSTxStream>>>,
         rx: WSRxStream,
@@ -281,6 +316,7 @@ impl RSGIWebsocketTransport {
     ) -> Self {
         Self {
             rt,
+            acct,
             dg,
             tx,
             rx: Arc::new(AsyncMutex::new(rx)),
@@ -318,6 +354,7 @@ impl RSGIWebsocketTransport {
         if self.closed.load(atomic::Ordering::Acquire) {
             return err_future_into_py(py, error_proto!());
         }
+        accounting::debit(&self.rt, self.acct.as_ref());
 
         let transport = self.tx.clone();
         let bdata: Box<[u8]> = data.into();
@@ -336,6 +373,7 @@ impl RSGIWebsocketTransport {
         if self.closed.load(atomic::Ordering::Acquire) {
             return err_future_into_py(py, error_proto!());
         }
+        accounting::debit(&self.rt, self.acct.as_ref());
 
         let transport = self.tx.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
@@ -352,18 +390,20 @@ impl RSGIWebsocketTransport {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RSGIWebsocketProtocol {
-    rt: RuntimeRef,
+    rt: RequestRt,
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
     disconnect_guard: Arc<Notify>,
     websocket: Arc<AsyncMutex<HyperWebsocket>>,
     upgrade: RwLock<Option<UpgradeData>>,
     closed: Arc<atomic::AtomicBool>,
     transport: Arc<AsyncMutex<Option<WSTxStream>>>,
+    acct: OnceLock<Py<RequestAcct>>,
+    finalized: atomic::AtomicBool,
 }
 
 impl RSGIWebsocketProtocol {
     pub fn new(
-        rt: RuntimeRef,
+        rt: RequestRt,
         tx: oneshot::Sender<WebsocketDetachedTransport>,
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
@@ -377,7 +417,21 @@ impl RSGIWebsocketProtocol {
             upgrade: RwLock::new(Some(upgrade)),
             closed: Arc::new(false.into()),
             transport: Arc::new(AsyncMutex::new(None)),
+            acct: OnceLock::new(),
+            finalized: false.into(),
         }
+    }
+
+    pub(crate) fn set_acct(&self, acct: Py<RequestAcct>) {
+        _ = self.acct.set(acct);
+    }
+
+    pub(crate) fn finalize(&self) {
+        if self.finalized.swap(true, atomic::Ordering::AcqRel) {
+            return;
+        }
+        accounting::debit(&self.rt, self.acct.get());
+        accounting::release(&self.rt);
     }
 
     fn consumed(&self) -> bool {
@@ -413,6 +467,7 @@ impl RSGIWebsocketProtocol {
         let closed = self.closed.clone();
         let transport = self.websocket.clone();
         let itransport = self.transport.clone();
+        let acct = self.acct.get().map(|a| a.clone_ref(py));
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut ws = transport.lock().await;
@@ -424,7 +479,9 @@ impl RSGIWebsocketProtocol {
                             let mut guard = itransport.lock().await;
                             *guard = Some(stx);
                         }
-                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(rth, dg, itransport, srx, closed))
+                        FutureResultToPy::RSGIWSAccept(RSGIWebsocketTransport::new(
+                            rth, acct, dg, itransport, srx, closed,
+                        ))
                     }
                     _ => FutureResultToPy::Err(error_proto!()),
                 },

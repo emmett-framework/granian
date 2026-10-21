@@ -40,6 +40,7 @@ impl WSGIWorker {
             ssl_ca=None,
             ssl_crl=vec![],
             ssl_client_verify=false,
+            scheduler=None,
             metrics=(None, None),
         )
     )]
@@ -65,6 +66,7 @@ impl WSGIWorker {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        scheduler: Option<Py<crate::scheduler::FairConfig>>,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
     ) -> PyResult<Self> {
         Ok(Self {
@@ -90,6 +92,7 @@ impl WSGIWorker {
                 ssl_ca,
                 ssl_crl,
                 ssl_client_verify,
+                scheduler,
                 metrics,
             ),
         })

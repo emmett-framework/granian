@@ -2,33 +2,67 @@ use futures::StreamExt;
 use http_body_util::BodyExt;
 use hyper::{body, header::HeaderMap};
 use pyo3::{prelude::*, pybacked::PyBackedStr};
-use std::{borrow::Cow, sync::Mutex};
+use std::{borrow::Cow, sync::Mutex, time::Instant};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{conversion::headers_from_py, http::HTTPResponseBody, utils::log_application_callable_exception};
+use crate::{
+    conversion::headers_from_py, http::HTTPResponseBody, runtime::RequestRt, utils::log_application_callable_exception,
+};
 
 // NOTE: for unknown reasons, under some circumstances (`threading` module usage in app?)
 //       this gets shared across threads. So it can't be `unsendable` (yet?).
 #[pyclass(frozen)]
 pub(super) struct WSGIProtocol {
     tx: Mutex<Option<oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>>>,
+    rt: RequestRt,
+    acct: Mutex<Instant>,
 }
 
 impl WSGIProtocol {
-    pub fn new(tx: oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>) -> Self {
+    pub fn new(rt: RequestRt, tx: oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>) -> Self {
         Self {
             tx: Mutex::new(Some(tx)),
+            rt,
+            acct: Mutex::new(Instant::now()),
         }
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<(u16, HeaderMap, HTTPResponseBody)>> {
         self.tx.lock().map_or(None, |mut v| v.take())
     }
+
+    /// Restart the occupancy clock; called when the request task actually starts.
+    pub fn start(&self) {
+        *self.acct.lock().unwrap() = Instant::now();
+    }
+
+    /// Charge the lane occupancy accumulated since the previous debit to the request's flow.
+    pub fn debit(&self) {
+        let cost = {
+            let mut last = self.acct.lock().unwrap();
+            let now = Instant::now();
+            let cost = now.duration_since(*last).as_nanos() as u64;
+            *last = now;
+            cost
+        };
+        if cost > 0
+            && let Some(flow) = self.rt.flow
+        {
+            self.rt.rt.debit_flow(&flow, cost);
+        }
+    }
+
+    /// Final flush and flow release, at the end of the request task.
+    pub fn finalize(&self) {
+        self.debit();
+        self.rt.release();
+    }
 }
 
 #[pymethods]
 impl WSGIProtocol {
     fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
+        self.debit();
         if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
             let data: Box<[u8]> = body.into();
             let txbody = http_body_util::Full::new(body::Bytes::from(data))
@@ -53,6 +87,7 @@ impl WSGIProtocol {
 
             let mut closed = false;
             loop {
+                self.debit();
                 if let Some(frame) = match body.call_method0(pyo3::intern!(py, "__next__")) {
                     Ok(chunk_obj) => match chunk_obj.extract::<Cow<[u8]>>() {
                         Ok(chunk) => {
@@ -90,6 +125,7 @@ impl WSGIProtocol {
                 }
                 break;
             }
+            self.debit();
         }
     }
 }

@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 
 import click
 
-from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
+from .constants import HTTPModes, Interfaces, Loops, RuntimeModes, Schedulers, SSLProtocols, TaskImpl
 from .errors import FatalError
 from .http import HTTP1Settings, HTTP2Settings
 from .log import LogLevels
@@ -171,6 +171,91 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
     type=click.IntRange(1),
     show_default='backlog/workers',
     help='Maximum number of requests to process concurrently (per worker)',
+)
+@option(
+    '--scheduler',
+    type=EnumType(Schedulers),
+    default=Schedulers.fifo,
+    help='Scheduler implementation to use for events sent to the Python side',
+)
+@option(
+    '--fq-outer-prefix-v4',
+    type=click.IntRange(8, 32),
+    default=24,
+    help='IPv4 outer flow prefix length (fair scheduler)',
+)
+@option(
+    '--fq-outer-prefix-v6',
+    type=click.IntRange(16, 128),
+    default=56,
+    help='IPv6 outer flow prefix length (fair scheduler)',
+)
+@option(
+    '--fq-outer-max',
+    type=click.IntRange(1),
+    default=65_536,
+    help='Maximum outer flows per worker before overflow (fair scheduler)',
+)
+@option(
+    '--fq-inner-max-per-outer',
+    type=click.IntRange(1),
+    default=1_024,
+    help='Maximum inner flows per outer flow before overflow (fair scheduler)',
+)
+@option(
+    '--fq-inner-max',
+    type=click.IntRange(1),
+    default=262_144,
+    help='Maximum inner flows per worker before overflow (fair scheduler)',
+)
+@option(
+    '--fq-burst',
+    type=click.IntRange(0),
+    default=20,
+    help='Fair queuing credit cap, in milliseconds (fair scheduler)',
+)
+@option(
+    '--fq-max-debt',
+    type=click.IntRange(0),
+    default=5_000,
+    help='Fair queuing debt cap, in milliseconds (fair scheduler)',
+)
+@option(
+    '--fq-debt-ttl',
+    type=Duration(1),
+    default=30,
+    help='Evict idle debtors after this many seconds (fair scheduler)',
+)
+@option(
+    '--fq-trusted-proxies',
+    default='127.0.0.1,::1',
+    help='Trusted proxy peers whose client IP header is honoured, or "*" (fair scheduler)',
+)
+@option(
+    '--fq-client-ip-header',
+    default='x-forwarded-for',
+    help='Header to read the client IP from (fair scheduler)',
+)
+@option(
+    '--fq-inner-headers',
+    default='user-agent,accept-language,sec-ch-ua,sec-ch-ua-platform,sec-ch-ua-mobile,authorization',
+    help='Request headers hashed into the inner flow key (fair scheduler)',
+)
+@option(
+    '--fq-inner-cookies',
+    default='sessionid,session',
+    help='Cookies hashed into the inner flow key (fair scheduler)',
+)
+@option(
+    '--fq-inner-include-ip/--no-fq-inner-include-ip',
+    default=True,
+    help='Include the full client IP in the inner flow key (fair scheduler)',
+)
+@option(
+    '--fq-monitoring-tool-id',
+    type=click.IntRange(0, 5),
+    default=4,
+    help='sys.monitoring tool ID used to measure lane occupancy (fair scheduler)',
 )
 @option(
     '--http1-buffer-size',
@@ -451,6 +536,21 @@ def cli(
     task_impl: TaskImpl,
     backlog: int,
     backpressure: int | None,
+    scheduler: Schedulers,
+    fq_outer_prefix_v4: int,
+    fq_outer_prefix_v6: int,
+    fq_outer_max: int,
+    fq_inner_max_per_outer: int,
+    fq_inner_max: int,
+    fq_burst: int,
+    fq_max_debt: int,
+    fq_debt_ttl: int,
+    fq_trusted_proxies: str,
+    fq_client_ip_header: str,
+    fq_inner_headers: str,
+    fq_inner_cookies: str,
+    fq_inner_include_ip: bool,
+    fq_monitoring_tool_id: int,
     http1_buffer_size: int,
     http1_header_read_timeout: int,
     http1_keep_alive: bool,
@@ -537,6 +637,21 @@ def cli(
         websockets=websockets,
         backlog=backlog,
         backpressure=backpressure,
+        scheduler=scheduler,
+        fq_outer_prefix_v4=fq_outer_prefix_v4,
+        fq_outer_prefix_v6=fq_outer_prefix_v6,
+        fq_outer_max=fq_outer_max,
+        fq_inner_max_per_outer=fq_inner_max_per_outer,
+        fq_inner_max=fq_inner_max,
+        fq_burst=fq_burst,
+        fq_max_debt=fq_max_debt,
+        fq_debt_ttl=fq_debt_ttl,
+        fq_trusted_proxies=fq_trusted_proxies,
+        fq_client_ip_header=fq_client_ip_header,
+        fq_inner_headers=fq_inner_headers,
+        fq_inner_cookies=fq_inner_cookies,
+        fq_inner_include_ip=fq_inner_include_ip,
+        fq_monitoring_tool_id=fq_monitoring_tool_id,
         http1_settings=HTTP1Settings(
             header_read_timeout=http1_header_read_timeout,
             keep_alive=http1_keep_alive,

@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use std::sync::{Arc, Condvar, Mutex};
 
-use super::workers::{Worker, WorkerAcceptor, WorkerConfig, WorkerSignal};
+use super::workers::{SchedulerConfig, Worker, WorkerAcceptor, WorkerConfig, WorkerSignal};
 
 macro_rules! serve_fn {
     (mt $name:ident, $listener:ty, $listener_gen:ident) => {
@@ -38,6 +38,7 @@ macro_rules! serve_fn {
             let backpressure = cfg.backpressure;
 
             let rtpyloop = Arc::new(event_loop.clone().unbind());
+            let scheduler = build_scheduler(cfg);
             let rt = py.detach(|| {
                 crate::runtime::init_runtime_mt(
                     cfg.threads,
@@ -46,6 +47,7 @@ macro_rules! serve_fn {
                     cfg.py_threads_idle_timeout,
                     rtpyloop,
                     metrics.1.clone(),
+                    scheduler,
                 )
             });
             let rth = rt.handler();
@@ -159,6 +161,7 @@ macro_rules! serve_fn {
 
             let py_loop = Arc::new(event_loop.clone().unbind());
             let mc_notify = Arc::new(tokio::sync::Notify::new());
+            let scheduler = build_scheduler(cfg);
 
             let metrics_thread = if let Some(metrics_interval) = cfg.metrics.0 {
                 let metrics = metrics.1.clone().unwrap();
@@ -168,9 +171,10 @@ macro_rules! serve_fn {
                 let aggr = cfg.metrics.1.as_ref().map(|v| v.clone_ref(py));
                 let srx = srx.clone();
                 let py_loop = py_loop.clone();
+                let scheduler = scheduler.clone();
 
                 let thread = std::thread::spawn(move || {
-                    let rt = crate::runtime::init_runtime_st(1, 0, 0, py_loop, None);
+                    let rt = crate::runtime::init_runtime_st(1, 0, 0, py_loop, None, scheduler);
                     let local = tokio::task::LocalSet::new();
 
                     #[cfg(not(Py_GIL_DISABLED))]
@@ -220,6 +224,7 @@ macro_rules! serve_fn {
                 let target = target.clone();
                 let py_loop = py_loop.clone();
                 let srx = srx.clone();
+                let scheduler = scheduler.clone();
 
                 workers.push(std::thread::spawn(move || {
                     let rt = crate::runtime::init_runtime_st(
@@ -228,6 +233,7 @@ macro_rules! serve_fn {
                         py_threads_idle_timeout,
                         py_loop,
                         metrics.1.clone(),
+                        scheduler,
                     );
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
@@ -314,6 +320,7 @@ macro_rules! serve_fn {
 
             let (stx, srx) = tokio::sync::watch::channel(false);
             let py_loop = Arc::new(event_loop.clone().unbind());
+            let scheduler = build_scheduler(cfg);
 
             let worker = std::thread::spawn(move || {
                 let rt = crate::runtime::init_runtime_st(
@@ -322,6 +329,7 @@ macro_rules! serve_fn {
                     py_threads_idle_timeout,
                     py_loop,
                     metrics.1.clone(),
+                    scheduler,
                 );
                 let rth = rt.handler();
                 let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target, metrics.0);
@@ -550,6 +558,13 @@ macro_rules! gen_serve_match_files {
 
 macro_rules! gen_serve_match {
     ($sm:expr, $acceptor_plain:ident, $acceptor_tls:ident, $self:expr, $py:expr, $callback:expr, $event_loop:expr, $signal:expr, $target:expr, $targetws:expr) => {{
+        if $self.config.monitoring
+            && let crate::workers::SchedulerConfig::Fair(cfg) = &$self.config.scheduler
+            && let Err(err) = crate::accounting::install_monitoring($py, $callback.get(), cfg.get().monitoring_tool_id)
+        {
+            log::error!("Cannot install sys.monitoring hooks for lane occupancy: {err:?}");
+        }
+
         let metrics_obj = std::sync::Arc::new(crate::metrics::WorkerMetrics::new());
         match $self.config.metrics.0.is_some() {
             false => crate::serve::gen_serve_match_files!(
@@ -589,3 +604,11 @@ pub(crate) use gen_serve_match;
 pub(crate) use gen_serve_match_files;
 pub(crate) use gen_serve_match_proto;
 pub(crate) use gen_serve_match_tls;
+
+/// Build the per-worker scheduler from its configuration, if not the default FIFO one.
+pub(crate) fn build_scheduler(cfg: &WorkerConfig) -> Option<Arc<crate::scheduler::SchedulerImpl>> {
+    match &cfg.scheduler {
+        SchedulerConfig::Fifo => None,
+        SchedulerConfig::Fair(cfg) => Some(Arc::new(crate::scheduler::SchedulerImpl::fair(cfg.get().clone()))),
+    }
+}

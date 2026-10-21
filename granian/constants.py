@@ -38,6 +38,11 @@ class TaskImpl(StrEnum):
     rust = 'rust'
 
 
+class Schedulers(StrEnum):
+    fifo = 'fifo'
+    fair = 'fair'
+
+
 class SSLProtocols(StrEnum):
     tls12 = 'tls1.2'
     tls13 = 'tls1.3'

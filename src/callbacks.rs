@@ -13,7 +13,7 @@ pub(crate) struct CallbackScheduler {
     #[pyo3(get)]
     _loop: Py<PyAny>,
     #[pyo3(get)]
-    _ctx: Py<PyAny>,
+    pub(crate) _ctx: Py<PyAny>,
     schedule_fn: OnceLock<Py<PyAny>>,
     aio_task: Py<PyAny>,
     aio_tenter: Py<PyAny>,

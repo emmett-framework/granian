@@ -26,7 +26,10 @@ pub(crate) async fn handle(
     scheme: HTTPProto,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
-    if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
+    let flow = rt.resolve_flow(&client_addr, &parts.headers);
+    if let Ok((status, headers, body)) =
+        call_http(rt, callback, server_addr, client_addr, scheme, parts, body, flow).await
+    {
         return build_response(status, headers, body);
     }
 

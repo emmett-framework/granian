@@ -9,6 +9,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use pyo3::prelude::*;
 use std::sync::OnceLock;
 
+mod accounting;
 mod asgi;
 mod asyncio;
 mod blocking;
@@ -21,6 +22,7 @@ mod metrics;
 mod net;
 mod rsgi;
 mod runtime;
+mod scheduler;
 mod serve;
 mod sys;
 mod tls;
@@ -48,6 +50,7 @@ fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("__version__", get_granian_version())?;
     module.add("BUILD_GIL", BUILD_GIL)?;
     module.add_class::<callbacks::CallbackScheduler>()?;
+    module.add_class::<scheduler::FairConfig>()?;
     asgi::init_pymodule(module)?;
     ipc::init_pymodule(module)?;
     metrics::init_pymodule(module)?;
