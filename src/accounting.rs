@@ -32,16 +32,61 @@ impl AcctState {
 
 /// Python-visible handle stored in a `ContextVar`, so that the monitoring callbacks can
 /// look up which request is currently executing on the loop thread.
+///
+/// On async interfaces it is also how the request takes turns on the event loop: the
+/// task driver in `granian._futures` queues a turn (`lane_wait`) before each step and gives
+/// the lane back (`lane_release`) when the step suspends; `lane_dispatch` grants the next
+/// turn. So the fair scheduler, not the loop's FIFO ready queue, decides which request's
+/// step runs next.
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct RequestAcct {
     pub(crate) state: Arc<AcctState>,
+    rt: RequestRt,
 }
 
 impl RequestAcct {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(rt: RequestRt) -> Self {
         Self {
             state: Arc::new(AcctState::default()),
+            rt,
         }
+    }
+}
+
+#[pymethods]
+impl RequestAcct {
+    /// Queue for the loop lane; `fut` gets resolved once it is this request's turn.
+    /// Returns `True` when the caller must schedule `lane_dispatch` with `call_soon`.
+    fn lane_wait(&self, py: Python<'_>, fut: Py<PyAny>) -> PyResult<bool> {
+        match self.rt.flow.as_ref() {
+            Some(flow) => Ok(self.rt.rt.lane_enqueue(flow, fut)),
+            // only tracked requests get an accounting handle, but never leave a waiter hanging
+            None => {
+                fut.call_method1(py, "set_result", (py.None(),))?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// The step suspended: charge its occupancy and give the lane back. Returns `True` when
+    /// other requests are waiting and the caller must schedule `lane_dispatch`.
+    fn lane_release(&self) -> bool {
+        debit_state(&self.rt, &self.state);
+        self.rt.rt.lane_release()
+    }
+
+    /// Grant the lane to the waiting turn with the highest remaining budget.
+    fn lane_dispatch(&self, py: Python<'_>) -> PyResult<()> {
+        while let Some(fut) = self.rt.rt.lane_next() {
+            let fut = fut.bind(py);
+            // a turn whose task got cancelled while waiting is skipped
+            if fut.call_method0("done")?.is_truthy()? {
+                continue;
+            }
+            fut.call_method1("set_result", (py.None(),))?;
+            break;
+        }
+        Ok(())
     }
 }
 
@@ -82,6 +127,13 @@ fn take_current(state: &Arc<AcctState>) -> u64 {
     state.take()
 }
 
+/// The context variable holding the current request's `RequestAcct`, exposed to Python so the
+/// task driver can find the request's lane handle.
+#[pyfunction]
+pub(crate) fn request_acct_var(py: Python<'_>) -> Py<PyAny> {
+    acct_var(py).clone_ref(py)
+}
+
 /// The context variable holding the current request's `RequestAcct`.
 pub(crate) fn acct_var(py: Python<'_>) -> &'static Py<PyAny> {
     static VAR: OnceLock<Py<PyAny>> = OnceLock::new();
@@ -103,8 +155,14 @@ fn current_acct(py: Python<'_>) -> Option<Arc<AcctState>> {
 
 /// Charge everything the request consumed since its last debit to its flow.
 pub(crate) fn debit(rt: &RequestRt, acct: Option<&Py<RequestAcct>>) {
-    if let (Some(flow), Some(acct)) = (rt.flow.as_ref(), acct) {
-        let cost = take_current(&acct.get().state);
+    if let Some(acct) = acct {
+        debit_state(rt, &acct.get().state);
+    }
+}
+
+fn debit_state(rt: &RequestRt, state: &Arc<AcctState>) {
+    if let Some(flow) = rt.flow.as_ref() {
+        let cost = take_current(state);
         if cost > 0 {
             rt.rt.debit_flow(flow, cost);
         }
@@ -189,16 +247,16 @@ impl MonitoringEnd {
 }
 
 /// Create a per-request `RequestAcct` and the context that carries it, when the request is
-/// tracked by the scheduler.
+/// tracked by the scheduler (`tracked` is then its runtime handle).
 pub(crate) fn build_acct(
     py: Python<'_>,
     scheduler: &CallbackScheduler,
-    tracked: bool,
+    tracked: Option<RequestRt>,
 ) -> (Option<Py<RequestAcct>>, Option<Py<PyAny>>) {
-    if !tracked {
+    let Some(rt) = tracked else {
         return (None, None);
-    }
-    match Py::new(py, RequestAcct::new()) {
+    };
+    match Py::new(py, RequestAcct::new(rt)) {
         Ok(acct) => match build_context(py, scheduler, &acct) {
             Ok(ctx) => (Some(acct), Some(ctx)),
             Err(err) => {

@@ -58,6 +58,20 @@ pub(crate) trait Scheduler: Send + Sync + 'static {
     fn pop(&self) -> Option<BlockingTask>;
     fn pop_timeout(&self, d: Duration) -> Result<BlockingTask, PopError>;
     fn len(&self) -> usize;
+
+    /// Queue a turn on the event-loop lane for a step of a tracked request (`fut` is returned
+    /// by `lane_next` once it is granted); `true` if the caller must schedule a dispatch.
+    fn lane_enqueue(&self, _flow: &FlowRef, _fut: Py<PyAny>) -> bool {
+        false
+    }
+    /// Pick the next turn to grant, if any (or let the lane go idle).
+    fn lane_next(&self) -> Option<Py<PyAny>> {
+        None
+    }
+    /// A granted step ended; `true` if the caller must schedule a dispatch.
+    fn lane_release(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -117,10 +131,61 @@ impl Scheduler for FifoScheduler {
 // Fair queuing
 // ---------------------------------------------------------------------------------------------
 
+/// The fair queue serves two independent lanes, sharing the flows' budgets.
+///
+/// * `Events`: the tasks pushed by Rust for the Python thread(s), as for every scheduler.
+/// * `Steps`: on async interfaces, the event loop itself. A tracked request must hold it to
+///   run a step of its task, and hands it back when the step suspends. Without it, every
+///   admitted request would be an ordinary asyncio task, stepped in FIFO order by the loop's
+///   ready queue, and the fair queue would only decide in which order requests *start*.
+#[derive(Clone, Copy)]
+enum Lane {
+    Events = 0,
+    Steps = 1,
+}
+
+const LANES: usize = 2;
+
+/// What a flow queues on a lane: events on `Lane::Events`, turns on `Lane::Steps`.
+enum Item {
+    Task(BlockingTask),
+    Turn(Turn),
+}
+
+/// A request waiting for the loop: the future to resolve once it is granted the lane.
+///
+/// Turns can be dropped off the loop thread, e.g. with the scheduler at worker shutdown, and
+/// releasing a Python reference requires being attached to the interpreter. Attach if
+/// possible, otherwise (interpreter finalizing) leak the reference rather than abort.
+struct Turn(std::mem::ManuallyDrop<Py<PyAny>>);
+
+impl Turn {
+    fn new(fut: Py<PyAny>) -> Self {
+        Self(std::mem::ManuallyDrop::new(fut))
+    }
+
+    fn into_inner(mut self) -> Py<PyAny> {
+        // SAFETY: the value is taken exactly once, and `self` is forgotten right after.
+        let fut = unsafe { std::mem::ManuallyDrop::take(&mut self.0) };
+        std::mem::forget(self);
+        fut
+    }
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        // SAFETY: `drop` runs at most once and `into_inner` forgets `self`.
+        let mut fut = Some(unsafe { std::mem::ManuallyDrop::take(&mut self.0) });
+        if Python::try_attach(|_| drop(fut.take())).is_none() {
+            std::mem::forget(fut);
+        }
+    }
+}
+
 struct InnerFlow {
     used: u64,
     in_flight: usize,
-    queued: VecDeque<BlockingTask>,
+    queued: [VecDeque<Item>; LANES],
     last_active: Instant,
 }
 
@@ -129,9 +194,13 @@ impl InnerFlow {
         Self {
             used: v.saturating_sub(burst),
             in_flight: 0,
-            queued: VecDeque::new(),
+            queued: [VecDeque::new(), VecDeque::new()],
             last_active: Instant::now(),
         }
+    }
+
+    fn idle(&self) -> bool {
+        self.queued.iter().all(VecDeque::is_empty)
     }
 }
 
@@ -140,7 +209,7 @@ struct OuterFlow {
     v: u64,
     in_flight: usize,
     inners: HashMap<u64, InnerFlow>,
-    backlog: BTreeSet<(u64, u64)>,
+    backlog: [BTreeSet<(u64, u64)>; LANES],
     last_active: Instant,
 }
 
@@ -151,8 +220,38 @@ impl OuterFlow {
             v,
             in_flight: 0,
             inners: HashMap::new(),
-            backlog: BTreeSet::new(),
+            backlog: [BTreeSet::new(), BTreeSet::new()],
             last_active: Instant::now(),
+        }
+    }
+
+    fn backlogged(&self) -> bool {
+        self.backlog.iter().any(|b| !b.is_empty())
+    }
+}
+
+/// Move an inner flow to its new `used` position in every lane it is backlogged on.
+fn rekey_inner(backlog: &mut [BTreeSet<(u64, u64)>; LANES], inner: &InnerFlow, ikey: u64, old: u64) {
+    if inner.used == old {
+        return;
+    }
+    for (lane, set) in backlog.iter_mut().enumerate() {
+        if !inner.queued[lane].is_empty() {
+            set.remove(&(old, ikey));
+            set.insert((inner.used, ikey));
+        }
+    }
+}
+
+/// Move an outer flow to its new `used` position in every lane it is backlogged on.
+fn rekey_outer(root: &mut [BTreeSet<(u64, OuterKey)>; LANES], o: &OuterFlow, okey: OuterKey, old: u64) {
+    if o.used == old {
+        return;
+    }
+    for (lane, set) in root.iter_mut().enumerate() {
+        if !o.backlog[lane].is_empty() {
+            set.remove(&(old, okey));
+            set.insert((o.used, okey));
         }
     }
 }
@@ -160,11 +259,14 @@ impl OuterFlow {
 struct FairQueue {
     v: u64,
     outers: HashMap<OuterKey, OuterFlow>,
-    root_backlog: BTreeSet<(u64, OuterKey)>,
+    root_backlog: [BTreeSet<(u64, OuterKey)>; LANES],
     system: VecDeque<BlockingTask>,
+    /// Queued events (system + `Lane::Events`); the length seen by the blocking pool.
     queued: usize,
     inner_count: usize,
     overflow_outer: Option<OuterKey>,
+    /// Whether some request currently holds (or has been granted) the loop.
+    lane_busy: bool,
     cfg: FairConfigInner,
     closed: bool,
 }
@@ -191,11 +293,12 @@ impl FairQueue {
         Self {
             v: 0,
             outers: HashMap::new(),
-            root_backlog: BTreeSet::new(),
+            root_backlog: [BTreeSet::new(), BTreeSet::new()],
             system: VecDeque::new(),
             queued: 0,
             inner_count: 0,
             overflow_outer: None,
+            lane_busy: false,
             cfg,
             closed: false,
         }
@@ -207,37 +310,44 @@ impl FairQueue {
     }
 
     fn push(&mut self, task: BlockingTask, flow: Option<FlowRef>) {
-        let Some(FlowRef {
+        match flow {
+            Some(flow) => self.push_item(Lane::Events, Item::Task(task), flow),
+            None => self.system.push_back(task),
+        }
+        self.queued += 1;
+    }
+
+    fn push_item(&mut self, lane: Lane, item: Item, flow: FlowRef) {
+        let FlowRef {
             outer: okey,
             inner: ikey,
-        }) = flow
-        else {
-            self.system.push_back(task);
-            self.queued += 1;
-            return;
-        };
-
+        } = flow;
+        let lane = lane as usize;
         let v = self.v;
         let burst = self.cfg.burst;
+        let now = Instant::now();
+
         let o = self.outers.entry(okey).or_insert_with(|| OuterFlow::new(v, burst));
-        o.last_active = Instant::now();
+        o.last_active = now;
         let ov = o.v;
-        let outer_backlogged = !o.backlog.is_empty();
+        let outer_backlogged = !o.backlog[lane].is_empty();
 
         let inner = o.inners.entry(ikey).or_insert_with(|| InnerFlow::new(ov, burst));
-        inner.last_active = Instant::now();
-        if inner.queued.is_empty() {
+        inner.last_active = now;
+        if inner.queued[lane].is_empty() {
+            let old = inner.used;
             inner.used = inner.used.max(ov.saturating_sub(burst));
-            o.backlog.insert((inner.used, ikey));
+            rekey_inner(&mut o.backlog, inner, ikey, old);
+            o.backlog[lane].insert((inner.used, ikey));
         }
-        inner.queued.push_back(task);
+        inner.queued[lane].push_back(item);
 
         if !outer_backlogged {
+            let old = o.used;
             o.used = o.used.max(v.saturating_sub(burst));
-            self.root_backlog.insert((o.used, okey));
+            rekey_outer(&mut self.root_backlog, o, okey, old);
+            self.root_backlog[lane].insert((o.used, okey));
         }
-
-        self.queued += 1;
     }
 
     fn pop_task(&mut self) -> Option<BlockingTask> {
@@ -245,32 +355,75 @@ impl FairQueue {
             self.queued -= 1;
             return Some(task);
         }
+        match self.pop_item(Lane::Events)? {
+            Item::Task(task) => {
+                self.queued -= 1;
+                Some(task)
+            }
+            // never pushed on the events lane
+            Item::Turn(_) => None,
+        }
+    }
+
+    fn pop_item(&mut self, lane: Lane) -> Option<Item> {
+        let lane = lane as usize;
 
         // root level: backlogged outer with the highest remaining budget (= lowest `used`)
-        let (o_used, okey) = *self.root_backlog.iter().next()?;
+        let (o_used, okey) = *self.root_backlog[lane].iter().next()?;
         self.v = self.v.max(o_used);
 
         let o = self.outers.get_mut(&okey)?;
-        let (i_used, ikey) = *o.backlog.iter().next()?;
+        let (i_used, ikey) = *o.backlog[lane].iter().next()?;
         o.v = o.v.max(i_used);
 
         let inner = o.inners.get_mut(&ikey)?;
-        let task = inner.queued.pop_front()?;
-        self.queued -= 1;
+        let item = inner.queued[lane].pop_front()?;
 
-        if inner.queued.is_empty() {
-            o.backlog.remove(&(i_used, ikey));
+        if inner.queued[lane].is_empty() {
+            o.backlog[lane].remove(&(i_used, ikey));
         }
-        if o.backlog.is_empty() {
-            self.root_backlog.remove(&(o_used, okey));
+        if o.backlog[lane].is_empty() {
+            self.root_backlog[lane].remove(&(o_used, okey));
         }
 
-        Some(task)
+        Some(item)
+    }
+
+    // -- loop lane -----------------------------------------------------------------------------
+    //
+    // The lane is busy from the moment a dispatch is pending until the granted step ends.
+    // Waiting turns are never granted on the spot: the caller schedules a dispatch with
+    // `call_soon`, which runs after every wakeup already in the loop's ready queue, so that
+    // the choice is made among all the requests that are ready to run, not just the first.
+
+    /// Queue a turn; `true` if the lane was idle and the caller must schedule a dispatch.
+    fn lane_enqueue(&mut self, flow: FlowRef, fut: Py<PyAny>) -> bool {
+        self.push_item(Lane::Steps, Item::Turn(Turn::new(fut)), flow);
+        !std::mem::replace(&mut self.lane_busy, true)
+    }
+
+    /// Dispatch: the turn with the highest remaining budget, or `None` (the lane goes idle).
+    fn lane_next(&mut self) -> Option<Py<PyAny>> {
+        if let Some(Item::Turn(turn)) = self.pop_item(Lane::Steps) {
+            return Some(turn.into_inner());
+        }
+        self.lane_busy = false;
+        None
+    }
+
+    /// The granted step ended; `true` if turns are waiting and a dispatch must be scheduled.
+    fn lane_release(&mut self) -> bool {
+        if self.root_backlog[Lane::Steps as usize].is_empty() {
+            self.lane_busy = false;
+            return false;
+        }
+        true
     }
 
     fn debit(&mut self, flow: &FlowRef, cost: u64) {
         let v = self.v;
         let max_debt = self.cfg.max_debt;
+        let now = Instant::now();
 
         let Some(o) = self.outers.get_mut(&flow.outer) else {
             return;
@@ -280,20 +433,14 @@ impl FairQueue {
         if let Some(inner) = o.inners.get_mut(&flow.inner) {
             let old = inner.used;
             inner.used = inner.used.saturating_add(cost).min(ov.saturating_add(max_debt));
-            inner.last_active = Instant::now();
-            if !inner.queued.is_empty() && inner.used != old {
-                o.backlog.remove(&(old, flow.inner));
-                o.backlog.insert((inner.used, flow.inner));
-            }
+            inner.last_active = now;
+            rekey_inner(&mut o.backlog, inner, flow.inner, old);
         }
 
-        let old_o = o.used;
+        let old = o.used;
         o.used = o.used.saturating_add(cost).min(v.saturating_add(max_debt));
-        o.last_active = Instant::now();
-        if !o.backlog.is_empty() && o.used != old_o {
-            self.root_backlog.remove(&(old_o, flow.outer));
-            self.root_backlog.insert((o.used, flow.outer));
-        }
+        o.last_active = now;
+        rekey_outer(&mut self.root_backlog, o, flow.outer, old);
     }
 
     fn release(&mut self, flow: FlowRef) {
@@ -309,18 +456,20 @@ impl FairQueue {
             }
 
             let drop_inner = o.inners.get(&flow.inner).is_some_and(|inner| {
-                inner.queued.is_empty()
+                inner.idle()
                     && inner.in_flight == 0
                     && (Self::budget_pos(outer_v, inner.used) || now.duration_since(inner.last_active) > ttl)
             });
             if drop_inner && let Some(inner) = o.inners.remove(&flow.inner) {
                 self.inner_count = self.inner_count.saturating_sub(1);
-                o.backlog.remove(&(inner.used, flow.inner));
+                for set in &mut o.backlog {
+                    set.remove(&(inner.used, flow.inner));
+                }
             }
 
             if o.inners.is_empty()
                 && o.in_flight == 0
-                && o.backlog.is_empty()
+                && !o.backlogged()
                 && (Self::budget_pos(self.v, o.used) || now.duration_since(o.last_active) > ttl)
             {
                 remove_outer = true;
@@ -344,7 +493,7 @@ impl FairQueue {
         for (okey, o) in &mut self.outers {
             let mut dead_inners = Vec::new();
             for (ikey, inner) in &o.inners {
-                if inner.queued.is_empty()
+                if inner.idle()
                     && inner.in_flight == 0
                     && (Self::budget_pos(o.v, inner.used) || now.duration_since(inner.last_active) > ttl)
                 {
@@ -354,13 +503,15 @@ impl FairQueue {
             for ikey in dead_inners {
                 if let Some(inner) = o.inners.remove(&ikey) {
                     self.inner_count = self.inner_count.saturating_sub(1);
-                    o.backlog.remove(&(inner.used, ikey));
+                    for set in &mut o.backlog {
+                        set.remove(&(inner.used, ikey));
+                    }
                 }
             }
 
             if o.inners.is_empty()
                 && o.in_flight == 0
-                && o.backlog.is_empty()
+                && !o.backlogged()
                 && (Self::budget_pos(v, o.used) || now.duration_since(o.last_active) > ttl)
             {
                 dead_outers.push(*okey);
@@ -608,6 +759,18 @@ impl FairScheduler {
     pub fn len(&self) -> usize {
         self.q.lock().unwrap().queued
     }
+
+    pub fn lane_enqueue(&self, flow: &FlowRef, fut: Py<PyAny>) -> bool {
+        self.q.lock().unwrap().lane_enqueue(*flow, fut)
+    }
+
+    pub fn lane_next(&self) -> Option<Py<PyAny>> {
+        self.q.lock().unwrap().lane_next()
+    }
+
+    pub fn lane_release(&self) -> bool {
+        self.q.lock().unwrap().lane_release()
+    }
 }
 
 impl Drop for FairScheduler {
@@ -640,6 +803,15 @@ impl Scheduler for FairScheduler {
     }
     fn len(&self) -> usize {
         FairScheduler::len(self)
+    }
+    fn lane_enqueue(&self, flow: &FlowRef, fut: Py<PyAny>) -> bool {
+        FairScheduler::lane_enqueue(self, flow, fut)
+    }
+    fn lane_next(&self) -> Option<Py<PyAny>> {
+        FairScheduler::lane_next(self)
+    }
+    fn lane_release(&self) -> bool {
+        FairScheduler::lane_release(self)
     }
 }
 
@@ -721,6 +893,30 @@ impl Scheduler for SchedulerImpl {
         match self {
             Self::Fifo(s) => s.len(),
             Self::Fair(s) => s.len(),
+        }
+    }
+
+    #[inline]
+    fn lane_enqueue(&self, flow: &FlowRef, fut: Py<PyAny>) -> bool {
+        match self {
+            Self::Fifo(s) => s.lane_enqueue(flow, fut),
+            Self::Fair(s) => s.lane_enqueue(flow, fut),
+        }
+    }
+
+    #[inline]
+    fn lane_next(&self) -> Option<Py<PyAny>> {
+        match self {
+            Self::Fifo(s) => s.lane_next(),
+            Self::Fair(s) => s.lane_next(),
+        }
+    }
+
+    #[inline]
+    fn lane_release(&self) -> bool {
+        match self {
+            Self::Fifo(s) => s.lane_release(),
+            Self::Fair(s) => s.lane_release(),
         }
     }
 }
@@ -1098,6 +1294,107 @@ mod tests {
             .resolve(&peer_v6("::ffff:203.0.113.9"), &HeaderMap::new())
             .unwrap();
         assert_eq!(mapped.outer, OuterKey::from_v4(Ipv4Addr::new(203, 0, 113, 0)));
+    }
+
+    /// Queue a turn identified by `id` (a Python int, so the granted turn can be told apart).
+    fn turn(sched: &FairScheduler, flow: &FlowRef, id: u32) -> bool {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let fut = id.into_pyobject(py).unwrap().into_any().unbind();
+            sched.lane_enqueue(flow, fut)
+        })
+    }
+
+    fn next_turn(sched: &FairScheduler) -> Option<u32> {
+        pyo3::Python::attach(|py| sched.lane_next().map(|fut| fut.extract::<u32>(py).unwrap()))
+    }
+
+    #[test]
+    fn loop_lane_dispatch_protocol() {
+        let sched = FairScheduler::new(cfg());
+        let flow = sched.resolve(&peer([10, 0, 0, 1]), &HeaderMap::new()).unwrap();
+
+        // the first turn on an idle lane asks for a dispatch, later ones do not
+        assert!(turn(&sched, &flow, 0));
+        assert!(!turn(&sched, &flow, 1));
+
+        assert_eq!(next_turn(&sched), Some(0));
+        // the granted step ends while a turn is waiting: dispatch again
+        assert!(sched.lane_release());
+        assert_eq!(next_turn(&sched), Some(1));
+        // nobody is waiting anymore: the lane goes idle
+        assert!(!sched.lane_release());
+        assert!(turn(&sched, &flow, 2));
+        assert_eq!(next_turn(&sched), Some(2));
+        assert!(!sched.lane_release());
+        // a dispatch that finds nothing (e.g. only cancelled turns) also idles the lane
+        assert!(turn(&sched, &flow, 3));
+        assert_eq!(next_turn(&sched), Some(3));
+        assert_eq!(next_turn(&sched), None);
+        assert!(turn(&sched, &flow, 4));
+    }
+
+    #[test]
+    fn loop_lane_orders_steps_by_budget() {
+        let sched = FairScheduler::new(cfg());
+        let hog = sched
+            .resolve(
+                &peer([10, 0, 0, 1]),
+                &HeaderMap::from_iter([(hyper::header::USER_AGENT, HeaderValue::from_static("hog"))]),
+            )
+            .unwrap();
+        let light = sched
+            .resolve(
+                &peer([10, 0, 0, 1]),
+                &HeaderMap::from_iter([(hyper::header::USER_AGENT, HeaderValue::from_static("light"))]),
+            )
+            .unwrap();
+        assert_eq!(hog.outer, light.outer);
+        assert_ne!(hog.inner, light.inner);
+
+        // the hog has several steps ready, then the light flow becomes ready too
+        turn(&sched, &hog, 0);
+        turn(&sched, &hog, 1);
+        turn(&sched, &hog, 2);
+        turn(&sched, &light, 10);
+
+        // the hog's previous steps burned 50ms of loop time
+        sched.debit(&hog, 50_000_000);
+
+        assert_eq!(next_turn(&sched), Some(10));
+        assert!(sched.lane_release());
+        // the hog's own steps keep their order
+        assert_eq!(next_turn(&sched), Some(0));
+        assert_eq!(next_turn(&sched), Some(1));
+        assert_eq!(next_turn(&sched), Some(2));
+        assert!(!sched.lane_release());
+    }
+
+    #[test]
+    fn debits_keep_both_lanes_consistent() {
+        let sched = FairScheduler::new(cfg());
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let a = sched.resolve(&peer([10, 0, 0, 1]), &HeaderMap::new()).unwrap();
+        let b = sched.resolve(&peer([10, 1, 0, 1]), &HeaderMap::new()).unwrap();
+
+        // `a` is backlogged on both lanes when it gets debited
+        sched.push(task(&order, 0), Some(&a)).unwrap();
+        turn(&sched, &a, 0);
+        sched.push(task(&order, 1), Some(&b)).unwrap();
+        turn(&sched, &b, 1);
+        sched.debit(&a, 100_000_000);
+
+        run_task(sched.pop_timeout(Duration::from_millis(0)).unwrap());
+        run_task(sched.pop_timeout(Duration::from_millis(0)).unwrap());
+        assert_eq!(*order.lock().unwrap(), vec![1, 0]);
+        assert_eq!(next_turn(&sched), Some(1));
+        assert_eq!(next_turn(&sched), Some(0));
+        assert_eq!(next_turn(&sched), None);
+
+        // and the flows can still be released and collected
+        sched.release(a);
+        sched.release(b);
+        assert_eq!(sched.len(), 0);
     }
 
     fn peer_v6(addr: &str) -> SockAddr {

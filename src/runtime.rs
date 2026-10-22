@@ -170,6 +170,21 @@ impl RuntimeRef {
     pub fn debit_flow(&self, flow: &FlowRef, cost_ns: u64) {
         self.sched.debit(flow, cost_ns);
     }
+
+    #[inline]
+    pub fn lane_enqueue(&self, flow: &FlowRef, fut: Py<PyAny>) -> bool {
+        self.sched.lane_enqueue(flow, fut)
+    }
+
+    #[inline]
+    pub fn lane_next(&self) -> Option<Py<PyAny>> {
+        self.sched.lane_next()
+    }
+
+    #[inline]
+    pub fn lane_release(&self) -> bool {
+        self.sched.lane_release()
+    }
 }
 
 impl JoinError for tokio::task::JoinError {

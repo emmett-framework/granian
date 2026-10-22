@@ -51,6 +51,7 @@ fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("BUILD_GIL", BUILD_GIL)?;
     module.add_class::<callbacks::CallbackScheduler>()?;
     module.add_class::<scheduler::FairConfig>()?;
+    module.add_function(pyo3::wrap_pyfunction!(accounting::request_acct_var, module)?)?;
     asgi::init_pymodule(module)?;
     ipc::init_pymodule(module)?;
     metrics::init_pymodule(module)?;

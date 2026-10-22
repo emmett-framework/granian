@@ -138,7 +138,7 @@ pub(crate) fn call_http(
     flow: Option<FlowRef>,
 ) -> GuardedReceiver<PyResponse> {
     let rrt = RequestRt::new(rt.clone(), flow);
-    let tracked = flow.is_some();
+    let tracked = flow.is_some().then(|| rrt.clone());
     let (tx, rx) = oneshot::channel();
     let disconnect_guard = Arc::new(SetOnce::new());
     let protocol = HTTPProtocol::new(rrt, disconnect_guard.clone(), tx, body);
@@ -170,7 +170,7 @@ pub(crate) fn call_ws(
     flow: Option<FlowRef>,
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
     let rrt = RequestRt::new(rt.clone(), flow);
-    let tracked = flow.is_some();
+    let tracked = flow.is_some().then(|| rrt.clone());
     let (tx, rx) = oneshot::channel();
     let protocol = WebsocketProtocol::new(rrt, tx, ws, upgrade, disconnect_guard);
 
