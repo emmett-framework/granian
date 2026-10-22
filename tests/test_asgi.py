@@ -73,6 +73,33 @@ async def test_app_error(asgi_server, runtime_mode):
 @pytest.mark.asyncio
 @pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+@pytest.mark.parametrize('task_impl', ['asyncio', 'rust'])
+async def test_app_error_during_response_stream(asgi_server, runtime_mode, task_impl):
+    async with asgi_server(runtime_mode, ws=False, task_impl=task_impl, runtime_threads=4) as port:
+        with pytest.raises(httpx.RemoteProtocolError):
+            with httpx.stream('POST', f'http://localhost:{port}/err_app_stream') as response:
+                assert response.status_code == 200
+                response.read()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+@pytest.mark.parametrize('task_impl', ['asyncio', 'rust'])
+@pytest.mark.parametrize('reference', ['receive', 'send'])
+async def test_app_error_during_response_stream_with_protocol_reference(
+    asgi_server, runtime_mode, task_impl, reference
+):
+    async with asgi_server(runtime_mode, ws=False, task_impl=task_impl, runtime_threads=4) as port:
+        with pytest.raises(httpx.RemoteProtocolError):
+            with httpx.stream('GET', f'http://localhost:{port}/err_app_stream_ref?{reference}', timeout=5) as response:
+                assert response.status_code == 200
+                response.read()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(bool(os.getenv('PGO_RUN')), reason='PGO build')
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_protocol_error(asgi_server, runtime_mode):
     async with asgi_server(runtime_mode, ws=False) as port:
         res = httpx.get(f'http://localhost:{port}/err_proto/type')
