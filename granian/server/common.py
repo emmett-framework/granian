@@ -57,13 +57,20 @@ class AbstractWorker:
 
     def _watcher(self):
         self.inner.join()
-        if not self.interrupt_by_parent:
+        if self.interrupt_by_parent:
+            return
+        clean_exit = getattr(self.inner, 'exitcode', None) == 0
+        if clean_exit:
+            logger.info(f'worker-{self.idx + 1} exited')
+        else:
             logger.error(f'Unexpected exit from worker-{self.idx + 1}')
-            if self.parent.reload_on_changes and self.parent.reload_ignore_worker_failure:
-                return
-            self.parent.interrupt_children.append(self.idx)
-            self.parent.main_loop_interrupt.set()
-
+        if self.parent.reload_on_changes and self.parent.reload_ignore_worker_failure:
+            return
+        self.parent.interrupt_children.append(self.idx)
+        if not clean_exit:
+            self.parent.crashed_children.append(self.idx)
+        self.parent.main_loop_interrupt.set()
+    
     def _watch(self):
         watcher = threading.Thread(target=self._watcher)
         watcher.start()
@@ -233,6 +240,7 @@ class AbstractServer(Generic[WT]):
         self.main_loop_interrupt = threading.Event()
         self.interrupt_signal = False
         self.interrupt_children = []
+        self.crashed_children = []
         self.respawned_wrks = {}
         self.reload_signal = False
         self.lifetime_signal = False
@@ -515,7 +523,7 @@ class AbstractServer(Generic[WT]):
 
         logger.info('Granian shutdown completed, see ya!')
 
-        if not exit_code and self.interrupt_children:
+        if not exit_code and self.crashed_children:
             exit_code = 1
         if exit_code:
             sys.exit(exit_code)
@@ -546,7 +554,7 @@ class AbstractServer(Generic[WT]):
                     break
 
                 cycle = time.monotonic()
-                if any(cycle - self.respawned_wrks.get(idx, 0) <= 5.5 for idx in self.interrupt_children):
+                if any(cycle - self.respawned_wrks.get(idx, 0) <= 5.5 for idx in self.crashed_children):
                     logger.error('Worker crash loop detected, exiting')
                     break
 
@@ -555,7 +563,9 @@ class AbstractServer(Generic[WT]):
                 self.respawned_wrks.clear()
                 self.main_loop_interrupt.clear()
                 self._respawn_workers(workers, spawn_target, target_loader)
-                self._metrics.incr_respawn_err(1)
+                if self.crashed_children:
+                    self._metrics.incr_respawn_err(1)
+                    self.crashed_children.clear()
 
             if self.reload_signal:
                 self._reload(spawn_target, target_loader)
