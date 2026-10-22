@@ -1,0 +1,30 @@
+name: vouch manage
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: vouch-manage
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  manage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: mitchellh/vouch/action/manage-by-issue@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+      with:
+        repo: ${{ github.repository }}
+        issue-id: ${{ github.event.issue.number }}
+        comment-id: ${{ github.event.comment.id }}
+        pull-request: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
