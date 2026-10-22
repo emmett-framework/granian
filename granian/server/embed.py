@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, RSGIWorker, WorkerSignal
+from .._granian import ASGIWorker, FairConfig, RSGIWorker, WorkerSignal
 from .._imports import dotenv
 from .._internal import load_env
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
+from ..constants import Schedulers
 from ..errors import ConfigurationError, FatalError
 from ..rsgi import _callback_wrapper as _rsgi_call_wrap, _callbacks_from_target as _rsgi_cbs_from_target
 from .common import (
@@ -108,6 +109,23 @@ class Server(AbstractServer[AsyncWorker]):
         websockets: bool = True,
         backlog: int = 128,
         backpressure: int | None = None,
+        scheduler: Schedulers | str = Schedulers.fifo,
+        fq_outer_prefix_v4: int = 24,
+        fq_outer_prefix_v6: int = 56,
+        fq_outer_max: int = 65_536,
+        fq_inner_max_per_outer: int = 1_024,
+        fq_inner_max: int = 262_144,
+        fq_burst: int = 20,
+        fq_max_debt: int = 5_000,
+        fq_debt_ttl: int = 30,
+        fq_trusted_proxies: str | Sequence[str] = '127.0.0.1,::1',
+        fq_client_ip_header: str = 'x-forwarded-for',
+        fq_inner_headers: str | Sequence[str] = (
+            'user-agent,accept-language,sec-ch-ua,sec-ch-ua-platform,sec-ch-ua-mobile,authorization'
+        ),
+        fq_inner_cookies: str | Sequence[str] = 'sessionid,session',
+        fq_inner_include_ip: bool = True,
+        fq_monitoring_tool_id: int = 4,
         http1_settings: HTTP1Settings | None = None,
         http2_settings: HTTP2Settings | None = None,
         log_enabled: bool = True,
@@ -144,6 +162,21 @@ class Server(AbstractServer[AsyncWorker]):
             websockets=websockets,
             backlog=backlog,
             backpressure=backpressure,
+            scheduler=scheduler,
+            fq_outer_prefix_v4=fq_outer_prefix_v4,
+            fq_outer_prefix_v6=fq_outer_prefix_v6,
+            fq_outer_max=fq_outer_max,
+            fq_inner_max_per_outer=fq_inner_max_per_outer,
+            fq_inner_max=fq_inner_max,
+            fq_burst=fq_burst,
+            fq_max_debt=fq_max_debt,
+            fq_debt_ttl=fq_debt_ttl,
+            fq_trusted_proxies=fq_trusted_proxies,
+            fq_client_ip_header=fq_client_ip_header,
+            fq_inner_headers=fq_inner_headers,
+            fq_inner_cookies=fq_inner_cookies,
+            fq_inner_include_ip=fq_inner_include_ip,
+            fq_monitoring_tool_id=fq_monitoring_tool_id,
             http1_settings=http1_settings,
             http2_settings=http2_settings,
             log_enabled=log_enabled,
@@ -193,6 +226,7 @@ class Server(AbstractServer[AsyncWorker]):
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
+                self.fq_config,
             ),
             sig=sig,
         )
@@ -219,6 +253,7 @@ class Server(AbstractServer[AsyncWorker]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
         fut = loop.create_future()
@@ -246,6 +281,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             (None, None),
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
@@ -275,6 +311,7 @@ class Server(AbstractServer[AsyncWorker]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
     ):
         lifespan_handler = LifespanProtocol(callback)
         wcallback = _future_watcher_wrapper(
@@ -311,6 +348,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             (None, None),
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
@@ -341,6 +379,7 @@ class Server(AbstractServer[AsyncWorker]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
         wcallback = _future_watcher_wrapper(_rsgi_call_wrap(callback, log_access_fmt))
@@ -371,6 +410,7 @@ class Server(AbstractServer[AsyncWorker]):
             websockets,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             (None, None),
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
@@ -488,6 +528,8 @@ class Server(AbstractServer[AsyncWorker]):
         if self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
             raise ConfigurationError('blocking_threads')
+
+        self._validate_scheduler()
 
         if self.websockets:
             if self.http == HTTPModes.http2:

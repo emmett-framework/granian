@@ -50,7 +50,7 @@ pem = "=3.0"
 percent-encoding = "=2.3"
 pin-project-lite = "=0.2"
 pkcs8 = { version = "=0.11", features = ["encryption", "pkcs5"] }
-pyo3 = { version = "=0.30", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
+pyo3 = { version = "=0.30", features = ["anyhow", "bytes", "generate-import-lib"] }
 pyo3-log = { version = "=0.13", git = "https://github.com/gi0baro/pyo3-log.git", branch = "relaxed-pyo3-pin" }
 rustls-pemfile = "2.2"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -67,6 +67,10 @@ tokio-util = { version = "0.7", features = ["codec", "rt"] }
 pyo3-build-config = "=0.30"
 
 [features]
+default = ["extension-module"]
+# `extension-module` is only needed to build the wheel; keeping it out of the base
+# dependency lets `cargo test --no-default-features` link against libpython.
+extension-module = ["pyo3/extension-module"]
 jemalloc = ["dep:tikv-jemallocator"]
 mimalloc = ["dep:mimalloc"]
 

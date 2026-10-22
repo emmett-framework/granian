@@ -6,7 +6,7 @@ from functools import wraps
 from typing import Any
 
 from .._futures import _future_watcher_wrapper, _new_cbscheduler
-from .._granian import ASGIWorker, RSGIWorker, WorkerSignal, WSGIWorker
+from .._granian import ASGIWorker, FairConfig, RSGIWorker, WorkerSignal, WSGIWorker
 from .._loops import close_active_loop, loops
 from .._types import SSLCtx
 from ..asgi import LifespanProtocol, _callback_wrapper as _asgi_call_wrap
@@ -95,6 +95,7 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
         metrics: Any,
     ):
         wcallback = _future_watcher_wrapper(_asgi_call_wrap(callback, scope_opts, {}, log_access_fmt))
@@ -126,6 +127,7 @@ class MTServer(AbstractServer[WorkerThread]):
             websockets,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
@@ -156,6 +158,7 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
         metrics: Any,
     ):
         lifespan_handler = LifespanProtocol(callback)
@@ -195,6 +198,7 @@ class MTServer(AbstractServer[WorkerThread]):
             websockets,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
@@ -226,6 +230,7 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
         metrics: Any,
     ):
         callback, callback_init, callback_del = _rsgi_cbs_from_target(callback)
@@ -260,6 +265,7 @@ class MTServer(AbstractServer[WorkerThread]):
             websockets,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
@@ -291,6 +297,7 @@ class MTServer(AbstractServer[WorkerThread]):
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
         scope_opts: dict[str, Any],
+        fq_config: dict[str, Any] | None,
         metrics: Any,
     ):
         wcallback = _wsgi_call_wrap(callback, scope_opts, log_access_fmt)
@@ -318,6 +325,7 @@ class MTServer(AbstractServer[WorkerThread]):
             http2_settings,
             static_path,
             *ssl_ctx,
+            FairConfig(**fq_config) if fq_config else None,
             metrics,
         )
         serve = getattr(worker, WORKERS_METHODS[runtime_mode][(sock[0] or sock[1]).is_uds()])
@@ -353,6 +361,7 @@ class MTServer(AbstractServer[WorkerThread]):
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
                 {'url_path_prefix': self.url_path_prefix},
+                self.fq_config,
                 (self.metrics_scrape_interval if self.metrics_enabled else None, self._metrics),
             ),
             sig=sig,

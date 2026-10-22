@@ -1,3 +1,4 @@
+use hyper::HeaderMap;
 use pyo3::{IntoPyObjectExt, prelude::*};
 use std::{future::Future, sync::Arc};
 use tokio::{
@@ -14,6 +15,8 @@ use super::blocking;
 use super::callbacks::{PyDoneAwaitable, PyEmptyAwaitable, PyErrAwaitable, PyIterAwaitable};
 use super::conversion::FutureResultToPy;
 use super::metrics;
+use super::net::SockAddr;
+use super::scheduler::{FlowRef, Scheduler, SchedulerImpl};
 
 pub trait JoinError {
     #[allow(dead_code)]
@@ -32,6 +35,13 @@ pub trait Runtime: Send + 'static {
     where
         F: FnOnce(Python) + Send + 'static;
 
+    fn spawn_blocking_flow<F>(&self, task: F, _flow: Option<&FlowRef>)
+    where
+        F: FnOnce(Python) + Send + 'static,
+    {
+        self.spawn_blocking(task);
+    }
+
     fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
     where
         F: Future<Output = ()> + Send + 'static;
@@ -46,6 +56,7 @@ pub(crate) struct RuntimeWrapper {
     br: Arc<blocking::BlockingRunner>,
     pr: Arc<Py<PyAny>>,
     sig: Arc<tokio::sync::Notify>,
+    sched: Arc<SchedulerImpl>,
 }
 
 impl RuntimeWrapper {
@@ -55,16 +66,24 @@ impl RuntimeWrapper {
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
         metrics: Option<metrics::ArcWorkerMetrics>,
+        scheduler: Option<Arc<SchedulerImpl>>,
     ) -> Self {
+        let sched = scheduler.unwrap_or_else(|| Arc::new(SchedulerImpl::fifo()));
         let br = match metrics {
-            Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
-            None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout),
+            Some(metrics) => blocking::BlockingRunner::new_with_metrics(
+                py_threads,
+                py_threads_idle_timeout,
+                metrics,
+                Some(sched.clone()),
+            ),
+            None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout, Some(sched.clone())),
         };
         Self {
             inner: default_runtime(blocking_threads),
             br: br.into(),
             pr: py_loop,
             sig: tokio::sync::Notify::new().into(),
+            sched,
         }
     }
 
@@ -74,16 +93,24 @@ impl RuntimeWrapper {
         py_threads_idle_timeout: u64,
         py_loop: Arc<Py<PyAny>>,
         metrics: Option<metrics::ArcWorkerMetrics>,
+        scheduler: Option<Arc<SchedulerImpl>>,
     ) -> Self {
+        let sched = scheduler.unwrap_or_else(|| Arc::new(SchedulerImpl::fifo()));
         let br = match metrics {
-            Some(metrics) => blocking::BlockingRunner::new_with_metrics(py_threads, py_threads_idle_timeout, metrics),
-            None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout),
+            Some(metrics) => blocking::BlockingRunner::new_with_metrics(
+                py_threads,
+                py_threads_idle_timeout,
+                metrics,
+                Some(sched.clone()),
+            ),
+            None => blocking::BlockingRunner::new(py_threads, py_threads_idle_timeout, Some(sched.clone())),
         };
         Self {
             inner: rt,
             br: br.into(),
             pr: py_loop,
             sig: tokio::sync::Notify::new().into(),
+            sched,
         }
     }
 
@@ -93,6 +120,7 @@ impl RuntimeWrapper {
             self.br.clone(),
             self.pr.clone(),
             self.sig.clone(),
+            self.sched.clone(),
         )
     }
 }
@@ -103,6 +131,7 @@ pub struct RuntimeRef {
     innerb: Arc<blocking::BlockingRunner>,
     innerp: Arc<Py<PyAny>>,
     sig: Arc<tokio::sync::Notify>,
+    sched: Arc<SchedulerImpl>,
 }
 
 impl RuntimeRef {
@@ -111,17 +140,50 @@ impl RuntimeRef {
         br: Arc<blocking::BlockingRunner>,
         pyloop: Arc<Py<PyAny>>,
         sig: Arc<tokio::sync::Notify>,
+        sched: Arc<SchedulerImpl>,
     ) -> Self {
         Self {
             inner: rt,
             innerb: br,
             innerp: pyloop,
             sig,
+            sched,
         }
     }
 
     pub fn close(&self) {
         self.sig.notify_waiters();
+    }
+
+    /// The scheduler shared by every runtime of the worker, used to tag events with a flow.
+    #[inline]
+    pub fn resolve_flow(&self, peer: &SockAddr, headers: &HeaderMap) -> Option<FlowRef> {
+        self.sched.resolve(peer, headers)
+    }
+
+    #[inline]
+    pub fn release_flow(&self, flow: FlowRef) {
+        self.sched.release(flow);
+    }
+
+    #[inline]
+    pub fn debit_flow(&self, flow: &FlowRef, cost_ns: u64) {
+        self.sched.debit(flow, cost_ns);
+    }
+
+    #[inline]
+    pub fn lane_enqueue(&self, flow: &FlowRef, fut: Py<PyAny>) -> bool {
+        self.sched.lane_enqueue(flow, fut)
+    }
+
+    #[inline]
+    pub fn lane_next(&self) -> Option<Py<PyAny>> {
+        self.sched.lane_next()
+    }
+
+    #[inline]
+    pub fn lane_release(&self) -> bool {
+        self.sched.lane_release()
     }
 }
 
@@ -150,6 +212,14 @@ impl Runtime for RuntimeRef {
         _ = self.innerb.run(task);
     }
 
+    #[inline]
+    fn spawn_blocking_flow<F>(&self, task: F, flow: Option<&FlowRef>)
+    where
+        F: FnOnce(Python) + Send + 'static,
+    {
+        _ = self.innerb.run_with_flow(task, flow);
+    }
+
     fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
     where
         F: Future<Output = ()> + Send + 'static,
@@ -174,6 +244,60 @@ impl ContextExt for RuntimeRef {
     }
 }
 
+/// Per-request runtime handle. It behaves like `RuntimeRef`, but tags every event it
+/// pushes to the Python side with the request's flow, so that the fair scheduler can
+/// order them.
+#[derive(Clone)]
+pub(crate) struct RequestRt {
+    pub rt: RuntimeRef,
+    pub flow: Option<FlowRef>,
+}
+
+impl RequestRt {
+    pub fn new(rt: RuntimeRef, flow: Option<FlowRef>) -> Self {
+        Self { rt, flow }
+    }
+
+    /// Release the request's flow, if any.
+    pub fn release(&self) {
+        if let Some(flow) = self.flow {
+            self.rt.release_flow(flow);
+        }
+    }
+}
+
+impl Runtime for RequestRt {
+    type JoinError = <RuntimeRef as Runtime>::JoinError;
+    type JoinHandle = <RuntimeRef as Runtime>::JoinHandle;
+
+    fn spawn<F>(&self, fut: F) -> Self::JoinHandle
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.rt.spawn(fut)
+    }
+
+    fn spawn_blocking<F>(&self, task: F)
+    where
+        F: FnOnce(Python) + Send + 'static,
+    {
+        self.rt.spawn_blocking_flow(task, self.flow.as_ref());
+    }
+
+    fn spawn_cancellable<F>(&self, on_cancel: Arc<tokio::sync::Notify>, fut: F) -> Self::JoinHandle
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.rt.spawn_cancellable(on_cancel, fut)
+    }
+}
+
+impl ContextExt for RequestRt {
+    fn py_event_loop(&self, py: Python) -> Py<PyAny> {
+        self.rt.py_event_loop(py)
+    }
+}
+
 fn default_runtime(blocking_threads: usize) -> tokio::runtime::Runtime {
     RuntimeBuilder::new_current_thread()
         .max_blocking_threads(blocking_threads)
@@ -189,6 +313,7 @@ pub(crate) fn init_runtime_mt(
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
     metrics: Option<metrics::ArcWorkerMetrics>,
+    scheduler: Option<Arc<SchedulerImpl>>,
 ) -> RuntimeWrapper {
     RuntimeWrapper::with_runtime(
         RuntimeBuilder::new_multi_thread()
@@ -201,6 +326,7 @@ pub(crate) fn init_runtime_mt(
         py_threads_idle_timeout,
         py_loop,
         metrics,
+        scheduler,
     )
 }
 
@@ -210,8 +336,16 @@ pub(crate) fn init_runtime_st(
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
     metrics: Option<metrics::ArcWorkerMetrics>,
+    scheduler: Option<Arc<SchedulerImpl>>,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop, metrics)
+    RuntimeWrapper::new(
+        blocking_threads,
+        py_threads,
+        py_threads_idle_timeout,
+        py_loop,
+        metrics,
+        scheduler,
+    )
 }
 
 #[inline(always)]
@@ -235,7 +369,7 @@ pub(crate) fn err_future_into_py(py: Python, err: PyResult<()>) -> PyResult<Boun
 //  It consumes more cpu-cycles than `future_into_py_futlike`,
 //  but for "quick" operations it's something like 12% faster.
 #[allow(dead_code, unused_must_use)]
-pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+pub(crate) fn future_into_py_iter<R, F>(rt: R, py: Python<'_>, fut: F) -> PyResult<Bound<'_, PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = FutureResultToPy> + Send + 'static,
@@ -259,7 +393,7 @@ where
 //  and for "long" operations it's something like 6% faster than `future_into_py_iter`.
 #[allow(unused_must_use)]
 #[cfg(unix)]
-pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python<'_>, fut: F) -> PyResult<Bound<'_, PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = FutureResultToPy> + Send + 'static,
@@ -282,7 +416,7 @@ where
 
 #[allow(unused_must_use)]
 #[cfg(windows)]
-pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python, fut: F) -> PyResult<Bound<PyAny>>
+pub(crate) fn future_into_py_futlike<R, F>(rt: R, py: Python<'_>, fut: F) -> PyResult<Bound<'_, PyAny>>
 where
     R: Runtime + ContextExt + Clone,
     F: Future<Output = FutureResultToPy> + Send + 'static,

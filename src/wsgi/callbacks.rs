@@ -12,7 +12,8 @@ use crate::{
     callbacks::ArcCBScheduler,
     http::{HTTPProto, HTTPResponseBody, empty_body},
     net::SockAddr,
-    runtime::{Runtime, RuntimeRef},
+    runtime::{RequestRt, Runtime, RuntimeRef},
+    scheduler::FlowRef,
     utils::log_application_callable_exception,
 };
 
@@ -35,9 +36,8 @@ fn build_wsgi(
     client_addr: SockAddr,
     scheme: HTTPProto,
     mut req: request::Parts,
-    protocol: WSGIProtocol,
     body: WSGIBody,
-) -> PyResult<(Py<WSGIProtocol>, Bound<PyDict>)> {
+) -> PyResult<Bound<PyDict>> {
     let (path, query_string) = req.uri.path_and_query().map_or_else(
         || (String::new(), String::new()),
         |pq| {
@@ -47,7 +47,6 @@ fn build_wsgi(
             )
         },
     );
-    let proto = Py::new(py, protocol)?;
     let environ = PyDict::new(py);
 
     environ_set!(
@@ -110,7 +109,7 @@ fn build_wsgi(
         );
     }
 
-    Ok((proto, environ))
+    Ok(environ)
 }
 
 #[inline(always)]
@@ -122,23 +121,42 @@ pub(crate) fn call_http(
     scheme: HTTPProto,
     req: request::Parts,
     body: body::Incoming,
+    flow: Option<FlowRef>,
 ) -> oneshot::Receiver<(u16, HeaderMap, HTTPResponseBody)> {
+    let rrt = RequestRt::new(rt.clone(), flow);
     let (tx, rx) = oneshot::channel();
-    let protocol = WSGIProtocol::new(tx);
+    let protocol = WSGIProtocol::new(rrt, tx);
     let body = WSGIBody::new(rt.clone(), body);
 
-    rt.spawn_blocking(move |py| {
-        if let Ok((proto, environ)) = build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body) {
-            if let Err(err) = cb.get().cb.call1(py, (proto.clone_ref(py), environ)) {
-                log_application_callable_exception(py, &err);
-                if let Some(tx) = proto.get().tx() {
-                    let _ = tx.send((500, HeaderMap::new(), empty_body()));
+    rt.spawn_blocking_flow(
+        move |py| {
+            let Ok(proto) = Py::new(py, protocol) else {
+                return;
+            };
+            proto.get().start();
+
+            match build_wsgi(py, server_addr, client_addr, scheme, req, body) {
+                Ok(environ) => {
+                    if let Err(err) = cb.get().cb.call1(py, (proto.clone_ref(py), environ)) {
+                        log_application_callable_exception(py, &err);
+                        if let Some(tx) = proto.get().tx() {
+                            let _ = tx.send((500, HeaderMap::new(), empty_body()));
+                        }
+                    }
+                }
+                Err(err) => {
+                    log_application_callable_exception(py, &err);
+                    if let Some(tx) = proto.get().tx() {
+                        let _ = tx.send((500, HeaderMap::new(), empty_body()));
+                    }
                 }
             }
 
+            proto.get().finalize();
             proto.drop_ref(py);
-        }
-    });
+        },
+        flow.as_ref(),
+    );
 
     rx
 }

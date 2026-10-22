@@ -66,6 +66,12 @@ pub(crate) struct HTTP1Config {
     pub pipeline_flush: bool,
 }
 
+/// Scheduler selection for a worker.
+pub(crate) enum SchedulerConfig {
+    Fifo,
+    Fair(Py<crate::scheduler::FairConfig>),
+}
+
 #[derive(Clone)]
 pub(crate) struct HTTP2Config {
     pub adaptive_window: bool,
@@ -98,6 +104,9 @@ pub(crate) struct WorkerConfig {
     pub websockets_enabled: bool,
     pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
+    pub scheduler: SchedulerConfig,
+    /// Whether the `sys.monitoring` occupancy hooks must be installed (async interfaces with fair).
+    pub monitoring: bool,
     pub metrics: (
         Option<std::time::Duration>,
         Option<Py<crate::metrics::MetricsAggregator>>,
@@ -140,6 +149,7 @@ impl WorkerConfig {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        scheduler: Option<Py<crate::scheduler::FairConfig>>,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
     ) -> Self {
         let tls_opts = match ssl_enabled {
@@ -170,6 +180,11 @@ impl WorkerConfig {
             websockets_enabled,
             static_files,
             tls_opts,
+            scheduler: match scheduler {
+                Some(cfg) => SchedulerConfig::Fair(cfg),
+                None => SchedulerConfig::Fifo,
+            },
+            monitoring: false,
             metrics: (metrics.0.map(std::time::Duration::from_secs), metrics.1),
         }
     }

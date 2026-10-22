@@ -74,6 +74,7 @@ class ASGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        scheduler: FairConfig | None = None,
     ) -> ASGIWorker: ...
 
 class WSGIWorker:
@@ -98,6 +99,7 @@ class WSGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        scheduler: FairConfig | None = None,
     ) -> WSGIWorker: ...
 
 class RSGIWorker:
@@ -123,6 +125,7 @@ class RSGIWorker:
         ssl_ca: str | None,
         ssl_crl: list[str],
         ssl_client_verify: bool,
+        scheduler: FairConfig | None = None,
     ) -> RSGIWorker: ...
 
 class SocketHolder:
@@ -145,6 +148,27 @@ class CallbackScheduler:
     _ctx: Any
 
     def _run(self, coro: Any) -> None: ...
+
+class FairConfig:
+    monitoring_tool_id: int
+
+    def __init__(
+        self,
+        outer_prefix_v4: int = ...,
+        outer_prefix_v6: int = ...,
+        outer_max: int = ...,
+        inner_max_per_outer: int = ...,
+        inner_max: int = ...,
+        burst_ms: int = ...,
+        max_debt_ms: int = ...,
+        debt_ttl_secs: int = ...,
+        trusted_proxies: list[str] = ...,
+        client_ip_header: str = ...,
+        inner_headers: list[str] = ...,
+        inner_cookies: list[str] = ...,
+        inner_include_ip: bool = ...,
+        monitoring_tool_id: int = ...,
+    ) -> None: ...
 
 class ProcInfoCollector:
     def __init__(self) -> None: ...

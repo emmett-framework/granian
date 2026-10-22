@@ -7,8 +7,10 @@ use super::{
     types::{PyResponse, PyResponseBody, RSGIHTTPScope as HTTPScope, RSGIWebsocketScope as WebsocketScope},
 };
 use crate::{
+    accounting::build_acct,
     callbacks::ArcCBScheduler,
-    runtime::{Runtime, RuntimeRef},
+    runtime::{RequestRt, Runtime, RuntimeRef},
+    scheduler::FlowRef,
     utils::{GuardedReceiver, log_application_callable_exception},
     ws::{HyperWebsocket, UpgradeData},
 };
@@ -18,12 +20,14 @@ macro_rules! callback_impl_done_http {
         if let Some(tx) = $self.proto.get().tx() {
             let _ = tx.send(PyResponse::Body(PyResponseBody::empty(500, Vec::new())));
         }
+        $self.proto.get().finalize();
     };
 }
 
 macro_rules! callback_impl_done_ws {
     ($self:expr) => {
         $self.proto.get().close(None);
+        $self.proto.get().finalize();
     };
 }
 
@@ -46,16 +50,19 @@ pub(crate) struct CallbackWatcherHTTP {
     proto: Py<HTTPProtocol>,
     #[pyo3(get)]
     scope: Py<HTTPScope>,
+    #[pyo3(get)]
+    ctx: Py<PyAny>,
     aio_taskref: OnceLock<Py<PyAny>>,
 }
 
 impl CallbackWatcherHTTP {
-    pub fn new(py: Python, proto: HTTPProtocol, scope: HTTPScope) -> PyResult<Py<Self>> {
+    pub fn new(py: Python, proto: HTTPProtocol, scope: HTTPScope, ctx: Option<Py<PyAny>>) -> PyResult<Py<Self>> {
         Py::new(
             py,
             Self {
                 proto: Py::new(py, proto)?,
                 scope: Py::new(py, scope)?,
+                ctx: ctx.unwrap_or_else(|| py.None()),
                 aio_taskref: OnceLock::new(),
             },
         )
@@ -83,16 +90,24 @@ pub(crate) struct CallbackWatcherWebsocket {
     proto: Py<WebsocketProtocol>,
     #[pyo3(get)]
     scope: Py<WebsocketScope>,
+    #[pyo3(get)]
+    ctx: Py<PyAny>,
     aio_taskref: OnceLock<Py<PyAny>>,
 }
 
 impl CallbackWatcherWebsocket {
-    pub fn new(py: Python, proto: WebsocketProtocol, scope: WebsocketScope) -> PyResult<Py<Self>> {
+    pub fn new(
+        py: Python,
+        proto: WebsocketProtocol,
+        scope: WebsocketScope,
+        ctx: Option<Py<PyAny>>,
+    ) -> PyResult<Py<Self>> {
         Py::new(
             py,
             Self {
                 proto: Py::new(py, proto)?,
                 scope: Py::new(py, scope)?,
+                ctx: ctx.unwrap_or_else(|| py.None()),
                 aio_taskref: OnceLock::new(),
             },
         )
@@ -120,16 +135,26 @@ pub(crate) fn call_http(
     rt: RuntimeRef,
     body: hyper::body::Incoming,
     scope: HTTPScope,
+    flow: Option<FlowRef>,
 ) -> GuardedReceiver<PyResponse> {
+    let rrt = RequestRt::new(rt.clone(), flow);
+    let tracked = flow.is_some().then(|| rrt.clone());
     let (tx, rx) = oneshot::channel();
     let disconnect_guard = Arc::new(SetOnce::new());
-    let protocol = HTTPProtocol::new(rt.clone(), disconnect_guard.clone(), tx, body);
+    let protocol = HTTPProtocol::new(rrt, disconnect_guard.clone(), tx, body);
 
-    rt.spawn_blocking(move |py| {
-        if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope) {
-            cb.get().schedule(py, watcher);
-        }
-    });
+    rt.spawn_blocking_flow(
+        move |py| {
+            let (acct, ctx) = build_acct(py, cb.get(), tracked);
+            if let Some(acct) = acct {
+                protocol.set_acct(acct);
+            }
+            if let Ok(watcher) = CallbackWatcherHTTP::new(py, protocol, scope, ctx) {
+                cb.get().schedule(py, watcher);
+            }
+        },
+        flow.as_ref(),
+    );
 
     GuardedReceiver::new(rx, disconnect_guard)
 }
@@ -142,15 +167,25 @@ pub(crate) fn call_ws(
     ws: HyperWebsocket,
     upgrade: UpgradeData,
     scope: WebsocketScope,
+    flow: Option<FlowRef>,
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
+    let rrt = RequestRt::new(rt.clone(), flow);
+    let tracked = flow.is_some().then(|| rrt.clone());
     let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard);
+    let protocol = WebsocketProtocol::new(rrt, tx, ws, upgrade, disconnect_guard);
 
-    rt.spawn_blocking(move |py| {
-        if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope) {
-            cb.get().schedule(py, watcher);
-        }
-    });
+    rt.spawn_blocking_flow(
+        move |py| {
+            let (acct, ctx) = build_acct(py, cb.get(), tracked);
+            if let Some(acct) = acct {
+                protocol.set_acct(acct);
+            }
+            if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope, ctx) {
+                cb.get().schedule(py, watcher);
+            }
+        },
+        flow.as_ref(),
+    );
 
     rx
 }

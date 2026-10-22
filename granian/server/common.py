@@ -17,7 +17,7 @@ from .._granian import MetricsAggregator, MetricsExporter, WorkerSignal
 from .._imports import dotenv, setproctitle, watchfiles
 from .._internal import build_env_loader, load_target
 from .._signals import set_main_signals
-from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, SSLProtocols, TaskImpl
+from ..constants import HTTPModes, Interfaces, Loops, RuntimeModes, Schedulers, SSLProtocols, TaskImpl
 from ..errors import ConfigurationError, PidFileError
 from ..http import HTTP1Settings, HTTP2Settings
 from ..log import DEFAULT_ACCESSLOG_FMT, LogLevels, configure_logging, logger
@@ -107,6 +107,23 @@ class AbstractServer(Generic[WT]):
         websockets: bool = True,
         backlog: int = 1024,
         backpressure: int | None = None,
+        scheduler: Schedulers | str = Schedulers.fifo,
+        fq_outer_prefix_v4: int = 24,
+        fq_outer_prefix_v6: int = 56,
+        fq_outer_max: int = 65_536,
+        fq_inner_max_per_outer: int = 1_024,
+        fq_inner_max: int = 262_144,
+        fq_burst: int = 20,
+        fq_max_debt: int = 5_000,
+        fq_debt_ttl: int = 30,
+        fq_trusted_proxies: str | Sequence[str] = '127.0.0.1,::1',
+        fq_client_ip_header: str = 'x-forwarded-for',
+        fq_inner_headers: str | Sequence[str] = (
+            'user-agent,accept-language,sec-ch-ua,sec-ch-ua-platform,sec-ch-ua-mobile,authorization'
+        ),
+        fq_inner_cookies: str | Sequence[str] = 'sessionid,session',
+        fq_inner_include_ip: bool = True,
+        fq_monitoring_tool_id: int = 4,
         http1_settings: HTTP1Settings | None = None,
         http2_settings: HTTP2Settings | None = None,
         log_enabled: bool = True,
@@ -173,6 +190,27 @@ class AbstractServer(Generic[WT]):
             else max(1, (self.backpressure // 2) if self.interface == Interfaces.WSGI else 1)
         )
         self.blocking_threads_idle_timeout = blocking_threads_idle_timeout
+        self.scheduler = Schedulers(scheduler)
+        self.fq_config = (
+            self._build_fq_config(
+                fq_outer_prefix_v4,
+                fq_outer_prefix_v6,
+                fq_outer_max,
+                fq_inner_max_per_outer,
+                fq_inner_max,
+                fq_burst,
+                fq_max_debt,
+                fq_debt_ttl,
+                fq_trusted_proxies,
+                fq_client_ip_header,
+                fq_inner_headers,
+                fq_inner_cookies,
+                fq_inner_include_ip,
+                fq_monitoring_tool_id,
+            )
+            if self.scheduler == Schedulers.fair
+            else None
+        )
         self.http1_settings = http1_settings
         self.http2_settings = http2_settings
         self.log_enabled = log_enabled
@@ -239,6 +277,60 @@ class AbstractServer(Generic[WT]):
         self.rss_signal = False
         self.pid = None
         self._env_loader = build_env_loader()
+
+    @staticmethod
+    def _split_fq_list(value: str | Sequence[str]) -> list[str]:
+        "Normalize a comma-separated or already-split fair-queuing option into a clean list."
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(',') if item.strip()]
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @staticmethod
+    def _build_fq_config(
+        outer_prefix_v4: int,
+        outer_prefix_v6: int,
+        outer_max: int,
+        inner_max_per_outer: int,
+        inner_max: int,
+        burst: int,
+        max_debt: int,
+        debt_ttl: int,
+        trusted_proxies: str | Sequence[str],
+        client_ip_header: str,
+        inner_headers: str | Sequence[str],
+        inner_cookies: str | Sequence[str],
+        inner_include_ip: bool,
+        monitoring_tool_id: int,
+    ) -> dict[str, Any]:
+        "Collect the fair-scheduler options into the primitive dict the workers turn into a FairConfig."
+        return {
+            'outer_prefix_v4': outer_prefix_v4,
+            'outer_prefix_v6': outer_prefix_v6,
+            'outer_max': outer_max,
+            'inner_max_per_outer': inner_max_per_outer,
+            'inner_max': inner_max,
+            'burst_ms': burst,
+            'max_debt_ms': max_debt,
+            'debt_ttl_secs': debt_ttl,
+            'trusted_proxies': AbstractServer._split_fq_list(trusted_proxies),
+            'client_ip_header': client_ip_header,
+            'inner_headers': AbstractServer._split_fq_list(inner_headers),
+            'inner_cookies': AbstractServer._split_fq_list(inner_cookies),
+            'inner_include_ip': inner_include_ip,
+            'monitoring_tool_id': monitoring_tool_id,
+        }
+
+    def _validate_scheduler(self) -> None:
+        """Reject fair scheduling on async interfaces below Python 3.12.
+
+        Those versions cannot use `sys.monitoring`, which fair scheduling needs to measure
+        async lane occupancy. WSGI is always allowed, since its occupancy is measured in Rust.
+        """
+        if self.scheduler != Schedulers.fair:
+            return
+        if self.interface != Interfaces.WSGI and _PYV < _PY_312:
+            logger.error('The fair scheduler requires Python >= 3.12 for ASGI and RSGI interfaces')
+            raise ConfigurationError('scheduler')
 
     def _init_static_mounts(
         self,
@@ -672,6 +764,8 @@ class AbstractServer(Generic[WT]):
         if self.interface != Interfaces.WSGI and self.blocking_threads > 1:
             logger.error('Blocking threads > 1 is not supported on ASGI and RSGI')
             raise ConfigurationError('blocking_threads')
+
+        self._validate_scheduler()
 
         if self.websockets:
             if self.interface == Interfaces.WSGI:

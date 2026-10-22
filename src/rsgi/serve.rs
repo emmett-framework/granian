@@ -39,6 +39,7 @@ impl RSGIWorker {
             ssl_ca=None,
             ssl_crl=vec![],
             ssl_client_verify=false,
+            scheduler=None,
             metrics=(None, None),
         )
     )]
@@ -65,34 +66,37 @@ impl RSGIWorker {
         ssl_ca: Option<String>,
         ssl_crl: Vec<String>,
         ssl_client_verify: bool,
+        scheduler: Option<Py<crate::scheduler::FairConfig>>,
         metrics: (Option<u64>, Option<Py<crate::metrics::MetricsAggregator>>),
     ) -> PyResult<Self> {
-        Ok(Self {
-            config: WorkerConfig::new(
-                worker_id,
-                sock,
-                ipc,
-                threads,
-                blocking_threads,
-                py_threads,
-                py_threads_idle_timeout,
-                backpressure,
-                http_mode,
-                worker_http1_config_from_py(py, http1_opts)?,
-                worker_http2_config_from_py(py, http2_opts)?,
-                websockets_enabled,
-                static_files,
-                ssl_enabled,
-                ssl_cert,
-                ssl_key,
-                ssl_key_password,
-                ssl_protocol_min,
-                ssl_ca,
-                ssl_crl,
-                ssl_client_verify,
-                metrics,
-            ),
-        })
+        let monitoring = scheduler.is_some();
+        let mut config = WorkerConfig::new(
+            worker_id,
+            sock,
+            ipc,
+            threads,
+            blocking_threads,
+            py_threads,
+            py_threads_idle_timeout,
+            backpressure,
+            http_mode,
+            worker_http1_config_from_py(py, http1_opts)?,
+            worker_http2_config_from_py(py, http2_opts)?,
+            websockets_enabled,
+            static_files,
+            ssl_enabled,
+            ssl_cert,
+            ssl_key,
+            ssl_key_password,
+            ssl_protocol_min,
+            ssl_ca,
+            ssl_crl,
+            ssl_client_verify,
+            scheduler,
+            metrics,
+        );
+        config.monitoring = monitoring;
+        Ok(Self { config })
     }
 
     fn serve_mtr(

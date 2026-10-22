@@ -9,7 +9,7 @@ use pyo3::{prelude::*, pybacked::PyBackedBytes, types::PyDict};
 use std::{
     borrow::Cow,
     pin::Pin,
-    sync::{Arc, Mutex, atomic},
+    sync::{Arc, Mutex, OnceLock, atomic},
     task::{Context, Poll},
 };
 use tokio::{
@@ -24,10 +24,11 @@ use super::{
     types::ASGIMessageType,
 };
 use crate::{
+    accounting::{self, RequestAcct},
     conversion::FutureResultToPy,
     http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404},
     runtime::{
-        Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
+        RequestRt, Runtime, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
     },
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
@@ -83,7 +84,7 @@ impl ResponseBodyStream {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIHTTPProtocol {
-    rt: RuntimeRef,
+    rt: RequestRt,
     tx: Mutex<Option<oneshot::Sender<HTTPResponse>>>,
     disconnect_guard: Arc<SetOnce<()>>,
     request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
@@ -95,11 +96,13 @@ pub(crate) struct ASGIHTTPProtocol {
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<SetOnce<()>>,
     sent_response_code: Arc<atomic::AtomicU16>,
+    acct: OnceLock<Py<RequestAcct>>,
+    finalized: atomic::AtomicBool,
 }
 
 impl ASGIHTTPProtocol {
     pub fn new(
-        rt: RuntimeRef,
+        rt: RequestRt,
         disconnect_guard: Arc<SetOnce<()>>,
         body: hyper::body::Incoming,
         tx: oneshot::Sender<HTTPResponse>,
@@ -117,7 +120,23 @@ impl ASGIHTTPProtocol {
             flow_rx_closed: Arc::new(atomic::AtomicBool::new(false)),
             flow_tx_waiter: Arc::new(SetOnce::new()),
             sent_response_code: Arc::new(atomic::AtomicU16::new(500)),
+            acct: OnceLock::new(),
+            finalized: false.into(),
         }
+    }
+
+    /// Attach the per-request accounting object once it is available on the Python side.
+    pub(crate) fn set_acct(&self, acct: Py<RequestAcct>) {
+        _ = self.acct.set(acct);
+    }
+
+    /// Flush the final occupancy and release the request's flow. Idempotent.
+    pub(crate) fn finalize(&self) {
+        if self.finalized.swap(true, atomic::Ordering::AcqRel) {
+            return;
+        }
+        accounting::debit(&self.rt, self.acct.get());
+        accounting::release(&self.rt);
     }
 
     #[inline(always)]
@@ -277,6 +296,7 @@ impl ASGIHTTPProtocol {
                 empty_future_into_py(py)
             }
             Ok(ASGIMessageType::HTTPResponseBody((body, more))) => {
+                accounting::debit(&self.rt, self.acct.get());
                 match (
                     self.response_started.load(atomic::Ordering::Relaxed),
                     more,
@@ -403,7 +423,7 @@ impl WebsocketDetachedTransport {
 
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct ASGIWebsocketProtocol {
-    rt: RuntimeRef,
+    rt: RequestRt,
     tx: Mutex<Option<oneshot::Sender<WebsocketDetachedTransport>>>,
     disconnect_guard: Arc<Notify>,
     websocket: Mutex<Option<HyperWebsocket>>,
@@ -415,11 +435,13 @@ pub(crate) struct ASGIWebsocketProtocol {
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
+    acct: OnceLock<Py<RequestAcct>>,
+    finalized: atomic::AtomicBool,
 }
 
 impl ASGIWebsocketProtocol {
     pub fn new(
-        rt: RuntimeRef,
+        rt: RequestRt,
         tx: oneshot::Sender<WebsocketDetachedTransport>,
         websocket: HyperWebsocket,
         upgrade: UpgradeData,
@@ -438,7 +460,21 @@ impl ASGIWebsocketProtocol {
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
+            acct: OnceLock::new(),
+            finalized: false.into(),
         }
+    }
+
+    pub(crate) fn set_acct(&self, acct: Py<RequestAcct>) {
+        _ = self.acct.set(acct);
+    }
+
+    pub(crate) fn finalize(&self) {
+        if self.finalized.swap(true, atomic::Ordering::AcqRel) {
+            return;
+        }
+        accounting::debit(&self.rt, self.acct.get());
+        accounting::release(&self.rt);
     }
 
     #[inline(always)]
@@ -527,6 +563,8 @@ impl ASGIWebsocketProtocol {
             // return err_future_into_py(py, error_flow!("Transport closed"));
             return empty_future_into_py(py);
         }
+
+        accounting::debit(&self.rt, self.acct.get());
 
         let transport = self.ws_tx.clone();
         let closed = self.closed.clone();
