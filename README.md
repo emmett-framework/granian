@@ -328,13 +328,13 @@ Options:
                                   directory listings  [env var:
                                   GRANIAN_STATIC_PATH_DIR_TO_FILE]
   --static-path-expires DURATION  Cache headers expiration (in seconds or a
-                                  human-readable duration) for static file
-                                  serving. 0 to disable.  [env var:
-                                  GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
-                                  x>=0]
+                                   human-readable duration) for static file
+                                   serving. 0 to disable.  [env var:
+                                   GRANIAN_STATIC_PATH_EXPIRES; default: 86400;
+                                   x>=0]
   --metrics / --no-metrics        Enable the prometheus metrics exporter.
-                                  [env var: GRANIAN_METRICS_ENABLED; default:
-                                  (disabled)]
+                                   [env var: GRANIAN_METRICS_ENABLED; default:
+                                   (disabled)]
   --metrics-scrape-interval DURATION
                                   Configure the interval for metrics
                                   collection.  [env var:
@@ -523,6 +523,35 @@ $ granian \
 ```
 
 > **Note:** while Granian performs a rewrite on the target directory, the file will still be served if the request path points to it directly (in the example above, requests pointing to `/docs/somefolder` and `/docs/somefolder/index.html` will both respond with the contents of `index.html` – if present). Also, the option will enable this behavior on all the static paths defined.
+
+### Native routes
+
+> **Note:** this is an experimental feature, and the API is expected to change.
+
+Beside static files, Granian can serve specific paths *directly from Rust*, without involving the Python application at all. This is useful for endpoints that would otherwise pay the cost of a round-trip through the Python interpreter, like websockets.
+
+Native routes are registered by the code building the `granian._granian` extension module, and matched on segment boundaries: `/ws` will match `/ws` and `/ws/whatever`, but not `/wsfoo`.
+
+Since Granian is also usable as a Rust library, the routes can be provided by an out-of-tree crate, which becomes the artifact being built (the Python side is entirely stock Granian):
+
+```rust
+use pyo3::prelude::*;
+
+#[pyo3::pymodule(gil_used = false)]
+fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
+    granian::init_py_module(py, module)?;
+
+    granian::register_native_route("/ws", granian::NativeRouteKind::Websocket, handler);
+
+    Ok(())
+}
+```
+
+A complete example is available in the `examples/native-views` directory.
+
+> **Note:** the clients group of a websockets route is bound to the worker, hence messages are not propagated across workers. If you need to broadcast to all the clients of a multi-worker setup, you will need to use an external broker.
+
+The full design is described in the [native routes documentation](docs/native-routes.md).
 
 ### Proxies and forwarded headers
 

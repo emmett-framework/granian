@@ -28,7 +28,7 @@ include = [
 
 [lib]
 name = "_granian"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "=1.0"
@@ -67,6 +67,11 @@ tokio-util = { version = "0.7", features = ["codec", "rt"] }
 pyo3-build-config = "=0.30"
 
 [features]
+default = ["python-module"]
+# Provides the `granian._granian` Python module.
+# It must be disabled by crates embedding Granian as a library and providing
+# their own module, to avoid the `PyInit__granian` symbol being defined twice.
+python-module = []
 jemalloc = ["dep:tikv-jemallocator"]
 mimalloc = ["dep:mimalloc"]
 

@@ -13,7 +13,7 @@ use std::os::windows::io::{AsRawSocket, FromRawSocket};
 use socket2::{Domain, Protocol, Socket, Type};
 
 #[derive(Clone)]
-pub(crate) enum SockAddr {
+pub enum SockAddr {
     #[allow(clippy::upper_case_acronyms)]
     TCP(std::net::SocketAddr),
     #[cfg(unix)]
@@ -22,6 +22,12 @@ pub(crate) enum SockAddr {
 }
 
 impl SockAddr {
+    /// The IP address of the socket.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the path of a unix socket is not valid UTF-8.
+    #[must_use]
     pub fn ip(&self) -> String {
         match self {
             Self::TCP(addr) => addr.ip().to_string(),
@@ -30,6 +36,8 @@ impl SockAddr {
         }
     }
 
+    /// The port of the socket.
+    #[must_use]
     pub fn port(&self) -> u16 {
         match self {
             Self::TCP(addr) => addr.port(),
@@ -38,7 +46,13 @@ impl SockAddr {
         }
     }
 
+    /// The string representation of the socket address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the path of a unix socket is not valid UTF-8.
     #[allow(clippy::inherent_to_string)]
+    #[must_use]
     pub fn to_string(&self) -> String {
         match self {
             Self::TCP(addr) => addr.to_string(),

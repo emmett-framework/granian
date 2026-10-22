@@ -24,7 +24,7 @@ use tokio_tungstenite::{
 use super::http::HTTPResponse;
 use super::utils::header_contains_value;
 
-pub(crate) type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
+pub type WSStream = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
 pub(crate) type WSRxStream = futures::stream::SplitStream<WSStream>;
 pub(crate) type WSTxStream = futures::stream::SplitSink<WSStream, Message>;
 
@@ -102,12 +102,17 @@ impl UpgradeData {
 }
 
 #[inline]
-pub(crate) fn is_upgrade_request<B>(request: &Request<B>) -> bool {
+pub fn is_upgrade_request<B>(request: &Request<B>) -> bool {
     header_contains_value(request.headers(), CONNECTION, "Upgrade")
         && header_contains_value(request.headers(), UPGRADE, "websocket")
 }
 
-pub(crate) fn upgrade_intent<B>(
+/// Perform the websockets handshake.
+///
+/// # Errors
+///
+/// Returns an error if the request is not a valid websockets upgrade request.
+pub fn upgrade_intent<B>(
     request: &mut Request<B>,
     config: Option<WebSocketConfig>,
 ) -> Result<(Builder, HyperWebsocket), ProtocolError> {

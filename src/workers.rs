@@ -154,6 +154,11 @@ impl WorkerConfig {
             false => None,
         };
 
+        // Native websockets routes require the connections to support protocol
+        // upgrades, hence the websockets support is enabled when any of them
+        // is registered.
+        let websockets_enabled = websockets_enabled || crate::native::has_ws_routes();
+
         Self {
             id,
             sock,
@@ -336,15 +341,37 @@ struct WorkerSvc<F, C, P> {
 
 macro_rules! service_proto_fut {
     ($proto:expr, $self:expr, $req:expr) => {{
-        let fut = ($self.f)(
-            $self.rt.clone(),
-            $self.ctx.callback.clone(),
-            $self.addr_local.clone(),
-            $self.addr_remote.clone(),
-            $req,
-            $proto,
-        );
-        Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+        let native = crate::native::router().match_path($req.uri().path()).cloned();
+        match native {
+            Some(handler) => {
+                let rt = $self.rt.inner.clone();
+                let addr_local = $self.addr_local.clone();
+                let addr_remote = $self.addr_remote.clone();
+                let secure = matches!($proto, crate::http::HTTPProto::Tls);
+                Box::pin(async move {
+                    let ctx = crate::native::NativeContext {
+                        rt,
+                        addr_local,
+                        addr_remote,
+                        secure,
+                    };
+                    Ok::<_, hyper::Error>(handler($req, ctx).await)
+                })
+                    as Pin<Box<dyn Future<Output = Result<crate::http::HTTPResponse, hyper::Error>> + Send>>
+            }
+            None => {
+                let fut = ($self.f)(
+                    $self.rt.clone(),
+                    $self.ctx.callback.clone(),
+                    $self.addr_local.clone(),
+                    $self.addr_remote.clone(),
+                    $req,
+                    $proto,
+                );
+                Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+                    as Pin<Box<dyn Future<Output = Result<crate::http::HTTPResponse, hyper::Error>> + Send>>
+            }
+        }
     }};
 }
 
