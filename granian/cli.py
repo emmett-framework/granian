@@ -129,6 +129,11 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
 )
 @option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
 @option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling')
+@option(
+    '--server-header/--no-server-header',
+    default=True,
+    help='Add a `server: granian` header to responses not already providing one',
+)
 @option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
 @option(
     '--blocking-threads',
@@ -441,6 +446,7 @@ def cli(
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
+    server_header: bool,
     workers: int,
     blocking_threads: int | None,
     blocking_threads_idle_timeout: int,
@@ -535,6 +541,7 @@ def cli(
         task_impl=task_impl,
         http=http,
         websockets=websockets,
+        server_header=server_header,
         backlog=backlog,
         backpressure=backpressure,
         http1_settings=HTTP1Settings(
