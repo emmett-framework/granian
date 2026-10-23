@@ -81,6 +81,8 @@ impl WSGIWorker {
                 worker_http1_config_from_py(py, http1_opts)?,
                 worker_http2_config_from_py(py, http2_opts)?,
                 false,
+                None,
+                None,
                 static_files,
                 ssl_enabled,
                 ssl_cert,
