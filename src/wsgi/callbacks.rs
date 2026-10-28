@@ -126,6 +126,7 @@ pub(crate) fn call_http(
     let (tx, rx) = oneshot::channel();
     let protocol = WSGIProtocol::new(tx);
     let body = WSGIBody::new(rt.clone(), body);
+    let body_stream = body.inner.clone();
 
     rt.spawn_blocking(move |py| {
         if let Ok((proto, environ)) = build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body) {
@@ -138,6 +139,8 @@ pub(crate) fn call_http(
 
             proto.drop_ref(py);
         }
+
+        _ = body_stream.blocking_lock().take();
     });
 
     rx

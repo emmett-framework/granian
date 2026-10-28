@@ -21,7 +21,7 @@ enum WSGIBodyBuffering {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WSGIBody {
     rt: RuntimeRef,
-    inner: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
+    pub(super) inner: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
     buffer: Arc<Mutex<BytesMut>>,
 }
 
@@ -29,14 +29,14 @@ impl WSGIBody {
     pub fn new(rt: RuntimeRef, body: body::Incoming) -> Self {
         Self {
             rt,
-            inner: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
+            inner: Arc::new(AsyncMutex::new(Some(http_body_util::BodyStream::new(body)))),
             buffer: Arc::new(Mutex::new(BytesMut::new())),
         }
     }
 
     #[allow(clippy::await_holding_lock)]
     async fn fill_buffer(
-        stream: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
+        stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
         buffer: Arc<Mutex<BytesMut>>,
         buffering: WSGIBodyBuffering,
     ) {
@@ -47,25 +47,27 @@ impl WSGIBody {
             return;
         }
 
-        let mut stream = stream.lock().await;
-        loop {
-            if let Some(chunk) = stream.next().await {
-                let data = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
-                buffer.put(data);
-                match buffering {
-                    WSGIBodyBuffering::Line => {
-                        if !buffer.contains(&LINE_SPLIT) {
-                            continue;
+        let mut guard = stream.lock().await;
+        if let Some(stream) = guard.as_mut() {
+            loop {
+                if let Some(chunk) = stream.next().await {
+                    let data = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
+                    buffer.put(data);
+                    match buffering {
+                        WSGIBodyBuffering::Line => {
+                            if !buffer.contains(&LINE_SPLIT) {
+                                continue;
+                            }
                         }
-                    }
-                    WSGIBodyBuffering::Size(size) => {
-                        if buffer.len() < size {
-                            continue;
+                        WSGIBodyBuffering::Size(size) => {
+                            if buffer.len() < size {
+                                continue;
+                            }
                         }
                     }
                 }
+                break;
             }
-            break;
         }
     }
 
@@ -112,9 +114,12 @@ impl WSGIBody {
                 py.detach(|| {
                     self.rt.inner.block_on(async move {
                         let mut inner = inner.lock().await;
-                        BodyExt::collect(&mut *inner)
-                            .await
-                            .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
+                        match inner.take() {
+                            Some(stream) => BodyExt::collect(stream)
+                                .await
+                                .map_or(Bytes::new(), http_body_util::Collected::to_bytes),
+                            None => Bytes::new(),
+                        }
                     })
                 })
             }
@@ -148,9 +153,12 @@ impl WSGIBody {
         let data = py.detach(|| {
             self.rt.inner.block_on(async move {
                 let mut inner = inner.lock().await;
-                BodyExt::collect(&mut *inner)
-                    .await
-                    .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
+                match inner.take() {
+                    Some(stream) => BodyExt::collect(stream)
+                        .await
+                        .map_or(Bytes::new(), http_body_util::Collected::to_bytes),
+                    None => Bytes::new(),
+                }
             })
         });
         let lines: Vec<Bound<PyBytes>> = data
