@@ -37,7 +37,7 @@ const EMPTY_STRING: String = String::new();
 static WS_SUBPROTO_HNAME: &str = "Sec-WebSocket-Protocol";
 
 struct ResponseBodyStream {
-    inner: mpsc::Receiver<body::Bytes>,
+    inner: mpsc::Receiver<Result<body::Bytes>>,
     closed: Arc<SetOnce<()>>,
 }
 
@@ -57,7 +57,7 @@ impl body::Body for ResponseBodyStream {
     ) -> Poll<Option<Result<body::Frame<Self::Data>, Self::Error>>> {
         self.inner
             .poll_recv(cx)
-            .map(|item| item.map(|data| Ok(body::Frame::data(data))))
+            .map(|item| item.map(|data| data.map(body::Frame::data)))
     }
 
     fn is_end_stream(&self) -> bool {
@@ -70,9 +70,9 @@ impl body::Body for ResponseBodyStream {
 }
 
 impl ResponseBodyStream {
-    fn new(notify: Arc<SetOnce<()>>) -> (mpsc::Sender<body::Bytes>, Self) {
+    fn new(notify: Arc<SetOnce<()>>) -> (mpsc::Sender<Result<body::Bytes>>, Self) {
         //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
-        let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
+        let (body_tx, body_rx) = mpsc::channel::<Result<body::Bytes>>(4);
         let slf = Self {
             inner: body_rx,
             closed: notify,
@@ -90,7 +90,7 @@ pub(crate) struct ASGIHTTPProtocol {
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
-    body_tx: Mutex<Option<mpsc::Sender<body::Bytes>>>,
+    body_tx: Mutex<Option<mpsc::Sender<Result<body::Bytes>>>>,
     flow_rx_exhausted: Arc<atomic::AtomicBool>,
     flow_rx_closed: Arc<atomic::AtomicBool>,
     flow_tx_waiter: Arc<SetOnce<()>>,
@@ -135,12 +135,12 @@ impl ASGIHTTPProtocol {
     fn send_body<'p>(
         &self,
         py: Python<'p>,
-        tx: mpsc::Sender<body::Bytes>,
+        tx: mpsc::Sender<Result<body::Bytes>>,
         body: Box<[u8]>,
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
         let frame = body.into();
-        match tx.try_send(frame) {
+        match tx.try_send(Ok(frame)) {
             Ok(()) => {
                 if close {
                     _ = self.flow_tx_waiter.set(());
@@ -179,6 +179,11 @@ impl ASGIHTTPProtocol {
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<HTTPResponse>> {
+        if let Some(stream) = self.body_tx.lock().unwrap().take() {
+            self.rt.spawn(async move {
+                _ = stream.send(Err(anyhow::anyhow!("Closed with outstanding data"))).await;
+            });
+        }
         self.tx.lock().unwrap().take()
     }
 }
