@@ -126,6 +126,8 @@ impl RSGIHTTPProtocol {
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<PyResponse>> {
+        _ = self.body.lock().unwrap().take();
+        _ = self.body_stream.try_lock().map(|mut guard| guard.take());
         self.tx.lock().unwrap().take()
     }
 }

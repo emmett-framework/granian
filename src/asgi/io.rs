@@ -86,7 +86,7 @@ pub(crate) struct ASGIHTTPProtocol {
     rt: RuntimeRef,
     tx: Mutex<Option<oneshot::Sender<HTTPResponse>>>,
     disconnect_guard: Arc<SetOnce<()>>,
-    request_body: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
+    request_body: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
     response_started: atomic::AtomicBool,
     response_chunked: atomic::AtomicBool,
     response_intent: Mutex<Option<(u16, HeaderMap)>>,
@@ -108,7 +108,7 @@ impl ASGIHTTPProtocol {
             rt,
             tx: Mutex::new(Some(tx)),
             disconnect_guard,
-            request_body: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
+            request_body: Arc::new(AsyncMutex::new(Some(http_body_util::BodyStream::new(body)))),
             response_started: false.into(),
             response_chunked: false.into(),
             response_intent: Mutex::new(None),
@@ -179,6 +179,7 @@ impl ASGIHTTPProtocol {
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<HTTPResponse>> {
+        _ = self.request_body.try_lock().map(|mut guard| guard.take());
         if let Some(stream) = self.body_tx.lock().unwrap().take() {
             self.rt.spawn(async move {
                 _ = stream.send(Err(anyhow::anyhow!("Closed with outstanding data"))).await;
@@ -217,27 +218,32 @@ impl ASGIHTTPProtocol {
         let exhausted = self.flow_rx_exhausted.clone();
         let disconnected = self.flow_rx_closed.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
-            let mut bodym = body_ref.lock().await;
-            let body = &mut *bodym;
+            let mut guard_body = body_ref.lock().await;
             let mut more_body = false;
 
-            let chunk = tokio::select! {
-                biased;
-                frame = body.next() => match frame {
-                    Some(Ok(buf)) => {
-                        more_body = true;
-                        Some(buf.into_data().unwrap_or_default())
+            let chunk = match guard_body.as_mut() {
+                Some(body) => {
+                    tokio::select! {
+                        biased;
+                        frame = body.next() => match frame {
+                            Some(Ok(buf)) => {
+                                more_body = true;
+                                Some(buf.into_data().unwrap_or_default())
+                            }
+                            Some(Err(_)) => None,
+                            _ => Some(body::Bytes::new()),
+                        },
+                        () = guard_disconnect.wait() => {
+                            disconnected.store(true, atomic::Ordering::Release);
+                            None
+                        }
                     }
-                    Some(Err(_)) => None,
-                    _ => Some(body::Bytes::new()),
-                },
-                () = guard_disconnect.wait() => {
-                    disconnected.store(true, atomic::Ordering::Release);
-                    None
                 }
+                None => None,
             };
             if !more_body {
                 exhausted.store(true, atomic::Ordering::Release);
+                _ = guard_body.take();
             }
 
             match chunk {
