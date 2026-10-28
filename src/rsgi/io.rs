@@ -164,16 +164,14 @@ impl RSGIHTTPProtocol {
         let body_stream = self.body_stream.clone();
         future_into_py_futlike(self.rt.clone(), py, async move {
             let guard = &mut *body_stream.lock().await;
-            match guard.as_mut().unwrap().next().await {
-                Some(chunk) => {
+            if let Some(stream) = guard.as_mut() {
+                if let Some(chunk) = stream.next().await {
                     let chunk = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
-                    FutureResultToPy::Bytes(chunk)
+                    return FutureResultToPy::Bytes(chunk);
                 }
-                _ => {
-                    _ = guard.take();
-                    FutureResultToPy::Bytes(body::Bytes::new())
-                }
+                _ = guard.take();
             }
+            FutureResultToPy::Bytes(body::Bytes::new())
         })
     }
 
