@@ -36,7 +36,7 @@ fn build_wsgi(
     scheme: HTTPProto,
     mut req: request::Parts,
     protocol: WSGIProtocol,
-    body: WSGIBody,
+    body: Py<WSGIBody>,
 ) -> PyResult<(Py<WSGIProtocol>, Bound<PyDict>)> {
     let (path, query_string) = req.uri.path_and_query().map_or_else(
         || (String::new(), String::new()),
@@ -69,7 +69,7 @@ fn build_wsgi(
     environ_set!(py, environ, "PATH_INFO", path);
     environ_set!(py, environ, "QUERY_STRING", query_string);
     environ_set!(py, environ, "wsgi.url_scheme", scheme.as_str());
-    environ_set!(py, environ, "wsgi.input", body);
+    environ_set!(py, environ, "wsgi.input", &body);
 
     if let Some(content_type) = req.headers.remove(header::CONTENT_TYPE) {
         environ_set!(py, environ, "CONTENT_TYPE", content_type.to_str().unwrap_or_default());
@@ -128,7 +128,20 @@ pub(crate) fn call_http(
     let body = WSGIBody::new(rt.clone(), body);
 
     rt.spawn_blocking(move |py| {
-        if let Ok((proto, environ)) = build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body) {
+        let body = match Py::new(py, body) {
+            Ok(body) => body,
+            Err(err) => {
+                log_application_callable_exception(py, &err);
+                if let Some(tx) = protocol.tx() {
+                    let _ = tx.send((500, HeaderMap::new(), empty_body()));
+                }
+                return;
+            }
+        };
+
+        if let Ok((proto, environ)) =
+            build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body.clone_ref(py))
+        {
             if let Err(err) = cb.get().cb.call1(py, (proto.clone_ref(py), environ)) {
                 log_application_callable_exception(py, &err);
                 if let Some(tx) = proto.get().tx() {
@@ -138,6 +151,8 @@ pub(crate) fn call_http(
 
             proto.drop_ref(py);
         }
+
+        body.get().drop_body();
     });
 
     rx

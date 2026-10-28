@@ -67,3 +67,19 @@ async def test_app_error(wsgi_server, runtime_mode):
         res = httpx.get(f'http://localhost:{port}/err_app')
 
     assert res.status_code == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_unread_body_with_ref_cycle(wsgi_server, runtime_mode):
+    async with wsgi_server(runtime_mode) as port:
+        res = httpx.put(
+            f'http://localhost:{port}/unread_body_cycle',
+            content=b'0' * 4096,
+            headers={'Expect': '100-continue'},
+        )
+        assert res.status_code == 200
+        assert res.text == 'ignored'
+
+        res2 = httpx.get(f'http://localhost:{port}/info')
+        assert res2.status_code == 200

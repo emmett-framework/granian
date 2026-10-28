@@ -21,7 +21,7 @@ enum WSGIBodyBuffering {
 #[pyclass(frozen, module = "granian._granian")]
 pub(crate) struct WSGIBody {
     rt: RuntimeRef,
-    inner: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
+    inner: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
     buffer: Arc<Mutex<BytesMut>>,
 }
 
@@ -29,14 +29,26 @@ impl WSGIBody {
     pub fn new(rt: RuntimeRef, body: body::Incoming) -> Self {
         Self {
             rt,
-            inner: Arc::new(AsyncMutex::new(http_body_util::BodyStream::new(body))),
+            inner: Arc::new(AsyncMutex::new(Some(http_body_util::BodyStream::new(body)))),
             buffer: Arc::new(Mutex::new(BytesMut::new())),
+        }
+    }
+
+    pub fn drop_body(&self) {
+        if let Ok(mut lock) = self.inner.try_lock() {
+            *lock = None;
+        } else {
+            let inner = self.inner.clone();
+            self.rt.inner.block_on(async move {
+                let mut lock = inner.lock().await;
+                *lock = None;
+            });
         }
     }
 
     #[allow(clippy::await_holding_lock)]
     async fn fill_buffer(
-        stream: Arc<AsyncMutex<http_body_util::BodyStream<body::Incoming>>>,
+        stream: Arc<AsyncMutex<Option<http_body_util::BodyStream<body::Incoming>>>>,
         buffer: Arc<Mutex<BytesMut>>,
         buffering: WSGIBodyBuffering,
     ) {
@@ -48,6 +60,9 @@ impl WSGIBody {
         }
 
         let mut stream = stream.lock().await;
+        let Some(stream) = stream.as_mut() else {
+            return;
+        };
         loop {
             if let Some(chunk) = stream.next().await {
                 let data = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
@@ -104,19 +119,35 @@ impl WSGIBody {
         }
     }
 
+    fn close(&self) {
+        self.drop_body();
+    }
+
     #[pyo3(signature = (size=None))]
     fn read(&self, py: Python, size: Option<usize>) -> Bytes {
         match size {
             None => {
                 let inner = self.inner.clone();
-                py.detach(|| {
+                let stream_data = py.detach(|| {
                     self.rt.inner.block_on(async move {
                         let mut inner = inner.lock().await;
-                        BodyExt::collect(&mut *inner)
-                            .await
-                            .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
+                        match inner.as_mut() {
+                            Some(stream) => BodyExt::collect(stream)
+                                .await
+                                .map_or(Bytes::new(), http_body_util::Collected::to_bytes),
+                            None => Bytes::new(),
+                        }
                     })
-                })
+                });
+
+                let mut buffer = self.buffer.lock().unwrap();
+                if buffer.is_empty() {
+                    stream_data
+                } else {
+                    buffer.put(stream_data);
+                    let len = buffer.len();
+                    buffer.split_to(len).freeze()
+                }
             }
             Some(size) => match size {
                 0 => Bytes::new(),
@@ -148,12 +179,23 @@ impl WSGIBody {
         let data = py.detach(|| {
             self.rt.inner.block_on(async move {
                 let mut inner = inner.lock().await;
-                BodyExt::collect(&mut *inner)
-                    .await
-                    .map_or(Bytes::new(), http_body_util::Collected::to_bytes)
+                match inner.as_mut() {
+                    Some(stream) => BodyExt::collect(stream)
+                        .await
+                        .map_or(Bytes::new(), http_body_util::Collected::to_bytes),
+                    None => Bytes::new(),
+                }
             })
         });
-        let lines: Vec<Bound<PyBytes>> = data
+        let mut buffer = self.buffer.lock().unwrap();
+        let full_data = if buffer.is_empty() {
+            data
+        } else {
+            buffer.put(data);
+            let len = buffer.len();
+            buffer.split_to(len).freeze()
+        };
+        let lines: Vec<Bound<PyBytes>> = full_data
             .split(|&c| c == LINE_SPLIT)
             .map(|item| PyBytes::new(py, item))
             .collect();

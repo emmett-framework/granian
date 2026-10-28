@@ -35,7 +35,18 @@ def err_app(environ, protocol):
     1 / 0
 
 
+def unread_body_cycle(environ, protocol):
+    request = {'environ': environ}
+    request['self'] = request
+    protocol('200 OK', [('content-type', 'text/plain; charset=utf-8')])
+    return [b'ignored']
+
+
 def app(environ, protocol):
-    return {'/info': info, '/echo': echo, '/iterbody': iterbody, '/err_app': err_app}[environ['PATH_INFO']](
-        environ, protocol
-    )
+    return {
+        '/info': info,
+        '/echo': echo,
+        '/iterbody': iterbody,
+        '/err_app': err_app,
+        '/unread_body_cycle': unread_body_cycle,
+    }[environ['PATH_INFO']](environ, protocol)
