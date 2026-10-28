@@ -74,8 +74,7 @@ impl CallbackWatcherHTTP {
     }
 
     fn err(&self, py: Python, err: Bound<PyAny>) {
-        self.proto.get().fail();
-        log_application_callable_exception(py, &PyErr::from_value(err));
+        callback_impl_done_err!(self, py, &PyErr::from_value(err));
     }
 
     fn taskref(&self, py: Python, task: Py<PyAny>) {

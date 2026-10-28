@@ -139,8 +139,8 @@ impl ASGIHTTPProtocol {
         body: Box<[u8]>,
         close: bool,
     ) -> PyResult<Bound<'p, PyAny>> {
-        let frame = Ok(body.into());
-        match tx.try_send(frame) {
+        let frame = body.into();
+        match tx.try_send(Ok(frame)) {
             Ok(()) => {
                 if close {
                     _ = self.flow_tx_waiter.set(());
@@ -179,20 +179,12 @@ impl ASGIHTTPProtocol {
     }
 
     pub fn tx(&self) -> Option<oneshot::Sender<HTTPResponse>> {
-        self.tx.lock().unwrap().take()
-    }
-
-    pub fn fail(&self) {
-        if let Some(tx) = self.tx() {
-            let _ = tx.send(crate::http::response_500());
-            return;
-        }
-
-        if let Some(tx) = self.body_tx.lock().unwrap().take() {
+        if let Some(stream) = self.body_tx.lock().unwrap().take() {
             self.rt.spawn(async move {
-                let _ = tx.send(Err(anyhow::anyhow!("ASGI application error"))).await;
+                _ = stream.send(Err(anyhow::anyhow!("Closed with outstanding data"))).await;
             });
         }
+        self.tx.lock().unwrap().take()
     }
 }
 

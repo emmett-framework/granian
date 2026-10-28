@@ -16,7 +16,6 @@ MEDIA_RESPONSE = {
     'status': 200,
     'headers': [[b'content-type', b'image/png'], [b'content-length', b'95']],
 }
-STREAM_REFS = []
 
 
 async def info(scope, receive, send):
@@ -160,20 +159,6 @@ async def err_app(scope, receive, send):
     1 / 0
 
 
-async def err_app_stream(scope, receive, send):
-    await send(PLAINTEXT_RESPONSE)
-    await send({'type': 'http.response.body', 'body': b'msg1', 'more_body': True})
-    raise ValueError('mid stream error')
-
-
-async def err_app_stream_ref(scope, receive, send):
-    reference = scope['query_string'].decode()
-    STREAM_REFS.append({'scope': scope, 'receive': receive, 'send': send}[reference])
-    await send(PLAINTEXT_RESPONSE)
-    await send({'type': 'http.response.body', 'body': b'msg1', 'more_body': True})
-    raise ValueError('mid stream error')
-
-
 async def err_proto_msg(scope, receive, send):
     await send(PLAINTEXT_RESPONSE)
     try:
@@ -244,8 +229,6 @@ def app(scope, receive, send):
         '/ws_close': ws_close,
         '/ws_push': ws_push,
         '/err_app': err_app,
-        '/err_app_stream': err_app_stream,
-        '/err_app_stream_ref': err_app_stream_ref,
         '/err_proto/type': err_proto_msg,
         '/err_proto/flow': err_proto_flow,
         '/timeout_n': timeout_n,
