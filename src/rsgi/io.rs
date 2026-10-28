@@ -401,7 +401,7 @@ impl RSGIWebsocketProtocol {
                     handle = Some(transport);
                 }
 
-                let _ = tx.send((status.unwrap_or(0), consumed, handle));
+                let _ = tx.send((status.unwrap_or(403), consumed, handle));
             });
         }
     }
