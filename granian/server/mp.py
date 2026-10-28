@@ -385,14 +385,14 @@ class MPServer(AbstractServer[WorkerProcess]):
             sock.set_inheritable(True)
             self._sso = sock
 
+    def _drop_shared_socket(self):
+        if self._sso is not None:
+            self._sso.close()
+            self._sso = None
+
     def _write_pidfile(self):
         super()._write_pidfile()
         self._rss_collector = ProcInfoCollector()
-
-    def _unlink_pidfile(self):
-        if self._sso is not None:
-            self._sso.detach()
-        super()._unlink_pidfile()
 
     def _start_ipc(self):
         self._ipc = {}

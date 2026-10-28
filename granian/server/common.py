@@ -332,6 +332,9 @@ class AbstractServer(Generic[WT]):
         self._sfd = self._shd.get_fd()
         self._ssp = None
 
+    def _drop_shared_socket(self):
+        pass
+
     def signal_handler_interrupt(self, *args, **kwargs):
         self.interrupt_signal = True
         self.main_loop_interrupt.set()
@@ -508,6 +511,7 @@ class AbstractServer(Generic[WT]):
 
         if self.metrics_enabled:
             self._stop_metrics()
+        self._drop_shared_socket()
         self._stop_workers()
         self._stop_ipc()
         self._call_hooks(self.hooks_shutdown)
