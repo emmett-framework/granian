@@ -97,11 +97,11 @@ impl IPCReceiverHandle {
                             let mut receiver = ipc.lock().await;
                             // TODO: log unexpected messages?
                             // match read_msg(&mut *receiver).await {
-                            //     Ok(Message::Metrics(data)) => metrics_aggregator.get().collect(idx, data),
+                            //     Ok(Message::Metrics(birth, data)) => metrics_aggregator.get().collect(idx, birth, data),
                             //     _ => {}
                             // }
-                            if let Ok(Message::Metrics(data)) = read_msg(&mut *receiver).await {
-                                metrics_aggregator.get().collect(idx, data);
+                            if let Ok(Message::Metrics(birth, data)) = read_msg(&mut *receiver).await {
+                                metrics_aggregator.get().collect(idx, birth, data);
                             }
                         } => {},
                         _ = pyrx.changed() => break,
@@ -179,7 +179,7 @@ pub(crate) struct IPCSenderHandle {}
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum Message {
     // NOTE: potentially use IPC for more purposes
-    Metrics(crate::metrics::MetricsData),
+    Metrics(u64, crate::metrics::MetricsData),
 }
 
 #[cfg(not(Py_GIL_DISABLED))]
