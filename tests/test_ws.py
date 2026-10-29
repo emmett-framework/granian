@@ -1,10 +1,32 @@
 import asyncio
+import base64
 import json
 import os
 
 import pytest
 import websockets
 import websockets.exceptions
+
+
+async def _raw_ws_connect(port):
+    # a bare socket client: it never answers pings on its own, unlike `websockets`
+    reader, writer = await asyncio.open_connection('127.0.0.1', port)
+    key = base64.b64encode(os.urandom(16)).decode()
+    writer.write(
+        (
+            f'GET /ws_echo HTTP/1.1\r\nHost: localhost:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+            f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n'
+        ).encode()
+    )
+    await writer.drain()
+    await reader.readuntil(b'\r\n\r\n')
+    return reader, writer
+
+
+async def _read_control_frame(reader, timeout):
+    # server frames are unmasked and control frames carry at most 125 bytes of payload
+    head = await asyncio.wait_for(reader.readexactly(2), timeout)
+    return head[0] & 0x0F, await reader.readexactly(head[1] & 0x7F)
 
 
 @pytest.mark.asyncio
@@ -122,3 +144,48 @@ async def test_rsgi_scope(rsgi_server, runtime_mode):
     assert data['query_string'] == 'test=true'
     assert data['headers']['host'] == f'localhost:{port}'
     assert not data['authority']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_ws_ping_timeout(server, runtime_mode):
+    async with server(runtime_mode, ws_ping_interval=0.5, ws_ping_timeout=0.5) as port:
+        reader, writer = await _raw_ws_connect(port)
+        try:
+            ping_opcode, _ = await _read_control_frame(reader, 3)
+            # the ping is never answered, so the server has to close with 1011
+            close_opcode, close_payload = await _read_control_frame(reader, 3)
+        finally:
+            writer.close()
+
+    assert ping_opcode == 0x9
+    assert close_opcode == 0x8
+    assert int.from_bytes(close_payload[:2], 'big') == 1011
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_ws_ping_keepalive(server, runtime_mode):
+    async with server(runtime_mode, ws_ping_interval=0.5, ws_ping_timeout=0.4) as port:
+        # the client answers pings automatically, and sends none of its own
+        async with websockets.connect(f'ws://localhost:{port}/ws_echo', ping_interval=None) as ws:
+            await asyncio.sleep(2)
+            await ws.send('foo')
+            res = await ws.recv()
+
+    assert res == 'foo'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('server', ['asgi', 'rsgi'], indirect=True)
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_ws_ping_disabled(server, runtime_mode):
+    async with server(runtime_mode, ws_ping_interval=0) as port:
+        reader, writer = await _raw_ws_connect(port)
+        try:
+            with pytest.raises(asyncio.TimeoutError):
+                await _read_control_frame(reader, 1.5)
+        finally:
+            writer.close()
