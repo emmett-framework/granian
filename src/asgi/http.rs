@@ -9,7 +9,7 @@ use crate::{
     http::{HTTPProto, HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
     net::SockAddr,
     runtime::{Runtime, RuntimeRef},
-    ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
+    ws::{UpgradeData, WsKeepaliveConfig, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
 };
 
 macro_rules! handle_http_response {
@@ -34,6 +34,7 @@ macro_rules! handle_request {
             client_addr: SockAddr,
             req: HTTPRequest,
             scheme: HTTPProto,
+            _ws_keepalive: WsKeepaliveConfig,
         ) -> HTTPResponse {
             let (parts, body) = req.into_parts();
             handle_http_response!(
@@ -60,6 +61,7 @@ macro_rules! handle_request_with_ws {
             client_addr: SockAddr,
             mut req: HTTPRequest,
             scheme: HTTPProto,
+            ws_keepalive: WsKeepaliveConfig,
         ) -> HTTPResponse {
             if is_ws_upgrade(&req) {
                 return match ws_upgrade(&mut req, None) {
@@ -82,6 +84,7 @@ macro_rules! handle_request_with_ws {
                                 ws,
                                 parts,
                                 UpgradeData::new(res, restx),
+                                ws_keepalive,
                             )
                             .await
                             {

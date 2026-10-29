@@ -12,6 +12,7 @@ use super::tls::{
     load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
     resolve_protocol_versions,
 };
+use super::ws::WsKeepaliveConfig;
 use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -96,6 +97,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
+    pub ws_config: WsKeepaliveConfig,
     pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
     pub metrics: (
@@ -131,6 +133,8 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
+        ws_ping_interval: Option<f64>,
+        ws_ping_timeout: Option<f64>,
         static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
@@ -168,6 +172,7 @@ impl WorkerConfig {
             http1_opts,
             http2_opts,
             websockets_enabled,
+            ws_config: WsKeepaliveConfig::new(ws_ping_interval, ws_ping_timeout),
             static_files,
             tls_opts,
             metrics: (metrics.0.map(std::time::Duration::from_secs), metrics.1),
@@ -250,13 +255,19 @@ pub(crate) struct WorkerMarkerConnUpgrades;
 pub(crate) struct WorkerCTXBase<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
     pub metrics: M,
+    pub ws_keepalive: super::ws::WsKeepaliveConfig,
 }
 
 impl<M> WorkerCTXBase<M> {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M) -> Self {
+    pub fn new(
+        callback: crate::callbacks::PyCBScheduler,
+        metrics: M,
+        ws_keepalive: super::ws::WsKeepaliveConfig,
+    ) -> Self {
         Self {
             callback: Arc::new(callback),
             metrics,
+            ws_keepalive,
         }
     }
 }
@@ -265,6 +276,7 @@ impl<M> WorkerCTXBase<M> {
 pub(crate) struct WorkerCTXFiles<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
     pub metrics: M,
+    pub ws_keepalive: super::ws::WsKeepaliveConfig,
     pub static_mounts: Vec<(String, String)>,
     pub static_dir_to_file: Option<String>,
     pub static_expires: Option<String>,
@@ -274,12 +286,14 @@ impl<M> WorkerCTXFiles<M> {
     pub fn new(
         callback: crate::callbacks::PyCBScheduler,
         metrics: M,
+        ws_keepalive: super::ws::WsKeepaliveConfig,
         files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     ) -> Self {
         let (static_mounts, static_dir_to_file, static_expires) = files.unwrap();
         Self {
             callback: Arc::new(callback),
             metrics,
+            ws_keepalive,
             static_mounts,
             static_dir_to_file,
             static_expires,
@@ -307,6 +321,7 @@ where
             crate::net::SockAddr,
             crate::http::HTTPRequest,
             crate::http::HTTPProto,
+            crate::ws::WsKeepaliveConfig,
         ) -> Ret
         + Copy,
     Ret: Future<Output = crate::http::HTTPResponse>,
@@ -343,6 +358,7 @@ macro_rules! service_proto_fut {
             $self.addr_remote.clone(),
             $req,
             $proto,
+            $self.ctx.ws_keepalive,
         );
         Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
     }};
@@ -360,6 +376,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -386,6 +403,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -426,6 +444,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -456,6 +475,7 @@ macro_rules! service_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1086,6 +1106,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1118,6 +1139,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1151,6 +1173,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
@@ -1183,6 +1206,7 @@ macro_rules! acceptor_impl {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send
