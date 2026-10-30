@@ -1,12 +1,12 @@
 use http_body_util::BodyExt;
-use hyper::{StatusCode, header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder};
+use hyper::{StatusCode, http::response::Builder as ResponseBuilder};
 use std::sync::Arc;
 use tokio::sync::{Notify, mpsc};
 
 use super::callbacks::{call_http, call_ws};
 use crate::{
     callbacks::ArcCBScheduler,
-    http::{HTTPProto, HTTPRequest, HTTPResponse, HV_SERVER, empty_body, response_500},
+    http::{HTTPProto, HTTPRequest, HTTPResponse, empty_body, response_500},
     net::SockAddr,
     runtime::{Runtime, RuntimeRef},
     ws::{UpgradeData, is_upgrade_request as is_ws_upgrade, upgrade_intent as ws_upgrade},
@@ -92,7 +92,6 @@ macro_rules! handle_request_with_ws {
                                                 .send(
                                                     ResponseBuilder::new()
                                                         .status(StatusCode::FORBIDDEN)
-                                                        .header(HK_SERVER, HV_SERVER)
                                                         .body(empty_body())
                                                         .unwrap(),
                                                 )
@@ -122,7 +121,6 @@ macro_rules! handle_request_with_ws {
                         log::info!("Websocket handshake failed with {:?}", err);
                         return ResponseBuilder::new()
                             .status(StatusCode::BAD_REQUEST)
-                            .header(HK_SERVER, HV_SERVER)
                             .body(
                                 http_body_util::Full::new(format!("{}", err).into())
                                     .map_err(|e| match e {})

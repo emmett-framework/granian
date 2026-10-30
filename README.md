@@ -152,6 +152,10 @@ Options:
                                   default: (auto)]
   --ws / --no-ws                  Enable websockets handling  [env var:
                                   GRANIAN_WEBSOCKETS; default: (enabled)]
+  --server-header / --no-server-header
+                                  Add a `server: granian` header to responses
+                                  not already providing one  [env var:
+                                  GRANIAN_SERVER_HEADER; default: (enabled)]
   --workers INTEGER RANGE         Number of worker processes  [env var:
                                   GRANIAN_WORKERS; default: 1; x>=1]
   --blocking-threads INTEGER RANGE
