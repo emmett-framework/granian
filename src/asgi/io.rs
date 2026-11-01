@@ -685,7 +685,7 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
                 ))),
                 "http.response.body" | "websocket.http.response.body" => {
-                    Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message)))
+                    Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message)?))
                 }
                 "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
                 "websocket.accept" => {
@@ -747,17 +747,17 @@ fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
 }
 
 #[inline(always)]
-fn adapt_body(py: Python, message: &Bound<PyDict>) -> (Box<[u8]>, bool) {
-    let body = message.get_item(pyo3::intern!(py, "body"));
+fn adapt_body(py: Python, message: &Bound<PyDict>) -> PyResult<(Box<[u8]>, bool)> {
+    let body = message.get_item(pyo3::intern!(py, "body"))?;
     let body = match body {
-        Ok(Some(ref item)) => item.extract().unwrap_or(EMPTY_BYTES),
-        _ => EMPTY_BYTES,
+        Some(ref item) => item.extract()?,
+        None => EMPTY_BYTES,
     };
     let more = match message.get_item(pyo3::intern!(py, "more_body")) {
         Ok(Some(item)) => item.extract().unwrap_or(false),
         _ => false,
     };
-    (body.into(), more)
+    Ok((body.into(), more))
 }
 
 #[inline(always)]

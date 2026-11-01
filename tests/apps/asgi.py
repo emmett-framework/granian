@@ -168,6 +168,14 @@ async def err_proto_msg(scope, receive, send):
     await send({'type': 'http.response.body', 'body': msg.encode('utf8'), 'more_body': False})
 
 
+async def err_proto_body(scope, receive, send):
+    await send(PLAINTEXT_RESPONSE)
+    if scope['path'].endswith('/stream'):
+        await send({'type': 'http.response.body', 'body': b'test', 'more_body': True})
+    # non-bytes body will cause the response to err.
+    await send({'type': 'http.response.body', 'body': 'test'})
+
+
 async def err_proto_flow(scope, receive, send):
     await send(PLAINTEXT_RESPONSE)
     await send({'type': 'http.response.body', 'body': b'msg1', 'more_body': False})
@@ -230,6 +238,8 @@ def app(scope, receive, send):
         '/ws_push': ws_push,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,
+        '/err_proto/body': err_proto_body,
+        '/err_proto/body/stream': err_proto_body,
         '/err_proto/flow': err_proto_flow,
         '/timeout_n': timeout_n,
         '/timeout_w': timeout_w,

@@ -86,6 +86,25 @@ async def test_protocol_error(asgi_server, runtime_mode):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_non_bytes_body(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws=False) as port:
+        res = httpx.get(f'http://localhost:{port}/err_proto/body')
+
+    assert res.status_code == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_non_bytes_body_stream(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode, ws=False) as port:
+        with httpx.stream('GET', f'http://localhost:{port}/err_proto/body/stream') as res:
+            assert res.status_code == 200
+            with pytest.raises(httpx.RemoteProtocolError):
+                res.read()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_file(asgi_server, runtime_mode):
     async with asgi_server(runtime_mode, ws=False) as port:
         res = httpx.get(f'http://localhost:{port}/file')
