@@ -18,7 +18,7 @@ jobs:
     - run: |
         git clone https://github.com/gi0baro/rewrk.git
         cd rewrk && cargo build --release
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: rewrk
         path: rewrk/target/release/rewrk
@@ -56,7 +56,7 @@ jobs:
       run: |
         python benchmarks.py
     - name: upload results
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: results-base
         path: benchmarks/results/*
@@ -98,7 +98,7 @@ jobs:
       run: |
         python benchmarks.py vs
     - name: upload results
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: results-vs
         path: benchmarks/results/*
@@ -134,7 +134,7 @@ jobs:
       run: |
         python benchmarks.py vs_ws
     - name: upload results
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: results-ws
         path: benchmarks/results/*
@@ -192,7 +192,7 @@ jobs:
         BENCHMARK_EXC_PREFIX="$WORKSPACE/.venv313/bin" "$WORKSPACE/.venv313/bin/python" benchmarks.py interfaces
         mv results/data.json results/py313.json
     - name: upload results
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: results-pyver
         path: benchmarks/results/*
