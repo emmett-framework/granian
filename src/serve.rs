@@ -23,6 +23,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy,
             M: Clone + Sync,
@@ -139,6 +140,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send,
@@ -291,6 +293,7 @@ macro_rules! serve_fn {
                     crate::net::SockAddr,
                     crate::http::HTTPRequest,
                     crate::http::HTTPProto,
+                    crate::ws::WsKeepaliveConfig,
                 ) -> Ret
                 + Copy
                 + Send,
@@ -524,7 +527,7 @@ macro_rules! gen_serve_match_files {
                 $signal,
                 $metrics,
                 $metrics_opt,
-                crate::workers::WorkerCTXBase::new($callback, $metrics.clone()),
+                crate::workers::WorkerCTXBase::new($callback, $metrics.clone(), $self.config.ws_config),
                 $acceptor_plain,
                 $acceptor_tls,
                 $target,
@@ -538,7 +541,12 @@ macro_rules! gen_serve_match_files {
                 $signal,
                 $metrics,
                 $metrics_opt,
-                crate::workers::WorkerCTXFiles::new($callback, $metrics.clone(), $self.config.static_files.clone()),
+                crate::workers::WorkerCTXFiles::new(
+                    $callback,
+                    $metrics.clone(),
+                    $self.config.ws_config,
+                    $self.config.static_files.clone(),
+                ),
                 $acceptor_plain,
                 $acceptor_tls,
                 $target,
