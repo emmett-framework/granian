@@ -457,7 +457,23 @@ macro_rules! gen_serve_match_proto {
                 },
                 $targetws
             ),
-            ("2", _) => crate::serve::gen_serve_impl!(
+            ("2", true) => crate::serve::gen_serve_impl!(
+                $sm,
+                $self,
+                $py,
+                $event_loop,
+                $signal,
+                $metrics,
+                $metrics_opt,
+                $ctx,
+                $acceptor,
+                crate::workers::WorkerHandlerH2 {
+                    opts: $self.config.http2_opts.clone(),
+                    metrics: $metrics.clone(),
+                },
+                $targetws
+            ),
+            ("2", false) => crate::serve::gen_serve_impl!(
                 $sm,
                 $self,
                 $py,
