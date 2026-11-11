@@ -971,9 +971,44 @@ macro_rules! acceptor_impl_stream {
     }};
 }
 
+#[cfg(unix)]
+const ACCEPT_ERRNOS: [i32; 2] = [libc::EMFILE, libc::ENFILE];
+#[cfg(windows)]
+const ACCEPT_ERRNOS: [i32; 1] = [10024]; // WSAEMFILE
+const ACCEPT_ERR_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+
+#[inline(always)]
+fn is_resource_error(err: &std::io::Error) -> bool {
+    err.raw_os_error().is_some_and(|code| ACCEPT_ERRNOS.contains(&code))
+}
+
+trait AcceptError: std::fmt::Debug {
+    fn is_resource_error(&self) -> bool;
+}
+
+impl AcceptError for std::io::Error {
+    fn is_resource_error(&self) -> bool {
+        is_resource_error(self)
+    }
+}
+
+impl<TE: std::error::Error, A: std::fmt::Debug> AcceptError for tls_listener::Error<std::io::Error, TE, A> {
+    fn is_resource_error(&self) -> bool {
+        match self {
+            tls_listener::Error::ListenerError(err) => is_resource_error(err),
+            _ => false,
+        }
+    }
+}
+
 macro_rules! acceptor_impl_err {
     ($err:expr, $permit:expr) => {{
-        log::debug!("TCP handshake failed with error: {:?}", $err);
+        if AcceptError::is_resource_error(&$err) {
+            log::error!("Failed to accept connection: {:?}", $err);
+            tokio::time::sleep(ACCEPT_ERR_DELAY).await;
+        } else {
+            log::debug!("TCP accept failed: {:?}", $err);
+        }
         drop($permit);
     }};
 }

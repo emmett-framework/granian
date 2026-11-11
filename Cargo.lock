@@ -483,6 +483,7 @@ dependencies = [
  "hyper-util",
  "interprocess",
  "itertools",
+ "libc",
  "log",
  "mimalloc",
  "mime_guess",
