@@ -81,10 +81,10 @@ impl UpgradeData {
             if let Some(status) = status {
                 builder = builder.status(status);
             }
-            if let Some(mut headers) = headers {
+            if let Some(headers) = headers {
                 let rheaders = builder.headers_mut().unwrap();
-                for (key, val) in headers.drain() {
-                    rheaders.append(key.unwrap(), val);
+                for (key, val) in &headers {
+                    rheaders.append(key.clone(), val.clone());
                 }
             }
             let res = match body {
