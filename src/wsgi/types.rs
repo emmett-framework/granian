@@ -49,30 +49,38 @@ impl WSGIBody {
 
         let mut guard = stream.lock().await;
         if let Some(stream) = guard.as_mut() {
-            loop {
-                if let Some(chunk) = stream.next().await {
-                    let data = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
-                    buffer.put(data);
-                    match buffering {
-                        WSGIBodyBuffering::Line => {
-                            if !buffer.contains(&LINE_SPLIT) {
-                                continue;
-                            }
-                        }
-                        WSGIBodyBuffering::Size(size) => {
-                            if buffer.len() < size {
-                                continue;
-                            }
+            match buffering {
+                WSGIBodyBuffering::Line => {
+                    while let Some(chunk) = stream.next().await {
+                        let data = chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default());
+                        let has_split = data.contains(&LINE_SPLIT);
+                        buffer.put(data);
+                        if has_split {
+                            break;
                         }
                     }
                 }
-                break;
+                WSGIBodyBuffering::Size(size) => {
+                    while let Some(chunk) = stream.next().await {
+                        buffer.put(chunk.map_or(body::Bytes::new(), |buf| buf.into_data().unwrap_or_default()));
+                        if buffer.len() >= size {
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
 
     #[allow(clippy::map_unwrap_or)]
     fn _readline(&self, py: Python) -> Bytes {
+        {
+            let mut buffer = self.buffer.lock().unwrap();
+            if let Some(next_split) = buffer.iter().position(|&c| c == LINE_SPLIT) {
+                return buffer.split_to(next_split + 1).freeze();
+            }
+        }
+
         let inner = self.inner.clone();
         py.detach(|| {
             self.rt.inner.block_on(async move {
@@ -84,7 +92,7 @@ impl WSGIBody {
         buffer
             .iter()
             .position(|&c| c == LINE_SPLIT)
-            .map(|next_split| buffer.split_to(next_split).freeze())
+            .map(|next_split| buffer.split_to(next_split + 1).freeze())
             .unwrap_or_else(|| {
                 let len = buffer.len();
                 buffer.split_to(len).freeze()
