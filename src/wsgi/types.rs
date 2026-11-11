@@ -170,7 +170,7 @@ impl WSGIBody {
             })
         });
         let lines: Vec<Bound<PyBytes>> = data
-            .split(|&c| c == LINE_SPLIT)
+            .split_inclusive(|&c| c == LINE_SPLIT)
             .map(|item| PyBytes::new(py, item))
             .collect();
         PyList::new(py, lines)
