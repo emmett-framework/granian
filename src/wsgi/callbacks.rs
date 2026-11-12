@@ -38,12 +38,13 @@ fn build_wsgi(
     protocol: WSGIProtocol,
     body: WSGIBody,
 ) -> PyResult<(Py<WSGIProtocol>, Bound<PyDict>)> {
-    let (path, query_string) = req.uri.path_and_query().map_or_else(
-        || (String::new(), String::new()),
+    let (path, query_string, raw_uri) = req.uri.path_and_query().map_or_else(
+        || (String::new(), String::new(), String::new()),
         |pq| {
             (
                 encoding_rs::mem::decode_latin1(&percent_decode_str(pq.path()).collect_vec()).into_owned(),
                 encoding_rs::mem::decode_latin1(pq.query().unwrap_or("").as_bytes()).into_owned(),
+                encoding_rs::mem::decode_latin1(pq.as_str().as_bytes()).into_owned(),
             )
         },
     );
@@ -68,6 +69,9 @@ fn build_wsgi(
     environ_set!(py, environ, "REQUEST_METHOD", req.method.as_str());
     environ_set!(py, environ, "PATH_INFO", path);
     environ_set!(py, environ, "QUERY_STRING", query_string);
+    // Not in PEP 3333, but gunicorn sets it and middleware (e.g. OpenTelemetry) reads it
+    // to recover the target as sent, since PATH_INFO is percent-decoded.
+    environ_set!(py, environ, "RAW_URI", raw_uri);
     environ_set!(py, environ, "wsgi.url_scheme", scheme.as_str());
     environ_set!(py, environ, "wsgi.input", body);
 
