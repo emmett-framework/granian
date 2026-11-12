@@ -129,6 +129,21 @@ def option(*param_decls: str, cls: type[click.Option] | None = None, **attrs: An
 )
 @option('--http', type=EnumType(HTTPModes), default=HTTPModes.auto, help='HTTP version')
 @option('--ws/--no-ws', 'websockets', default=True, help='Enable websockets handling')
+@option(
+    '--ws-ping-interval',
+    type=click.FloatRange(min=0),
+    default=None,
+    help='Seconds of client silence after which a websocket ping is sent (unset or 0 disables)',
+)
+@option(
+    '--ws-ping-timeout',
+    type=click.FloatRange(min=0),
+    default=None,
+    help=(
+        'Seconds to wait for a client frame after a ping before closing the websocket (unset or 0 disables). '
+        'Client frames are read only while the application is awaiting receive()'
+    ),
+)
 @option('--workers', type=click.IntRange(1), default=1, help='Number of worker processes')
 @option(
     '--blocking-threads',
@@ -441,6 +456,8 @@ def cli(
     interface: Interfaces,
     http: HTTPModes,
     websockets: bool,
+    ws_ping_interval: float | None,
+    ws_ping_timeout: float | None,
     workers: int,
     blocking_threads: int | None,
     blocking_threads_idle_timeout: int,
@@ -535,6 +552,8 @@ def cli(
         task_impl=task_impl,
         http=http,
         websockets=websockets,
+        ws_ping_interval=ws_ping_interval,
+        ws_ping_timeout=ws_ping_timeout,
         backlog=backlog,
         backpressure=backpressure,
         http1_settings=HTTP1Settings(

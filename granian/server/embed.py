@@ -106,6 +106,8 @@ class Server(AbstractServer[AsyncWorker]):
         task_impl: TaskImpl = TaskImpl.asyncio,
         http: HTTPModes = HTTPModes.auto,
         websockets: bool = True,
+        ws_ping_interval: float | None = None,
+        ws_ping_timeout: float | None = None,
         backlog: int = 128,
         backpressure: int | None = None,
         http1_settings: HTTP1Settings | None = None,
@@ -142,6 +144,8 @@ class Server(AbstractServer[AsyncWorker]):
             task_impl=task_impl,
             http=http,
             websockets=websockets,
+            ws_ping_interval=ws_ping_interval,
+            ws_ping_timeout=ws_ping_timeout,
             backlog=backlog,
             backpressure=backpressure,
             http1_settings=http1_settings,
@@ -189,6 +193,7 @@ class Server(AbstractServer[AsyncWorker]):
                 self.http1_settings,
                 self.http2_settings,
                 self.websockets,
+                (self.ws_ping_interval, self.ws_ping_timeout),
                 self.static_path,
                 self.log_access_format if self.log_access else None,
                 self.ssl_ctx,
@@ -215,6 +220,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -247,6 +253,7 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
             (None, None),
+            websocket_ping,
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -271,6 +278,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -312,6 +320,7 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
             (None, None),
+            websocket_ping,
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)
@@ -337,6 +346,7 @@ class Server(AbstractServer[AsyncWorker]):
         http1_settings: HTTP1Settings | None,
         http2_settings: HTTP2Settings | None,
         websockets: bool,
+        websocket_ping: tuple[float | None, float | None],
         static_path: tuple[str, str, str | None, str | None] | None,
         log_access_fmt: str | None,
         ssl_ctx: SSLCtx,
@@ -372,6 +382,7 @@ class Server(AbstractServer[AsyncWorker]):
             static_path,
             *ssl_ctx,
             (None, None),
+            websocket_ping,
         )
         serve = worker.serve_async_uds if (sock[0] or sock[1]).is_uds() else worker.serve_async
         scheduler = _new_cbscheduler(loop, wcallback, impl_asyncio=task_impl == TaskImpl.asyncio)

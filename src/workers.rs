@@ -12,6 +12,7 @@ use super::tls::{
     load_certs as tls_load_certs, load_crls as tls_load_crls, load_private_key as tls_load_pkey,
     resolve_protocol_versions,
 };
+use super::ws::WSPing;
 use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
@@ -96,6 +97,7 @@ pub(crate) struct WorkerConfig {
     pub http1_opts: HTTP1Config,
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
+    pub websocket_ping: WSPing,
     pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
     pub tls_opts: Option<WorkerTlsConfig>,
     pub metrics: (
@@ -131,6 +133,7 @@ impl WorkerConfig {
         http1_opts: HTTP1Config,
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
+        websocket_ping: WSPing,
         static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
@@ -168,6 +171,7 @@ impl WorkerConfig {
             http1_opts,
             http2_opts,
             websockets_enabled,
+            websocket_ping,
             static_files,
             tls_opts,
             metrics: (metrics.0.map(std::time::Duration::from_secs), metrics.1),
