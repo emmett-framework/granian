@@ -10,7 +10,7 @@ use crate::{
     callbacks::ArcCBScheduler,
     runtime::{Runtime, RuntimeRef},
     utils::{GuardedReceiver, log_application_callable_exception},
-    ws::{HyperWebsocket, UpgradeData},
+    ws::{HyperWebsocket, UpgradeData, WsKeepaliveConfig},
 };
 
 macro_rules! callback_impl_done_http {
@@ -142,9 +142,10 @@ pub(crate) fn call_ws(
     ws: HyperWebsocket,
     upgrade: UpgradeData,
     scope: WebsocketScope,
+    ws_keepalive: WsKeepaliveConfig,
 ) -> oneshot::Receiver<WebsocketDetachedTransport> {
     let (tx, rx) = oneshot::channel();
-    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard);
+    let protocol = WebsocketProtocol::new(rt.clone(), tx, ws, upgrade, disconnect_guard, ws_keepalive);
 
     rt.spawn_blocking(move |py| {
         if let Ok(watcher) = CallbackWatcherWebsocket::new(py, protocol, scope) {
