@@ -27,6 +27,7 @@ async def _server(
     task_impl='asyncio',
     static_mount=False,
     static_rewrite=False,
+    server_header=True,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -49,6 +50,9 @@ async def _server(
 
         if tls_proto:
             kwargs['ssl_protocol_min'] = tls_proto
+
+    if not server_header:
+        kwargs['server_header'] = False
 
     if static_mount:
         if static_mount is True:

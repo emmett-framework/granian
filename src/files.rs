@@ -1,16 +1,13 @@
 use anyhow::Result;
 use futures::TryStreamExt;
 use http_body_util::BodyExt;
-use hyper::{
-    HeaderMap, StatusCode,
-    header::{HeaderValue, SERVER as HK_SERVER},
-};
+use hyper::{HeaderMap, StatusCode, header::HeaderValue};
 use percent_encoding::percent_decode_str;
 use std::{io, path::Path};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::http::{HTTPResponse, HV_SERVER, response_404};
+use crate::http::{HTTPResponse, response_404};
 
 #[inline(always)]
 pub(crate) fn match_static_file(
@@ -71,7 +68,6 @@ pub(crate) async fn serve_static_file(path: String, expires: Option<String>) -> 
             let mut headers = HeaderMap::new();
             let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
 
-            headers.insert(HK_SERVER, HV_SERVER);
             if let Some(expires) = expires {
                 headers.insert(
                     "cache-control",

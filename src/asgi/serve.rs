@@ -31,6 +31,7 @@ impl ASGIWorker {
             http2_opts=None,
             websockets_enabled=false,
             static_files=None,
+            server_header=true,
             ssl_enabled=false,
             ssl_cert=None,
             ssl_key=None,
@@ -42,6 +43,7 @@ impl ASGIWorker {
             metrics=(None, None),
         )
     )]
+    #[allow(clippy::fn_params_excessive_bools)]
     fn new(
         py: Python,
         worker_id: i32,
@@ -57,6 +59,7 @@ impl ASGIWorker {
         http2_opts: Option<Py<PyAny>>,
         websockets_enabled: bool,
         static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+        server_header: bool,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -82,6 +85,7 @@ impl ASGIWorker {
                 worker_http2_config_from_py(py, http2_opts)?,
                 websockets_enabled,
                 static_files,
+                server_header,
                 ssl_enabled,
                 ssl_cert,
                 ssl_key,

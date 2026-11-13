@@ -97,6 +97,7 @@ pub(crate) struct WorkerConfig {
     pub http2_opts: HTTP2Config,
     pub websockets_enabled: bool,
     pub static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+    pub server_header: bool,
     pub tls_opts: Option<WorkerTlsConfig>,
     pub metrics: (
         Option<std::time::Duration>,
@@ -115,6 +116,7 @@ pub(crate) struct WorkerTlsConfig {
 }
 
 impl WorkerConfig {
+    #[allow(clippy::fn_params_excessive_bools)]
     pub fn new(
         id: i32,
         sock: (
@@ -132,6 +134,7 @@ impl WorkerConfig {
         http2_opts: HTTP2Config,
         websockets_enabled: bool,
         static_files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+        server_header: bool,
         ssl_enabled: bool,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
@@ -169,6 +172,7 @@ impl WorkerConfig {
             http2_opts,
             websockets_enabled,
             static_files,
+            server_header,
             tls_opts,
             metrics: (metrics.0.map(std::time::Duration::from_secs), metrics.1),
         }
@@ -250,13 +254,15 @@ pub(crate) struct WorkerMarkerConnUpgrades;
 pub(crate) struct WorkerCTXBase<M> {
     pub callback: crate::callbacks::ArcCBScheduler,
     pub metrics: M,
+    pub server_header: bool,
 }
 
 impl<M> WorkerCTXBase<M> {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M) -> Self {
+    pub fn new(callback: crate::callbacks::PyCBScheduler, metrics: M, server_header: bool) -> Self {
         Self {
             callback: Arc::new(callback),
             metrics,
+            server_header,
         }
     }
 }
@@ -268,6 +274,7 @@ pub(crate) struct WorkerCTXFiles<M> {
     pub static_mounts: Vec<(String, String)>,
     pub static_dir_to_file: Option<String>,
     pub static_expires: Option<String>,
+    pub server_header: bool,
 }
 
 impl<M> WorkerCTXFiles<M> {
@@ -275,6 +282,7 @@ impl<M> WorkerCTXFiles<M> {
         callback: crate::callbacks::PyCBScheduler,
         metrics: M,
         files: Option<(Vec<(String, String)>, Option<String>, Option<String>)>,
+        server_header: bool,
     ) -> Self {
         let (static_mounts, static_dir_to_file, static_expires) = files.unwrap();
         Self {
@@ -283,6 +291,7 @@ impl<M> WorkerCTXFiles<M> {
             static_mounts,
             static_dir_to_file,
             static_expires,
+            server_header,
         }
     }
 }
@@ -344,7 +353,8 @@ macro_rules! service_proto_fut {
             $req,
             $proto,
         );
-        Box::pin(async move { Ok::<_, hyper::Error>(fut.await) })
+        let server_header = $self.ctx.server_header;
+        Box::pin(async move { Ok::<_, hyper::Error>(crate::http::with_server_header(fut.await, server_header)) })
     }};
 }
 
@@ -404,11 +414,21 @@ macro_rules! service_impl {
                     self.ctx.static_dir_to_file.as_ref(),
                 ) {
                     if static_match.is_err() {
-                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
+                        let server_header = self.ctx.server_header;
+                        return Box::pin(async move {
+                            Ok::<_, hyper::Error>(crate::http::with_server_header(
+                                crate::http::response_404(),
+                                server_header,
+                            ))
+                        });
                     }
                     let expires = self.ctx.static_expires.clone();
+                    let server_header = self.ctx.server_header;
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                        Ok::<_, hyper::Error>(crate::http::with_server_header(
+                            crate::files::serve_static_file(static_match.unwrap(), expires).await,
+                            server_header,
+                        ))
                     });
                 }
 
@@ -487,11 +507,21 @@ macro_rules! service_impl {
                             .metrics
                             .req_static_err
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
+                        let server_header = self.ctx.server_header;
+                        return Box::pin(async move {
+                            Ok::<_, hyper::Error>(crate::http::with_server_header(
+                                crate::http::response_404(),
+                                server_header,
+                            ))
+                        });
                     }
                     let expires = self.ctx.static_expires.clone();
+                    let server_header = self.ctx.server_header;
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                        Ok::<_, hyper::Error>(crate::http::with_server_header(
+                            crate::files::serve_static_file(static_match.unwrap(), expires).await,
+                            server_header,
+                        ))
                     });
                 }
 
