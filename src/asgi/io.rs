@@ -568,9 +568,8 @@ impl ASGIWebsocketProtocol {
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
-                WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx), frame)
-                    .close()
-                    .await;
+                let rx = ws_rx.try_lock().map_or(None, |mut guard| guard.take());
+                WebsocketDetachedTransport::new(true, rx, Some(tx), frame).close().await;
             } else {
                 init_ev.notify_one();
             }
@@ -632,7 +631,8 @@ impl ASGIWebsocketProtocol {
                 accepted_ev.notified().await;
             }
 
-            if let Some(ws) = &mut *(transport.lock().await) {
+            let mut rx = transport.lock().await;
+            if let Some(ws) = &mut *rx {
                 while let Some(recv) = tokio::select! {
                     biased;
                     recv = ws.next() => recv,
@@ -641,7 +641,9 @@ impl ASGIWebsocketProtocol {
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => {}
                         Ok(message @ Message::Close(_)) => {
-                            closed.store(true, atomic::Ordering::Release);
+                            if closed.swap(true, atomic::Ordering::AcqRel) {
+                                rx.take();
+                            }
                             return FutureResultToPy::ASGIWSMessage(message);
                         }
                         Ok(message) => return FutureResultToPy::ASGIWSMessage(message),

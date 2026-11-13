@@ -55,6 +55,16 @@ async def test_asgi_server_close(asgi_server, runtime_mode, tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_asgi_server_close_pending_receive(asgi_server, runtime_mode):
+    async with asgi_server(runtime_mode) as port:
+        async with websockets.connect(f'ws://localhost:{port}/ws_close_pending_receive') as ws:
+            await asyncio.wait_for(ws.wait_closed(), timeout=1)
+
+    assert ws.close_code == 1000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
 async def test_asgi_reject_explicit(asgi_server, runtime_mode):
     async with asgi_server(runtime_mode) as port:
         with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
