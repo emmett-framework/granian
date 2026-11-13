@@ -155,6 +155,16 @@ async def ws_close(scope, receive, send):
         pathlib.Path(fpath).touch()
 
 
+async def ws_close_pending_receive(scope, receive, send):
+    await receive()
+    await send({'type': 'websocket.accept'})
+    pending = asyncio.ensure_future(receive())
+    await asyncio.sleep(0.1)
+    await send({'type': 'websocket.close', 'code': 1000})
+    await pending
+    await asyncio.sleep(2)
+
+
 async def err_app(scope, receive, send):
     1 / 0
 
@@ -227,6 +237,7 @@ def app(scope, receive, send):
         '/ws_info': ws_info,
         '/ws_echo': ws_echo,
         '/ws_close': ws_close,
+        '/ws_close_pending_receive': ws_close_pending_receive,
         '/ws_push': ws_push,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,
