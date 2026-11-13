@@ -73,6 +73,7 @@ lint = [
     'ruff~=0.15.0',
 ]
 test = [
+    'h2~=4.4',
     'httpx~=0.28',
     'pytest~=9.0',
     'pytest-asyncio~=1.3',
