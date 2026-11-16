@@ -722,7 +722,9 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
 #[inline(always)]
 fn adapt_status_code(py: Python, message: &Bound<PyDict>) -> Result<u16, UnsupportedASGIMessage> {
     match message.get_item(pyo3::intern!(py, "status"))? {
-        Some(item) => Ok(item.extract()?),
+        Some(item) => Ok(StatusCode::from_u16(item.extract()?)
+            .map_err(|_| UnsupportedASGIMessage)?
+            .as_u16()),
         _ => error_message!(),
     }
 }

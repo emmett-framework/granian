@@ -168,6 +168,15 @@ async def err_proto_msg(scope, receive, send):
     await send({'type': 'http.response.body', 'body': msg.encode('utf8'), 'more_body': False})
 
 
+async def err_proto_status(scope, receive, send):
+    try:
+        await send({**PLAINTEXT_RESPONSE, 'status': 1000})
+    except Exception as e:
+        msg = e.args[0]
+    await send(PLAINTEXT_RESPONSE)
+    await send({'type': 'http.response.body', 'body': msg.encode('utf8'), 'more_body': False})
+
+
 async def err_proto_flow(scope, receive, send):
     await send(PLAINTEXT_RESPONSE)
     await send({'type': 'http.response.body', 'body': b'msg1', 'more_body': False})
@@ -230,6 +239,7 @@ def app(scope, receive, send):
         '/ws_push': ws_push,
         '/err_app': err_app,
         '/err_proto/type': err_proto_msg,
+        '/err_proto/status': err_proto_status,
         '/err_proto/flow': err_proto_flow,
         '/timeout_n': timeout_n,
         '/timeout_w': timeout_w,

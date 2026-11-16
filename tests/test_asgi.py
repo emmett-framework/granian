@@ -79,6 +79,10 @@ async def test_protocol_error(asgi_server, runtime_mode):
         assert res.status_code == 200
         assert res.text == 'Unsupported ASGI message'
 
+        res = httpx.get(f'http://localhost:{port}/err_proto/status')
+        assert res.status_code == 200
+        assert res.text == 'Unsupported ASGI message'
+
         res = httpx.get(f'http://localhost:{port}/err_proto/flow')
         assert res.status_code == 200
         assert res.text == 'msg1'
