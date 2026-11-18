@@ -426,6 +426,7 @@ pub(crate) struct ASGIWebsocketProtocol {
     init_tx: Arc<atomic::AtomicBool>,
     init_event: Arc<Notify>,
     closed: Arc<atomic::AtomicBool>,
+    abort_guard: Arc<SetOnce<()>>,
 }
 
 impl ASGIWebsocketProtocol {
@@ -449,6 +450,7 @@ impl ASGIWebsocketProtocol {
             init_tx: Arc::new(false.into()),
             init_event: Arc::new(Notify::new()),
             closed: Arc::new(false.into()),
+            abort_guard: Arc::new(SetOnce::new()),
         }
     }
 
@@ -562,12 +564,14 @@ impl ASGIWebsocketProtocol {
     #[inline(always)]
     fn close<'p>(&self, py: Python<'p>, frame: Option<wsframe::CloseFrame>) -> PyResult<Bound<'p, PyAny>> {
         let init_ev = self.init_event.clone();
+        let abort_ev = self.abort_guard.clone();
         let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
         self.closed.store(true, atomic::Ordering::Release);
 
         future_into_py_futlike(self.rt.clone(), py, async move {
             if let Some(tx) = ws_tx.lock().await.take() {
+                _ = abort_ev.set(());
                 WebsocketDetachedTransport::new(true, ws_rx.lock().await.take(), Some(tx), frame)
                     .close()
                     .await;
@@ -624,6 +628,7 @@ impl ASGIWebsocketProtocol {
         let accepted_ev = self.init_event.clone();
         let closed = self.closed.clone();
         let transport = self.ws_rx.clone();
+        let guard_abort = self.abort_guard.clone();
         let guard_disconnect = self.disconnect_guard.clone();
 
         future_into_py_futlike(self.rt.clone(), py, async move {
@@ -637,6 +642,7 @@ impl ASGIWebsocketProtocol {
                     biased;
                     recv = ws.next() => recv,
                     () = guard_disconnect.notified() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
+                    () = guard_abort.wait() => Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)),
                 } {
                     match recv {
                         Ok(Message::Ping(_) | Message::Pong(_)) => {}
