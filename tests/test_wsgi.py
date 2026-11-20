@@ -22,9 +22,22 @@ async def test_scope(wsgi_server, runtime_mode):
     assert data['method'] == 'POST'
     assert data['path'] == '/info'
     assert data['query_string'] == 'test=true'
+    assert data['raw_uri'] == '/info?test=true'
     assert data['headers']['HTTP_HOST'] == f'localhost:{port}'
     assert data['content_length'] == str(len(payload))
     assert data['headers']['HTTP_TEST'] == 'val1,val2'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('runtime_mode', ['mt', 'st'])
+async def test_raw_uri(wsgi_server, runtime_mode):
+    async with wsgi_server(runtime_mode) as port:
+        res = httpx.get(f'http://localhost:{port}/info/%E6%B5%8B%2F?q=%E6%B5%8B')
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data['path'] == '/info/' + '测'.encode().decode('latin-1') + '/'
+    assert data['raw_uri'] == '/info/%E6%B5%8B%2F?q=%E6%B5%8B'
 
 
 @pytest.mark.asyncio
