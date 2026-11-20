@@ -681,8 +681,6 @@ class AbstractServer(Generic[WT]):
             if self.interface == Interfaces.WSGI:
                 self.websockets = False
                 logger.info('Websockets are not supported on WSGI, ignoring')
-            if self.http == HTTPModes.http2:
-                logger.info('Websockets are not supported on HTTP/2 only, ignoring')
 
         if setproctitle is not None:
             self.process_name = self.process_name or (f'granian {self.interface} {self._bind_addr_fmt} {self.target}')

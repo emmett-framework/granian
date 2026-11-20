@@ -121,7 +121,8 @@ def _callback_wrapper(callback, scope_opts, state, access_log_fmt=None):
         return rv
 
     def _ws_logger(scope, proto):
-        access_log(time.time(), time.perf_counter(), scope, 101)
+        # websockets over HTTP/2 are established with a 2xx response (RFC 8441)
+        access_log(time.time(), time.perf_counter(), scope, 200 if scope['http_version'] == '2' else 101)
         return _runner(scope, proto)
 
     def _logger(scope, proto):

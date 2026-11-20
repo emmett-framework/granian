@@ -1,6 +1,6 @@
 use http_body_util::BodyExt;
 use hyper::{
-    Request, Response, StatusCode,
+    Request, Response, StatusCode, Version,
     header::{CONNECTION, UPGRADE},
     http::response::Builder,
 };
@@ -103,6 +103,15 @@ impl UpgradeData {
 
 #[inline]
 pub(crate) fn is_upgrade_request<B>(request: &Request<B>) -> bool {
+    if request.version() == Version::HTTP_2 {
+        // RFC 8441: websockets over HTTP/2 are bootstrapped with the extended
+        // CONNECT method, carrying the "websocket" protocol
+        return request
+            .extensions()
+            .get::<hyper::ext::Protocol>()
+            .is_some_and(|protocol| protocol.as_str().eq_ignore_ascii_case("websocket"));
+    }
+
     header_contains_value(request.headers(), CONNECTION, "Upgrade")
         && header_contains_value(request.headers(), UPGRADE, "websocket")
 }
@@ -111,6 +120,18 @@ pub(crate) fn upgrade_intent<B>(
     request: &mut Request<B>,
     config: Option<WebSocketConfig>,
 ) -> Result<(Builder, HyperWebsocket), ProtocolError> {
+    if request.version() == Version::HTTP_2 {
+        // RFC 8441: the Sec-WebSocket-Key and Sec-WebSocket-Accept headers are
+        // not used, and the response is a 2xx instead of a 101
+        return Ok((
+            Response::builder().status(StatusCode::OK),
+            HyperWebsocket {
+                inner: hyper::upgrade::on(request),
+                config,
+            },
+        ));
+    }
+
     let key = request
         .headers()
         .get("Sec-WebSocket-Key")

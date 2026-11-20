@@ -27,6 +27,7 @@ async def _server(
     task_impl='asyncio',
     static_mount=False,
     static_rewrite=False,
+    http=None,
 ):
     certs_path = Path.cwd() / 'tests' / 'fixtures' / 'tls'
     kwargs = {
@@ -38,6 +39,8 @@ async def _server(
         'task_impl': task_impl,
         'websockets': ws,
     }
+    if http is not None:
+        kwargs['http'] = http
     if tls:
         if tls == 'private':
             kwargs['ssl_cert'] = certs_path / 'pcert.pem'

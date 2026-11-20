@@ -746,6 +746,7 @@ macro_rules! conn_handle_h2_impl {
             .max_frame_size($self.opts.max_frame_size)
             .max_header_list_size($self.opts.max_headers_size)
             .max_send_buf_size($self.opts.max_send_buffer_size)
+            .enable_connect_protocol()
             .serve_connection(hyper_util::rt::TokioIo::new($stream), $svc);
         tokio::pin!(conn);
 
