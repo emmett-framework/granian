@@ -41,12 +41,10 @@ impl WSGIProtocol {
     fn response_iter(&self, py: Python, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Bound<PyAny>) {
         if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
             //: chan capacity 2 (the actual number we need for pipelining) * 2 to have some "margin"
-            let (body_tx, body_rx) = mpsc::channel::<body::Bytes>(4);
+            let (body_tx, body_rx) = mpsc::channel::<anyhow::Result<body::Bytes>>(4);
 
             let body_stream = http_body_util::StreamBody::new(
-                tokio_stream::wrappers::ReceiverStream::new(body_rx)
-                    .map(body::Frame::data)
-                    .map(Result::Ok),
+                tokio_stream::wrappers::ReceiverStream::new(body_rx).map(|item| item.map(body::Frame::data)),
             );
             let txbody = BodyExt::boxed(body_stream);
             let _ = tx.send((status, headers_from_py(headers), txbody));
@@ -68,13 +66,15 @@ impl WSGIProtocol {
                     Err(err) => {
                         if !err.is_instance_of::<pyo3::exceptions::PyStopIteration>(py) {
                             log_application_callable_exception(py, &err);
+                            let _ = py
+                                .detach(|| body_tx.blocking_send(Err(anyhow::anyhow!("Closed with outstanding data"))));
                         }
                         let _ = body.call_method0(pyo3::intern!(py, "close"));
                         closed = true;
                         None
                     }
                 } {
-                    match body_tx.try_send(frame) {
+                    match body_tx.try_send(Ok(frame)) {
                         Ok(()) => continue,
                         Err(mpsc::error::TrySendError::Full(frame)) => {
                             if py.detach(|| body_tx.blocking_send(frame)).is_ok() {
