@@ -7,6 +7,9 @@ import httpx
 import pytest
 import websockets
 
+from granian import Granian
+from granian.errors import ConfigurationError
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('server_tls', ['asgi', 'rsgi', 'wsgi'], indirect=True)
@@ -80,3 +83,26 @@ async def test_tls_encrypted_key(rsgi_server):
     assert res.status_code == 200
     data = res.json()
     assert data['scheme'] == 'https'
+
+
+def test_ssl_client_verify_requires_ca():
+    certs = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls'
+    with pytest.raises(ConfigurationError, match='ssl_ca'):
+        Granian(
+            'tests.apps.asgi:app',
+            ssl_cert=certs / 'cert.pem',
+            ssl_key=certs / 'key.pem',
+            ssl_client_verify=True,
+        )
+
+
+def test_ssl_client_verify_with_ca():
+    certs = pathlib.Path.cwd() / 'tests' / 'fixtures' / 'tls'
+    server = Granian(
+        'tests.apps.asgi:app',
+        ssl_cert=certs / 'cert.pem',
+        ssl_key=certs / 'key.pem',
+        ssl_ca=certs / 'cert.pem',
+        ssl_client_verify=True,
+    )
+    assert server.ssl_ctx[-1] is True
