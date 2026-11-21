@@ -114,8 +114,10 @@ impl BlockingRunnerMono<metrics::ArcWorkerMetrics> {
     where
         T: FnOnce(Python) + Send + 'static,
     {
-        self.queue.send(BlockingTask::new(task)).map(|()| {
-            self.metrics.blocking_queue.fetch_add(1, atomic::Ordering::Relaxed);
+        // NOTE: increment before sending, so consumers can't decrement first
+        self.metrics.blocking_queue.fetch_add(1, atomic::Ordering::Relaxed);
+        self.queue.send(BlockingTask::new(task)).inspect_err(|_| {
+            self.metrics.blocking_queue.fetch_sub(1, atomic::Ordering::Relaxed);
         })
     }
 }
@@ -251,8 +253,11 @@ impl BlockingRunnerPool<metrics::ArcWorkerMetrics> {
             .blocking_threads
             .load(atomic::Ordering::Relaxed)
             .cast_signed();
-        self.queue.send(BlockingTask::new(task))?;
+        // NOTE: increment before sending, so consumers can't decrement first
         self.metrics.blocking_queue.fetch_add(1, atomic::Ordering::Relaxed);
+        self.queue.send(BlockingTask::new(task)).inspect_err(|_| {
+            self.metrics.blocking_queue.fetch_sub(1, atomic::Ordering::Relaxed);
+        })?;
         let idle = self.idle.load(atomic::Ordering::Relaxed).cast_signed();
         let overload = self.queue.len().cast_signed() - idle;
         if (overload > 0) && (threads < self.tmax.cast_signed()) {
@@ -319,6 +324,7 @@ fn blocking_worker_with_metrics(queue: channel::Receiver<BlockingTask>, metrics:
             metrics
                 .py_wait_cumul
                 .fetch_add(t_wait.elapsed().as_micros() as usize, atomic::Ordering::Relaxed);
+            t_wait = time::Instant::now();
             task.run(py);
             metrics
                 .blocking_busy_cumul
@@ -375,6 +381,7 @@ fn blocking_worker_idle_with_metrics(
             metrics
                 .py_wait_cumul
                 .fetch_add(t_wait.elapsed().as_micros() as usize, atomic::Ordering::Relaxed);
+            t_wait = time::Instant::now();
             task.run(py);
             metrics
                 .blocking_busy_cumul
@@ -438,6 +445,7 @@ fn blocking_worker_timeout_with_metrics(
             metrics
                 .py_wait_cumul
                 .fetch_add(t_wait.elapsed().as_micros() as usize, atomic::Ordering::Relaxed);
+            t_wait = time::Instant::now();
             task.run(py);
             metrics
                 .blocking_busy_cumul
