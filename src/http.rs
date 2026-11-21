@@ -1,6 +1,6 @@
 use http_body_util::BodyExt;
 use hyper::{
-    Response,
+    Response, StatusCode,
     body::Bytes,
     header::{HeaderValue, SERVER as HK_SERVER},
 };
@@ -27,10 +27,8 @@ impl HTTPProto {
 }
 
 pub(crate) fn response_404() -> HTTPResponse {
-    let mut builder = Response::builder().status(404);
-    let headers = builder.headers_mut().unwrap();
-    headers.insert(HK_SERVER, HV_SERVER);
-    builder
+    Response::builder()
+        .status(404)
         .body(
             http_body_util::Full::new("Not found".into())
                 .map_err(|e| match e {})
@@ -40,16 +38,24 @@ pub(crate) fn response_404() -> HTTPResponse {
 }
 
 pub(crate) fn response_500() -> HTTPResponse {
-    let mut builder = Response::builder().status(500);
-    let headers = builder.headers_mut().unwrap();
-    headers.insert(HK_SERVER, HV_SERVER);
-    builder
+    Response::builder()
+        .status(500)
         .body(
             http_body_util::Full::new("Internal server error".into())
                 .map_err(|e| match e {})
                 .boxed(),
         )
         .unwrap()
+}
+
+// Adds the default `server` header, unless the application already set one.
+// Websocket handshake responses are left untouched.
+#[inline(always)]
+pub(crate) fn with_server_header(mut res: HTTPResponse, enabled: bool) -> HTTPResponse {
+    if enabled && res.status() != StatusCode::SWITCHING_PROTOCOLS {
+        res.headers_mut().entry(HK_SERVER).or_insert(HV_SERVER);
+    }
+    res
 }
 
 #[inline(always)]

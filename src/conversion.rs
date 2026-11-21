@@ -1,10 +1,7 @@
 use hyper::header;
 use pyo3::{IntoPyObjectExt, prelude::*, pybacked::PyBackedStr};
 
-use crate::{
-    http,
-    workers::{HTTP1Config, HTTP2Config},
-};
+use crate::workers::{HTTP1Config, HTTP2Config};
 
 pub(crate) struct Utf8BytesToPy(pub tokio_tungstenite::tungstenite::Utf8Bytes);
 
@@ -110,6 +107,5 @@ pub(crate) fn headers_from_py(inp: Vec<(PyBackedStr, PyBackedStr)>) -> header::H
             headers.append(hkey, hval);
         }
     }
-    headers.entry(header::SERVER).or_insert(http::HV_SERVER);
     headers
 }
